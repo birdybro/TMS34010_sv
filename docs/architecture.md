@@ -60,6 +60,15 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
 
 Solid blocks belong to Phase 1–2. Dashed (lower) blocks are Phase 3–9.
 
+## Test substrate
+
+For tests beyond pure FSM-state checks, a behavioral memory model under
+`sim/models/sim_memory_model.sv` provides a request/ack-handshake-compliant
+16-bit-word store with one-cycle ack latency. The model is **not RTL** —
+it exists only to drive the core's memory interface with predictable
+content in simulation. It is replaced by `rtl/memory/tms34010_mem_if.sv`
+plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
+
 ## Module map (planned)
 
 | Path                                    | Phase | Status      | Notes |

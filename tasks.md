@@ -9,7 +9,8 @@
 | 0001 | Add TMS34010_Info reference submodule | complete |
 | 0002 | Create project planning and docs scaffolding | complete |
 | 0003 | Initial synthesizable core skeleton + smoke test | complete |
-| 0004 | PC module + core integration | in progress |
+| 0004 | PC module + core integration | complete |
+| 0005 | Behavioral memory model + fetch-walk test | in progress |
 
 ---
 
@@ -87,7 +88,7 @@ Commit:
 ---
 
 ### Task 0004: PC module + core integration
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0003
 Spec sources (citation policy A0007):
@@ -128,6 +129,46 @@ Tests:
 Docs:
 - `docs/architecture.md` — PC row updated to "landed".
 - `docs/assumptions.md` — A0008 entry added.
+- `changelog.md`, `tasks.md`.
+Commit:
+- 244864d
+
+---
+
+### Task 0005: Behavioral memory model + fetch-walk test
+Status: in progress
+Dependencies:
+- Task 0004
+Spec sources:
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/01-architecture.md`
+  §"Datapath summary" — 16-bit-aligned instruction words; PC is bit-
+  addressed and increments by 16 per fetch.
+Acceptance Criteria:
+- `sim/models/sim_memory_model.sv` exists as a non-synthesizable
+  behavioral memory: 16-bit-word backing store indexed by
+  `mem_addr[IDX_WIDTH+3:4]`, two-state mini-FSM (`MEM_IDLE`/`MEM_ACK`)
+  with a one-cycle ack pulse. Lives under `sim/models/` so it is
+  never compiled into a synthesis flow.
+- The model enforces the request/ack handshake: a new request is only
+  accepted when `!mem_ack`, so the producer's "stale `mem_req` on the
+  ack cycle" (a property of a synchronous req/valid protocol where
+  `mem_req` is combinational from a state register that NBA-updates
+  one cycle later) does not retrigger a duplicate latch.
+- `sim/tb/tb_fetch_walk.sv` connects core to memory model, preloads
+  8 instruction words, watches every ack via an active-region monitor,
+  and verifies (a) `mem_addr === pc_o` at each ack, (b) PC sequence is
+  `0, 16, 32, ..., 112`, (c) `mem_size === INSTR_WORD_BITS` at each
+  ack, (d) `mem_rdata[15:0]` matches the preloaded word, (e)
+  `mem_rdata[31:16] === 0` (zero-extension contract), (f) final PC =
+  `N*16` after the ack-driven advance commits.
+- `scripts/sim.sh` discovers `sim/models/*.sv` automatically.
+Tests:
+- `scripts/sim.sh tb_fetch_walk` → PASS.
+- `scripts/sim.sh tb_smoke` → PASS (regression).
+- `scripts/sim.sh tb_pc` → PASS (regression).
+- `scripts/lint.sh` → clean.
+Docs:
+- `docs/architecture.md` — note the memory model substrate.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

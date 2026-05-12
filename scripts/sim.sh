@@ -49,12 +49,19 @@ cd "$WORK"
 rm -rf work
 "$VLIB_BIN" work >/dev/null
 
-# Collect sources. Order matters: package first, then RTL modules, then TB.
+# Collect sources. Order matters: package first, then RTL modules, then
+# behavioral sim models, then TB.
 SRCS=("$ROOT/rtl/tms34010_pkg.sv")
 while IFS= read -r f; do
   [ "$f" = "$ROOT/rtl/tms34010_pkg.sv" ] && continue
   SRCS+=("$f")
 done < <(find "$ROOT/rtl" -type f -name '*.sv' | sort)
+
+if [ -d "$ROOT/sim/models" ]; then
+  while IFS= read -r f; do
+    SRCS+=("$f")
+  done < <(find "$ROOT/sim/models" -type f -name '*.sv' | sort)
+fi
 
 TB_FILE="$ROOT/sim/tb/${TB}.sv"
 if [ ! -f "$TB_FILE" ]; then

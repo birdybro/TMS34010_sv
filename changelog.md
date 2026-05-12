@@ -48,6 +48,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   single advance by `INSTR_WORD_BITS`, cumulative advances, absolute
   load, and load-wins-over-advance precedence.
 - Added `docs/assumptions.md` entry A0008 (reset-vector deferral).
+- Added `sim/models/sim_memory_model.sv` — non-synthesizable behavioral
+  memory with two-state mini-FSM, one-cycle ack pulse, and a guard
+  against re-latching while still driving an ack (the producer's
+  `mem_req` is combinational from a state register that NBA-updates
+  the cycle after, so on the ack cycle `mem_req` is still high
+  for one delta-cycle).
+- Added `sim/tb/tb_fetch_walk.sv` — end-to-end fetch-loop test
+  connecting `tms34010_core` to `sim_memory_model`. Preloads 8 words,
+  watches every ack with an active-region monitor, and verifies the
+  full handshake: address tracks PC, PC advances by `INSTR_WORD_BITS`
+  on each ack, `mem_size` matches, `mem_rdata` low 16 bits match the
+  preloaded word and high 16 bits are zero, and the final PC commits
+  to `N*16`.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives
@@ -55,9 +68,9 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   `mem_ack` in `CORE_FETCH`. New observability port `pc_o` on the core.
 - `sim/tb/tb_smoke.sv` consumes the new `pc_o` and additionally asserts
   that `mem_addr === pc_o` while in `CORE_FETCH`.
-- `scripts/sim.sh` discovers all `rtl/**/*.sv` sources automatically
-  (package first, then everything else, then the TB), so new modules
-  don't require editing the script.
+- `scripts/sim.sh` discovers all `rtl/**/*.sv` and `sim/models/**/*.sv`
+  sources automatically (package first, then RTL, then behavioral
+  models, then the TB).
 
 ### Fixed
 - N/A
