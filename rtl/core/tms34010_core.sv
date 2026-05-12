@@ -227,16 +227,27 @@ module tms34010_core
   assign rf_wr_data = alu_result;
 
   // ALU operand selection.
-  //   `a` always comes from the regfile rs1 port (currently A0 for MOVI).
-  //   `b` switches between regfile rs2 and the assembled immediate based
-  //       on the decoded instruction class.
+  //
+  // Default routing puts Rs on `alu_a` and Rd on `alu_b`, which works for
+  // commutative reg-reg ops (ADD, AND, OR, XOR, ...) and for the move
+  // family (`alu_b` is overridden to the immediate / K).
+  //
+  // For SUB (Rd - Rs → Rd) the order matters: we need `alu_a = Rd` and
+  // `alu_b = Rs` because the ALU computes `a - b`. The two muxes below
+  // swap routing for `INSTR_SUB_RR`.
   assign alu_op  = decoded.alu_op;
-  assign alu_a   = rf_rs1_data;
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_SUB_RR: alu_a = rf_rs2_data;   // Rd is the minuend
+      default:      alu_a = rf_rs1_data;   // Rs (commutative ops, MOVI ignores it)
+    endcase
+  end
   always_comb begin
     unique case (decoded.iclass)
       INSTR_MOVI_IW,
       INSTR_MOVI_IL: alu_b = imm32;
       INSTR_MOVK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
+      INSTR_SUB_RR:  alu_b = rf_rs1_data;  // Rs is the subtrahend
       default:       alu_b = rf_rs2_data;
     endcase
   end

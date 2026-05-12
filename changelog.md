@@ -173,6 +173,13 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Resolved encoding-source uncertainty: extracted SPVU001A page A-14
   via `pdftotext -layout` — this is the authoritative opcode chart
   for every '34010 instruction. Logged as A0014.
+- Fifth instruction: **SUB Rs, Rd** (Rd - Rs → Rd). 7-bit prefix
+  `7'b0100010` from SPVU001A A-14. Added `alu_a` mux in the core
+  that swaps operands for INSTR_SUB_RR so the ALU's natural `a - b`
+  produces the spec-mandated `Rd - Rs`.
+- Added `sim/tb/tb_sub_rr.sv` — five cases: simple positive, equal
+  operands (Z=1), borrow (3-10 = -7 with C, N), signed-overflow
+  (MIN_INT - 1 = MAX_INT with V), and a B-file SUB.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

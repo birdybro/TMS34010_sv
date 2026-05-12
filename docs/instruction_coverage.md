@@ -30,6 +30,7 @@ Required columns:
 | MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm (LO,HI) | SPVU004 listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi_il | N, Z (per A0011) | none | TBD | 32-bit immediate stored as two 16-bit words (low first, high second) → Rd. C, V cleared per A0011. |
 | MOVK     | `0x1800 \| (K<<5) \| (R<<4) \| N`, single word | SPVU004 (A0013); SPVU001A §"Move Constant" | implemented | tb_movk | **none** (spec: "does not affect the status register") | none | TBD | 5-bit zero-extended K → Rd. Confirmed against `MOVK 1,A12 → 0x182C` and `MOVK 8,B1 → 0x1911`. K=0 hypothesis logged in A0013. |
 | ADD Rs,Rd | `0100 000S SSSR DDDD` (= `0x4000 \| (S<<5) \| (R<<4) \| D`) | SPVU001A A-14 (A0014, A0015) | implemented | tb_add_rr | N, C, Z, V | none | TBD | Rs + Rd → Rd. First reg-reg arithmetic. Rs and Rd share file (single R bit). |
+| SUB Rs,Rd | `0100 010S SSSR DDDD` (= `0x4400 \| (S<<5) \| (R<<4) \| D`) | SPVU001A A-14 | implemented | tb_sub_rr | N, C, Z, V | none | TBD | Rd - Rs → Rd. ALU operand swap (alu_a=Rd, alu_b=Rs) handled in the core. C is borrow output. |
 
 ## Categories to populate (placeholder roadmap)
 

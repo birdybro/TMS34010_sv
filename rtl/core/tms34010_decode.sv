@@ -54,10 +54,11 @@ module tms34010_decode
   assign top7  = instr[INSTR_WORD_WIDTH-1:9];
   assign top6  = instr[INSTR_WORD_WIDTH-1:10];
 
-  // Opcode prefixes.
+  // Opcode prefixes (each cited from SPVU001A Appendix A page A-14).
   localparam logic [9:0] MOVI_TOP10   = 10'b00_0010_0111;
   localparam logic [5:0] MOVK_TOP6    = 6'b00_0110;
-  localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;     // 0x40 from SPVU001A A-14
+  localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
+  localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
 
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
@@ -144,10 +145,24 @@ module tms34010_decode
       decoded.rd_file         = reg_file_from_instr;   // single R bit governs both
       decoded.rd_idx          = reg_idx_from_instr;
       decoded.rs_idx          = rs_idx_from_instr;
-      decoded.needs_imm16     = 1'b0;
-      decoded.needs_imm32     = 1'b0;
-      decoded.imm_sign_extend = 1'b0;
       decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // SUB Rs, Rd  (Rd - Rs → Rd; same-file constraint)
+    // -----------------------------------------------------------------------
+    if (top7 == SUB_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_SUB_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      // Operand routing: alu_a = Rd, alu_b = Rs so that SUB computes
+      // (a - b) = (Rd - Rs) → Rd, matching the spec "Rd - Rs → Rd".
+      // See the alu_b mux in tms34010_core.sv for the swap.
+      decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
     end

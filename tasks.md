@@ -20,7 +20,8 @@
 | 0012 | Implement MOVI IW end-to-end | complete |
 | 0013 | Implement MOVI IL end-to-end | complete |
 | 0014 | Implement MOVK K, Rd | complete |
-| 0015 | Implement ADD Rs, Rd | in progress |
+| 0015 | Implement ADD Rs, Rd | complete |
+| 0016 | Implement SUB Rs, Rd | in progress |
 
 ---
 
@@ -505,7 +506,7 @@ Commit:
 ---
 
 ### Task 0015: Implement ADD Rs, Rd
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0011 (datapath wired)
 Spec sources:
@@ -532,6 +533,26 @@ Docs:
 - `docs/assumptions.md` — A0014 (chart source) and A0015 (ADD
   encoding) added.
 - `changelog.md`, `tasks.md`.
+Commit:
+- 4e7cacb
+
+---
+
+### Task 0016: Implement SUB Rs, Rd
+Status: in progress
+Dependencies:
+- Task 0015 (ADD; same encoding shape, same datapath wiring approach)
+Spec source: SPVU001A A-14 chart row `0100 010S SSSR DDDD`.
+Acceptance Criteria:
+- Decoder arm for `top7 == 7'b0100010` setting `iclass=INSTR_SUB_RR`,
+  `alu_op=ALU_OP_SUB`, both wb enables.
+- Core: alu_a mux swaps to `rf_rs2_data` (Rd) for SUB so ALU's
+  `a - b` produces `Rd - Rs` matching the spec.
+- `sim/tb/tb_sub_rr.sv`: five cases (simple, equal, borrow,
+  signed overflow, B-file).
+- Full regression: 13/13 PASS; lint clean.
+Tests: tb_sub_rr PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md, changelog.md, tasks.md.
 Commit:
 - pending
 

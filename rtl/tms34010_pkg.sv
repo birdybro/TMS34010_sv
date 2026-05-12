@@ -196,7 +196,8 @@ package tms34010_pkg;
     INSTR_MOVI_IW = 4'd1,    // MOVI IW K, Rd  — 16-bit sign-extended immediate
     INSTR_MOVI_IL = 4'd2,    // MOVI IL K, Rd  — 32-bit immediate
     INSTR_MOVK    = 4'd3,    // MOVK K, Rd     — 5-bit zero-extended constant
-    INSTR_ADD_RR  = 4'd4     // ADD Rs, Rd     — Rs + Rd → Rd; both same file
+    INSTR_ADD_RR  = 4'd4,    // ADD Rs, Rd     — Rs + Rd → Rd; both same file
+    INSTR_SUB_RR  = 4'd5     // SUB Rs, Rd     — Rd - Rs → Rd; both same file
   } instr_class_t;
 
   // What the control FSM needs from decode in order to execute. Fields are
