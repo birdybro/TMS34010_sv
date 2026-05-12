@@ -30,7 +30,8 @@
 | 0022 | Single-reg unary ops (NEG, NOT) | complete |
 | 0023 | Immediate arithmetic IW (ADDI, SUBI, CMPI) | complete |
 | 0024 | K-form shifts (RL, SLA, SLL, SRA, SRL) | complete |
-| 0025 | Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI) | in progress |
+| 0025 | Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI) | complete |
+| 0026 | MOVE Rs, Rd (register-to-register) | in progress |
 
 ---
 
@@ -751,7 +752,7 @@ Commit:
 ---
 
 ### Task 0025: Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI)
-Status: in progress
+Status: complete
 Dependencies: Task 0013 (MOVI IL IMM_HI fetch infra).
 Spec source: SPVU001A A-14 chart rows for each IL-form.
 Acceptance Criteria:
@@ -767,6 +768,25 @@ Acceptance Criteria:
 - Full regression: 22/22 PASS; lint clean.
 Tests: tb_immi_il PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (6 rows), changelog.md, tasks.md.
+Commit:
+- 61c608f
+
+---
+
+### Task 0026: MOVE Rs, Rd (register-to-register)
+Status: in progress
+Dependencies: Task 0011 (datapath wired).
+Spec source: SPVU001A A-14 chart row for MOVE Rs, Rd.
+Acceptance Criteria:
+- INSTR_MOVE_RR enum value.
+- Decoder arm `top6 == 6'b100100`. F bit at [9] ignored (A0020).
+- alu_op = PASS_A (alu_a routes rf_rs1_data which is Rs).
+- wb_reg_en = 1, wb_flags_en = 1 (N/Z from result per A0009).
+- `sim/tb/tb_move_rr.sv` covers four cases.
+- Full regression: 23/23 PASS; lint clean.
+- Documentation: A0020 added for the F-bit deferral.
+Tests: tb_move_rr PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md, assumptions.md A0020, changelog.md, tasks.md.
 Commit:
 - pending
 

@@ -380,6 +380,16 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0020 — MOVE family: F-bit (field-size selector) ignored in Phase 4
+- **Date**: 2026-05-12
+- **Status**: active, deferred to Phase 5
+- **Source**: SPVU001A A-14 chart rows for MOVE family (`1001 00FS SSSR DDDD` and variants); SPVU001A §12.3 prose on field-size mechanics; bibliography/hdl-reimplementation/04-memory-fields-pixels.md.
+- **Conclusion**: TMS34010 MOVE-family instructions encode an F bit (typically bit[9] in reg-reg encodings, bit[10] in some indirect-addressing variants) that selects between FE0 and FE1 in the status register. FE0/FE1 hold the field size (1..32 bits) and a sign-extension/zero-extension flag that govern how a MOVE behaves at the bit level.
+- **Phase 4 implementation**: Field-size machinery is not yet built. MOVE Rs, Rd is implemented as a full 32-bit register copy, ignoring F. This is correct behavior for code that uses MOVE Rs, Rd with field-size=32 (the most common case), and incorrect for code using smaller field sizes.
+- **How to apply**: When Phase 5 lands the field-size logic (FE0/FE1 in ST + field-extract/insert hardware), revisit the MOVE Rs, Rd decoder arm. Add an `fe_select` field to `decoded_instr_t`, use it together with the F bit to read FE0 or FE1 from ST, and route through the existing shifter/ALU machinery (or a dedicated field-handler module). The MOVE indirect variants (`MOVE *Rs, Rd`, `MOVE Rs, *Rd`, etc.) are blocked on the same dependency and currently fall through to ILLEGAL.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

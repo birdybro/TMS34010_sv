@@ -55,6 +55,7 @@ Required columns:
 | ANDI IL K,Rd | `0000 1011 100R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd & K32 → Rd. |
 | ORI  IL K,Rd | `0000 1011 101R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd \| K32 → Rd. |
 | XORI IL K,Rd | `0000 1011 110R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd ^ K32 → Rd. |
+| MOVE Rs, Rd  | `1001 00FS SSSR DDDD` | SPVU001A A-14 (A0020) | implemented (F ignored) | tb_move_rr | N, Z | none | TBD | Rs → Rd. Field-size selector F currently ignored; full 32-bit copy. MOVE *Rs/Rd indirect variants still ILLEGAL pending Phase 5 field-size machinery. |
 | ABS Rd    | `0000 0011 100R DDDD` (bits[6:5]=00) | SPVU001A A-14 | **not started** | none | N, C, Z, V (with V on MIN_INT) | none | TBD | Deferred — ALU does not currently have an ABS op; would need a conditional NEG plus the V-on-MIN_INT subtlety. |
 | NEGB Rd   | `0000 0011 110R DDDD` (bits[6:5]=10) | SPVU001A A-14 | **not started** | none | N, C, Z, V | none | TBD | Deferred — needs C-input handling (`Rd = -Rd - C`). |
 

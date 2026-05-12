@@ -87,6 +87,11 @@ module tms34010_decode
   localparam logic [10:0] ORI_IL_TOP11  = 11'b0000_1011_101;  // ORI  IL
   localparam logic [10:0] XORI_IL_TOP11 = 11'b0000_1011_110;  // XORI IL
   localparam logic [10:0] SUBI_IL_TOP11 = 11'b0000_1101_000;  // SUBI IL (different base!)
+
+  // MOVE Rs, Rd (register-to-register, same file). The F bit at position
+  // [9] selects the field-size mode (FE0/FE1 in ST). Phase 4 ignores F
+  // and treats it as a full 32-bit register copy (A0020).
+  localparam logic [5:0] MOVE_RR_TOP6 = 6'b100100;  // 1001 00FS SSSR DDDD
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
@@ -331,6 +336,28 @@ module tms34010_decode
       decoded.rd_idx      = reg_idx_from_instr;
       decoded.needs_imm32 = 1'b1;
       decoded.alu_op      = ALU_OP_XOR;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE Rs, Rd  (register-to-register, same file)
+    //
+    // Encoding: `1001 00FS SSSR DDDD`. The F bit (position 9) selects
+    // the field-size mode (FE0/FE1 in ST). Phase 4 ignores F and treats
+    // this as a 32-bit register copy (per A0020); revisit when field-
+    // size semantics land in Phase 5.
+    //
+    // Flag effects: N and Z from the source value (per A0009 default
+    // for PASS_A operations). C and V cleared.
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_RR_TOP6) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_MOVE_RR;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.alu_op      = ALU_OP_PASS_A;        // alu_a = rf_rs1_data (= Rs)
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
     end

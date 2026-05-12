@@ -295,6 +295,16 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   immediates that the IW form cannot encode (large values, full
   bit patterns). Includes CMPI IL with `wb_reg_en=0` verification
   and an XORI to invert (B-file).
+- **MOVE Rs, Rd** (register-to-register move, same file). Encoding
+  `1001 00FS SSSR DDDD` (top6 = `6'b100100`) per SPVU001A A-14.
+  Routes through ALU PASS_A. The F bit (field-size selector,
+  bit[9]) is ignored — Phase 4 implements full-width 32-bit
+  register copy. Documented as A0020; field-size mechanics + the
+  MOVE indirect-addressing variants are Phase 5 work.
+- Added `sim/tb/tb_move_rr.sv` — four cases covering A-to-A move
+  of a pattern, MOVE of zero (Z=1), MOVE of MIN_INT (N=1), and a
+  B-file move. Encoder verified against hand-decoded
+  `MOVE A1,A2 = 0x9022` and `MOVE B5,B7 = 0x90B7`.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
