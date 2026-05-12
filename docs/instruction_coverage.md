@@ -35,6 +35,7 @@ Required columns:
 | ANDN Rs,Rd | `0101 001S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd & ~Rs → Rd. Non-commutative — uses the same alu_a/b swap as SUB. |
 | OR Rs,Rd   | `0101 010S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd \| Rs → Rd. Commutative. |
 | XOR Rs,Rd  | `0101 011S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd ^ Rs → Rd. Encoding cross-checked against `XOR A0,A0 = 0x5600` in SPVU004 listing. |
+| CMP Rs,Rd  | `0100 100S SSSR DDDD` | SPVU001A A-14 | implemented | tb_cmp_rr | N, C, Z, V | none | TBD | Flags from (Rd - Rs); **Rd unchanged** (nondestructive). First instruction in the project with `wb_reg_en = 0`. |
 
 ## Categories to populate (placeholder roadmap)
 

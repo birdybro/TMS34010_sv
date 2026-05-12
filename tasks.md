@@ -22,7 +22,8 @@
 | 0014 | Implement MOVK K, Rd | complete |
 | 0015 | Implement ADD Rs, Rd | complete |
 | 0016 | Implement SUB Rs, Rd | complete |
-| 0017 | Reg-reg logical instructions (AND, ANDN, OR, XOR) | in progress |
+| 0017 | Reg-reg logical instructions (AND, ANDN, OR, XOR) | complete |
+| 0018 | Implement CMP Rs, Rd | in progress |
 
 ---
 
@@ -560,7 +561,7 @@ Commit:
 ---
 
 ### Task 0017: Reg-reg logical instructions (AND, ANDN, OR, XOR)
-Status: in progress
+Status: complete
 Dependencies:
 - Tasks 0015/0016 (reg-reg shape, operand-swap pattern from SUB).
 Spec source: SPVU001A A-14 chart rows for AND/ANDN/OR/XOR.
@@ -575,6 +576,24 @@ Acceptance Criteria:
 - Full regression: 14/14 PASS; lint clean.
 Tests: tb_logical_rr PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (4 rows), changelog.md, tasks.md.
+Commit:
+- e13e6a4
+
+---
+
+### Task 0018: Implement CMP Rs, Rd
+Status: in progress
+Dependencies: Task 0016 (SUB infrastructure: alu_op CMP, operand-swap mux).
+Spec source: SPVU001A A-14 chart row `0100 100S SSSR DDDD`.
+Acceptance Criteria:
+- Decoder arm `top7 == 7'b0100100`; `iclass = INSTR_CMP_RR`;
+  `alu_op = ALU_OP_CMP`; `wb_reg_en = 0`; `wb_flags_en = 1`.
+- Core: alu_a/b muxes add INSTR_CMP_RR to the SUB-style swap group.
+- `sim/tb/tb_cmp_rr.sv` confirms Rd untouched after a CMP and the
+  flags exactly match an equivalent SUB.
+- Full regression: 15/15 PASS; lint clean.
+Tests: tb_cmp_rr PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (CMP row), changelog.md, tasks.md.
 Commit:
 - pending
 

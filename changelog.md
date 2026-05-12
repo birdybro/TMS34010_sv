@@ -191,6 +191,14 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   characteristic bit-pattern test cases (alternating bits, bit
   isolation, sign-bit flips). Encoder helper cross-checked against
   the SPVU004 listing `XOR A0,A0 = 0x5600`.
+- Tenth instruction: **CMP Rs, Rd**. 7-bit prefix `7'b0100100`.
+  Computes the same arithmetic as SUB but with `wb_reg_en = 0` —
+  the destination register is **not** modified, only the status
+  register changes. First instruction in the project that
+  exercises the flag-only writeback path. Reuses the SUB operand-
+  swap in the alu_a/b muxes.
+- Added `sim/tb/tb_cmp_rr.sv` — verifies (a) Rs and Rd both
+  unchanged after CMP, (b) flags match the equivalent SUB.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

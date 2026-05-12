@@ -239,7 +239,8 @@ module tms34010_core
   always_comb begin
     unique case (decoded.iclass)
       INSTR_SUB_RR,
-      INSTR_ANDN_RR: alu_a = rf_rs2_data;   // Rd is the "first" operand
+      INSTR_ANDN_RR,
+      INSTR_CMP_RR:  alu_a = rf_rs2_data;   // Rd is the "first" operand
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -249,7 +250,8 @@ module tms34010_core
       INSTR_MOVI_IL: alu_b = imm32;
       INSTR_MOVK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_SUB_RR,
-      INSTR_ANDN_RR: alu_b = rf_rs1_data;   // Rs is the "second" operand
+      INSTR_ANDN_RR,
+      INSTR_CMP_RR:  alu_b = rf_rs1_data;   // Rs is the "second" operand
       default:       alu_b = rf_rs2_data;
     endcase
   end

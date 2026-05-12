@@ -63,6 +63,7 @@ module tms34010_decode
   localparam logic [6:0] ANDN_RR_TOP7 = 7'b0101_001;  // chart: 0101 001S SSSR DDDD
   localparam logic [6:0] OR_RR_TOP7   = 7'b0101_010;  // chart: 0101 010S SSSR DDDD
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
+  localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
@@ -221,6 +222,20 @@ module tms34010_decode
       decoded.rs_idx          = rs_idx_from_instr;
       decoded.alu_op          = ALU_OP_XOR;
       decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // CMP Rs, Rd  (flags from Rd - Rs; Rd unchanged — first wb_reg_en=0)
+    // -----------------------------------------------------------------------
+    if (top7 == CMP_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_CMP_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.alu_op          = ALU_OP_CMP;        // same arithmetic as SUB
+      decoded.wb_reg_en       = 1'b0;              // *** key difference ***
       decoded.wb_flags_en     = 1'b1;
     end
   end
