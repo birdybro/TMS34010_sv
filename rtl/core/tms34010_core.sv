@@ -212,6 +212,10 @@ module tms34010_core
   logic [DATA_WIDTH-1:0]  st_value;
   logic                   st_n, st_c, st_z, st_v;
 
+  // Shifter ports.
+  logic [DATA_WIDTH-1:0]  shifter_result;
+  alu_flags_t             shifter_flags;
+
   // ---- Operand assembly ----------------------------------------------------
   // Full 32-bit immediate composed from the latched 16-bit pieces. For
   // IW form: sign-extend (or zero-extend) imm_lo_q. For IL form (Task
@@ -242,10 +246,12 @@ module tms34010_core
   assign rf_rs2_idx  = decoded.rd_idx;
 
   // Writeback enable is a one-cycle pulse, gated by the FSM state.
+  // Writeback data and flag-input come from either the ALU or the
+  // shifter depending on `decoded.use_shifter`.
   assign rf_wr_en   = (state_q == CORE_WRITEBACK) && decoded.wb_reg_en;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
-  assign rf_wr_data = alu_result;
+  assign rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
 
   // ALU operand selection.
   //
@@ -356,11 +362,30 @@ module tms34010_core
     .flags (alu_flags)
   );
 
+  // Shifter datapath. Operand is the Rd register value (via rf_rs2_data,
+  // which already reads decoded.rd_idx in the same file as the
+  // destination). Shift amount comes from decoded.k5 (the same K
+  // extraction used by MOVK/ADDK/SUBK). The output is muxed into the
+  // writeback paths above; it sits idle (combinationally driven from
+  // current operand state) when no shift instruction is decoded.
+  tms34010_shifter u_shifter (
+    .op    (decoded.shift_op),
+    .a     (rf_rs2_data),
+    .amount(decoded.k5),
+    .result(shifter_result),
+    .flags (shifter_flags)
+  );
+
+  // Flag-input mux: status register samples either ALU flags or shifter
+  // flags depending on the source of the result.
+  alu_flags_t  flag_input;
+  assign flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
+
   tms34010_status_reg u_status_reg (
     .clk           (clk),
     .rst           (rst),
     .flag_update_en(st_flag_update_en),
-    .flags_in      (alu_flags),
+    .flags_in      (flag_input),
     .st_write_en   (st_write_en),
     .st_write_data (st_write_data),
     .st_o          (st_value),

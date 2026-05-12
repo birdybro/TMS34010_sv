@@ -211,7 +211,12 @@ package tms34010_pkg;
     INSTR_NOT        = 5'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
     INSTR_ADDI_IW    = 5'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
     INSTR_SUBI_IW    = 5'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
-    INSTR_CMPI_IW    = 5'd18  // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
+    INSTR_CMPI_IW    = 5'd18, // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
+    INSTR_SLA_K      = 5'd19, // SLA K, Rd        — Rd << K (arithmetic, may set V)
+    INSTR_SLL_K      = 5'd20, // SLL K, Rd        — Rd << K (logical)
+    INSTR_SRA_K      = 5'd21, // SRA K, Rd        — Rd >>> K (arithmetic / sign-extend)
+    INSTR_SRL_K      = 5'd22, // SRL K, Rd        — Rd >> K  (logical, MSB ← 0)
+    INSTR_RL_K       = 5'd23  // RL K, Rd         — Rd ROL K (rotate left)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
@@ -238,6 +243,8 @@ package tms34010_pkg;
     logic          needs_imm32; // fetch two extra 16-bit words; LO first then HI
     logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits
     alu_op_t       alu_op;      // ALU op to use in CORE_EXECUTE
+    shift_op_t     shift_op;    // shifter op (used when result_source = SHIFTER)
+    logic          use_shifter; // 1 ⇒ writeback from shifter, else from ALU
     logic [4:0]    k5;          // K-form 5-bit constant (MOVK, ADDK, SUBK, ...)
     logic [3:0]    branch_cc;   // condition code for JRcc / JAcc / DSJcc
     logic          wb_reg_en;   // 1 ⇒ regfile write in CORE_WRITEBACK

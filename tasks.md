@@ -28,7 +28,8 @@
 | 0020 | JRcc short conditional (UC, EQ, NE) | complete |
 | 0021 | K-form arithmetic (ADDK, SUBK) | complete |
 | 0022 | Single-reg unary ops (NEG, NOT) | complete |
-| 0023 | Immediate arithmetic IW (ADDI, SUBI, CMPI) | in progress |
+| 0023 | Immediate arithmetic IW (ADDI, SUBI, CMPI) | complete |
+| 0024 | K-form shifts (RL, SLA, SLL, SRA, SRL) | in progress |
 
 ---
 
@@ -700,7 +701,7 @@ Commit:
 ---
 
 ### Task 0023: Immediate arithmetic IW (ADDI, SUBI, CMPI)
-Status: in progress
+Status: complete
 Dependencies: Task 0012 (MOVI IW IMM_LO fetch infra), Task 0018 (CMP wb_reg_en=0 pattern).
 Spec source: SPVU001A A-14 chart rows for ADDI/SUBI/CMPI IW.
 Acceptance Criteria:
@@ -717,6 +718,32 @@ Acceptance Criteria:
 - Full regression: 20/20 PASS; lint clean.
 Tests: tb_immi_iw PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (3 rows), changelog.md, tasks.md.
+Commit:
+- 574ed33
+
+---
+
+### Task 0024: K-form shifts (RL, SLA, SLL, SRA, SRL)
+Status: in progress
+Dependencies: Task 0008 (shifter module), Task 0011 (datapath wired).
+Spec source: SPVU001A A-14 chart rows for shift K-forms; A0019 for K
+  treatment.
+Acceptance Criteria:
+- Five new INSTR_*_K enum values.
+- Decoder: five new top6 patterns matching `001000..001100`.
+- `decoded_instr_t` gains `shift_op` (shift_op_t) and `use_shifter`
+  (bool).
+- Core: shifter instantiated; result-data and flag-input muxes
+  select between ALU and shifter outputs based on `use_shifter`.
+- `sim/tb/tb_shift_k.sv` covers each op with characteristic patterns
+  (sign-extension, logical-vs-arithmetic, rotate half-word swap, B
+  file). Encoders verified against hand-decoded 0x2020 / 0x3200.
+- A0019 added documenting K=0 literal interpretation and deferred
+  K=0 → 32 hypothesis.
+- Full regression: 21/21 PASS; lint clean.
+Tests: tb_shift_k PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (5 rows), assumptions.md A0019,
+  changelog.md, tasks.md.
 Commit:
 - pending
 

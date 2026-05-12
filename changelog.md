@@ -271,6 +271,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   SUBI to zero (Z=1), ADDI with negative sign-extended immediate
   (verifies sign-extension), CMPI equal (Z=1, Rd unchanged), and
   a B-file ADDI.
+- K-form shift batch: **SLA, SLL, SRA, SRL, RL** (all K K, Rd
+  forms). Top-6 prefixes 6'b001000..001100 per SPVU001A A-14.
+  Wires the shifter module — previously built but unused — into
+  the writeback path via a new `use_shifter` field in
+  `decoded_instr_t`. The result-data and flag-input muxes pick
+  between ALU and shifter outputs.
+- Added package shift-op constant routing in `decoded_instr_t`
+  (`shift_op` field of type `shift_op_t`).
+- Added `sim/tb/tb_shift_k.sv` — six cases: SLL of 1 (basic left
+  shift), SRA of 0x80000000 (sign-extension verification), SRL
+  of 0x80000000 (logical right verification), SLA of a pattern,
+  RL by 16 (half-word swap), and a B-file SRL.
+- Added assumption A0019 covering the literal-K interpretation
+  and flagging the unresolved K=0 → 32 hypothesis for shifts
+  (parallel to A0018 for ADDK/SUBK).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

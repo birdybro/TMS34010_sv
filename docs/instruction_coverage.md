@@ -44,6 +44,11 @@ Required columns:
 | ADDI IW K,Rd | `0000 1011 000R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Rd + sign_extend(K16, 32) → Rd. Reuses MOVI IW IMM_LO fetch. |
 | SUBI IW K,Rd | `0000 1011 111R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Rd - sign_extend(K16, 32) → Rd. C is borrow. |
 | CMPI IW K,Rd | `0000 1011 010R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Flags from Rd - sign_extend(K16); Rd unchanged. `wb_reg_en = 0`. |
+| SLA K,Rd | `0010 00KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd << K (arithmetic). K=0 → no shift (literal per A0019). |
+| SLL K,Rd | `0010 01KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd << K (logical). |
+| SRA K,Rd | `0010 10KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >>> K (sign-extending arithmetic right shift). |
+| SRL K,Rd | `0010 11KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >> K (logical right shift; MSB ← 0). |
+| RL  K,Rd | `0011 00KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd ROL K (rotate left). |
 | ABS Rd    | `0000 0011 100R DDDD` (bits[6:5]=00) | SPVU001A A-14 | **not started** | none | N, C, Z, V (with V on MIN_INT) | none | TBD | Deferred — ALU does not currently have an ABS op; would need a conditional NEG plus the V-on-MIN_INT subtlety. |
 | NEGB Rd   | `0000 0011 110R DDDD` (bits[6:5]=10) | SPVU001A A-14 | **not started** | none | N, C, Z, V | none | TBD | Deferred — needs C-input handling (`Rd = -Rd - C`). |
 

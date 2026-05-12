@@ -350,6 +350,36 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0019 — Shift K-value treatment
+- **Date**: 2026-05-12
+- **Status**: active (encoding confirmed; literal-K behavior implemented; K=0 → 32 hypothesis deferred)
+- **Source**: SPVU001A A-14 chart rows for SLA/SLL/SRA/SRL/RL K-form,
+  plus SPVU001A §12.8 "Shift Instructions" prose ("the shift amount
+  is specified by the value of a 5-bit constant"). Note the related
+  prose for Rs-form shifts: "the SRA Rs, Rd and SRL Rs, Rd use the
+  2s complement value of the 5 LSBs in Rs" (i.e., right-shift Rs-form
+  has a sign-aware shift-count interpretation that doesn't apply to
+  the K-form).
+- **Conclusion (implemented)**: K is treated as a literal 5-bit
+  unsigned shift count in the range 0..31. The shifter module's
+  `amount=0` case is a passthrough — the value is unchanged and C=0.
+- **K=0 hypothesis (NOT implemented)**: TI K-form shift instructions
+  in some related families special-case K=0 to mean K=32, providing
+  efficient "zero out the register" (SLL 32) / "broadcast sign bit"
+  (SRA 32) operations. SPVU001A's chart row and the §12.8 prose do
+  not explicitly state this for the '34010 K-form. Without an
+  explicit chart-side note, the implementation follows the literal
+  interpretation — same policy as ADDK/SUBK (A0018).
+- **How to apply**: If a careful read of SPVU001A §12.8 + Appendix A
+  individual instruction entries documents K=0 → K=32, change the
+  shifter wrapper (or pass an amount of `decoded.k5 == 0 ? 5'd32 :
+  decoded.k5` — note this requires widening `SHIFT_AMOUNT_WIDTH`
+  past 5 to encode the value 32). `tb_shift_k` deliberately
+  avoids K=0; add failing K=0 vectors as the regression once the
+  spec is confirmed.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

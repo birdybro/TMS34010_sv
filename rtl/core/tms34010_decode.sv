@@ -70,6 +70,14 @@ module tms34010_decode
   localparam logic [10:0] ADDI_IW_TOP11 = 11'b0000_1011_000;  // ADDI IW
   localparam logic [10:0] SUBI_IW_TOP11 = 11'b0000_1011_111;  // SUBI IW
   localparam logic [10:0] CMPI_IW_TOP11 = 11'b0000_1011_010;  // CMPI IW
+
+  // K-form shift family. Each is a top-6 prefix; bits[9:5] = K (5-bit
+  // shift amount); bit[4] = R; bits[3:0] = Rd.
+  localparam logic [5:0] SLA_K_TOP6  = 6'b001000;  // 0010 00KK KKKR DDDD
+  localparam logic [5:0] SLL_K_TOP6  = 6'b001001;  // 0010 01KK KKKR DDDD
+  localparam logic [5:0] SRA_K_TOP6  = 6'b001010;  // 0010 10KK KKKR DDDD
+  localparam logic [5:0] SRL_K_TOP6  = 6'b001011;  // 0010 11KK KKKR DDDD
+  localparam logic [5:0] RL_K_TOP6   = 6'b001100;  // 0011 00KK KKKR DDDD
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
@@ -112,6 +120,8 @@ module tms34010_decode
     decoded.needs_imm32     = 1'b0;
     decoded.imm_sign_extend = 1'b0;
     decoded.alu_op          = ALU_OP_PASS_A;
+    decoded.shift_op        = SHIFT_OP_SLL;
+    decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
     decoded.branch_cc       = '0;
     decoded.wb_reg_en       = 1'b0;
@@ -240,6 +250,78 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_CMP;
       decoded.wb_reg_en       = 1'b0;
       decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // K-form shift instructions
+    //
+    // All five share the encoding shape:
+    //   bits[15:10] = 6-bit shift-op prefix (table below)
+    //   bits[9:5]   = K (5-bit shift amount; per A0019 treated literally —
+    //                    K=0 means no shift, not 32 as some TI ISAs use)
+    //   bit[4]      = R (file)
+    //   bits[3:0]   = Rd index
+    //
+    //   SLA K, Rd  →  6'b001000   (shift left arithmetic)
+    //   SLL K, Rd  →  6'b001001   (shift left logical)
+    //   SRA K, Rd  →  6'b001010   (shift right arithmetic / sign-extend)
+    //   SRL K, Rd  →  6'b001011   (shift right logical)
+    //   RL  K, Rd  →  6'b001100   (rotate left)
+    // -----------------------------------------------------------------------
+    if (top6 == SLA_K_TOP6) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SLA_K;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = instr[9:5];
+      decoded.shift_op    = SHIFT_OP_SLA;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top6 == SLL_K_TOP6) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SLL_K;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = instr[9:5];
+      decoded.shift_op    = SHIFT_OP_SLL;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top6 == SRA_K_TOP6) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SRA_K;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = instr[9:5];
+      decoded.shift_op    = SHIFT_OP_SRA;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top6 == SRL_K_TOP6) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SRL_K;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = instr[9:5];
+      decoded.shift_op    = SHIFT_OP_SRL;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top6 == RL_K_TOP6) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_RL_K;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = instr[9:5];
+      decoded.shift_op    = SHIFT_OP_RL;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
     end
 
     // -----------------------------------------------------------------------
