@@ -26,7 +26,7 @@ Required columns:
 
 | Mnemonic | Encoding | Source | Status      | Test | Flags | Memory | Cycles  | Notes |
 |----------|----------|--------|-------------|------|-------|--------|---------|-------|
-| _(none)_ | _(n/a)_  | _(n/a)_ | not started | none | _(n/a)_ | _(n/a)_ | _(n/a)_ | Decode FSM not implemented yet (Phase 3). |
+| _(none)_ | _(n/a)_  | _(n/a)_ | not started | none | _(n/a)_ | _(n/a)_ | _(n/a)_ | Phase 3 decoder skeleton landed; every encoding currently routes to ILLEGAL (`tb_illegal_opcode` verifies). First real instruction lands in Task 0011. |
 
 ## Categories to populate (placeholder roadmap)
 

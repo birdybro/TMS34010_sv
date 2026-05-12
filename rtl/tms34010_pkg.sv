@@ -172,4 +172,32 @@ package tms34010_pkg;
   parameter int unsigned ST_Z_BIT = 29;
   parameter int unsigned ST_V_BIT = 28;
 
+  // ---------------------------------------------------------------------------
+  // Instruction word + decoded-instruction skeleton
+  //
+  // Spec: bibliography/hdl-reimplementation/02-instruction-set.md
+  //   §"Encoding shape": "16-bit-aligned half-words ... The decode space is
+  //   dense — there is no easy 'top-bits-give-class' partition. Use the
+  //   SPVU004 opcode chart ... rather than hand-rolling the decoder."
+  //
+  // Phase 3 skeleton: the only field populated by decode is `illegal`. The
+  // rest of `decoded_instr_t` is intentionally absent until specific
+  // instructions are added in Task 0011 onwards (one per task, each citing
+  // the SPVU004 opcode-chart row that defines its encoding).
+  // ---------------------------------------------------------------------------
+  parameter int unsigned INSTR_WORD_WIDTH = 16;
+  typedef logic [INSTR_WORD_WIDTH-1:0] instr_word_t;
+
+  // Instruction class — used by the core control FSM to pick the
+  // decode/execute/memory/writeback path. Phase 3 skeleton uses only
+  // ILLEGAL; later phases add MOVE / ALU_RR / ALU_RI / BRANCH / etc.
+  typedef enum logic [3:0] {
+    INSTR_ILLEGAL = 4'd0
+  } instr_class_t;
+
+  typedef struct packed {
+    logic          illegal;     // 1 if the encoding is not recognized
+    instr_class_t  iclass;      // dispatch class for the control FSM
+  } decoded_instr_t;
+
 endpackage : tms34010_pkg

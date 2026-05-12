@@ -1,23 +1,26 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level TMS34010 core wrapper. Phase 1 — PC integrated.
+// Top-level TMS34010 core wrapper. Phase 3 — decode skeleton integrated.
 //
 // What this module IS, today:
 //   - A clocked top-level entity with explicit synchronous active-high reset.
-//   - A typed-enum core FSM with two real transitions: CORE_RESET → CORE_FETCH,
-//     and CORE_FETCH → CORE_DECODE on memory ack.
-//   - A request/valid memory interface stub. `mem_addr` is driven from
-//     the PC register. PC advances by `INSTR_WORD_BITS` (=16 bits) on
-//     every `mem_ack` arriving in CORE_FETCH.
-//   - Observability ports (`state_o`, `pc_o`) so testbenches can self-check
-//     FSM and PC state without poking internal signals via hierarchical
-//     references.
+//   - A typed-enum core FSM that fully cycles: CORE_RESET → CORE_FETCH →
+//     CORE_DECODE → CORE_EXECUTE → CORE_WRITEBACK → CORE_FETCH (no
+//     instruction touches memory in Phase 3, so CORE_MEMORY is unused).
+//   - Memory IF that drives `mem_addr` from the PC register and asserts a
+//     16-bit fetch in CORE_FETCH. On mem_ack the fetched word is latched
+//     into `instr_word_q` and the PC advances by INSTR_WORD_BITS.
+//   - A tms34010_decode instance evaluates `instr_word_q` combinationally.
+//     Phase 3 skeleton: every encoding is flagged ILLEGAL. Real
+//     instruction patterns land starting Task 0011.
+//   - Sticky `illegal_opcode_o` observability output: once decode flags an
+//     illegal encoding, this latches high. Cleared only by reset.
 //
 // What this module IS NOT, yet:
-//   - There is no register file, no ALU, no decode, no execute.
-//     States after CORE_FETCH currently fall back to CORE_FETCH on the next
-//     clock — this is the documented skeleton behavior, not a bug.
+//   - No register file, ALU, or status register instantiated here yet.
+//     EXECUTE / WRITEBACK are pass-through states. Task 0011 starts wiring
+//     the datapath in alongside the first real instruction (likely MOVI).
 //   - No branches / jumps yet, so the PC `load_en` port is tied 0.
 //   - The PC starts at `RESET_PC` from the package, currently a placeholder
 //     '0 — see docs/assumptions.md A0008 for the architectural reset-vector
@@ -49,17 +52,13 @@ module tms34010_core
   input  logic [DATA_WIDTH-1:0]               mem_rdata,
   input  logic                                mem_ack,
 
-  // Observability for testbenches (Phase 0/1 only — may move to an
+  // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
   output core_state_t                         state_o,
-  output logic [ADDR_WIDTH-1:0]               pc_o
+  output logic [ADDR_WIDTH-1:0]               pc_o,
+  output instr_word_t                         instr_word_o,
+  output logic                                illegal_opcode_o
 );
-
-  // Acknowledge that mem_rdata is not consumed in the skeleton. Suppresses
-  // unused-port warnings from lint tools without falsely claiming we read it.
-  // When decode lands (Phase 3), this is replaced by real consumers.
-  logic [DATA_WIDTH-1:0] unused_rdata;
-  assign unused_rdata = mem_rdata;
 
   // ---------------------------------------------------------------------------
   // Program counter
@@ -88,6 +87,40 @@ module tms34010_core
       state_q <= CORE_RESET;
     end else begin
       state_q <= state_d;
+    end
+  end
+
+  // ---------------------------------------------------------------------------
+  // Instruction word latch + decoder
+  //
+  // instr_word_q is latched the cycle the memory acks an instruction
+  // fetch. The decoder runs combinationally; consumers see the decoded
+  // result from CORE_DECODE onward.
+  // ---------------------------------------------------------------------------
+  instr_word_t    instr_word_q;
+  decoded_instr_t decoded;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      instr_word_q <= '0;
+    end else if (state_q == CORE_FETCH && mem_ack) begin
+      instr_word_q <= mem_rdata[INSTR_WORD_WIDTH-1:0];
+    end
+  end
+
+  tms34010_decode u_decode (
+    .instr  (instr_word_q),
+    .decoded(decoded)
+  );
+
+  // Sticky illegal-opcode latch. Set on the cycle we are in CORE_DECODE
+  // with an illegal `decoded`. Cleared only by reset.
+  logic illegal_q;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      illegal_q <= 1'b0;
+    end else if (state_q == CORE_DECODE && decoded.illegal) begin
+      illegal_q <= 1'b1;
     end
   end
 
@@ -124,13 +157,27 @@ module tms34010_core
         end
       end
 
-      CORE_DECODE,
-      CORE_EXECUTE,
-      CORE_MEMORY,
+      CORE_DECODE: begin
+        // Phase 3 skeleton: decoder runs combinationally; we always
+        // advance to EXECUTE on the next clock. Future phases may stall
+        // here for multi-word fetches (long-immediate forms).
+        state_d = CORE_EXECUTE;
+      end
+
+      CORE_EXECUTE: begin
+        // Phase 3 skeleton: no real datapath. Illegal-opcode latch was
+        // already set in the always_ff sticky block above. Advance.
+        // Task 0011+ will switch on decoded.iclass here.
+        state_d = CORE_WRITEBACK;
+      end
+
+      CORE_MEMORY: begin
+        // Unused in Phase 3 — no instruction yet reaches this state.
+        // Reserved for memory-touching instructions (Phase 4+).
+        state_d = CORE_WRITEBACK;
+      end
+
       CORE_WRITEBACK: begin
-        // TODO Phase 3+: real decode/execute/memory/writeback datapaths.
-        // Skeleton placeholder: return to fetch so the FSM remains live
-        // for waveform/observability tests, but never produces side effects.
         state_d = CORE_FETCH;
       end
 
@@ -141,7 +188,9 @@ module tms34010_core
     endcase
   end
 
-  assign state_o = state_q;
-  assign pc_o    = pc_value;
+  assign state_o          = state_q;
+  assign pc_o             = pc_value;
+  assign instr_word_o     = instr_word_q;
+  assign illegal_opcode_o = illegal_q;
 
 endmodule : tms34010_core

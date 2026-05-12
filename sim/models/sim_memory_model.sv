@@ -59,13 +59,26 @@ module sim_memory_model
   logic                        latched_we;
   logic [DATA_WIDTH-1:0]       latched_wdata;
 
+  // Sim-only init: zero the backing store so addresses the testbench
+  // hasn't preloaded read back as 0 rather than X. The memory model is
+  // not synthesizable, so `initial` is fine here.
+  initial begin
+    for (int unsigned i = 0; i < DEPTH_WORDS; i++) begin
+      mem[i] = '0;
+    end
+  end
+
   // Bit-address [3:0] = within-word bit offset (must be 0 for the
   // Phase 1 16-bit-aligned fetch path).
   // Bit-address [IDX_WIDTH+3:4] = word index.
   logic [IDX_WIDTH-1:0] word_idx;
   assign word_idx = latched_addr[IDX_WIDTH+3 : 4];
 
-  always_ff @(posedge clk) begin
+  // Plain `always` (not `always_ff`) so `mem` can also be driven by the
+  // sim-only `initial` block above without violating SV-2009's "one
+  // driving process per variable" rule for always_ff. This file is
+  // intentionally not synthesizable.
+  always @(posedge clk) begin
     if (rst) begin
       state_q   <= MEM_IDLE;
       mem_ack   <= 1'b0;

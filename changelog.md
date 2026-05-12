@@ -103,11 +103,38 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added `sim/tb/tb_status_reg.sv` — reset, selective flag update,
   full ST write, non-flag-bit preservation across selective updates,
   precedence (st_write wins over flag_update).
+- Added `rtl/core/tms34010_decode.sv` — Phase 3 combinational decode
+  skeleton. Currently flags every 16-bit encoding as ILLEGAL; SPVU004
+  opcode-chart rows populate in Task 0011 onwards (one instruction
+  per task, each citing the chart row).
+- Added package types `instr_word_t` (alias for `logic [15:0]`),
+  `instr_class_t` (4-bit enum, currently only `INSTR_ILLEGAL`),
+  `decoded_instr_t` (packed `{illegal, iclass}`), and constant
+  `INSTR_WORD_WIDTH = 16`.
+- Added `sim/tb/tb_illegal_opcode.sv` — preloads memory, runs the
+  core, verifies (a) `illegal_opcode_o` is 0 during reset, (b) the
+  sticky illegal latch asserts after the first CORE_DECODE, (c)
+  remains high (stickiness), (d) `instr_word_o` carries the
+  preloaded value `0xDEAD` from the first decode, (e) the PC has
+  advanced past reset value.
+- Added `initial` block to `sim_memory_model` to zero the backing
+  store so tests that don't preload every fetched address see 0,
+  not X. Also switched the memory model from `always_ff` to plain
+  `always` since `initial` and `always_ff` cannot both write to the
+  same array under SV-2009.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives
   `mem_addr` from `pc_o`, and asserts `pc_advance_en` for one cycle on
   `mem_ack` in `CORE_FETCH`. New observability port `pc_o` on the core.
+- `rtl/core/tms34010_core.sv` now also: (a) latches the fetched
+  instruction word into `instr_word_q` on `mem_ack` in `CORE_FETCH`,
+  (b) instantiates `tms34010_decode`, (c) walks the full FSM
+  `CORE_FETCH → CORE_DECODE → CORE_EXECUTE → CORE_WRITEBACK → CORE_FETCH`
+  (no instruction reaches `CORE_MEMORY` yet), and (d) maintains a
+  sticky `illegal_q` latch set when a CORE_DECODE sees
+  `decoded.illegal = 1`. Two new observability ports `instr_word_o`
+  and `illegal_opcode_o`.
 - `sim/tb/tb_smoke.sv` consumes the new `pc_o` and additionally asserts
   that `mem_addr === pc_o` while in `CORE_FETCH`.
 - `scripts/sim.sh` discovers all `rtl/**/*.sv` and `sim/models/**/*.sv`

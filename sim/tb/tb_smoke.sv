@@ -47,6 +47,8 @@ module tb_smoke;
   logic                              mem_ack;
   core_state_t                       state_w;
   logic [ADDR_WIDTH-1:0]             pc_w;
+  instr_word_t                       instr_w;
+  logic                              illegal_w;
 
   // Memory stub: never acks. In Phase 0 we just want to see CORE_FETCH;
   // the core will then sit in CORE_FETCH waiting indefinitely, which is
@@ -62,10 +64,12 @@ module tb_smoke;
     .mem_addr (mem_addr),
     .mem_size (mem_size),
     .mem_wdata(mem_wdata),
-    .mem_rdata(mem_rdata),
-    .mem_ack  (mem_ack),
-    .state_o  (state_w),
-    .pc_o     (pc_w)
+    .mem_rdata       (mem_rdata),
+    .mem_ack         (mem_ack),
+    .state_o         (state_w),
+    .pc_o            (pc_w),
+    .instr_word_o    (instr_w),
+    .illegal_opcode_o(illegal_w)
   );
 
   // ---------------------------------------------------------------------------

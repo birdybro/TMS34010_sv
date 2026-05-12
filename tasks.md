@@ -1,6 +1,6 @@
 # Tasks
 
-## Current Milestone: Phase 2 — Register and ALU foundation
+## Current Milestone: Phase 3 — Instruction fetch/decode
 
 ## Task index
 
@@ -14,7 +14,8 @@
 | 0006 | A/B register file with shared SP | complete |
 | 0007 | ALU + flag generation | complete |
 | 0008 | Barrel shifter | complete |
-| 0009 | Status register (ST) | in progress |
+| 0009 | Status register (ST) | complete |
+| 0010 | Decode skeleton + full execute cycle | in progress |
 
 ---
 
@@ -289,7 +290,7 @@ Commit:
 ---
 
 ### Task 0009: Status register (ST)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0007 (ALU produces alu_flags_t)
 Spec source:
@@ -313,6 +314,45 @@ Tests:
 Docs:
 - `docs/architecture.md` — ST row → landed.
 - `docs/assumptions.md` — A0010 entry added.
+- `changelog.md`, `tasks.md`.
+Commit:
+- 24edaee
+
+---
+
+### Task 0010: Decode skeleton + full execute cycle
+Status: in progress
+Dependencies:
+- Task 0005 (memory model + fetch substrate)
+Spec sources:
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
+  §"Encoding shape" (16-bit-aligned half-words; SPVU004 opcode chart
+  is authoritative; decode space is dense, no top-bits-give-class).
+Acceptance Criteria:
+- `rtl/core/tms34010_decode.sv` exists as a purely combinational
+  decoder. Phase 3 skeleton always flags ILLEGAL.
+- Package gains `instr_word_t`, `instr_class_t` (currently
+  `INSTR_ILLEGAL` only), `decoded_instr_t` (`{illegal, iclass}`),
+  `INSTR_WORD_WIDTH = 16`.
+- Core wiring: latch `instr_word_q` from `mem_rdata[15:0]` on
+  `mem_ack` in CORE_FETCH; combinational decode runs over
+  `instr_word_q`; FSM now walks `FETCH → DECODE → EXECUTE →
+  WRITEBACK → FETCH` (5 cycles per instruction in the current
+  placeholder loop, was 3 before).
+- Sticky `illegal_opcode_o` observability output: latches on the
+  first CORE_DECODE cycle where `decoded.illegal == 1`, cleared
+  only by reset.
+- `sim/tb/tb_illegal_opcode.sv` verifies the end-to-end path.
+- `sim_memory_model.sv` deterministic-init: backing store zeroed in
+  an `initial` block so unpreloaded addresses read as 0, not X.
+Tests:
+- `scripts/sim.sh tb_illegal_opcode` → PASS.
+- All previous tests still PASS (8/8).
+- Lint clean.
+Docs:
+- `docs/architecture.md` — decode row → skeleton landed.
+- `docs/instruction_coverage.md` — note that Phase 3 skeleton routes
+  every encoding to ILLEGAL; first real instruction lands Task 0011.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending
