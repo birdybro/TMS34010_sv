@@ -11,7 +11,8 @@
 | 0003 | Initial synthesizable core skeleton + smoke test | complete |
 | 0004 | PC module + core integration | complete |
 | 0005 | Behavioral memory model + fetch-walk test | complete |
-| 0006 | A/B register file with shared SP | in progress |
+| 0006 | A/B register file with shared SP | complete |
+| 0007 | ALU + flag generation | in progress |
 
 ---
 
@@ -177,7 +178,7 @@ Commit:
 ---
 
 ### Task 0006: A/B register file with shared SP
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0003
 Spec source:
@@ -208,6 +209,43 @@ Tests:
 - Lint clean.
 Docs:
 - `docs/architecture.md` — regfile row → landed.
+- `changelog.md`, `tasks.md`.
+Commit:
+- afc4381
+
+---
+
+### Task 0007: ALU + flag generation
+Status: in progress
+Dependencies:
+- Task 0006
+Spec sources:
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
+  §"Flag effects" (per-instruction flag list in SPVU001A Appendix A is
+  authoritative).
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/03-registers.md`
+  §"Status register" (N, C, Z, V from the ALU).
+Acceptance Criteria:
+- `rtl/core/tms34010_alu.sv` exists as a purely combinational module.
+  Operations: ADD, ADDC, SUB, SUBB, CMP, AND, ANDN, OR, XOR, NOT,
+  NEG, PASS_A, PASS_B. Output: 32-bit `result` + packed `alu_flags_t`
+  (N, C, Z, V).
+- One 33-bit adder + one 33-bit subtractor (a + ~b + cin) shared
+  across all arithmetic ops — no per-op duplicated adders.
+- Logical ops set C = V = 0 per the convention in A0009. Arithmetic
+  ops use the standard two's-complement carry/borrow/overflow rules.
+- Package gains `alu_op_t` (4-bit enum) and `alu_flags_t` (packed
+  struct with n/c/z/v).
+- `sim/tb/tb_alu.sv` covers every operation with at least 2-3 vectors,
+  including the corner cases: signed-overflow on ADD, borrow on SUB,
+  Z on ADD producing 0 via carry, V on NEG of MIN_INT.
+Tests:
+- `scripts/sim.sh tb_alu` → PASS.
+- All previous tests still PASS.
+- Lint clean.
+Docs:
+- `docs/architecture.md` — ALU row → landed.
+- `docs/assumptions.md` — A0009 entry added.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

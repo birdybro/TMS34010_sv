@@ -70,6 +70,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   per-file isolation (A vs B), SP aliasing (write A15 visible via B15
   and `sp_o`), independent read ports, synchronous-write contract
   (same-cycle read returns old value, next-cycle read returns new).
+- Added `rtl/core/tms34010_alu.sv` — purely combinational 32-bit ALU
+  with operations ADD, ADDC, SUB, SUBB, CMP, AND, ANDN, OR, XOR, NOT,
+  NEG, PASS_A, PASS_B. Produces a 32-bit result and an `alu_flags_t`
+  struct (N, C, Z, V). Arithmetic ops use a single 33-bit adder for
+  carry extraction (`{cout, sum} = a + b + cin`) and the symmetric
+  subtractor form (`a + ~b + 1`) for SUB/SUBB/CMP/NEG.
+- Added package types `alu_op_t` and `alu_flags_t`.
+- Added `sim/tb/tb_alu.sv` — per-operation vectors covering normal,
+  zero-result, negative-result, unsigned-carry and signed-overflow
+  edge cases. PASS on ModelSim ASE 17.0.
+- Added `docs/assumptions.md` A0009 covering the ALU flag-update
+  convention until SPVU001A Appendix A is read per-instruction.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives

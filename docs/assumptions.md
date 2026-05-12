@@ -124,6 +124,39 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0009 — ALU flag-update convention before per-instruction read
+- **Date**: 2026-05-12
+- **Status**: active, **TODO/spec-uncertain** (per-instruction nuances)
+- **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
+  ("Instructions document which flags they affect; some pixel ops set
+  flags based on the last pixel transferred or the comparison result
+  against the window rather than on a regular ALU outcome — read
+  SPVU001A entries individually."); 03-registers.md ("Condition flags
+  N, C, Z, V from the ALU").
+- **Assumption**: Until each instruction's flag entry in SPVU001A
+  Appendix A is read individually, the ALU computes flags using the
+  obvious two's-complement convention:
+  - Arithmetic: N = result[31], Z = (result == 0), C = unsigned overflow
+    (carry out of bit 31 for ADD; *borrow* = `!carry-out-of-(a + ~b + 1)`
+    for SUB), V = signed overflow (operand-sign agreement-disagreement
+    rule).
+  - Logical: N = result[31], Z = (result == 0), C = 0, V = 0.
+  - PASS: N = src[31], Z = (src == 0), C = 0, V = 0.
+- **Rationale**: This is the convention SPVU001A almost certainly
+  documents (it's the convention shared by every contemporary CPU TI
+  had on staff), and any per-instruction quirks (MOVE's flag policy,
+  ABS's V-on-MIN-NEG, CPW's window-relative flag semantics, etc.) are
+  per-instruction concerns that surface in Phases 4+ when those
+  instructions land.
+- **How to apply**: When implementing each instruction in decode, cite
+  the SPVU001A appendix entry and update `docs/instruction_coverage.md`
+  with the exact flag list. If the spec disagrees with this ALU's
+  default flag-update, either (a) update the ALU op enum to add a
+  variant that matches, or (b) override flags in the surrounding
+  control logic.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

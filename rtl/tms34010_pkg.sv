@@ -88,4 +88,47 @@ package tms34010_pkg;
 
   parameter reg_idx_t REG_SP_IDX = 4'hF;
 
+  // ---------------------------------------------------------------------------
+  // ALU operation enum
+  //
+  // Spec sources:
+  //   - bibliography/hdl-reimplementation/02-instruction-set.md
+  //     §"Arithmetic / Logical": "N, C, Z, V plus the field-size mode bits
+  //     ... all live in the ST register".
+  //   - bibliography/hdl-reimplementation/03-registers.md §"Status register".
+  //
+  // Concrete per-instruction flag semantics (TI's exact carry-vs-borrow
+  // convention, V on NEG / ABS minimum-negative, etc.) are captured in
+  // docs/assumptions.md as A0009 until SPVU001A Appendix A is read in
+  // detail. The ALU implements the "obvious" two's-complement /
+  // carry-out-of-MSB convention and matches the standard:
+  //   C = unsigned overflow (carry from MSB on ADD; "borrow" output on SUB,
+  //       which here equals NOT carry-out-of-(a + ~b + 1)).
+  //   V = signed overflow.
+  //   N = result[31].
+  //   Z = result == 0.
+  // ---------------------------------------------------------------------------
+  typedef enum logic [3:0] {
+    ALU_OP_ADD    = 4'd0,
+    ALU_OP_ADDC   = 4'd1,
+    ALU_OP_SUB    = 4'd2,
+    ALU_OP_SUBB   = 4'd3,
+    ALU_OP_CMP    = 4'd4,
+    ALU_OP_AND    = 4'd5,
+    ALU_OP_ANDN   = 4'd6,
+    ALU_OP_OR     = 4'd7,
+    ALU_OP_XOR    = 4'd8,
+    ALU_OP_NOT    = 4'd9,
+    ALU_OP_NEG    = 4'd10,
+    ALU_OP_PASS_A = 4'd11,
+    ALU_OP_PASS_B = 4'd12
+  } alu_op_t;
+
+  typedef struct packed {
+    logic n;
+    logic c;
+    logic z;
+    logic v;
+  } alu_flags_t;
+
 endpackage : tms34010_pkg
