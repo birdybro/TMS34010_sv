@@ -238,8 +238,9 @@ module tms34010_core
   assign alu_op  = decoded.alu_op;
   always_comb begin
     unique case (decoded.iclass)
-      INSTR_SUB_RR: alu_a = rf_rs2_data;   // Rd is the minuend
-      default:      alu_a = rf_rs1_data;   // Rs (commutative ops, MOVI ignores it)
+      INSTR_SUB_RR,
+      INSTR_ANDN_RR: alu_a = rf_rs2_data;   // Rd is the "first" operand
+      default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
   always_comb begin
@@ -247,7 +248,8 @@ module tms34010_core
       INSTR_MOVI_IW,
       INSTR_MOVI_IL: alu_b = imm32;
       INSTR_MOVK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
-      INSTR_SUB_RR:  alu_b = rf_rs1_data;  // Rs is the subtrahend
+      INSTR_SUB_RR,
+      INSTR_ANDN_RR: alu_b = rf_rs1_data;   // Rs is the "second" operand
       default:       alu_b = rf_rs2_data;
     endcase
   end

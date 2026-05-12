@@ -59,6 +59,10 @@ module tms34010_decode
   localparam logic [5:0] MOVK_TOP6    = 6'b00_0110;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
+  localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
+  localparam logic [6:0] ANDN_RR_TOP7 = 7'b0101_001;  // chart: 0101 001S SSSR DDDD
+  localparam logic [6:0] OR_RR_TOP7   = 7'b0101_010;  // chart: 0101 010S SSSR DDDD
+  localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
 
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
@@ -163,6 +167,59 @@ module tms34010_decode
       // (a - b) = (Rd - Rs) → Rd, matching the spec "Rd - Rs → Rd".
       // See the alu_b mux in tms34010_core.sv for the swap.
       decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // Reg-reg logical ops (AND, ANDN, OR, XOR).
+    // All share the same encoding shape with a different 7-bit prefix.
+    // Operand routing: alu_a = Rs (default), alu_b = Rd. Operations are
+    // commutative (or via ANDN's complement-of-b form) so no swap is
+    // needed.
+    // -----------------------------------------------------------------------
+    if (top7 == AND_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_AND_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.alu_op          = ALU_OP_AND;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    if (top7 == ANDN_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_ANDN_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      // ANDN per spec: Rd = Rd & ~Rs. ALU_OP_ANDN computes a & ~b, so
+      // we need alu_a = Rd, alu_b = Rs. Operand swap handled in core.
+      decoded.alu_op          = ALU_OP_ANDN;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    if (top7 == OR_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_OR_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.alu_op          = ALU_OP_OR;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    if (top7 == XOR_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_XOR_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.alu_op          = ALU_OP_XOR;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
     end

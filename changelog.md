@@ -180,6 +180,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added `sim/tb/tb_sub_rr.sv` — five cases: simple positive, equal
   operands (Z=1), borrow (3-10 = -7 with C, N), signed-overflow
   (MIN_INT - 1 = MAX_INT with V), and a B-file SUB.
+- Reg-reg logical block: **AND, ANDN, OR, XOR Rs, Rd**. 7-bit
+  prefixes `7'b0101_0XX` per SPVU001A A-14. AND/OR/XOR are
+  commutative and use the default alu_a/b routing; ANDN
+  (`Rd & ~Rs → Rd`) reuses the SUB-style operand swap (`alu_a = Rd`,
+  `alu_b = Rs`) so the ALU's `a & ~b` computes the right value.
+  All four set N/Z from the result; C, V cleared (logical-op
+  convention from A0009).
+- Added `sim/tb/tb_logical_rr.sv` — covers all four ops with
+  characteristic bit-pattern test cases (alternating bits, bit
+  isolation, sign-bit flips). Encoder helper cross-checked against
+  the SPVU004 listing `XOR A0,A0 = 0x5600`.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

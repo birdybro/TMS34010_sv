@@ -31,6 +31,10 @@ Required columns:
 | MOVK     | `0x1800 \| (K<<5) \| (R<<4) \| N`, single word | SPVU004 (A0013); SPVU001A §"Move Constant" | implemented | tb_movk | **none** (spec: "does not affect the status register") | none | TBD | 5-bit zero-extended K → Rd. Confirmed against `MOVK 1,A12 → 0x182C` and `MOVK 8,B1 → 0x1911`. K=0 hypothesis logged in A0013. |
 | ADD Rs,Rd | `0100 000S SSSR DDDD` (= `0x4000 \| (S<<5) \| (R<<4) \| D`) | SPVU001A A-14 (A0014, A0015) | implemented | tb_add_rr | N, C, Z, V | none | TBD | Rs + Rd → Rd. First reg-reg arithmetic. Rs and Rd share file (single R bit). |
 | SUB Rs,Rd | `0100 010S SSSR DDDD` (= `0x4400 \| (S<<5) \| (R<<4) \| D`) | SPVU001A A-14 | implemented | tb_sub_rr | N, C, Z, V | none | TBD | Rd - Rs → Rd. ALU operand swap (alu_a=Rd, alu_b=Rs) handled in the core. C is borrow output. |
+| AND Rs,Rd  | `0101 000S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared per A0009) | none | TBD | Rd & Rs → Rd. Commutative; default operand routing. |
+| ANDN Rs,Rd | `0101 001S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd & ~Rs → Rd. Non-commutative — uses the same alu_a/b swap as SUB. |
+| OR Rs,Rd   | `0101 010S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd \| Rs → Rd. Commutative. |
+| XOR Rs,Rd  | `0101 011S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd ^ Rs → Rd. Encoding cross-checked against `XOR A0,A0 = 0x5600` in SPVU004 listing. |
 
 ## Categories to populate (placeholder roadmap)
 

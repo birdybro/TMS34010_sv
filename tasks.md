@@ -21,7 +21,8 @@
 | 0013 | Implement MOVI IL end-to-end | complete |
 | 0014 | Implement MOVK K, Rd | complete |
 | 0015 | Implement ADD Rs, Rd | complete |
-| 0016 | Implement SUB Rs, Rd | in progress |
+| 0016 | Implement SUB Rs, Rd | complete |
+| 0017 | Reg-reg logical instructions (AND, ANDN, OR, XOR) | in progress |
 
 ---
 
@@ -539,7 +540,7 @@ Commit:
 ---
 
 ### Task 0016: Implement SUB Rs, Rd
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0015 (ADD; same encoding shape, same datapath wiring approach)
 Spec source: SPVU001A A-14 chart row `0100 010S SSSR DDDD`.
@@ -553,6 +554,27 @@ Acceptance Criteria:
 - Full regression: 13/13 PASS; lint clean.
 Tests: tb_sub_rr PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md, changelog.md, tasks.md.
+Commit:
+- ac0dbbf
+
+---
+
+### Task 0017: Reg-reg logical instructions (AND, ANDN, OR, XOR)
+Status: in progress
+Dependencies:
+- Tasks 0015/0016 (reg-reg shape, operand-swap pattern from SUB).
+Spec source: SPVU001A A-14 chart rows for AND/ANDN/OR/XOR.
+Acceptance Criteria:
+- Four new decoder arms with 7-bit prefixes 7'b0101_000..011.
+  iclass enum values INSTR_AND_RR / ANDN_RR / OR_RR / XOR_RR.
+- alu_op selects ALU_OP_{AND,ANDN,OR,XOR}. ANDN reuses the SUB
+  operand-swap (alu_a=Rd, alu_b=Rs) so the ALU's `a & ~b` produces
+  the spec-mandated `Rd & ~Rs`.
+- `sim/tb/tb_logical_rr.sv`: characteristic patterns for each op,
+  encoder cross-checked against `XOR A0,A0=0x5600`.
+- Full regression: 14/14 PASS; lint clean.
+Tests: tb_logical_rr PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (4 rows), changelog.md, tasks.md.
 Commit:
 - pending
 
