@@ -80,7 +80,7 @@ plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed**  | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR + N/C/Z flags |
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
-| `rtl/core/tms34010_decode.sv`           | 3     | **skeleton landed** | combinational decoder; Phase 3 always flags ILLEGAL until SPVU004 rows populate |
+| `rtl/core/tms34010_decode.sv`           | 3     | **MOVI IW landed** | combinational decoder; recognizes MOVI IW (encoding A0012). Other encodings route to ILLEGAL. |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv (revisit if it gets large) | top-level control FSM |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |

@@ -26,7 +26,8 @@ Required columns:
 
 | Mnemonic | Encoding | Source | Status      | Test | Flags | Memory | Cycles  | Notes |
 |----------|----------|--------|-------------|------|-------|--------|---------|-------|
-| _(none)_ | _(n/a)_  | _(n/a)_ | not started | none | _(n/a)_ | _(n/a)_ | _(n/a)_ | Phase 3 decoder skeleton landed; every encoding currently routes to ILLEGAL (`tb_illegal_opcode` verifies). First real instruction lands in Task 0011. |
+| MOVI IW  | `0x09C0 \| (R<<4) \| N`, +16-bit imm | SPVU004 assembler listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi | N, Z (per A0011) | none | TBD | 16-bit immediate sign-extended to 32 bits → Rd. C, V cleared per A0011 / A0009. |
+| MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm | SPVU004 listings | not started | none | TBD | none | TBD | Decoded space reserved; routes to ILLEGAL until Task 0013 wires the IMM_HI path. |
 
 ## Categories to populate (placeholder roadmap)
 

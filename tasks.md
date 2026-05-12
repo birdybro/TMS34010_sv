@@ -16,7 +16,8 @@
 | 0008 | Barrel shifter | complete |
 | 0009 | Status register (ST) | complete |
 | 0010 | Decode skeleton + full execute cycle | complete |
-| 0011 | Wire datapath modules into core | in progress |
+| 0011 | Wire datapath modules into core | complete |
+| 0012 | Implement MOVI IW end-to-end | in progress |
 
 ---
 
@@ -361,7 +362,7 @@ Commit:
 ---
 
 ### Task 0011: Wire datapath modules into core
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0010 (decode skeleton already wired)
 - Tasks 0006, 0007, 0009 (regfile, ALU, ST modules ready to instantiate)
@@ -385,6 +386,51 @@ Tests:
 - Lint clean.
 Docs:
 - `docs/architecture.md` — module-instantiation comment updated.
+- `changelog.md`, `tasks.md`.
+Commit:
+- 8f8a1ec
+
+---
+
+### Task 0012: Implement MOVI IW end-to-end
+Status: in progress
+Dependencies:
+- Task 0011 (datapath wired)
+Spec sources:
+- `third_party/TMS34010_Info/tools/assembler/TMS34010_Assembly_Language_Tools_Users_Guide_SPVU004.pdf`
+  — assembler listings provide ground-truth encodings; the description
+  "Move Immediate - Short or Long" provides the semantics.
+  Captured in `docs/assumptions.md` A0011 (flag policy) and A0012
+  (encoding).
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
+  §"Encoding shape" — long-immediate forms are 16-bit opcode followed
+  by 16 or 32 bits of immediate data.
+Acceptance Criteria:
+- Decoder recognizes the MOVI IW encoding (top 10 bits = 0x027,
+  bit[5]=0). Returns `iclass=INSTR_MOVI_IW`, destination from bits
+  [4:0], `needs_imm16=1`, `imm_sign_extend=1`, `alu_op=PASS_B`,
+  `wb_reg_en=1`, `wb_flags_en=1`.
+- Core FSM adds CORE_FETCH_IMM_LO (and reserves CORE_FETCH_IMM_HI
+  for IL). Latches `imm_lo_q` on mem_ack, advances PC by 16 bits.
+- ALU operand B selects `imm32` (sign-extended `imm_lo_q`) when the
+  decoded class is `INSTR_MOVI_IW`. Result routed to regfile write
+  port; flags routed to ST flag-update port. Writes gated by
+  `state_q == CORE_WRITEBACK` and the corresponding decoded `wb_*_en`.
+- `sim/tb/tb_movi.sv` exercises 5 MOVI IW instructions covering both
+  files, positive/zero/negative immediates, and verifies (a) each
+  destination register holds the sign-extended value via
+  hierarchical reference, (b) ST flags after the last MOVI match the
+  expected N/Z/C/V, (c) `illegal_opcode_o` stays 0 during the valid
+  program window.
+- Full regression: 9/9 PASS; lint clean.
+Tests:
+- `scripts/sim.sh tb_movi` → PASS.
+- All previous 8 tests still PASS.
+- Lint clean.
+Docs:
+- `docs/architecture.md` — decode row updated.
+- `docs/instruction_coverage.md` — first real row (MOVI IW) added.
+- `docs/assumptions.md` — A0011 (flag policy), A0012 (encoding).
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

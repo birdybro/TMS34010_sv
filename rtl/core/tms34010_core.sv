@@ -129,17 +129,38 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
+  // Immediate latch
+  //
+  // Long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, ...) fetch
+  // one or two additional 16-bit words after the opcode word. We latch
+  // them into imm_lo_q / imm_hi_q during the CORE_FETCH_IMM_LO and
+  // CORE_FETCH_IMM_HI states, then sign-extend or concatenate into a
+  // 32-bit operand in CORE_EXECUTE.
+  // ---------------------------------------------------------------------------
+  instr_word_t imm_lo_q;
+  instr_word_t imm_hi_q;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      imm_lo_q <= '0;
+      imm_hi_q <= '0;
+    end else begin
+      if (state_q == CORE_FETCH_IMM_LO && mem_ack) begin
+        imm_lo_q <= mem_rdata[INSTR_WORD_WIDTH-1:0];
+      end
+      if (state_q == CORE_FETCH_IMM_HI && mem_ack) begin
+        imm_hi_q <= mem_rdata[INSTR_WORD_WIDTH-1:0];
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // Datapath modules
   //
-  // Phase 3 wiring: regfile, ALU, and status register are instantiated and
-  // their datapath nets are connected, but every "go" signal (wr_en,
-  // flag_update_en, st_write_en) is tied 0. This commit changes the
-  // module graph but not any observable behavior — Task 0012 replaces the
-  // tied-off control signals with decoded-instruction-driven values for
-  // the first real instruction (MOVI).
-  //
-  // The wires that will become control points are named for clarity even
-  // when currently constant, so Task 0012's diff is small and reviewable.
+  // Control signals are now driven by `decoded.*` plus the FSM state:
+  // writes only happen in CORE_WRITEBACK, and only for instructions whose
+  // decoded record requests a writeback (decoded.wb_reg_en /
+  // decoded.wb_flags_en).
   // ---------------------------------------------------------------------------
 
   // Register-file ports.
@@ -170,23 +191,54 @@ module tms34010_core
   logic [DATA_WIDTH-1:0]  st_value;
   logic                   st_n, st_c, st_z, st_v;
 
-  // ---- Control: tied-off until Task 0012 wires decode-driven values ----
+  // ---- Operand assembly ----------------------------------------------------
+  // Full 32-bit immediate composed from the latched 16-bit pieces. For
+  // IW form: sign-extend (or zero-extend) imm_lo_q. For IL form (Task
+  // 0013): concatenate {imm_hi_q, imm_lo_q}.
+  logic [DATA_WIDTH-1:0] imm32;
+  always_comb begin
+    if (decoded.needs_imm32) begin
+      imm32 = {imm_hi_q, imm_lo_q};
+    end else if (decoded.imm_sign_extend) begin
+      imm32 = {{(DATA_WIDTH-INSTR_WORD_WIDTH){imm_lo_q[INSTR_WORD_WIDTH-1]}}, imm_lo_q};
+    end else begin
+      imm32 = {{(DATA_WIDTH-INSTR_WORD_WIDTH){1'b0}}, imm_lo_q};
+    end
+  end
+
+  // ---- Register-file selectors driven by decode ----------------------------
+  // Phase 3 currently has only MOVI which has no source-register read.
+  // Reads stay at A0 (idx 0) as a benign default; real source reads
+  // arrive with the first reg-reg ALU instruction.
   assign rf_rs1_file = REG_FILE_A;
   assign rf_rs1_idx  = 4'd0;
   assign rf_rs2_file = REG_FILE_A;
   assign rf_rs2_idx  = 4'd0;
-  assign rf_wr_en    = 1'b0;
-  assign rf_wr_file  = REG_FILE_A;
-  assign rf_wr_idx   = 4'd0;
-  // Writeback path: ALU result flows here. Currently no-op (wr_en=0).
-  assign rf_wr_data  = alu_result;
 
-  assign alu_op  = ALU_OP_PASS_A;
+  // Writeback enable is a one-cycle pulse, gated by the FSM state.
+  assign rf_wr_en   = (state_q == CORE_WRITEBACK) && decoded.wb_reg_en;
+  assign rf_wr_file = decoded.rd_file;
+  assign rf_wr_idx  = decoded.rd_idx;
+  assign rf_wr_data = alu_result;
+
+  // ALU operand selection.
+  //   `a` always comes from the regfile rs1 port (currently A0 for MOVI).
+  //   `b` switches between regfile rs2 and the assembled immediate based
+  //       on the decoded instruction class.
+  assign alu_op  = decoded.alu_op;
   assign alu_a   = rf_rs1_data;
-  assign alu_b   = rf_rs2_data;
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_MOVI_IW,
+      INSTR_MOVI_IL: alu_b = imm32;
+      default:       alu_b = rf_rs2_data;
+    endcase
+  end
   assign alu_cin = st_c;
 
-  assign st_flag_update_en = 1'b0;
+  // Status-register inputs. Flag-update is gated by FSM state, like the
+  // regfile write. Full ST write port is unused until POPST lands.
+  assign st_flag_update_en = (state_q == CORE_WRITEBACK) && decoded.wb_flags_en;
   assign st_write_en       = 1'b0;
   assign st_write_data     = '0;
 
@@ -273,16 +325,45 @@ module tms34010_core
       end
 
       CORE_DECODE: begin
-        // Phase 3 skeleton: decoder runs combinationally; we always
-        // advance to EXECUTE on the next clock. Future phases may stall
-        // here for multi-word fetches (long-immediate forms).
-        state_d = CORE_EXECUTE;
+        // Branch based on how many immediate words the decoded
+        // instruction needs.
+        if (decoded.needs_imm32) begin
+          state_d = CORE_FETCH_IMM_LO;
+        end else if (decoded.needs_imm16) begin
+          state_d = CORE_FETCH_IMM_LO;
+        end else begin
+          state_d = CORE_EXECUTE;
+        end
+      end
+
+      CORE_FETCH_IMM_LO: begin
+        // Fetch the 16-bit low-immediate word from PC. Same protocol as
+        // CORE_FETCH; PC advances by INSTR_WORD_BITS on ack.
+        mem_req  = 1'b1;
+        mem_we   = 1'b0;
+        mem_addr = pc_value;
+        mem_size = INSTR_WORD_BITS;
+        if (mem_ack) begin
+          pc_advance_en = 1'b1;
+          state_d = decoded.needs_imm32 ? CORE_FETCH_IMM_HI : CORE_EXECUTE;
+        end
+      end
+
+      CORE_FETCH_IMM_HI: begin
+        mem_req  = 1'b1;
+        mem_we   = 1'b0;
+        mem_addr = pc_value;
+        mem_size = INSTR_WORD_BITS;
+        if (mem_ack) begin
+          pc_advance_en = 1'b1;
+          state_d = CORE_EXECUTE;
+        end
       end
 
       CORE_EXECUTE: begin
-        // Phase 3 skeleton: no real datapath. Illegal-opcode latch was
-        // already set in the always_ff sticky block above. Advance.
-        // Task 0011+ will switch on decoded.iclass here.
+        // ALU output and flags are combinational from decoded.alu_op,
+        // alu_a, alu_b, and st_c. CORE_EXECUTE simply lets that result
+        // settle for one cycle so CORE_WRITEBACK can latch it.
         state_d = CORE_WRITEBACK;
       end
 

@@ -122,6 +122,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   not X. Also switched the memory model from `always_ff` to plain
   `always` since `initial` and `always_ff` cannot both write to the
   same array under SV-2009.
+- First real instruction: **MOVI IW K, Rd** (move 16-bit sign-extended
+  immediate to register). Encoding `0x09C0 | (R<<4) | N` (per A0012);
+  flag effects N/Z from result, C/V cleared (per A0011). End-to-end:
+  decoder recognizes the pattern, FSM fetches the 16-bit immediate
+  word from a new CORE_FETCH_IMM_LO state, ALU PASS_B routes through
+  to regfile write, ST flag-update fires on writeback.
+- Added `sim/tb/tb_movi.sv` — 5 MOVI IW instructions covering a mix
+  of A-file and B-file destinations and immediate values exercising
+  N/Z flag semantics (positive, all-ones, zero, max positive, min
+  negative sign-extended). Verifies each register value via
+  hierarchical reference and the final ST flag bits.
+- Added `docs/assumptions.md` A0011 (MOVI flag-update convention)
+  and A0012 (MOVI IW encoding extracted from SPVU004 listings).
+- Added first real row to `docs/instruction_coverage.md` for MOVI
+  IW; placeholder row for MOVI IL until Task 0013.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
@@ -131,6 +146,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   `st_flag_update_en`, `st_write_en`) is tied 0 in this commit so no
   visible behavior changes; Task 0012 replaces those tie-offs with
   decoded-instruction-driven values for the first real instruction.
+- `rtl/core/tms34010_core.sv` then: latches imm_lo_q in the new
+  CORE_FETCH_IMM_LO state, drives the writeback path
+  (`rf_wr_en = (state == CORE_WRITEBACK) && decoded.wb_reg_en`),
+  selects `alu_b` from the assembled `imm32` when the decoded class is
+  `INSTR_MOVI_*`. CORE_FETCH_IMM_HI state added in preparation for
+  MOVI IL (Task 0013) but not yet reachable.
+- `tms34010_pkg.sv` core_state_t enum widened to 3 bits and two new
+  states added: CORE_FETCH_IMM_LO, CORE_FETCH_IMM_HI. `decoded_instr_t`
+  extended with `rd_file`, `rd_idx`, `needs_imm16`, `needs_imm32`,
+  `imm_sign_extend`, `alu_op`, `wb_reg_en`, `wb_flags_en`.
+- `instr_class_t` adds INSTR_MOVI_IW (used) and INSTR_MOVI_IL
+  (reserved, decoded but currently routed to ILLEGAL).
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives
   `mem_addr` from `pc_o`, and asserts `pc_advance_en` for one cycle on
   `mem_ack` in `CORE_FETCH`. New observability port `pc_o` on the core.

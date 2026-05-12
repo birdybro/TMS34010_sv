@@ -182,6 +182,53 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0011 — MOVI flag-update convention
+- **Date**: 2026-05-12
+- **Status**: active, **TODO/spec-uncertain**
+- **Source**: `third_party/TMS34010_Info/tools/assembler/TMS34010_Assembly_Language_Tools_Users_Guide_SPVU004.pdf`
+  page describing MOVI ("Move Immediate - Short or Long"). The text
+  documents the operation but does not explicitly enumerate flag
+  effects; the closely-paired MOVK entry explicitly notes "this
+  instruction does not affect the status register", suggesting by
+  contrast that MOVI DOES.
+- **Assumption**: MOVI IW updates flags from the moved value: N =
+  result[31], Z = (result == 0), C = 0, V = 0. This matches the
+  default ALU PASS_B flag behavior in `tms34010_alu.sv`.
+- **Rationale**: The spec strongly hints at flag effects via the MOVK
+  contrast. Common convention for "move" instructions across CPU
+  families with separate K-class encodings is "K instructions don't
+  affect flags; I instructions do". Until SPVU001A Appendix A is
+  read, this is the working convention.
+- **How to apply**: When SPVU001A's MOVI entry is read, if it
+  documents different flag behavior, only `decoded_instr_t.wb_flags_en`
+  for `INSTR_MOVI_IW` in the decoder needs to change (and any
+  per-flag suppression added). `tb_movi` already checks all four
+  flags so a regression will catch any update.
+
+## A0012 — MOVI IW encoding extracted from SPVU004 listings
+- **Date**: 2026-05-12
+- **Status**: active
+- **Source**: `third_party/TMS34010_Info/tools/assembler/TMS34010_Assembly_Language_Tools_Users_Guide_SPVU004.pdf`
+  pages with assembler listings, e.g. `MOVI pbuf_sz, A4 → 0x09C4 0005`
+  (page near line 1357 in pdftotext output) and `MOVI array_size, A2
+  → 0x09C2 0x0640` (page near line 3823). Cross-referenced against the
+  bibliography's note in `02-instruction-set.md` §"Encoding shape"
+  that long-immediate forms are "16-bit opcode + 16 or 32 bits of
+  immediate data".
+- **Conclusion**: `MOVI IW K, Rd` encodes as:
+    bits[15:6] = 10'b00_0010_0111  (= 0x027)
+    bit[5]     = 0                  (1 = MOVI IL, 32-bit immediate)
+    bit[4]     = R                  (file: 0 = A, 1 = B)
+    bits[3:0]  = N                  (register index 0..15; idx 15 = SP alias)
+  Followed by one 16-bit word containing the immediate, sign-extended
+  to 32 bits on writeback.
+- **How to apply**: If a different encoding is discovered when
+  SPVU004 Appendix B is read in full, update `tms34010_decode.sv`'s
+  `MOVI_TOP10` constant and the `bit[5]` test. `tb_movi`'s
+  `movi_iw_enc` helper would need the same update.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

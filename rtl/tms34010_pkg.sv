@@ -56,18 +56,19 @@ package tms34010_pkg;
   // ---------------------------------------------------------------------------
   // Core top-level FSM states
   //
-  // High-level state machine for the per-instruction execution pipeline.
-  // The Phase 0 skeleton implements only CORE_RESET → CORE_FETCH; the rest
-  // are declared so downstream code can refer to them and so the FSM's
-  // `unique case` already covers them safely.
+  // Added in Phase 3:
+  //   CORE_FETCH_IMM_LO/HI — fetch the 16- or 32-bit immediate that follows
+  //   long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, CMPI, etc.).
   // ---------------------------------------------------------------------------
   typedef enum logic [2:0] {
-    CORE_RESET     = 3'd0,
-    CORE_FETCH     = 3'd1,
-    CORE_DECODE    = 3'd2,
-    CORE_EXECUTE   = 3'd3,
-    CORE_MEMORY    = 3'd4,
-    CORE_WRITEBACK = 3'd5
+    CORE_RESET        = 3'd0,
+    CORE_FETCH        = 3'd1,
+    CORE_DECODE       = 3'd2,
+    CORE_FETCH_IMM_LO = 3'd3,
+    CORE_FETCH_IMM_HI = 3'd4,
+    CORE_EXECUTE      = 3'd5,
+    CORE_MEMORY       = 3'd6,
+    CORE_WRITEBACK    = 3'd7
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -189,15 +190,28 @@ package tms34010_pkg;
   typedef logic [INSTR_WORD_WIDTH-1:0] instr_word_t;
 
   // Instruction class — used by the core control FSM to pick the
-  // decode/execute/memory/writeback path. Phase 3 skeleton uses only
-  // ILLEGAL; later phases add MOVE / ALU_RR / ALU_RI / BRANCH / etc.
+  // decode/execute/memory/writeback path.
   typedef enum logic [3:0] {
-    INSTR_ILLEGAL = 4'd0
+    INSTR_ILLEGAL = 4'd0,
+    INSTR_MOVI_IW = 4'd1,    // MOVI IW K, Rd  — 16-bit sign-extended immediate
+    INSTR_MOVI_IL = 4'd2     // MOVI IL K, Rd  — 32-bit immediate (Task TBD)
   } instr_class_t;
 
+  // What the control FSM needs from decode in order to execute. Fields are
+  // populated only when the instruction class uses them; the rest hold safe
+  // defaults (REG_FILE_A, idx 0, ALU_OP_PASS_A, etc.) so an undriven path
+  // never mis-writes the register file.
   typedef struct packed {
     logic          illegal;     // 1 if the encoding is not recognized
     instr_class_t  iclass;      // dispatch class for the control FSM
+    reg_file_t     rd_file;     // destination register file (A or B)
+    reg_idx_t      rd_idx;      // destination register index
+    logic          needs_imm16; // fetch one extra 16-bit word for immediate
+    logic          needs_imm32; // fetch two extra 16-bit words; LO first then HI
+    logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits
+    alu_op_t       alu_op;      // ALU op to use in CORE_EXECUTE
+    logic          wb_reg_en;   // 1 ⇒ regfile write in CORE_WRITEBACK
+    logic          wb_flags_en; // 1 ⇒ ST flag update in CORE_WRITEBACK
   } decoded_instr_t;
 
 endpackage : tms34010_pkg
