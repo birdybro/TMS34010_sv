@@ -1,0 +1,14 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.sv text eol=lf
+*.svh text eol=lf
+*.md text eol=lf
+*.csv text eol=lf
+
+# Binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.bin binary
+*.sof binary
+*.pof binary

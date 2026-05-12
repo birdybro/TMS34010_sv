@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Run a single testbench through Questa/ModelSim.
+#
+# Usage:   scripts/sim.sh <tb_name>
+# Example: scripts/sim.sh tb_smoke
+#
+# Resolves the simulator via env or PATH:
+#   $VLOG, $VSIM, $VLIB  — explicit binaries (highest precedence)
+#   PATH                 — vlog/vsim must be reachable
+#
+# On Windows, install paths commonly seen on this project's dev box:
+#   /c/altera_pro/25.1.1/questa_fse/win64/   (Questa FSE 25.1.1)
+#   /c/intelFPGA_lite/17.0/modelsim_ase/win32aloem/  (ModelSim ASE 17.0)
+#
+# Exits non-zero if the simulator is not found or the testbench fails.
+
+set -euo pipefail
+
+if [ $# -lt 1 ]; then
+  echo "usage: $0 <tb_name>" >&2
+  exit 64
+fi
+TB="$1"
+
+# Locate tools.
+VLOG_BIN="${VLOG:-$(command -v vlog || true)}"
+VSIM_BIN="${VSIM:-$(command -v vsim || true)}"
+VLIB_BIN="${VLIB:-$(command -v vlib || true)}"
+
+if [ -z "$VLOG_BIN" ] || [ -z "$VSIM_BIN" ] || [ -z "$VLIB_BIN" ]; then
+  cat >&2 <<EOF
+sim.sh: simulator not found.
+  set \$VLOG, \$VSIM, \$VLIB to point at vlog/vsim/vlib binaries,
+  or add them to PATH. Tried:
+    VLOG=${VLOG:-<unset>}    -> ${VLOG_BIN:-<not found>}
+    VSIM=${VSIM:-<unset>}    -> ${VSIM_BIN:-<not found>}
+    VLIB=${VLIB:-<unset>}    -> ${VLIB_BIN:-<not found>}
+EOF
+  exit 69
+fi
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WORK="$ROOT/work"
+mkdir -p "$WORK"
+
+cd "$WORK"
+
+# Reset work library each run for determinism.
+rm -rf work
+"$VLIB_BIN" work >/dev/null
+
+# Collect sources. Order matters: package, then RTL, then TB.
+SRCS=(
+  "$ROOT/rtl/tms34010_pkg.sv"
+  "$ROOT/rtl/core/tms34010_core.sv"
+  "$ROOT/sim/tb/${TB}.sv"
+)
+for f in "${SRCS[@]}"; do
+  if [ ! -f "$f" ]; then
+    echo "sim.sh: missing source: $f" >&2
+    exit 66
+  fi
+done
+
+"$VLOG_BIN" -sv -quiet "${SRCS[@]}"
+"$VSIM_BIN" -c -do "run -all; quit -f" work."$TB"

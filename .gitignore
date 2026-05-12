@@ -1,0 +1,31 @@
+# Simulator work directories
+work/
+work_lint/
+transcript
+vsim.wlf
+*.vstf
+*.mti
+modelsim.ini
+
+# Quartus build artifacts
+db/
+incremental_db/
+output_files/
+*.qws
+*.rpt
+*.summary
+*.smsg
+*.sof
+*.pof
+*.qpf.bak
+*.qsf.bak
+*.qdf
+*.qmsg
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
