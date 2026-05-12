@@ -299,6 +299,15 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0016 — JRUC short displacement: bit-target = PC_post_fetch + disp8*16
+- **Date**: 2026-05-12
+- **Status**: active
+- **Source**: SPVU001A Appendix A page A-14 row `JRcc Address ... 1100 code xxxx xxxx`; cross-checked against SPVU004 assembler listing `JRGT L5 = 0xC70B` at bit-address 0x3B0 with label L5 at bit-address 0x470 (disp value `0x0B` × 16 = `0xB0`, target `0x3B0 + 0x10 + 0xB0 = 0x470` ✓).
+- **Conclusion**: For JRcc short form `1100 cc dddd_dddd`, the new PC is `PC_after_fetch + sign_extend(disp8, 32) * 16`. Implementation: `branch_target = pc_value + $signed({disp8, 4'b0000})`, computed combinationally and applied via the PC module's `load_en`/`load_value` ports in `CORE_WRITEBACK`.
+- **How to apply**: When future JRcc variants (conditional, long, absolute) land, reuse the same `branch_target_short` form for short and add separate paths for long (16-bit disp) and absolute (32-bit target). All conditional variants share the cc-decoding from Table 12-8 (SPVU001A §12).
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

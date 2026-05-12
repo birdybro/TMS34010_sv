@@ -23,7 +23,8 @@
 | 0015 | Implement ADD Rs, Rd | complete |
 | 0016 | Implement SUB Rs, Rd | complete |
 | 0017 | Reg-reg logical instructions (AND, ANDN, OR, XOR) | complete |
-| 0018 | Implement CMP Rs, Rd | in progress |
+| 0018 | Implement CMP Rs, Rd | complete |
+| 0019 | First branch — JRUC short | in progress |
 
 ---
 
@@ -582,7 +583,7 @@ Commit:
 ---
 
 ### Task 0018: Implement CMP Rs, Rd
-Status: in progress
+Status: complete
 Dependencies: Task 0016 (SUB infrastructure: alu_op CMP, operand-swap mux).
 Spec source: SPVU001A A-14 chart row `0100 100S SSSR DDDD`.
 Acceptance Criteria:
@@ -594,6 +595,32 @@ Acceptance Criteria:
 - Full regression: 15/15 PASS; lint clean.
 Tests: tb_cmp_rr PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (CMP row), changelog.md, tasks.md.
+Commit:
+- 4ba4171
+
+---
+
+### Task 0019: First branch — JRUC short
+Status: in progress
+Dependencies:
+- Task 0011 (PC module instantiated in core but with load_en tied 0).
+Spec sources:
+- SPVU001A A-14 chart row `JRcc Address 1100 code xxxx xxxx`.
+- SPVU001A Table 12-8 (cc=0000 = UC).
+- A0016 (target math verified against SPVU004 assembler listing).
+Acceptance Criteria:
+- Decoder recognizes `instr[15:8] == 8'hC0 && instr[7:0] != 8'h00 &&
+  instr[7:0] != 8'h80`. Returns `iclass=INSTR_JRUC_SHORT`,
+  `wb_reg_en=0`, `wb_flags_en=0`.
+- Core computes `branch_target_short = pc_value +
+  $signed({instr[7:0], 4'h0})` combinationally.
+- Core drives `pc_load_en=1`, `pc_load_value=branch_target_short`
+  during `CORE_WRITEBACK` when `iclass == INSTR_JRUC_SHORT`.
+- `sim/tb/tb_jruc_short.sv` proves the branch took (destination
+  register holds landing-site value, not skipped-instruction value).
+- Full regression: 16/16 PASS; lint clean.
+Tests: tb_jruc_short PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md, assumptions.md A0016, changelog.md, tasks.md.
 Commit:
 - pending
 

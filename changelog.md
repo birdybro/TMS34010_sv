@@ -199,6 +199,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   swap in the alu_a/b muxes.
 - Added `sim/tb/tb_cmp_rr.sv` — verifies (a) Rs and Rd both
   unchanged after CMP, (b) flags match the equivalent SUB.
+- **First branch instruction**: **JRUC short** (Jump Relative
+  Unconditional, 8-bit signed displacement). Encoding
+  `1100 0000 dddd_dddd` per SPVU001A A-14 + condition-code
+  table 12-8 (cc = `4'b0000` = UC). Branch target =
+  `PC_post_fetch + sign_extend(disp8) * 16`, verified by hand-
+  decoding `JRGT L5 = 0xC70B` against the assembler listing in
+  SPVU004 (logged as A0016). The PC module's `load_en` /
+  `load_value` ports are now driven dynamically by the core's
+  `CORE_WRITEBACK` logic.
+- Added `sim/tb/tb_jruc_short.sv` — program with three MOVI IL
+  instructions where the middle one is skipped by a JRUC +3. Verifies
+  the destination register holds the **landing-site** value (proving
+  the branch took) and never holds the skipped value.
+- Added assumption A0016 covering the branch-target math and pointing
+  forward to the future long/conditional/absolute variants.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

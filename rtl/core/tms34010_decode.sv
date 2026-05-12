@@ -65,6 +65,12 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // JRUC short form: chart row "1100 code xxxx xxxx" with code=4'b0000 (UC).
+  // The high byte is 8'b1100_0000 = 0xC0. The low byte (xxxx_xxxx) is the
+  // signed 8-bit displacement; values 0x00 (long-relative form marker) and
+  // 0x80 (absolute-form marker) are reserved and excluded.
+  localparam logic [7:0] JRUC_SHORT_TOP8 = 8'hC0;
+
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
   assign rs_idx_from_instr = instr[8:5];
@@ -237,6 +243,25 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_CMP;        // same arithmetic as SUB
       decoded.wb_reg_en       = 1'b0;              // *** key difference ***
       decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // JRUC short  (Jump Relative Unconditional, 8-bit signed displacement)
+    //
+    // The chart's JRcc-family encoding `1100 cc xxxxxxxx` shares its top
+    // byte with the cc field. Two low-byte values are reserved markers:
+    //   0x00 → long-relative form (next word holds 16-bit disp)
+    //   0x80 → absolute form      (next two words hold 32-bit addr)
+    // Anything else in the low byte is a short-relative displacement (in
+    // words; the PC adds disp*16 bits).
+    // -----------------------------------------------------------------------
+    if (instr[15:8] == JRUC_SHORT_TOP8 &&
+        instr[7:0] != 8'h00 && instr[7:0] != 8'h80) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_JRUC_SHORT;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+      // The displacement is in instr[7:0]; the core computes the target.
     end
   end
 

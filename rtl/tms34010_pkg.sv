@@ -202,7 +202,8 @@ package tms34010_pkg;
     INSTR_ANDN_RR = 4'd7,    // ANDN Rs, Rd    — Rd & ~Rs → Rd
     INSTR_OR_RR   = 4'd8,    // OR Rs, Rd      — Rd | Rs  → Rd
     INSTR_XOR_RR  = 4'd9,    // XOR Rs, Rd     — Rd ^ Rs  → Rd
-    INSTR_CMP_RR  = 4'd10    // CMP Rs, Rd     — flags from (Rd - Rs); Rd unchanged
+    INSTR_CMP_RR    = 4'd10,  // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
+    INSTR_JRUC_SHORT = 4'd11  // JRUC short       — PC += sign_extend(disp8)*16
   } instr_class_t;
 
   // What the control FSM needs from decode in order to execute. Fields are

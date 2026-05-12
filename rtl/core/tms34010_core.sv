@@ -68,13 +68,15 @@ module tms34010_core
   // Program counter
   // ---------------------------------------------------------------------------
   logic                  pc_advance_en;
+  logic                  pc_load_en;
+  logic [ADDR_WIDTH-1:0] pc_load_value;
   logic [ADDR_WIDTH-1:0] pc_value;
 
   tms34010_pc u_pc (
     .clk            (clk),
     .rst            (rst),
-    .load_en        (1'b0),               // no branches yet (Phase 4)
-    .load_value     ('0),
+    .load_en        (pc_load_en),
+    .load_value     (pc_load_value),
     .advance_en     (pc_advance_en),
     .advance_amount (PC_ADVANCE_WIDTH'(INSTR_WORD_BITS)),
     .pc_o           (pc_value)
@@ -127,6 +129,25 @@ module tms34010_core
       illegal_q <= 1'b1;
     end
   end
+
+  // ---------------------------------------------------------------------------
+  // Branch-target computation (PC-relative, short form)
+  //
+  // For JRUC short and (future) JRcc short: the displacement in
+  // instr_word_q[7:0] is a signed 8-bit count of 16-bit words. The new PC
+  // is `current_pc + disp * 16` (in bits). `current_pc` is the value AFTER
+  // the opcode fetch already advanced the PC by 16, which matches what
+  // hand-decoding `JRGT L5 = 0xC70B` at PC=0x3B0 → target 0x470 produces
+  // (target = (0x3B0+16) + 11*16 = 0x470).
+  //
+  // The full target is computed combinationally and only consumed when
+  // the FSM is in CORE_WRITEBACK with a taken-branch decoded class.
+  // ---------------------------------------------------------------------------
+  logic [ADDR_WIDTH-1:0] branch_target_short;
+  logic signed [INSTR_WORD_WIDTH-1:0] disp_signed_12;
+  // {disp8, 4'h0} = disp * 16 expressed in 12 bits, sign-bit at [11].
+  assign disp_signed_12   = $signed({instr_word_q[7:0], 4'h0});
+  assign branch_target_short = pc_value + ADDR_WIDTH'(disp_signed_12);
 
   // ---------------------------------------------------------------------------
   // Immediate latch
@@ -262,6 +283,23 @@ module tms34010_core
   assign st_flag_update_en = (state_q == CORE_WRITEBACK) && decoded.wb_flags_en;
   assign st_write_en       = 1'b0;
   assign st_write_data     = '0;
+
+  // ---- PC-load (branches) -------------------------------------------------
+  // Gated by FSM state. For JRUC short, load the relative target in
+  // CORE_WRITEBACK so the next CORE_FETCH issues from the branched-to PC.
+  always_comb begin
+    pc_load_en    = 1'b0;
+    pc_load_value = '0;
+    if (state_q == CORE_WRITEBACK) begin
+      unique case (decoded.iclass)
+        INSTR_JRUC_SHORT: begin
+          pc_load_en    = 1'b1;
+          pc_load_value = branch_target_short;
+        end
+        default: ; // no branch
+      endcase
+    end
+  end
 
   tms34010_regfile u_regfile (
     .clk      (clk),
