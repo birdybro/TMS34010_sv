@@ -231,6 +231,7 @@ module tms34010_core
     unique case (decoded.iclass)
       INSTR_MOVI_IW,
       INSTR_MOVI_IL: alu_b = imm32;
+      INSTR_MOVK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       default:       alu_b = rf_rs2_data;
     endcase
   end

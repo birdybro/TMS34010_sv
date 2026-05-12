@@ -147,6 +147,16 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added `sim/tb/tb_movi_il.sv` — 5 MOVI IL instructions with
   immediates that the IW form physically cannot encode (0xCAFE_BABE,
   0xDEAD_BEEF, 0x0000_FFFF, 0xFFFF_0000, 0x0000_0000).
+- Third instruction: **MOVK K, Rd** (move 5-bit constant). Encoding
+  `0x1800 | (K<<5) | (R<<4) | N` (A0013); single-word; **does not
+  affect ST** per SPVU004. Adds `k5` field to `decoded_instr_t` and a
+  new arm to the alu_b mux that zero-extends K to 32 bits.
+- Added `sim/tb/tb_movk.sv` — 5 MOVK instructions covering K range
+  edges (1, 31, 0, 16, 5) and verifying both regfile content and
+  that ST is unchanged from reset zeros (confirming the "no flag
+  update" contract).
+- Added `docs/assumptions.md` A0013 covering MOVK encoding, the
+  no-flag-effect contract, and the K=0 = literal-0 hypothesis.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

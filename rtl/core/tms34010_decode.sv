@@ -12,9 +12,15 @@
 //                    Operation: K (32-bit) → Rd
 //                    Two 16-bit words follow: low half first, then high.
 //                    Flag effects: same as MOVI IW (A0011).
+//   MOVK K, Rd     — encoding 0x1800 | (K<<5) | (R<<4) | N
+//                    Operation: zero_extend(K, 32) → Rd     (per A0013)
+//                    Single-word instruction; K is 5 bits in bits[9:5].
+//                    Flag effects: **none** (SPVU004: "Note that this
+//                    instruction does not affect the status register").
 //
 // (Flag policy is per A0009/A0011 until SPVU001A Appendix A is read in
-// detail. Encoding is per A0012 extracted from SPVU004 assembler listings.)
+// detail. Encoding is per A0012 / A0013 extracted from SPVU004
+// assembler listings.)
 //
 // Spec sources cited:
 //   third_party/TMS34010_Info/tools/assembler/
@@ -45,12 +51,15 @@ module tms34010_decode
   output decoded_instr_t decoded
 );
 
-  // Fixed-width view of the top 10 bits of the encoding.
+  // Fixed-width views of the top opcode bits.
   logic [9:0] top10;
+  logic [5:0] top6;
   assign top10 = instr[INSTR_WORD_WIDTH-1:6];
+  assign top6  = instr[INSTR_WORD_WIDTH-1:10];
 
-  // MOVI top-10 opcode prefix.
+  // Opcode prefixes.
   localparam logic [9:0] MOVI_TOP10 = 10'b00_0010_0111;
+  localparam logic [5:0] MOVK_TOP6  = 6'b00_0110;
 
   // Reg-field decoders (5 bits = file + 4-bit index).
   reg_file_t reg_file_from_instr;
@@ -70,6 +79,7 @@ module tms34010_decode
     decoded.needs_imm32     = 1'b0;
     decoded.imm_sign_extend = 1'b0;
     decoded.alu_op          = ALU_OP_PASS_A;
+    decoded.k5              = '0;
     decoded.wb_reg_en       = 1'b0;
     decoded.wb_flags_en     = 1'b0;
 
@@ -103,6 +113,23 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_PASS_B;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVK K, Rd
+    // -----------------------------------------------------------------------
+    if (top6 == MOVK_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVK;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.k5              = instr[9:5];
+      decoded.needs_imm16     = 1'b0;
+      decoded.needs_imm32     = 1'b0;
+      decoded.imm_sign_extend = 1'b0;
+      decoded.alu_op          = ALU_OP_PASS_B;   // routed through ALU like MOVI
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;            // MOVK doesn't touch ST
     end
   end
 

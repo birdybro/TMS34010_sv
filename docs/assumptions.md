@@ -229,6 +229,38 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0013 — MOVK K=0 semantics + encoding
+- **Date**: 2026-05-12
+- **Status**: active (encoding confirmed; K=0 semantics is a working hypothesis)
+- **Source**: `third_party/TMS34010_Info/tools/assembler/TMS34010_Assembly_Language_Tools_Users_Guide_SPVU004.pdf`
+  pages containing:
+  - "MOVK K, Rd. Move Constant - 5 Bits. Operation: K → Rd. Move a
+    5-bit constant into the destination register. Note that this
+    instruction does not affect the status register."
+  - Assembler listings: "MOVK 1, A12 → 0x182C" and
+    "MOVK 8, B1 → 0x1911".
+- **Conclusion**: `MOVK K, Rd` encodes as:
+    bits[15:10] = 6'b000110  (= 0x06)
+    bits[9:5]   = K          (5-bit unsigned)
+    bit[4]      = R          (file: 0 = A, 1 = B)
+    bits[3:0]   = N          (register index 0..15)
+  Operation: zero-extend K to 32 bits → Rd. Status register
+  unchanged.
+- **K=0 hypothesis**: Per the manual text "Move a 5-bit constant",
+  K=0 is treated as the literal value 0 (clearing the register).
+  Some other K-form instructions in the TMS34010 ISA (notably ADDK
+  and SUBK) special-case K=0 to mean K=32 because adding/subtracting
+  0 would be a no-op; MOVK has no such no-op concern since "move 0"
+  is a useful operation in its own right. SPVU001A Appendix A should
+  be consulted to confirm.
+- **How to apply**: The implementation treats K=0 as literal 0. If
+  SPVU001A documents otherwise, change the K-extension in
+  `tms34010_decode.sv`'s MOVK arm and the alu_b mux for INSTR_MOVK
+  in `tms34010_core.sv`. `tb_movk` includes a `MOVK 0, A1` test
+  case that will catch the regression.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

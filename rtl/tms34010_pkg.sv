@@ -194,7 +194,8 @@ package tms34010_pkg;
   typedef enum logic [3:0] {
     INSTR_ILLEGAL = 4'd0,
     INSTR_MOVI_IW = 4'd1,    // MOVI IW K, Rd  — 16-bit sign-extended immediate
-    INSTR_MOVI_IL = 4'd2     // MOVI IL K, Rd  — 32-bit immediate (Task TBD)
+    INSTR_MOVI_IL = 4'd2,    // MOVI IL K, Rd  — 32-bit immediate
+    INSTR_MOVK    = 4'd3     // MOVK K, Rd     — 5-bit zero-extended constant
   } instr_class_t;
 
   // What the control FSM needs from decode in order to execute. Fields are
@@ -210,6 +211,7 @@ package tms34010_pkg;
     logic          needs_imm32; // fetch two extra 16-bit words; LO first then HI
     logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits
     alu_op_t       alu_op;      // ALU op to use in CORE_EXECUTE
+    logic [4:0]    k5;          // K-form 5-bit constant (MOVK, ADDK, SUBK, ...)
     logic          wb_reg_en;   // 1 ⇒ regfile write in CORE_WRITEBACK
     logic          wb_flags_en; // 1 ⇒ ST flag update in CORE_WRITEBACK
   } decoded_instr_t;

@@ -18,7 +18,8 @@
 | 0010 | Decode skeleton + full execute cycle | complete |
 | 0011 | Wire datapath modules into core | complete |
 | 0012 | Implement MOVI IW end-to-end | complete |
-| 0013 | Implement MOVI IL end-to-end | in progress |
+| 0013 | Implement MOVI IL end-to-end | complete |
+| 0014 | Implement MOVK K, Rd | in progress |
 
 ---
 
@@ -439,7 +440,7 @@ Commit:
 ---
 
 ### Task 0013: Implement MOVI IL end-to-end
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0012 (MOVI IW; FSM IMM_HI state already in place; imm32 assembly
   already handles needs_imm32)
@@ -463,6 +464,39 @@ Tests:
 - Lint clean.
 Docs:
 - `docs/instruction_coverage.md` — MOVI IL row → implemented.
+- `changelog.md`, `tasks.md`.
+Commit:
+- aebf99a
+
+---
+
+### Task 0014: Implement MOVK K, Rd
+Status: in progress
+Dependencies:
+- Task 0011 (datapath wired)
+Spec sources:
+- SPVU004 §"Move Constant - 5 Bits" plus assembler listings
+  `MOVK 1,A12 → 0x182C` and `MOVK 8,B1 → 0x1911` (captured in A0013).
+Acceptance Criteria:
+- Decoder recognizes `bits[15:10] == 0x06`; sets `iclass=INSTR_MOVK`,
+  extracts K from bits[9:5] into `decoded.k5`, sets `alu_op=PASS_B`,
+  `wb_reg_en=1`, `wb_flags_en=0` (MOVK does NOT affect ST).
+- Package: `INSTR_MOVK` added to `instr_class_t`; `k5` field added
+  to `decoded_instr_t` (5 bits).
+- Core: alu_b mux gains an arm for INSTR_MOVK that zero-extends
+  `decoded.k5` to DATA_WIDTH.
+- `sim/tb/tb_movk.sv` exercises K=0, K=1, K=16, K=31 across A and B
+  files. Verifies both regfile content AND that ST is unchanged
+  from reset zeros.
+- Encoding helper sanity-checked against the two SPVU004 listings.
+- Full regression: 11/11 PASS; lint clean.
+Tests:
+- `scripts/sim.sh tb_movk` → PASS.
+- All previous 10 tests still PASS.
+- Lint clean.
+Docs:
+- `docs/instruction_coverage.md` — MOVK row added.
+- `docs/assumptions.md` — A0013 added.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending
