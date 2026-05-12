@@ -61,6 +61,15 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   on each ack, `mem_size` matches, `mem_rdata` low 16 bits match the
   preloaded word and high 16 bits are zero, and the final PC commits
   to `N*16`.
+- Added `rtl/core/tms34010_regfile.sv` — A0..A14 + B0..B14 + shared SP
+  (aliased as A15/B15). Two combinational read ports, one synchronous
+  write port, sync active-high reset clears all entries. SP aliasing
+  centralized in the read/write decode so callers never deal with it.
+  Package gains `reg_file_t`, `reg_idx_t`, and `REG_SP_IDX`.
+- Added `sim/tb/tb_regfile.sv` — coverage: reset clears all 31 slots,
+  per-file isolation (A vs B), SP aliasing (write A15 visible via B15
+  and `sp_o`), independent read ports, synchronous-write contract
+  (same-cycle read returns old value, next-cycle read returns new).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives

@@ -76,7 +76,7 @@ plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
 | `rtl/tms34010_pkg.sv`                   | 0     | **landed (skeleton)** | widths, basic typedefs; expanded each phase |
 | `rtl/core/tms34010_core.sv`             | 0–1   | **landed (skeleton)** | top-level wrapper; FSM scaffold; mem-IF stub |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
-| `rtl/core/tms34010_regfile.sv`          | 2     | not started | A0–A14, B0–B14, SP, ST, PC |
+| `rtl/core/tms34010_regfile.sv`          | 2     | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 2R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | not started | add/sub/log/cmp; flag generation |
 | `rtl/core/tms34010_shifter.sv`          | 2     | not started | barrel shifter; field-extract helpers |
 | `rtl/core/tms34010_flags.sv`            | 2     | not started | status-register flag update logic |

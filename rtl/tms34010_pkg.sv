@@ -70,4 +70,22 @@ package tms34010_pkg;
     CORE_WRITEBACK = 3'd5
   } core_state_t;
 
+  // ---------------------------------------------------------------------------
+  // Register file types
+  //
+  // Spec: bibliography/hdl-reimplementation/03-registers.md
+  //   - Two 15-entry general-purpose register banks (A and B).
+  //   - One shared stack pointer accessible from both banks as A15/B15.
+  //   - All 32 bits.
+  // ---------------------------------------------------------------------------
+  typedef enum logic {
+    REG_FILE_A = 1'b0,
+    REG_FILE_B = 1'b1
+  } reg_file_t;
+
+  // 4-bit register index inside a file. Index 4'hF is the shared SP alias.
+  typedef logic [3:0] reg_idx_t;
+
+  parameter reg_idx_t REG_SP_IDX = 4'hF;
+
 endpackage : tms34010_pkg

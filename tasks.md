@@ -1,6 +1,6 @@
 # Tasks
 
-## Current Milestone: Phase 1 — Core shell
+## Current Milestone: Phase 2 — Register and ALU foundation
 
 ## Task index
 
@@ -10,7 +10,8 @@
 | 0002 | Create project planning and docs scaffolding | complete |
 | 0003 | Initial synthesizable core skeleton + smoke test | complete |
 | 0004 | PC module + core integration | complete |
-| 0005 | Behavioral memory model + fetch-walk test | in progress |
+| 0005 | Behavioral memory model + fetch-walk test | complete |
+| 0006 | A/B register file with shared SP | in progress |
 
 ---
 
@@ -136,7 +137,7 @@ Commit:
 ---
 
 ### Task 0005: Behavioral memory model + fetch-walk test
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0004
 Spec sources:
@@ -169,6 +170,44 @@ Tests:
 - `scripts/lint.sh` → clean.
 Docs:
 - `docs/architecture.md` — note the memory model substrate.
+- `changelog.md`, `tasks.md`.
+Commit:
+- 2f6bdb9
+
+---
+
+### Task 0006: A/B register file with shared SP
+Status: in progress
+Dependencies:
+- Task 0003
+Spec source:
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/03-registers.md`
+  §"General-purpose register files A and B":
+  - Two banks, 15 32-bit registers each (A0..A14, B0..B14).
+  - One shared SP, accessible from both files as A15/B15.
+  - All 32 bits.
+  - Graphics ops implicitly read the B file (Phase 7 work).
+Acceptance Criteria:
+- `rtl/core/tms34010_regfile.sv` exists. Storage: 15-entry A array,
+  15-entry B array, single SP register. Two read ports (combinational
+  / async read for FPGA distributed-RAM friendliness — regfile is
+  ~1 Kb so block RAM is overkill). One synchronous write port.
+- Selector encoding: 1-bit file select + 4-bit index. Index 4'hF on
+  either file routes to the shared SP for both read and write.
+- Synchronous active-high reset clears all entries (bounded for-loop,
+  fully unrollable, no inferred latches).
+- Observability `sp_o` port for testbenches.
+- Package typedefs added: `reg_file_t` (enum A/B), `reg_idx_t` (4-bit).
+- `sim/tb/tb_regfile.sv` covers reset, isolated A/B writes, read-after-
+  write same and different ports, SP aliasing (write A15 → read B15
+  returns the value, and `sp_o` matches), file-A and file-B index 15
+  both alias to SP.
+Tests:
+- `scripts/sim.sh tb_regfile` → PASS.
+- All previous tests still PASS.
+- Lint clean.
+Docs:
+- `docs/architecture.md` — regfile row → landed.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending
