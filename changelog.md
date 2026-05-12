@@ -214,6 +214,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   the branch took) and never holds the skipped value.
 - Added assumption A0016 covering the branch-target math and pointing
   forward to the future long/conditional/absolute variants.
+- Generalized branch handling: `INSTR_JRUC_SHORT` is now
+  `INSTR_JRCC_SHORT` with a `branch_cc` field. Decoder accepts the
+  three verified condition codes (UC, EQ, NE per A0017); other cc
+  values on the JRcc encoding fall through to ILLEGAL. The core
+  gains a combinational `branch_taken` evaluator that picks the
+  right ST-flag combination for each cc.
+- Package adds `CC_UC=0000`, `CC_EQ=0100`, `CC_NE=0111` constants
+  for use across decoder and core.
+- Added `sim/tb/tb_jrcc_short.sv` — three scenarios: JREQ taken
+  (Z=1 from equal-CMP), JRNE taken (Z=0 from unequal-CMP), and JREQ
+  not-taken (with fall-through executing). Encoder helper
+  cross-checked against hand-computed `JREQ +5 = 0xC405` and
+  `JRNE +5 = 0xC705`.
+- `tb_jruc_short` unchanged — UC (cc=0000) still encodes the same
+  opcodes, so the existing test continues to verify the unconditional
+  path through the refactored code.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

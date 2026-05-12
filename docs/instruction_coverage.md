@@ -36,7 +36,7 @@ Required columns:
 | OR Rs,Rd   | `0101 010S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd \| Rs → Rd. Commutative. |
 | XOR Rs,Rd  | `0101 011S SSSR DDDD` | SPVU001A A-14 | implemented | tb_logical_rr | N, Z (C, V cleared) | none | TBD | Rd ^ Rs → Rd. Encoding cross-checked against `XOR A0,A0 = 0x5600` in SPVU004 listing. |
 | CMP Rs,Rd  | `0100 100S SSSR DDDD` | SPVU001A A-14 | implemented | tb_cmp_rr | N, C, Z, V | none | TBD | Flags from (Rd - Rs); **Rd unchanged** (nondestructive). First instruction in the project with `wb_reg_en = 0`. |
-| JRUC short | `1100 0000 dddd dddd` (= `0xC000 \| disp8`) | SPVU001A A-14, Table 12-8 (cc=0000 = UC) | implemented | tb_jruc_short | none | none | TBD | First branch. Target = PC_post_fetch + sign_extend(disp8) * 16 bits. disp = 0x00 reserved (long form), 0x80 reserved (absolute form). |
+| JRcc short | `1100 cccc dddd dddd` | SPVU001A A-14, Table 12-8 | partial: UC/EQ/NE only (A0017) | tb_jruc_short, tb_jrcc_short | none | none | TBD | Conditional/unconditional 8-bit-signed-disp relative jump. cc ∈ {0000 UC, 0100 EQ, 0111 NE} verified and decoded; other cc values trap as ILLEGAL until Table 12-8 is re-read. Target = PC_post_fetch + sign_extend(disp) × 16. disp ∈ {0x00, 0x80} reserved. |
 
 ## Categories to populate (placeholder roadmap)
 

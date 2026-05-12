@@ -65,11 +65,11 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
-  // JRUC short form: chart row "1100 code xxxx xxxx" with code=4'b0000 (UC).
-  // The high byte is 8'b1100_0000 = 0xC0. The low byte (xxxx_xxxx) is the
-  // signed 8-bit displacement; values 0x00 (long-relative form marker) and
-  // 0x80 (absolute-form marker) are reserved and excluded.
-  localparam logic [7:0] JRUC_SHORT_TOP8 = 8'hC0;
+  // JRcc short form: chart row "1100 code xxxx xxxx" with any cc.
+  // bits[15:12] = 4'b1100; bits[11:8] = cc (4 bits); bits[7:0] = signed
+  // 8-bit displacement. The two low-byte values 0x00 and 0x80 are reserved
+  // (long-relative and absolute-form markers respectively).
+  localparam logic [3:0] JRCC_TOP4 = 4'b1100;
 
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
@@ -95,6 +95,7 @@ module tms34010_decode
     decoded.imm_sign_extend = 1'b0;
     decoded.alu_op          = ALU_OP_PASS_A;
     decoded.k5              = '0;
+    decoded.branch_cc       = '0;
     decoded.wb_reg_en       = 1'b0;
     decoded.wb_flags_en     = 1'b0;
 
@@ -246,22 +247,31 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // JRUC short  (Jump Relative Unconditional, 8-bit signed displacement)
+    // JRcc short (Jump Relative Conditional, 8-bit signed displacement)
     //
-    // The chart's JRcc-family encoding `1100 cc xxxxxxxx` shares its top
-    // byte with the cc field. Two low-byte values are reserved markers:
-    //   0x00 → long-relative form (next word holds 16-bit disp)
-    //   0x80 → absolute form      (next two words hold 32-bit addr)
-    // Anything else in the low byte is a short-relative displacement (in
-    // words; the PC adds disp*16 bits).
+    // Encoding: bits[15:12] = 1100, bits[11:8] = cc, bits[7:0] = disp.
+    // Low-byte values 0x00 and 0x80 are reserved (long-relative and
+    // absolute form markers); only short-form disps land here.
+    //
+    // Per A0017, only condition codes verified against SPVU001A Table
+    // 12-8 are decoded:
+    //   cc = 0000 → UC (unconditional)
+    //   cc = 0100 → EQ (Z = 1)
+    //   cc = 0111 → NE (Z = 0)
+    // Other cc values fall through to ILLEGAL until the table is read
+    // more carefully — better to trap on an unverified condition than
+    // silently mis-branch.
     // -----------------------------------------------------------------------
-    if (instr[15:8] == JRUC_SHORT_TOP8 &&
-        instr[7:0] != 8'h00 && instr[7:0] != 8'h80) begin
+    if (instr[15:12] == JRCC_TOP4 &&
+        instr[7:0] != 8'h00 && instr[7:0] != 8'h80 &&
+        (instr[11:8] == CC_UC ||
+         instr[11:8] == CC_EQ ||
+         instr[11:8] == CC_NE)) begin
       decoded.illegal     = 1'b0;
-      decoded.iclass      = INSTR_JRUC_SHORT;
+      decoded.iclass      = INSTR_JRCC_SHORT;
+      decoded.branch_cc   = instr[11:8];
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
-      // The displacement is in instr[7:0]; the core computes the target.
     end
   end
 

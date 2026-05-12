@@ -308,6 +308,19 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0017 — JRcc condition codes (subset implemented)
+- **Date**: 2026-05-12
+- **Status**: active, **partial — most codes deferred**
+- **Source**: SPVU001A §12.7 + Table 12-8 "Condition Codes for JRcc and JAcc Instructions" (page 12-31).
+- **Conclusion (verified subset only)**:
+  - `cc = 0000` → UC (unconditional, always)
+  - `cc = 0100` → EQ / Z (Z = 1)
+  - `cc = 0111` → NE / NZ (Z = 0)
+  These three are extracted with high confidence from the table text. The remaining 13 condition codes (LO/B, LS, HI, HS/NC, LT, LE, GT, GE, P/NN, N, V, NV, plus the X/Y XY-coordinate variants) are visible in the table but the `pdftotext -layout` output is too garbled to reliably attribute codes to mnemonics without an OCR re-pass or a visual read of the PDF.
+- **How to apply**: The decoder explicitly enumerates only the three verified codes (`cc == CC_UC || cc == CC_EQ || cc == CC_NE`); any other cc value on a JRcc-shape encoding falls through to ILLEGAL. This is the spec-discipline-correct behavior: a real program that uses, say, JRGT will trap loudly rather than mis-branch silently. When the full Table 12-8 is verified, add the remaining cc constants to the package and the matching arms in the decoder + core's branch_taken evaluator.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

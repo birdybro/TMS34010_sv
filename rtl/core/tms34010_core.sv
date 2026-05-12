@@ -284,17 +284,35 @@ module tms34010_core
   assign st_write_en       = 1'b0;
   assign st_write_data     = '0;
 
+  // ---- Branch-condition evaluator -----------------------------------------
+  // Combinational decode of decoded.branch_cc against the current ST
+  // flags. Returns 1 if the branch should be taken. Codes not in the
+  // verified set (A0017) return 0 (no branch); the decoder is responsible
+  // for routing unverified codes to ILLEGAL so this default isn't reached
+  // by a recognized JRCC.
+  logic branch_taken;
+  always_comb begin
+    unique case (decoded.branch_cc)
+      CC_UC:   branch_taken = 1'b1;
+      CC_EQ:   branch_taken = st_z;
+      CC_NE:   branch_taken = !st_z;
+      default: branch_taken = 1'b0;
+    endcase
+  end
+
   // ---- PC-load (branches) -------------------------------------------------
-  // Gated by FSM state. For JRUC short, load the relative target in
-  // CORE_WRITEBACK so the next CORE_FETCH issues from the branched-to PC.
+  // Gated by FSM state. For JRcc short, load the relative target in
+  // CORE_WRITEBACK only when the condition is met.
   always_comb begin
     pc_load_en    = 1'b0;
     pc_load_value = '0;
     if (state_q == CORE_WRITEBACK) begin
       unique case (decoded.iclass)
-        INSTR_JRUC_SHORT: begin
-          pc_load_en    = 1'b1;
-          pc_load_value = branch_target_short;
+        INSTR_JRCC_SHORT: begin
+          if (branch_taken) begin
+            pc_load_en    = 1'b1;
+            pc_load_value = branch_target_short;
+          end
         end
         default: ; // no branch
       endcase

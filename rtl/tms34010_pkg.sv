@@ -203,8 +203,16 @@ package tms34010_pkg;
     INSTR_OR_RR   = 4'd8,    // OR Rs, Rd      — Rd | Rs  → Rd
     INSTR_XOR_RR  = 4'd9,    // XOR Rs, Rd     — Rd ^ Rs  → Rd
     INSTR_CMP_RR    = 4'd10,  // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
-    INSTR_JRUC_SHORT = 4'd11  // JRUC short       — PC += sign_extend(disp8)*16
+    INSTR_JRCC_SHORT = 4'd11  // JRcc short       — conditional relative jump
+                              //                    (cc=0 = UC = unconditional)
   } instr_class_t;
+
+  // Condition codes used by JRcc / JAcc (and other conditional ops).
+  // Source: SPVU001A Table 12-8. Only codes verified against the spec
+  // text are listed here; others are reserved (A0017).
+  parameter logic [3:0] CC_UC = 4'b0000;  // unconditional
+  parameter logic [3:0] CC_EQ = 4'b0100;  // equal       (Z = 1)
+  parameter logic [3:0] CC_NE = 4'b0111;  // not equal   (Z = 0)
 
   // What the control FSM needs from decode in order to execute. Fields are
   // populated only when the instruction class uses them; the rest hold safe
@@ -224,6 +232,7 @@ package tms34010_pkg;
     logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits
     alu_op_t       alu_op;      // ALU op to use in CORE_EXECUTE
     logic [4:0]    k5;          // K-form 5-bit constant (MOVK, ADDK, SUBK, ...)
+    logic [3:0]    branch_cc;   // condition code for JRcc / JAcc / DSJcc
     logic          wb_reg_en;   // 1 ⇒ regfile write in CORE_WRITEBACK
     logic          wb_flags_en; // 1 ⇒ ST flag update in CORE_WRITEBACK
   } decoded_instr_t;

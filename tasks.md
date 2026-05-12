@@ -24,7 +24,8 @@
 | 0016 | Implement SUB Rs, Rd | complete |
 | 0017 | Reg-reg logical instructions (AND, ANDN, OR, XOR) | complete |
 | 0018 | Implement CMP Rs, Rd | complete |
-| 0019 | First branch — JRUC short | in progress |
+| 0019 | First branch — JRUC short | complete |
+| 0020 | JRcc short conditional (UC, EQ, NE) | in progress |
 
 ---
 
@@ -601,7 +602,7 @@ Commit:
 ---
 
 ### Task 0019: First branch — JRUC short
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0011 (PC module instantiated in core but with load_en tied 0).
 Spec sources:
@@ -621,6 +622,30 @@ Acceptance Criteria:
 - Full regression: 16/16 PASS; lint clean.
 Tests: tb_jruc_short PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md, assumptions.md A0016, changelog.md, tasks.md.
+Commit:
+- dc01463
+
+---
+
+### Task 0020: JRcc short — conditional branches (UC, EQ, NE)
+Status: in progress
+Dependencies: Task 0019 (PC load_en path + branch_target_short already
+  computed combinationally).
+Spec source: SPVU001A Table 12-8 (subset verified per A0017).
+Acceptance Criteria:
+- Refactor: `INSTR_JRUC_SHORT` replaced with `INSTR_JRCC_SHORT`;
+  `branch_cc` (4 bits) added to `decoded_instr_t`. Package gets
+  `CC_UC/EQ/NE` constants.
+- Decoder accepts the three verified cc values; other cc on the
+  JRcc shape falls through to ILLEGAL.
+- Core gains combinational `branch_taken` evaluator switching on
+  `decoded.branch_cc` against ST flags. PC load only fires when
+  `branch_taken=1` in `CORE_WRITEBACK`.
+- `sim/tb/tb_jrcc_short.sv` covers JREQ taken, JRNE taken, JREQ
+  not-taken. tb_jruc_short continues to verify the UC path.
+- Full regression: 17/17 PASS; lint clean.
+Tests: tb_jrcc_short PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md, assumptions.md A0017, changelog.md, tasks.md.
 Commit:
 - pending
 
