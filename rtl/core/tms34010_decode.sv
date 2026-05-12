@@ -57,6 +57,10 @@ module tms34010_decode
   // Opcode prefixes (each cited from SPVU001A Appendix A page A-14).
   localparam logic [9:0] MOVI_TOP10   = 10'b00_0010_0111;
   localparam logic [5:0] MOVK_TOP6    = 6'b00_0110;
+  // K-family arithmetic shares the top-4 prefix 4'b0001; bits[11:10]
+  // select the operation (00=ADDK, 01=SUBK, 10=MOVK, 11=BTST K).
+  localparam logic [5:0] ADDK_TOP6    = 6'b00_0100;  // chart: 0001 00KK KKKR DDDD
+  localparam logic [5:0] SUBK_TOP6    = 6'b00_0101;  // chart: 0001 01KK KKKR DDDD
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
@@ -146,6 +150,34 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_PASS_B;   // routed through ALU like MOVI
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;            // MOVK doesn't touch ST
+    end
+
+    // -----------------------------------------------------------------------
+    // ADDK K, Rd  (K + Rd → Rd; K is 5-bit zero-extended per A0018)
+    // -----------------------------------------------------------------------
+    if (top6 == ADDK_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_ADDK;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.k5              = instr[9:5];
+      decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // SUBK K, Rd  (Rd - K → Rd; K is 5-bit zero-extended per A0018)
+    // -----------------------------------------------------------------------
+    if (top6 == SUBK_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_SUBK;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.k5              = instr[9:5];
+      decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
     end
 
     // -----------------------------------------------------------------------

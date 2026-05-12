@@ -321,6 +321,35 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0018 — ADDK / SUBK K-value treatment
+- **Date**: 2026-05-12
+- **Status**: active (encoding + literal-K behavior confirmed; K=0 → 32 hypothesis NOT implemented)
+- **Source**: SPVU001A A-14 chart rows:
+    `ADDK K,Rd  Add Constant (5 Bits)   0001 00KK KKKR DDDD   NCZV`
+    `SUBK K,Rd  Subtract Constant (5)   0001 01KK KKKR DDDD   NCZV`
+  Plus SPVU004 description "Add Constant (5 Bits) ... K + Rd → Rd" (no
+  mention of K=0 special case).
+- **Conclusion (implemented)**:
+  - Encoding: bits[15:10] = `6'b000100` (ADDK) or `6'b000101` (SUBK);
+    bits[9:5] = K (5-bit unsigned); bit[4] = R; bits[3:0] = Rd idx.
+  - ADDK operation: zero_extend(K, 32) + Rd → Rd.
+  - SUBK operation: Rd - zero_extend(K, 32) → Rd. Flags: standard
+    N/C/Z/V from the result (C is borrow for SUBK).
+- **K=0 hypothesis (NOT implemented)**: Some TI K-form ISAs special-
+  case K=0 to mean K=32 (giving useful "add 32" / "subtract 32"
+  efficiency, since adding/subtracting literal 0 would be a no-op).
+  SPVU004's prose for ADDK/SUBK does not mention this; SPVU001A
+  pages on these instructions specifically would need a careful
+  visual read to confirm. The implementation treats K=0 literally
+  (ADDK 0 = no-op, SUBK 0 = no-op).
+- **How to apply**: If SPVU001A turns out to specify K=0 → K=32 for
+  these instructions, change the decoder K-zero-extension or the
+  alu_b mux entry to substitute 32'd32 for the K=0 case. `tb_addk_subk`
+  deliberately avoids K=0 to keep behavior unambiguous; add a
+  failing K=0 test case as a regression once the spec is confirmed.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

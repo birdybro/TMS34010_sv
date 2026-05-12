@@ -203,8 +203,10 @@ package tms34010_pkg;
     INSTR_OR_RR   = 4'd8,    // OR Rs, Rd      — Rd | Rs  → Rd
     INSTR_XOR_RR  = 4'd9,    // XOR Rs, Rd     — Rd ^ Rs  → Rd
     INSTR_CMP_RR    = 4'd10,  // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
-    INSTR_JRCC_SHORT = 4'd11  // JRcc short       — conditional relative jump
+    INSTR_JRCC_SHORT = 4'd11, // JRcc short       — conditional relative jump
                               //                    (cc=0 = UC = unconditional)
+    INSTR_ADDK       = 4'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
+    INSTR_SUBK       = 4'd13  // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

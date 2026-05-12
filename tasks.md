@@ -25,7 +25,8 @@
 | 0017 | Reg-reg logical instructions (AND, ANDN, OR, XOR) | complete |
 | 0018 | Implement CMP Rs, Rd | complete |
 | 0019 | First branch — JRUC short | complete |
-| 0020 | JRcc short conditional (UC, EQ, NE) | in progress |
+| 0020 | JRcc short conditional (UC, EQ, NE) | complete |
+| 0021 | K-form arithmetic (ADDK, SUBK) | in progress |
 
 ---
 
@@ -628,7 +629,7 @@ Commit:
 ---
 
 ### Task 0020: JRcc short — conditional branches (UC, EQ, NE)
-Status: in progress
+Status: complete
 Dependencies: Task 0019 (PC load_en path + branch_target_short already
   computed combinationally).
 Spec source: SPVU001A Table 12-8 (subset verified per A0017).
@@ -646,6 +647,30 @@ Acceptance Criteria:
 - Full regression: 17/17 PASS; lint clean.
 Tests: tb_jrcc_short PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md, assumptions.md A0017, changelog.md, tasks.md.
+Commit:
+- 4c5e69a
+
+---
+
+### Task 0021: K-form arithmetic (ADDK, SUBK)
+Status: in progress
+Dependencies: Task 0014 (MOVK k5 infrastructure), Task 0016 (SUB swap pattern).
+Spec source: SPVU001A A-14 chart rows for ADDK/SUBK; A0018 for K=0 interpretation.
+Acceptance Criteria:
+- Decoder arms for `top6 == 6'b000100` (ADDK) and `6'b000101` (SUBK).
+- `decoded.k5` populated from `instr[9:5]`; `decoded.rd_file/idx` from
+  `instr[4:0]`. alu_op = ADD / SUB. wb_reg_en = 1, wb_flags_en = 1.
+- Core's alu_a/b muxes route Rd → alu_a and zero-extended K → alu_b
+  for both ADDK and SUBK (joining the existing swap group).
+- `sim/tb/tb_addk_subk.sv` covers increment/decrement, max-K,
+  unsigned-wrap, zero-result, and a B-file case. Encoder verified
+  against three hand-decoded encodings.
+- A0018 added documenting the literal-K choice and flagging the
+  unresolved K=0 → 32 hypothesis.
+- Full regression: 18/18 PASS; lint clean.
+Tests: tb_addk_subk PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (ADDK + SUBK rows), assumptions.md A0018,
+  changelog.md, tasks.md.
 Commit:
 - pending
 

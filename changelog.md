@@ -230,6 +230,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - `tb_jruc_short` unchanged — UC (cc=0000) still encodes the same
   opcodes, so the existing test continues to verify the unconditional
   path through the refactored code.
+- K-form arithmetic: **ADDK K, Rd** and **SUBK K, Rd**. Chart top-6
+  prefixes `6'b000100` and `6'b000101` (per A0018). Reuses the
+  `k5` field that MOVK already populates and the SUB-style operand
+  swap pattern (alu_a = Rd, alu_b = K_zero_extended). Updates
+  N/C/Z/V from the result.
+- Added `sim/tb/tb_addk_subk.sv` — six cases: increment (ADDK 5),
+  decrement (SUBK 1), max-K (ADDK 31), unsigned wrap (ADDK 1 of
+  0xFFFFFFFF → 0 with C, Z), zero-result (SUBK 5 of 5 → 0 with Z),
+  B-file (ADDK 16). Encoder verified against three hand-computed
+  encodings (0x1020, 0x17E0, 0x10F5).
+- Added assumption A0018 documenting the literal-K interpretation
+  and flagging the unresolved K=0 → 32 hypothesis that some TI
+  K-form ISAs use.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
