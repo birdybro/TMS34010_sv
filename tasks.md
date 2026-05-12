@@ -7,8 +7,8 @@
 | ID | Title | Status |
 |----|-------|--------|
 | 0001 | Add TMS34010_Info reference submodule | complete |
-| 0002 | Create project planning and docs scaffolding | in progress |
-| 0003 | Initial synthesizable core skeleton + smoke test | pending |
+| 0002 | Create project planning and docs scaffolding | complete |
+| 0003 | Initial synthesizable core skeleton + smoke test | in progress |
 
 ---
 
@@ -31,7 +31,7 @@ Commit:
 ---
 
 ### Task 0002: Create project planning and docs scaffolding
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0001
 Acceptance Criteria:
@@ -51,12 +51,12 @@ Tests:
 Docs:
 - All of the above are themselves the documentation deliverable.
 Commit:
-- pending
+- 676bdb6
 
 ---
 
 ### Task 0003: Initial synthesizable core skeleton + smoke test
-Status: pending
+Status: in progress
 Dependencies:
 - Task 0002
 Acceptance Criteria:

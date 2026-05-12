@@ -63,4 +63,15 @@ for f in "${SRCS[@]}"; do
 done
 
 "$VLOG_BIN" -sv -quiet "${SRCS[@]}"
-"$VSIM_BIN" -c -do "run -all; quit -f" work."$TB"
+
+# Run vsim. Capture transcript so we can decide PASS/FAIL by string match —
+# vsim's exit code in batch mode is unreliable for test status.
+LOG="$WORK/sim.log"
+"$VSIM_BIN" -c -do "run -all; quit -f" "work.$TB" 2>&1 | tee "$LOG"
+
+if grep -q "TEST_RESULT: PASS" "$LOG"; then
+  echo "sim.sh: $TB PASS"
+  exit 0
+fi
+echo "sim.sh: $TB did not print 'TEST_RESULT: PASS'. See $LOG." >&2
+exit 1

@@ -64,8 +64,8 @@ Solid blocks belong to Phase 1–2. Dashed (lower) blocks are Phase 3–9.
 
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
-| `rtl/tms34010_pkg.sv`                   | 0     | skeleton    | widths, basic typedefs; expanded each phase |
-| `rtl/core/tms34010_core.sv`             | 0–1   | skeleton    | top-level wrapper; FSM scaffold; mem-IF stub |
+| `rtl/tms34010_pkg.sv`                   | 0     | **landed (skeleton)** | widths, basic typedefs; expanded each phase |
+| `rtl/core/tms34010_core.sv`             | 0–1   | **landed (skeleton)** | top-level wrapper; FSM scaffold; mem-IF stub |
 | `rtl/core/tms34010_pc.sv`               | 1     | not started | byte/bit-addressed PC register |
 | `rtl/core/tms34010_regfile.sv`          | 2     | not started | A0–A14, B0–B14, SP, ST, PC |
 | `rtl/core/tms34010_alu.sv`              | 2     | not started | add/sub/log/cmp; flag generation |
