@@ -131,4 +131,27 @@ package tms34010_pkg;
     logic v;
   } alu_flags_t;
 
+  // ---------------------------------------------------------------------------
+  // Shifter operation enum
+  //
+  // Spec source: bibliography/hdl-reimplementation/01-architecture.md
+  //   §"Top-level blocks" — "32-bit barrel shifter; the shifter is critical
+  //   for field operations and pixel shifts"; 02-instruction-set.md lists
+  //   SLA, SLL, SRA, SRL, RL as the shift/rotate primitives.
+  //
+  // SLA vs SLL is per-spec: same shifted output, may differ on V flag (V on
+  // sign-change during left shift). Tracked in docs/assumptions.md A0009;
+  // both treated identically here until SPVU001A Appendix A is read.
+  // ---------------------------------------------------------------------------
+  typedef enum logic [2:0] {
+    SHIFT_OP_SLL = 3'd0,  // shift left, logical (fill 0)
+    SHIFT_OP_SLA = 3'd1,  // shift left, arithmetic (alias of SLL; V flag TBD)
+    SHIFT_OP_SRL = 3'd2,  // shift right, logical (fill 0)
+    SHIFT_OP_SRA = 3'd3,  // shift right, arithmetic (sign-extend)
+    SHIFT_OP_RL  = 3'd4,  // rotate left
+    SHIFT_OP_RR  = 3'd5   // rotate right
+  } shift_op_t;
+
+  parameter int unsigned SHIFT_AMOUNT_WIDTH = 5;  // 32-bit shifter, 0..31
+
 endpackage : tms34010_pkg

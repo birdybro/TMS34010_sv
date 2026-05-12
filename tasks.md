@@ -12,7 +12,8 @@
 | 0004 | PC module + core integration | complete |
 | 0005 | Behavioral memory model + fetch-walk test | complete |
 | 0006 | A/B register file with shared SP | complete |
-| 0007 | ALU + flag generation | in progress |
+| 0007 | ALU + flag generation | complete |
+| 0008 | Barrel shifter | in progress |
 
 ---
 
@@ -216,7 +217,7 @@ Commit:
 ---
 
 ### Task 0007: ALU + flag generation
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0006
 Spec sources:
@@ -246,6 +247,40 @@ Tests:
 Docs:
 - `docs/architecture.md` — ALU row → landed.
 - `docs/assumptions.md` — A0009 entry added.
+- `changelog.md`, `tasks.md`.
+Commit:
+- cae8f71
+
+---
+
+### Task 0008: Barrel shifter
+Status: in progress
+Dependencies:
+- Task 0007
+Spec source:
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/01-architecture.md`
+  §"Top-level blocks" — "32-bit barrel shifter; the shifter is critical
+  for field operations and pixel shifts".
+- `02-instruction-set.md` lists SLA, SLL, SRA, SRL, RL as shift/rotate
+  primitives.
+Acceptance Criteria:
+- `rtl/core/tms34010_shifter.sv` exists as a purely combinational
+  module. Ops: SLL, SLA (alias of SLL for now), SRL, SRA, RL, RR.
+  5-bit shift amount. Output: 32-bit result + `alu_flags_t` with V
+  tied 0.
+- amount==0 identity (result = a, C = 0).
+- C semantics: SLL/SLA/RL use the MSB-departing bit `a[32 - amount]`;
+  SRL/SRA/RR use the LSB-departing bit `a[amount - 1]`.
+- Package: `shift_op_t` (3-bit enum) and `SHIFT_AMOUNT_WIDTH = 5`.
+- `sim/tb/tb_shifter.sv` covers each op with identity (amount=0),
+  small shift, large shift, rotate-by-16 half-word swap, sign-
+  extension on SRA, MSB/LSB carry capture.
+Tests:
+- `scripts/sim.sh tb_shifter` → PASS.
+- All previous tests still PASS.
+- Lint clean.
+Docs:
+- `docs/architecture.md` — shifter row → landed.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

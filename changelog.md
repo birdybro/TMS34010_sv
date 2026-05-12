@@ -82,6 +82,16 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   edge cases. PASS on ModelSim ASE 17.0.
 - Added `docs/assumptions.md` A0009 covering the ALU flag-update
   convention until SPVU001A Appendix A is read per-instruction.
+- Added `rtl/core/tms34010_shifter.sv` — purely combinational 32-bit
+  barrel shifter. Operations: SLL, SLA (same output as SLL in Phase 2;
+  the V-on-sign-change quirk is tracked in A0009), SRL, SRA (signed
+  `>>>`), RL, RR. amount == 0 is identity (no shifts evaluated for
+  flags). Output reuses `alu_flags_t` with V tied 0 for now.
+- Added package types `shift_op_t` and `SHIFT_AMOUNT_WIDTH = 5`.
+- Added `sim/tb/tb_shifter.sv` — covers amount==0 identity per op,
+  small/large shift amounts, the half-word swap on rotate by 16,
+  signed extension on SRA, carry from MSB on left shifts/rotates,
+  carry from LSB on right shifts/rotates.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives
