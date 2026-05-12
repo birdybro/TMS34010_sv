@@ -12,15 +12,19 @@
 //     16-bit fetch in CORE_FETCH. On mem_ack the fetched word is latched
 //     into `instr_word_q` and the PC advances by INSTR_WORD_BITS.
 //   - A tms34010_decode instance evaluates `instr_word_q` combinationally.
-//     Phase 3 skeleton: every encoding is flagged ILLEGAL. Real
-//     instruction patterns land starting Task 0011.
-//   - Sticky `illegal_opcode_o` observability output: once decode flags an
-//     illegal encoding, this latches high. Cleared only by reset.
+//     Phase 3 skeleton: every encoding is flagged ILLEGAL.
+//   - Sticky `illegal_opcode_o` observability output.
+//   - Register file, ALU, and status register instantiated and connected
+//     into the datapath: ALU result → regfile write-data port, ALU flags
+//     → status-register flag-update port. All "go" signals (rf_wr_en,
+//     st_flag_update_en, st_write_en) are currently tied to 0 — no
+//     instruction is yet decoded into a real datapath action. Task 0012
+//     replaces these tie-offs with decoded-instruction-driven values for
+//     the first real instruction (MOVI).
 //
 // What this module IS NOT, yet:
-//   - No register file, ALU, or status register instantiated here yet.
-//     EXECUTE / WRITEBACK are pass-through states. Task 0011 starts wiring
-//     the datapath in alongside the first real instruction (likely MOVI).
+//   - No real instruction decoded. EXECUTE / WRITEBACK are pass-through
+//     states; the datapath stays at quiescent values.
 //   - No branches / jumps yet, so the PC `load_en` port is tied 0.
 //   - The PC starts at `RESET_PC` from the package, currently a placeholder
 //     '0 — see docs/assumptions.md A0008 for the architectural reset-vector
@@ -123,6 +127,117 @@ module tms34010_core
       illegal_q <= 1'b1;
     end
   end
+
+  // ---------------------------------------------------------------------------
+  // Datapath modules
+  //
+  // Phase 3 wiring: regfile, ALU, and status register are instantiated and
+  // their datapath nets are connected, but every "go" signal (wr_en,
+  // flag_update_en, st_write_en) is tied 0. This commit changes the
+  // module graph but not any observable behavior — Task 0012 replaces the
+  // tied-off control signals with decoded-instruction-driven values for
+  // the first real instruction (MOVI).
+  //
+  // The wires that will become control points are named for clarity even
+  // when currently constant, so Task 0012's diff is small and reviewable.
+  // ---------------------------------------------------------------------------
+
+  // Register-file ports.
+  reg_file_t              rf_rs1_file;
+  reg_idx_t               rf_rs1_idx;
+  logic [DATA_WIDTH-1:0]  rf_rs1_data;
+  reg_file_t              rf_rs2_file;
+  reg_idx_t               rf_rs2_idx;
+  logic [DATA_WIDTH-1:0]  rf_rs2_data;
+  logic                   rf_wr_en;
+  reg_file_t              rf_wr_file;
+  reg_idx_t               rf_wr_idx;
+  logic [DATA_WIDTH-1:0]  rf_wr_data;
+  logic [DATA_WIDTH-1:0]  rf_sp;
+
+  // ALU ports.
+  alu_op_t                alu_op;
+  logic [DATA_WIDTH-1:0]  alu_a;
+  logic [DATA_WIDTH-1:0]  alu_b;
+  logic                   alu_cin;
+  logic [DATA_WIDTH-1:0]  alu_result;
+  alu_flags_t             alu_flags;
+
+  // Status-register ports.
+  logic                   st_flag_update_en;
+  logic                   st_write_en;
+  logic [DATA_WIDTH-1:0]  st_write_data;
+  logic [DATA_WIDTH-1:0]  st_value;
+  logic                   st_n, st_c, st_z, st_v;
+
+  // ---- Control: tied-off until Task 0012 wires decode-driven values ----
+  assign rf_rs1_file = REG_FILE_A;
+  assign rf_rs1_idx  = 4'd0;
+  assign rf_rs2_file = REG_FILE_A;
+  assign rf_rs2_idx  = 4'd0;
+  assign rf_wr_en    = 1'b0;
+  assign rf_wr_file  = REG_FILE_A;
+  assign rf_wr_idx   = 4'd0;
+  // Writeback path: ALU result flows here. Currently no-op (wr_en=0).
+  assign rf_wr_data  = alu_result;
+
+  assign alu_op  = ALU_OP_PASS_A;
+  assign alu_a   = rf_rs1_data;
+  assign alu_b   = rf_rs2_data;
+  assign alu_cin = st_c;
+
+  assign st_flag_update_en = 1'b0;
+  assign st_write_en       = 1'b0;
+  assign st_write_data     = '0;
+
+  tms34010_regfile u_regfile (
+    .clk      (clk),
+    .rst      (rst),
+    .rs1_file (rf_rs1_file),
+    .rs1_idx  (rf_rs1_idx),
+    .rs1_data (rf_rs1_data),
+    .rs2_file (rf_rs2_file),
+    .rs2_idx  (rf_rs2_idx),
+    .rs2_data (rf_rs2_data),
+    .wr_en    (rf_wr_en),
+    .wr_file  (rf_wr_file),
+    .wr_idx   (rf_wr_idx),
+    .wr_data  (rf_wr_data),
+    .sp_o     (rf_sp)
+  );
+
+  tms34010_alu u_alu (
+    .op    (alu_op),
+    .a     (alu_a),
+    .b     (alu_b),
+    .cin   (alu_cin),
+    .result(alu_result),
+    .flags (alu_flags)
+  );
+
+  tms34010_status_reg u_status_reg (
+    .clk           (clk),
+    .rst           (rst),
+    .flag_update_en(st_flag_update_en),
+    .flags_in      (alu_flags),
+    .st_write_en   (st_write_en),
+    .st_write_data (st_write_data),
+    .st_o          (st_value),
+    .n_o           (st_n),
+    .c_o           (st_c),
+    .z_o           (st_z),
+    .v_o           (st_v)
+  );
+
+  // Currently-unused datapath observability — keep the lint sweep
+  // clean without falsely claiming we consume the value.
+  logic [DATA_WIDTH-1:0] unused_rf_sp;
+  logic [DATA_WIDTH-1:0] unused_st_value;
+  logic                  unused_st_nv;
+  assign unused_rf_sp    = rf_sp;
+  assign unused_st_value = st_value;
+  assign unused_st_nv    = st_n ^ st_v ^ st_z;  // touch all three to suppress
+
 
   // ---------------------------------------------------------------------------
   // Next-state + combinational outputs

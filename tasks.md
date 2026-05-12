@@ -15,7 +15,8 @@
 | 0007 | ALU + flag generation | complete |
 | 0008 | Barrel shifter | complete |
 | 0009 | Status register (ST) | complete |
-| 0010 | Decode skeleton + full execute cycle | in progress |
+| 0010 | Decode skeleton + full execute cycle | complete |
+| 0011 | Wire datapath modules into core | in progress |
 
 ---
 
@@ -321,7 +322,7 @@ Commit:
 ---
 
 ### Task 0010: Decode skeleton + full execute cycle
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0005 (memory model + fetch substrate)
 Spec sources:
@@ -353,6 +354,37 @@ Docs:
 - `docs/architecture.md` — decode row → skeleton landed.
 - `docs/instruction_coverage.md` — note that Phase 3 skeleton routes
   every encoding to ILLEGAL; first real instruction lands Task 0011.
+- `changelog.md`, `tasks.md`.
+Commit:
+- a959c28
+
+---
+
+### Task 0011: Wire datapath modules into core
+Status: in progress
+Dependencies:
+- Task 0010 (decode skeleton already wired)
+- Tasks 0006, 0007, 0009 (regfile, ALU, ST modules ready to instantiate)
+Acceptance Criteria:
+- `rtl/core/tms34010_core.sv` instantiates `tms34010_regfile`,
+  `tms34010_alu`, and `tms34010_status_reg`. The shifter is NOT
+  wired yet (no shift instruction lands until shifts are added).
+- Datapath connections: ALU `result` → regfile `wr_data` port;
+  ALU `flags` → status-register `flags_in` port; status-register
+  `c_o` → ALU `cin`. ALU `a` and `b` come from the regfile's two
+  read ports.
+- All "go" signals (`rf_wr_en`, `st_flag_update_en`, `st_write_en`)
+  tied 0 — no observable behavior change in this commit.
+- Control selectors (`rf_rs*_idx/file`, `rf_wr_idx/file`, `alu_op`,
+  `st_write_data`) tied to safe defaults (file A, index 0,
+  `ALU_OP_PASS_A`, 0).
+- Existing 8 testbenches all PASS with no test modifications.
+- Lint clean.
+Tests:
+- Full regression: 8/8 PASS.
+- Lint clean.
+Docs:
+- `docs/architecture.md` — module-instantiation comment updated.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

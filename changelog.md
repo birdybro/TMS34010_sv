@@ -124,6 +124,13 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   same array under SV-2009.
 
 ### Changed
+- `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
+  `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect
+  ALU `result` to the regfile's `wr_data` port and ALU `flags` to the
+  status register's `flags_in` port. Every control signal (`rf_wr_en`,
+  `st_flag_update_en`, `st_write_en`) is tied 0 in this commit so no
+  visible behavior changes; Task 0012 replaces those tie-offs with
+  decoded-instruction-driven values for the first real instruction.
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives
   `mem_addr` from `pc_o`, and asserts `pc_advance_en` for one cycle on
   `mem_ack` in `CORE_FETCH`. New observability port `pc_o` on the core.
