@@ -49,6 +49,12 @@ Required columns:
 | SRA K,Rd | `0010 10KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >>> K (sign-extending arithmetic right shift). |
 | SRL K,Rd | `0010 11KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >> K (logical right shift; MSB ← 0). |
 | RL  K,Rd | `0011 00KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd ROL K (rotate left). |
+| ADDI IL K,Rd | `0000 1011 001R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Rd + K32 → Rd. |
+| SUBI IL K,Rd | `0000 1101 000R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Rd - K32 → Rd. **Different base prefix from the rest of the IL family.** |
+| CMPI IL K,Rd | `0000 1011 011R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Flags from Rd - K32; Rd unchanged. |
+| ANDI IL K,Rd | `0000 1011 100R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd & K32 → Rd. |
+| ORI  IL K,Rd | `0000 1011 101R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd \| K32 → Rd. |
+| XORI IL K,Rd | `0000 1011 110R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd ^ K32 → Rd. |
 | ABS Rd    | `0000 0011 100R DDDD` (bits[6:5]=00) | SPVU001A A-14 | **not started** | none | N, C, Z, V (with V on MIN_INT) | none | TBD | Deferred — ALU does not currently have an ABS op; would need a conditional NEG plus the V-on-MIN_INT subtlety. |
 | NEGB Rd   | `0000 0011 110R DDDD` (bits[6:5]=10) | SPVU001A A-14 | **not started** | none | N, C, Z, V | none | TBD | Deferred — needs C-input handling (`Rd = -Rd - C`). |
 

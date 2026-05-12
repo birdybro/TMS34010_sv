@@ -286,6 +286,15 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added assumption A0019 covering the literal-K interpretation
   and flagging the unresolved K=0 → 32 hypothesis for shifts
   (parallel to A0018 for ADDK/SUBK).
+- IL-form immediate batch: **ADDI IL, SUBI IL, CMPI IL, ANDI IL,
+  ORI IL, XORI IL**. Six 32-bit-immediate instructions all sharing
+  the 11-bit-prefix encoding shape. SUBI IL is the odd one out with
+  a different base prefix (`0000_1101_000` vs `0000_1011_XXX` for
+  the others). Reuses MOVI IL's CORE_FETCH_IMM_HI path.
+- Added `sim/tb/tb_immi_il.sv` — six cases exercising 32-bit
+  immediates that the IW form cannot encode (large values, full
+  bit patterns). Includes CMPI IL with `wb_reg_en=0` verification
+  and an XORI to invert (B-file).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

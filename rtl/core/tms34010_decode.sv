@@ -78,6 +78,15 @@ module tms34010_decode
   localparam logic [5:0] SRA_K_TOP6  = 6'b001010;  // 0010 10KK KKKR DDDD
   localparam logic [5:0] SRL_K_TOP6  = 6'b001011;  // 0010 11KK KKKR DDDD
   localparam logic [5:0] RL_K_TOP6   = 6'b001100;  // 0011 00KK KKKR DDDD
+
+  // IL-form immediate family. 11-bit prefix; bottom 5 bits = {R, Rd}.
+  // 32-bit immediate follows in two 16-bit words (LO, HI).
+  localparam logic [10:0] ADDI_IL_TOP11 = 11'b0000_1011_001;  // ADDI IL
+  localparam logic [10:0] CMPI_IL_TOP11 = 11'b0000_1011_011;  // CMPI IL
+  localparam logic [10:0] ANDI_IL_TOP11 = 11'b0000_1011_100;  // ANDI IL
+  localparam logic [10:0] ORI_IL_TOP11  = 11'b0000_1011_101;  // ORI  IL
+  localparam logic [10:0] XORI_IL_TOP11 = 11'b0000_1011_110;  // XORI IL
+  localparam logic [10:0] SUBI_IL_TOP11 = 11'b0000_1101_000;  // SUBI IL (different base!)
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
@@ -250,6 +259,80 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_CMP;
       decoded.wb_reg_en       = 1'b0;
       decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // IL-form immediate family (32-bit immediate)
+    //
+    //   ADDI IL  =  0000 1011 001R DDDD + 32-bit imm
+    //   SUBI IL  =  0000 1101 000R DDDD + 32-bit imm   (different base prefix!)
+    //   CMPI IL  =  0000 1011 011R DDDD + 32-bit imm   (wb_reg_en = 0)
+    //   ANDI IL  =  0000 1011 100R DDDD + 32-bit imm
+    //   ORI  IL  =  0000 1011 101R DDDD + 32-bit imm
+    //   XORI IL  =  0000 1011 110R DDDD + 32-bit imm
+    //
+    // All reuse MOVI IL's CORE_FETCH_IMM_LO/HI path (needs_imm32=1,
+    // imm_sign_extend=0). 32-bit immediate is already full-width.
+    // -----------------------------------------------------------------------
+    if (top11 == ADDI_IL_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_ADDI_IL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.needs_imm32 = 1'b1;
+      decoded.alu_op      = ALU_OP_ADD;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top11 == SUBI_IL_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SUBI_IL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.needs_imm32 = 1'b1;
+      decoded.alu_op      = ALU_OP_SUB;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top11 == CMPI_IL_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_CMPI_IL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.needs_imm32 = 1'b1;
+      decoded.alu_op      = ALU_OP_CMP;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top11 == ANDI_IL_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_ANDI_IL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.needs_imm32 = 1'b1;
+      decoded.alu_op      = ALU_OP_AND;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top11 == ORI_IL_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_ORI_IL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.needs_imm32 = 1'b1;
+      decoded.alu_op      = ALU_OP_OR;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top11 == XORI_IL_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_XORI_IL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.needs_imm32 = 1'b1;
+      decoded.alu_op      = ALU_OP_XOR;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
     end
 
     // -----------------------------------------------------------------------

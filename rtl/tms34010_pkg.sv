@@ -216,7 +216,13 @@ package tms34010_pkg;
     INSTR_SLL_K      = 5'd20, // SLL K, Rd        — Rd << K (logical)
     INSTR_SRA_K      = 5'd21, // SRA K, Rd        — Rd >>> K (arithmetic / sign-extend)
     INSTR_SRL_K      = 5'd22, // SRL K, Rd        — Rd >> K  (logical, MSB ← 0)
-    INSTR_RL_K       = 5'd23  // RL K, Rd         — Rd ROL K (rotate left)
+    INSTR_RL_K       = 5'd23, // RL K, Rd         — Rd ROL K (rotate left)
+    INSTR_ADDI_IL    = 5'd24, // ADDI IL K, Rd    — Rd + K32 → Rd
+    INSTR_SUBI_IL    = 5'd25, // SUBI IL K, Rd    — Rd - K32 → Rd
+    INSTR_CMPI_IL    = 5'd26, // CMPI IL K, Rd    — flags from Rd - K32; Rd unchanged
+    INSTR_ANDI_IL    = 5'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
+    INSTR_ORI_IL     = 5'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
+    INSTR_XORI_IL    = 5'd29  // XORI IL K, Rd    — Rd ^ K32 → Rd
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

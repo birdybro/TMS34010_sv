@@ -29,7 +29,8 @@
 | 0021 | K-form arithmetic (ADDK, SUBK) | complete |
 | 0022 | Single-reg unary ops (NEG, NOT) | complete |
 | 0023 | Immediate arithmetic IW (ADDI, SUBI, CMPI) | complete |
-| 0024 | K-form shifts (RL, SLA, SLL, SRA, SRL) | in progress |
+| 0024 | K-form shifts (RL, SLA, SLL, SRA, SRL) | complete |
+| 0025 | Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI) | in progress |
 
 ---
 
@@ -724,7 +725,7 @@ Commit:
 ---
 
 ### Task 0024: K-form shifts (RL, SLA, SLL, SRA, SRL)
-Status: in progress
+Status: complete
 Dependencies: Task 0008 (shifter module), Task 0011 (datapath wired).
 Spec source: SPVU001A A-14 chart rows for shift K-forms; A0019 for K
   treatment.
@@ -744,6 +745,28 @@ Acceptance Criteria:
 Tests: tb_shift_k PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (5 rows), assumptions.md A0019,
   changelog.md, tasks.md.
+Commit:
+- 6a107ef
+
+---
+
+### Task 0025: Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI)
+Status: in progress
+Dependencies: Task 0013 (MOVI IL IMM_HI fetch infra).
+Spec source: SPVU001A A-14 chart rows for each IL-form.
+Acceptance Criteria:
+- Six new INSTR_*_IL enum values.
+- Decoder: six new top11 patterns. ADDI/CMPI/ANDI/ORI/XORI share
+  base prefix 0000_1011_XXX; SUBI IL has its own base 0000_1101_000.
+- All set needs_imm32=1 (use MOVI IL fetch path).
+- alu_a and alu_b muxes extended with all six new iclasses.
+- CMPI IL uses wb_reg_en=0.
+- `sim/tb/tb_immi_il.sv` covers all six with characteristic 32-bit-
+  immediate cases. Encoder verified against 0x0B20 (ADDI IL,A0)
+  and 0x0D00 (SUBI IL,A0).
+- Full regression: 22/22 PASS; lint clean.
+Tests: tb_immi_il PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (6 rows), changelog.md, tasks.md.
 Commit:
 - pending
 
