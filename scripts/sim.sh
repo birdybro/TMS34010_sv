@@ -49,18 +49,19 @@ cd "$WORK"
 rm -rf work
 "$VLIB_BIN" work >/dev/null
 
-# Collect sources. Order matters: package, then RTL, then TB.
-SRCS=(
-  "$ROOT/rtl/tms34010_pkg.sv"
-  "$ROOT/rtl/core/tms34010_core.sv"
-  "$ROOT/sim/tb/${TB}.sv"
-)
-for f in "${SRCS[@]}"; do
-  if [ ! -f "$f" ]; then
-    echo "sim.sh: missing source: $f" >&2
-    exit 66
-  fi
-done
+# Collect sources. Order matters: package first, then RTL modules, then TB.
+SRCS=("$ROOT/rtl/tms34010_pkg.sv")
+while IFS= read -r f; do
+  [ "$f" = "$ROOT/rtl/tms34010_pkg.sv" ] && continue
+  SRCS+=("$f")
+done < <(find "$ROOT/rtl" -type f -name '*.sv' | sort)
+
+TB_FILE="$ROOT/sim/tb/${TB}.sv"
+if [ ! -f "$TB_FILE" ]; then
+  echo "sim.sh: missing testbench: $TB_FILE" >&2
+  exit 66
+fi
+SRCS+=("$TB_FILE")
 
 "$VLOG_BIN" -sv -quiet "${SRCS[@]}"
 

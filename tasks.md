@@ -1,6 +1,6 @@
 # Tasks
 
-## Current Milestone: Phase 0 — Project setup
+## Current Milestone: Phase 1 — Core shell
 
 ## Task index
 
@@ -8,7 +8,8 @@
 |----|-------|--------|
 | 0001 | Add TMS34010_Info reference submodule | complete |
 | 0002 | Create project planning and docs scaffolding | complete |
-| 0003 | Initial synthesizable core skeleton + smoke test | in progress |
+| 0003 | Initial synthesizable core skeleton + smoke test | complete |
+| 0004 | PC module + core integration | in progress |
 
 ---
 
@@ -56,7 +57,7 @@ Commit:
 ---
 
 ### Task 0003: Initial synthesizable core skeleton + smoke test
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0002
 Acceptance Criteria:
@@ -80,6 +81,54 @@ Docs:
 - `docs/architecture.md` updated with the actual skeleton module list.
 - `docs/instruction_coverage.md` unchanged — no instructions yet.
 - `changelog.md` updated.
+Commit:
+- e65f6db
+
+---
+
+### Task 0004: PC module + core integration
+Status: in progress
+Dependencies:
+- Task 0003
+Spec sources (citation policy A0007):
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/01-architecture.md`
+  §"Datapath summary" — "PC is itself a bit address into instruction
+  memory"; "Instructions are 16-bit-aligned half-words … PC … increments
+  by 16 per fetch".
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/11-interrupts-reset.md`
+  §"Reset" — reset vector lives in trap table at the top of address
+  space (near `0xFFFFFFC0` per the bibliography, exact value pending
+  SPVU001A Ch. 13). The reset *sequence* (fetch PC from vector, then
+  resume normal fetch) is Phase 8 work.
+Acceptance Criteria:
+- `rtl/core/tms34010_pc.sv` exists as a parameterized bit-addressed PC
+  register: `RESET_VALUE` parameter, `load_en`/`load_value` for absolute
+  jump, `advance_en`/`advance_amount` for variable forward advance
+  measured in bits. Single `always_ff`, single `always_comb` with safe
+  defaults. No `/`, no `%`, no implicit width.
+- `rtl/tms34010_pkg.sv` gains `INSTR_WORD_BITS = 6'd16` and a
+  `PC_ADVANCE_WIDTH = 8` parameter (so the advance amount can express
+  up to 31 bytes / 15 16-bit words per advance, covering 1- to 3-word
+  instructions plus headroom).
+- `rtl/core/tms34010_core.sv` instantiates the PC, drives `mem_addr`
+  from `pc_o`, and asserts `advance_en` with `INSTR_WORD_BITS` when
+  `mem_ack` arrives in `CORE_FETCH`. `load_en` is tied 0 (no
+  branches/jumps yet).
+- `sim/tb/tb_pc.sv` covers: reset value, single load, single advance,
+  cumulative advances, load-while-advance precedence (load wins),
+  no-op cycles (PC stable when neither `load_en` nor `advance_en`).
+- `sim/tb/tb_smoke.sv` still passes after PC integration (no observable
+  state change since `mem_ack` is tied 0 in the smoke harness).
+- `docs/assumptions.md` gains an entry (A0008) for the reset-vector
+  value and reset-fetch sequence deferral.
+Tests:
+- `scripts/sim.sh tb_pc` → `TEST_RESULT: PASS`.
+- `scripts/sim.sh tb_smoke` → `TEST_RESULT: PASS` (regression).
+- `scripts/lint.sh` → compile clean.
+Docs:
+- `docs/architecture.md` — PC row updated to "landed".
+- `docs/assumptions.md` — A0008 entry added.
+- `changelog.md`, `tasks.md`.
 Commit:
 - pending
 

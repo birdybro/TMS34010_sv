@@ -46,6 +46,7 @@ module tb_smoke;
   logic [DATA_WIDTH-1:0]             mem_rdata;
   logic                              mem_ack;
   core_state_t                       state_w;
+  logic [ADDR_WIDTH-1:0]             pc_w;
 
   // Memory stub: never acks. In Phase 0 we just want to see CORE_FETCH;
   // the core will then sit in CORE_FETCH waiting indefinitely, which is
@@ -63,7 +64,8 @@ module tb_smoke;
     .mem_wdata(mem_wdata),
     .mem_rdata(mem_rdata),
     .mem_ack  (mem_ack),
-    .state_o  (state_w)
+    .state_o  (state_w),
+    .pc_o     (pc_w)
   );
 
   // ---------------------------------------------------------------------------
@@ -105,9 +107,16 @@ module tb_smoke;
       $finish;
     end
 
+    // mem_addr in CORE_FETCH should match the PC.
+    if (reached_fetch && (mem_addr !== pc_w)) begin
+      $display("TEST_RESULT: FAIL: mem_addr=%08h does not match pc=%08h in CORE_FETCH",
+               mem_addr, pc_w);
+      $finish;
+    end
+
     if (reached_fetch) begin
-      $display("TEST_RESULT: PASS (reached CORE_FETCH after %0d cycle(s); mem_req=%0b, mem_size=%0d)",
-               cycles_after_release, mem_req, mem_size);
+      $display("TEST_RESULT: PASS (reached CORE_FETCH after %0d cycle(s); mem_req=%0b, mem_size=%0d, pc=%08h)",
+               cycles_after_release, mem_req, mem_size, pc_w);
     end else begin
       $display("TEST_RESULT: FAIL: stuck in %s after %0d cycle(s) post-reset",
                state_w.name(), cycles_after_release);

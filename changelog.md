@@ -36,18 +36,42 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Updated `scripts/sim.sh` to capture transcript and grep for
   `TEST_RESULT: PASS` (vsim batch exit code is unreliable for test
   status).
+- Added `rtl/core/tms34010_pc.sv` — bit-addressed program counter with
+  parameterized `RESET_VALUE`, absolute-load port, and forward-advance
+  port measured in bits. Single `always_ff` + single `always_comb` with
+  safe defaults; no `/`, no `%`, no implicit-width adds.
+- Extended `rtl/tms34010_pkg.sv` with `INSTR_WORD_BITS = 6'd16`,
+  `PC_ADVANCE_WIDTH = 8`, and `RESET_PC` (placeholder until Phase 8
+  resolves the architectural reset-vector fetch sequence — see
+  assumption A0008).
+- Added `sim/tb/tb_pc.sv` — unit test covering reset, hold-when-idle,
+  single advance by `INSTR_WORD_BITS`, cumulative advances, absolute
+  load, and load-wins-over-advance precedence.
+- Added `docs/assumptions.md` entry A0008 (reset-vector deferral).
 
 ### Changed
-- N/A
+- `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives
+  `mem_addr` from `pc_o`, and asserts `pc_advance_en` for one cycle on
+  `mem_ack` in `CORE_FETCH`. New observability port `pc_o` on the core.
+- `sim/tb/tb_smoke.sv` consumes the new `pc_o` and additionally asserts
+  that `mem_addr === pc_o` while in `CORE_FETCH`.
+- `scripts/sim.sh` discovers all `rtl/**/*.sv` sources automatically
+  (package first, then everything else, then the TB), so new modules
+  don't require editing the script.
 
 ### Fixed
 - N/A
 
 ### Known Limitations
-- The core is a Phase 0 skeleton only — no PC, no register file, no decode,
-  no execute. The CORE_DECODE/EXECUTE/MEMORY/WRITEBACK arms of the FSM
-  return to CORE_FETCH and have no side effects.
-- Smoke test passes with Intel ModelSim ASE 17.0. Questa FSE 25.1.1 on
-  this dev box errors out on a license check (`SALT_LICENSE_SERVER` not
-  configured); functionally equivalent for SystemVerilog compile + run.
+- No register file, decode, or execute yet. The CORE_DECODE / EXECUTE /
+  MEMORY / WRITEBACK arms of the FSM return to CORE_FETCH and have no
+  side effects.
+- The PC starts at the placeholder `RESET_PC = '0`; the architecturally-
+  correct reset-vector fetch is Phase 8 work (assumption A0008).
+- No branches/jumps yet, so the PC's `load_en` is currently tied 0 at
+  the core boundary. The port is wired and tested in `tb_pc`.
+- Smoke + tb_pc pass with Intel ModelSim ASE 17.0. Questa FSE 25.1.1
+  on this dev box errors out on a license check
+  (`SALT_LICENSE_SERVER` not configured); functionally equivalent for
+  SystemVerilog compile + run.
 - No FPGA synthesis flow yet beyond a placeholder script.

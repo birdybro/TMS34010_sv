@@ -34,6 +34,26 @@ package tms34010_pkg;
   parameter int unsigned FIELD_SIZE_WIDTH = 6;
 
   // ---------------------------------------------------------------------------
+  // Instruction-stream constants
+  //
+  // Spec: bibliography/hdl-reimplementation/01-architecture.md
+  // ("Instructions are 16-bit-aligned half-words in memory. PC is a
+  //   bit-address but increments by 16 per fetch.")
+  // ---------------------------------------------------------------------------
+  parameter logic [FIELD_SIZE_WIDTH-1:0] INSTR_WORD_BITS = 6'd16;
+
+  // Width of the PC's per-advance amount (in bits). 8 bits covers 1- to
+  // 15-word instructions with headroom; the longest documented form is
+  // 3 words (48 bits) for instructions with a 32-bit immediate.
+  parameter int unsigned PC_ADVANCE_WIDTH = 8;
+
+  // Reset PC value. Placeholder — the architectural reset sequence fetches
+  // PC from the trap table near the top of address space (see
+  // docs/assumptions.md entry A0008). Until Phase 8 implements the
+  // reset-fetch sequence, the core boots at this constant.
+  parameter logic [ADDR_WIDTH-1:0] RESET_PC = '0;
+
+  // ---------------------------------------------------------------------------
   // Core top-level FSM states
   //
   // High-level state machine for the per-instruction execution pipeline.

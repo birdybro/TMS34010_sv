@@ -89,6 +89,41 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0008 — Reset PC and reset-vector fetch sequence deferred to Phase 8
+- **Date**: 2026-05-12
+- **Status**: active, **TODO/spec-uncertain**
+- **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/11-interrupts-reset.md`
+  §"Reset" — "PC = reset vector (fixed bit address — see SPVU001A Ch. 13)"
+  and "Vector-fetch is a normal local-bus read. No special path. The
+  reset and interrupt sequences just program PC = vector value, then
+  resume normal fetch."
+- **Assumption**: The TMS34010's architectural reset sequence is:
+  1. Set internal PC to the reset-vector trap-table slot (near
+     `0xFFFFFFC0` per the bibliography file; exact value pending a read
+     of SPVU001A Ch. 13).
+  2. Fetch a 32-bit value from that slot via the normal local-bus read.
+  3. Load PC with that fetched value.
+  4. Resume normal fetch.
+  In Phase 1, the core does **not** perform this sequence. Instead, the
+  PC register starts at the package's `RESET_PC` parameter (currently
+  `'0`), and the core's `CORE_RESET → CORE_FETCH` transition is the
+  full reset behavior. The architecturally-correct sequence is a
+  Phase 8 deliverable along with the rest of the trap/interrupt
+  subsystem.
+- **Rationale**: The reset-fetch sequence depends on the trap-table
+  layout, the I/O register page address, and the bus-cycle ordering
+  rules, all of which are Phase 6+ work. Implementing it now would
+  pin in dependencies that don't yet exist. The parameterized
+  `RESET_PC` keeps the test surface easy to reason about.
+- **How to apply**: When Phase 8 lands, replace `RESET_PC` with the
+  vector-table address and add a `CORE_RESET → CORE_FETCH_VECTOR →
+  CORE_LOAD_VECTOR → CORE_FETCH` sub-sequence in the core FSM. Any
+  test that relied on `RESET_PC = '0` must be updated. Open question
+  in this entry until then: the exact address of the reset slot
+  (`0xFFFFFFC0`, `0xFFFFFFE0`, or other — the bibliography is unsure).
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file
