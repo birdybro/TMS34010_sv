@@ -79,7 +79,7 @@ plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
 | `rtl/core/tms34010_regfile.sv`          | 2     | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 2R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed**  | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR + N/C/Z flags |
-| `rtl/core/tms34010_flags.sv`            | 2     | not started | status-register flag update logic |
+| `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
 | `rtl/core/tms34010_decode.sv`           | 3     | not started | opcode + operand decode |
 | `rtl/core/tms34010_control.sv`          | 3     | not started | top-level control FSM |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |

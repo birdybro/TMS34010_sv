@@ -157,6 +157,31 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0010 — Status-register bit layout placeholder
+- **Date**: 2026-05-12
+- **Status**: active, **TODO/spec-uncertain**
+- **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/03-registers.md`
+  §"Status register" ("Read SPVU001A Chapter 2 for the exact bit
+  layout").
+- **Assumption**: Until SPVU001A Ch. 2 is read, the N/C/Z/V flag bit
+  positions in ST are placeholders defined in `tms34010_pkg.sv`:
+  `ST_N_BIT = 31`, `ST_C_BIT = 30`, `ST_Z_BIT = 29`, `ST_V_BIT = 28`.
+  Field-mode bits (FE0/FE1 + extension bits), interrupt enables (E,
+  IE), and privilege bits are not yet allocated to specific positions;
+  the unused bits hold whatever was last written via `st_write_en`.
+- **Rationale**: Consumers in the rest of the design reference the
+  ST module's named outputs (`n_o`/`c_o`/`z_o`/`v_o`), so the bit
+  positions are visible only to PUSHST / POPST / MMTM ST / MMFM ST
+  (Phase 4) and to debug. Picking placeholders lets Phase 2 close
+  without blocking on the spec read; only the parameters change when
+  the layout is confirmed.
+- **How to apply**: When SPVU001A Ch. 2 is read, update the four
+  `ST_*_BIT` parameters and add positions for FE0/FE1, IE/E, and any
+  other bits. Re-run `tb_status_reg`. Add an entry to
+  `docs/instruction_coverage.md` for PUSHST/POPST when those land.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

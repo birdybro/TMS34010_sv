@@ -154,4 +154,22 @@ package tms34010_pkg;
 
   parameter int unsigned SHIFT_AMOUNT_WIDTH = 5;  // 32-bit shifter, 0..31
 
+  // ---------------------------------------------------------------------------
+  // Status register bit positions
+  //
+  // Spec: bibliography/hdl-reimplementation/03-registers.md §"Status register"
+  //   ("Read SPVU001A Chapter 2 for the exact bit layout").
+  //
+  // The N/C/Z/V flag positions below are PLACEHOLDERS pending detailed
+  // SPVU001A read. See docs/assumptions.md A0010. Consumers reference the
+  // ST module's named flag outputs (`n_o`, `c_o`, `z_o`, `v_o`) rather than
+  // bit positions directly; the bit positions matter only to PUSHST /
+  // POPST / MMTM ST / MMFM ST. When the layout is confirmed, only these
+  // parameters change.
+  // ---------------------------------------------------------------------------
+  parameter int unsigned ST_N_BIT = 31;
+  parameter int unsigned ST_C_BIT = 30;
+  parameter int unsigned ST_Z_BIT = 29;
+  parameter int unsigned ST_V_BIT = 28;
+
 endpackage : tms34010_pkg

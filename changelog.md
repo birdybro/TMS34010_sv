@@ -92,6 +92,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   small/large shift amounts, the half-word swap on rotate by 16,
   signed extension on SRA, carry from MSB on left shifts/rotates,
   carry from LSB on right shifts/rotates.
+- Added `rtl/core/tms34010_status_reg.sv` — 32-bit ST register.
+  Update priority: reset → 0, then `st_write_en` (full POPST-style
+  write) wins, then `flag_update_en` (selective N/C/Z/V update from
+  `alu_flags_t`) updates only the four flag bits and preserves the
+  other 28. Exposes named outputs `n_o`/`c_o`/`z_o`/`v_o`.
+- Added package parameters `ST_N_BIT/ST_C_BIT/ST_Z_BIT/ST_V_BIT` as
+  placeholder bit positions for the four flags, plus assumption A0010
+  for the rest of the ST bit layout (deferred to SPVU001A Ch. 2 read).
+- Added `sim/tb/tb_status_reg.sv` — reset, selective flag update,
+  full ST write, non-flag-bit preservation across selective updates,
+  precedence (st_write wins over flag_update).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now instantiates `tms34010_pc`, drives

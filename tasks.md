@@ -13,7 +13,8 @@
 | 0005 | Behavioral memory model + fetch-walk test | complete |
 | 0006 | A/B register file with shared SP | complete |
 | 0007 | ALU + flag generation | complete |
-| 0008 | Barrel shifter | in progress |
+| 0008 | Barrel shifter | complete |
+| 0009 | Status register (ST) | in progress |
 
 ---
 
@@ -254,7 +255,7 @@ Commit:
 ---
 
 ### Task 0008: Barrel shifter
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0007
 Spec source:
@@ -281,6 +282,37 @@ Tests:
 - Lint clean.
 Docs:
 - `docs/architecture.md` — shifter row → landed.
+- `changelog.md`, `tasks.md`.
+Commit:
+- 08fae79
+
+---
+
+### Task 0009: Status register (ST)
+Status: in progress
+Dependencies:
+- Task 0007 (ALU produces alu_flags_t)
+Spec source:
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/03-registers.md`
+  §"Status register".
+Acceptance Criteria:
+- `rtl/core/tms34010_status_reg.sv` exists. 32-bit ST. Update priority:
+  reset → 0, then `st_write_en` (full POPST-style write), then
+  `flag_update_en` (selective N/C/Z/V update via `alu_flags_t`).
+- Bit positions parameterized as `ST_N_BIT/C/Z/V` in
+  `tms34010_pkg.sv` (placeholders pending SPVU001A; documented in
+  assumption A0010).
+- Named flag outputs: `n_o`, `c_o`, `z_o`, `v_o`.
+- `sim/tb/tb_status_reg.sv` covers reset, selective flag update,
+  full write, non-flag bit preservation, st_write-wins-over-flag-
+  update.
+Tests:
+- `scripts/sim.sh tb_status_reg` → PASS.
+- All previous tests still PASS.
+- Lint clean.
+Docs:
+- `docs/architecture.md` — ST row → landed.
+- `docs/assumptions.md` — A0010 entry added.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending
