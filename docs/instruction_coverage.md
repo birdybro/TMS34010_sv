@@ -41,6 +41,9 @@ Required columns:
 | SUBK K,Rd | `0001 01KK KKKR DDDD` | SPVU001A A-14 (A0018) | implemented | tb_addk_subk | N, C, Z, V | none | TBD | Rd - K → Rd. K is 5-bit zero-extended. C = borrow. |
 | NEG Rd    | `0000 0011 101R DDDD` (bits[6:5]=01 in the unary family) | SPVU001A A-14 | implemented | tb_neg_not | N, C, Z, V | none | TBD | 0 - Rd → Rd. V=1 only when Rd was 0x8000_0000. |
 | NOT Rd    | `0000 0011 111R DDDD` (bits[6:5]=11 in the unary family) | SPVU001A A-14 | implemented | tb_neg_not | N, Z (C, V cleared) | none | TBD | ~Rd → Rd. |
+| ADDI IW K,Rd | `0000 1011 000R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Rd + sign_extend(K16, 32) → Rd. Reuses MOVI IW IMM_LO fetch. |
+| SUBI IW K,Rd | `0000 1011 111R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Rd - sign_extend(K16, 32) → Rd. C is borrow. |
+| CMPI IW K,Rd | `0000 1011 010R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Flags from Rd - sign_extend(K16); Rd unchanged. `wb_reg_en = 0`. |
 | ABS Rd    | `0000 0011 100R DDDD` (bits[6:5]=00) | SPVU001A A-14 | **not started** | none | N, C, Z, V (with V on MIN_INT) | none | TBD | Deferred — ALU does not currently have an ABS op; would need a conditional NEG plus the V-on-MIN_INT subtlety. |
 | NEGB Rd   | `0000 0011 110R DDDD` (bits[6:5]=10) | SPVU001A A-14 | **not started** | none | N, C, Z, V | none | TBD | Deferred — needs C-input handling (`Rd = -Rd - C`). |
 

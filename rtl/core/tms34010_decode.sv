@@ -63,7 +63,13 @@ module tms34010_decode
   localparam logic [5:0] SUBK_TOP6    = 6'b00_0101;  // chart: 0001 01KK KKKR DDDD
   // Single-register unary family: bits[15:7] = 9'b000000111 (= 0x007);
   // bits[6:5] picks sub-op: 00=ABS, 01=NEG, 10=NEGB, 11=NOT.
-  localparam logic [8:0] UNARY_TOP9   = 9'b0000_0011_1;
+  localparam logic [8:0] UNARY_TOP9    = 9'b0000_0011_1;
+  // 16-bit-immediate arithmetic family. All share bits[15:5] (11-bit
+  // prefix), bottom 5 bits are {R, Rd[3:0]}. The immediate value
+  // follows in the next 16-bit word, sign-extended to 32 bits.
+  localparam logic [10:0] ADDI_IW_TOP11 = 11'b0000_1011_000;  // ADDI IW
+  localparam logic [10:0] SUBI_IW_TOP11 = 11'b0000_1011_111;  // SUBI IW
+  localparam logic [10:0] CMPI_IW_TOP11 = 11'b0000_1011_010;  // CMPI IW
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
@@ -81,6 +87,11 @@ module tms34010_decode
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
   assign rs_idx_from_instr = instr[8:5];
+
+  // Top-11 view of the encoding (for ADDI/SUBI/CMPI IW which share an
+  // 11-bit prefix).
+  logic [10:0] top11;
+  assign top11 = instr[INSTR_WORD_WIDTH-1:5];
 
   // Reg-field decoders (5 bits = file + 4-bit index).
   reg_file_t reg_file_from_instr;
@@ -180,6 +191,54 @@ module tms34010_decode
       decoded.k5              = instr[9:5];
       decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // IW-form immediate arithmetic (ADDI, SUBI, CMPI)
+    //
+    // All three share the encoding shape:
+    //   bits[15:5] = 11-bit prefix selecting the op
+    //   bit[4]     = R   (file)
+    //   bits[3:0]  = Rd index
+    //   next word  = 16-bit immediate (sign-extended to 32 bits)
+    //
+    // CMPI does not write Rd (wb_reg_en = 0), matching the same
+    // contract as CMP Rs, Rd.
+    // -----------------------------------------------------------------------
+    if (top11 == ADDI_IW_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_ADDI_IW;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.needs_imm16     = 1'b1;
+      decoded.imm_sign_extend = 1'b1;
+      decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    if (top11 == SUBI_IW_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_SUBI_IW;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.needs_imm16     = 1'b1;
+      decoded.imm_sign_extend = 1'b1;
+      decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    if (top11 == CMPI_IW_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_CMPI_IW;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.needs_imm16     = 1'b1;
+      decoded.imm_sign_extend = 1'b1;
+      decoded.alu_op          = ALU_OP_CMP;
+      decoded.wb_reg_en       = 1'b0;
       decoded.wb_flags_en     = 1'b1;
     end
 

@@ -208,7 +208,10 @@ package tms34010_pkg;
     INSTR_ADDK       = 5'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
     INSTR_SUBK       = 5'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
     INSTR_NEG        = 5'd14, // NEG Rd           — 0 - Rd → Rd
-    INSTR_NOT        = 5'd15  // NOT Rd           — ~Rd → Rd     (C, V cleared)
+    INSTR_NOT        = 5'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
+    INSTR_ADDI_IW    = 5'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
+    INSTR_SUBI_IW    = 5'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
+    INSTR_CMPI_IW    = 5'd18  // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

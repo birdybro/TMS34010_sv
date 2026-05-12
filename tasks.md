@@ -27,7 +27,8 @@
 | 0019 | First branch — JRUC short | complete |
 | 0020 | JRcc short conditional (UC, EQ, NE) | complete |
 | 0021 | K-form arithmetic (ADDK, SUBK) | complete |
-| 0022 | Single-reg unary ops (NEG, NOT) | in progress |
+| 0022 | Single-reg unary ops (NEG, NOT) | complete |
+| 0023 | Immediate arithmetic IW (ADDI, SUBI, CMPI) | in progress |
 
 ---
 
@@ -678,7 +679,7 @@ Commit:
 ---
 
 ### Task 0022: Single-reg unary ops (NEG, NOT)
-Status: in progress
+Status: complete
 Dependencies: Task 0007 (ALU already has NEG and NOT ops).
 Spec source: SPVU001A A-14 unary chart rows.
 Acceptance Criteria:
@@ -693,6 +694,29 @@ Acceptance Criteria:
 Tests: tb_neg_not PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (NEG + NOT rows + ABS/NEGB placeholders),
   changelog.md, tasks.md.
+Commit:
+- 7b9135d
+
+---
+
+### Task 0023: Immediate arithmetic IW (ADDI, SUBI, CMPI)
+Status: in progress
+Dependencies: Task 0012 (MOVI IW IMM_LO fetch infra), Task 0018 (CMP wb_reg_en=0 pattern).
+Spec source: SPVU001A A-14 chart rows for ADDI/SUBI/CMPI IW.
+Acceptance Criteria:
+- Three new INSTR_*_IW enum values (ADDI/SUBI/CMPI).
+- Decoder grows a `top11` view; three new arms matching 11-bit prefixes:
+  ADDI=11'b0000_1011_000, SUBI=11'b0000_1011_111, CMPI=11'b0000_1011_010.
+- All three set needs_imm16=1, imm_sign_extend=1.
+- alu_a routes Rd via the swap group; alu_b routes imm32 via the
+  MOVI-IW arm.
+- CMPI has wb_reg_en=0 (same as CMP Rs, Rd).
+- `sim/tb/tb_immi_iw.sv` covers add-positive, sub-to-zero, add-
+  negative-immediate (verifies sign-extension), CMPI equal, B-file
+  add.
+- Full regression: 20/20 PASS; lint clean.
+Tests: tb_immi_iw PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (3 rows), changelog.md, tasks.md.
 Commit:
 - pending
 

@@ -258,6 +258,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added `sim/tb/tb_neg_not.sv` — six cases covering NEG of a small
   positive, NEG of 0, NEG of MIN_INT (V-flag check), NOT of a
   mixed pattern, NOT of 0 → all-ones, and a B-file NOT.
+- IW-form immediate arithmetic batch: **ADDI IW, SUBI IW, CMPI IW**.
+  All three share encoding shape `0000 1011 XXXR DDDD` + 16-bit
+  immediate word, with bits[7:5] selecting op (000=ADDI, 111=SUBI,
+  010=CMPI per SPVU001A A-14). Decoder gets a `top11` view for
+  matching the 11-bit prefix. Operand routing: alu_a = Rd,
+  alu_b = imm32 (sign-extended from the 16-bit immediate). CMPI
+  uses `wb_reg_en = 0` (nondestructive, same contract as CMP Rs,Rd).
+- All three reuse MOVI IW's CORE_FETCH_IMM_LO state; no new FSM
+  states needed.
+- Added `sim/tb/tb_immi_iw.sv` — five cases: ADDI positive,
+  SUBI to zero (Z=1), ADDI with negative sign-extended immediate
+  (verifies sign-extension), CMPI equal (Z=1, Rd unchanged), and
+  a B-file ADDI.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

@@ -265,14 +265,20 @@ module tms34010_core
       INSTR_ADDK,
       INSTR_SUBK,
       INSTR_NEG,
-      INSTR_NOT:     alu_a = rf_rs2_data;   // Rd is the operand
+      INSTR_NOT,
+      INSTR_ADDI_IW,
+      INSTR_SUBI_IW,
+      INSTR_CMPI_IW: alu_a = rf_rs2_data;   // Rd is the operand
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
   always_comb begin
     unique case (decoded.iclass)
       INSTR_MOVI_IW,
-      INSTR_MOVI_IL: alu_b = imm32;
+      INSTR_MOVI_IL,
+      INSTR_ADDI_IW,
+      INSTR_SUBI_IW,
+      INSTR_CMPI_IW: alu_b = imm32;
       INSTR_MOVK,
       INSTR_ADDK,
       INSTR_SUBK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
