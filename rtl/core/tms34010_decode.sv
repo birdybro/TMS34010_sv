@@ -61,6 +61,9 @@ module tms34010_decode
   // select the operation (00=ADDK, 01=SUBK, 10=MOVK, 11=BTST K).
   localparam logic [5:0] ADDK_TOP6    = 6'b00_0100;  // chart: 0001 00KK KKKR DDDD
   localparam logic [5:0] SUBK_TOP6    = 6'b00_0101;  // chart: 0001 01KK KKKR DDDD
+  // Single-register unary family: bits[15:7] = 9'b000000111 (= 0x007);
+  // bits[6:5] picks sub-op: 00=ABS, 01=NEG, 10=NEGB, 11=NOT.
+  localparam logic [8:0] UNARY_TOP9   = 9'b0000_0011_1;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
@@ -178,6 +181,37 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // Single-register unary family
+    //   ABS  Rd   bits[6:5] = 00  (deferred — V-on-MIN_INT spec subtlety)
+    //   NEG  Rd   bits[6:5] = 01  (implemented; ALU_OP_NEG)
+    //   NEGB Rd   bits[6:5] = 10  (deferred — needs C-input handling)
+    //   NOT  Rd   bits[6:5] = 11  (implemented; ALU_OP_NOT)
+    // -----------------------------------------------------------------------
+    if (instr[15:7] == UNARY_TOP9) begin
+      case (instr[6:5])
+        2'b01: begin   // NEG
+          decoded.illegal         = 1'b0;
+          decoded.iclass          = INSTR_NEG;
+          decoded.rd_file         = reg_file_from_instr;
+          decoded.rd_idx          = reg_idx_from_instr;
+          decoded.alu_op          = ALU_OP_NEG;
+          decoded.wb_reg_en       = 1'b1;
+          decoded.wb_flags_en     = 1'b1;
+        end
+        2'b11: begin   // NOT
+          decoded.illegal         = 1'b0;
+          decoded.iclass          = INSTR_NOT;
+          decoded.rd_file         = reg_file_from_instr;
+          decoded.rd_idx          = reg_idx_from_instr;
+          decoded.alu_op          = ALU_OP_NOT;
+          decoded.wb_reg_en       = 1'b1;
+          decoded.wb_flags_en     = 1'b1;
+        end
+        default: ;   // ABS / NEGB → ILLEGAL until landed
+      endcase
     end
 
     // -----------------------------------------------------------------------

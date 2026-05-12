@@ -39,6 +39,10 @@ Required columns:
 | JRcc short | `1100 cccc dddd dddd` | SPVU001A A-14, Table 12-8 | partial: UC/EQ/NE only (A0017) | tb_jruc_short, tb_jrcc_short | none | none | TBD | Conditional/unconditional 8-bit-signed-disp relative jump. cc ∈ {0000 UC, 0100 EQ, 0111 NE} verified and decoded; other cc values trap as ILLEGAL until Table 12-8 is re-read. Target = PC_post_fetch + sign_extend(disp) × 16. disp ∈ {0x00, 0x80} reserved. |
 | ADDK K,Rd | `0001 00KK KKKR DDDD` | SPVU001A A-14 (A0018) | implemented | tb_addk_subk | N, C, Z, V | none | TBD | K + Rd → Rd. K is 5-bit zero-extended. K=0 → literal 0 (per A0018; K=0 → 32 hypothesis NOT implemented). |
 | SUBK K,Rd | `0001 01KK KKKR DDDD` | SPVU001A A-14 (A0018) | implemented | tb_addk_subk | N, C, Z, V | none | TBD | Rd - K → Rd. K is 5-bit zero-extended. C = borrow. |
+| NEG Rd    | `0000 0011 101R DDDD` (bits[6:5]=01 in the unary family) | SPVU001A A-14 | implemented | tb_neg_not | N, C, Z, V | none | TBD | 0 - Rd → Rd. V=1 only when Rd was 0x8000_0000. |
+| NOT Rd    | `0000 0011 111R DDDD` (bits[6:5]=11 in the unary family) | SPVU001A A-14 | implemented | tb_neg_not | N, Z (C, V cleared) | none | TBD | ~Rd → Rd. |
+| ABS Rd    | `0000 0011 100R DDDD` (bits[6:5]=00) | SPVU001A A-14 | **not started** | none | N, C, Z, V (with V on MIN_INT) | none | TBD | Deferred — ALU does not currently have an ABS op; would need a conditional NEG plus the V-on-MIN_INT subtlety. |
+| NEGB Rd   | `0000 0011 110R DDDD` (bits[6:5]=10) | SPVU001A A-14 | **not started** | none | N, C, Z, V | none | TBD | Deferred — needs C-input handling (`Rd = -Rd - C`). |
 
 ## Categories to populate (placeholder roadmap)
 

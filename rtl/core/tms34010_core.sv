@@ -263,7 +263,9 @@ module tms34010_core
       INSTR_ANDN_RR,
       INSTR_CMP_RR,
       INSTR_ADDK,
-      INSTR_SUBK:    alu_a = rf_rs2_data;   // Rd is the "first" operand
+      INSTR_SUBK,
+      INSTR_NEG,
+      INSTR_NOT:     alu_a = rf_rs2_data;   // Rd is the operand
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end

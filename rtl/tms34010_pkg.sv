@@ -191,22 +191,24 @@ package tms34010_pkg;
 
   // Instruction class — used by the core control FSM to pick the
   // decode/execute/memory/writeback path.
-  typedef enum logic [3:0] {
-    INSTR_ILLEGAL = 4'd0,
-    INSTR_MOVI_IW = 4'd1,    // MOVI IW K, Rd  — 16-bit sign-extended immediate
-    INSTR_MOVI_IL = 4'd2,    // MOVI IL K, Rd  — 32-bit immediate
-    INSTR_MOVK    = 4'd3,    // MOVK K, Rd     — 5-bit zero-extended constant
-    INSTR_ADD_RR  = 4'd4,    // ADD Rs, Rd     — Rs + Rd → Rd; both same file
-    INSTR_SUB_RR  = 4'd5,    // SUB Rs, Rd     — Rd - Rs → Rd; both same file
-    INSTR_AND_RR  = 4'd6,    // AND Rs, Rd     — Rd & Rs  → Rd
-    INSTR_ANDN_RR = 4'd7,    // ANDN Rs, Rd    — Rd & ~Rs → Rd
-    INSTR_OR_RR   = 4'd8,    // OR Rs, Rd      — Rd | Rs  → Rd
-    INSTR_XOR_RR  = 4'd9,    // XOR Rs, Rd     — Rd ^ Rs  → Rd
-    INSTR_CMP_RR    = 4'd10,  // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
-    INSTR_JRCC_SHORT = 4'd11, // JRcc short       — conditional relative jump
+  typedef enum logic [4:0] {
+    INSTR_ILLEGAL    = 5'd0,
+    INSTR_MOVI_IW    = 5'd1,  // MOVI IW K, Rd    — 16-bit sign-extended immediate
+    INSTR_MOVI_IL    = 5'd2,  // MOVI IL K, Rd    — 32-bit immediate
+    INSTR_MOVK       = 5'd3,  // MOVK K, Rd       — 5-bit zero-extended constant
+    INSTR_ADD_RR     = 5'd4,  // ADD Rs, Rd       — Rs + Rd → Rd; both same file
+    INSTR_SUB_RR     = 5'd5,  // SUB Rs, Rd       — Rd - Rs → Rd; both same file
+    INSTR_AND_RR     = 5'd6,  // AND Rs, Rd       — Rd & Rs  → Rd
+    INSTR_ANDN_RR    = 5'd7,  // ANDN Rs, Rd      — Rd & ~Rs → Rd
+    INSTR_OR_RR      = 5'd8,  // OR Rs, Rd        — Rd | Rs  → Rd
+    INSTR_XOR_RR     = 5'd9,  // XOR Rs, Rd       — Rd ^ Rs  → Rd
+    INSTR_CMP_RR     = 5'd10, // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
+    INSTR_JRCC_SHORT = 5'd11, // JRcc short       — conditional relative jump
                               //                    (cc=0 = UC = unconditional)
-    INSTR_ADDK       = 4'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
-    INSTR_SUBK       = 4'd13  // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
+    INSTR_ADDK       = 5'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
+    INSTR_SUBK       = 5'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
+    INSTR_NEG        = 5'd14, // NEG Rd           — 0 - Rd → Rd
+    INSTR_NOT        = 5'd15  // NOT Rd           — ~Rd → Rd     (C, V cleared)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

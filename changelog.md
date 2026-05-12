@@ -243,6 +243,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added assumption A0018 documenting the literal-K interpretation
   and flagging the unresolved K=0 → 32 hypothesis that some TI
   K-form ISAs use.
+- Single-register unary block: **NEG Rd** and **NOT Rd**.
+  Encoding family `0000 0011 XX1R DDDD` (the "unary" group) per
+  SPVU001A A-14, with `bits[6:5]` selecting sub-op (01=NEG, 11=NOT).
+  Both join the SUB-style alu_a swap group (Rd → alu_a). The ALU's
+  existing NEG and NOT ops produce the right flag patterns,
+  including V=1 on `NEG 0x8000_0000`.
+- Deferred from this batch: **ABS** (needs an ALU op variant that
+  conditionally negates based on sign + sets V on MIN_INT) and
+  **NEGB** (Rd - 0 - C; needs carry-in routing). Tracked as
+  not-started rows in `docs/instruction_coverage.md`.
+- Widened `instr_class_t` from 4 bits to 5 bits to make room for
+  the growing instruction set.
+- Added `sim/tb/tb_neg_not.sv` — six cases covering NEG of a small
+  positive, NEG of 0, NEG of MIN_INT (V-flag check), NOT of a
+  mixed pattern, NOT of 0 → all-ones, and a B-file NOT.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

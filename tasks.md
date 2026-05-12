@@ -26,7 +26,8 @@
 | 0018 | Implement CMP Rs, Rd | complete |
 | 0019 | First branch — JRUC short | complete |
 | 0020 | JRcc short conditional (UC, EQ, NE) | complete |
-| 0021 | K-form arithmetic (ADDK, SUBK) | in progress |
+| 0021 | K-form arithmetic (ADDK, SUBK) | complete |
+| 0022 | Single-reg unary ops (NEG, NOT) | in progress |
 
 ---
 
@@ -653,7 +654,7 @@ Commit:
 ---
 
 ### Task 0021: K-form arithmetic (ADDK, SUBK)
-Status: in progress
+Status: complete
 Dependencies: Task 0014 (MOVK k5 infrastructure), Task 0016 (SUB swap pattern).
 Spec source: SPVU001A A-14 chart rows for ADDK/SUBK; A0018 for K=0 interpretation.
 Acceptance Criteria:
@@ -670,6 +671,27 @@ Acceptance Criteria:
 - Full regression: 18/18 PASS; lint clean.
 Tests: tb_addk_subk PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (ADDK + SUBK rows), assumptions.md A0018,
+  changelog.md, tasks.md.
+Commit:
+- f286298
+
+---
+
+### Task 0022: Single-reg unary ops (NEG, NOT)
+Status: in progress
+Dependencies: Task 0007 (ALU already has NEG and NOT ops).
+Spec source: SPVU001A A-14 unary chart rows.
+Acceptance Criteria:
+- Decoder recognizes the unary family by `instr[15:7] == 9'b000000111`.
+  Sub-op `instr[6:5]`: 01 = NEG, 11 = NOT. ABS (00) and NEGB (10)
+  fall through to ILLEGAL (deferred).
+- INSTR_NEG and INSTR_NOT added to iclass enum; widened to 5 bits.
+- Core: alu_a routes `rf_rs2_data` (Rd value) for both NEG and NOT.
+- `sim/tb/tb_neg_not.sv` covers NEG of 5, NEG of 0, NEG of MIN_INT
+  (V-flag), NOT of a mixed pattern, NOT of 0, NOT of -1 in B file.
+- Full regression: 19/19 PASS; lint clean.
+Tests: tb_neg_not PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (NEG + NOT rows + ABS/NEGB placeholders),
   changelog.md, tasks.md.
 Commit:
 - pending
