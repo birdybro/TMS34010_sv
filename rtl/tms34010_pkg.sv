@@ -228,10 +228,16 @@ package tms34010_pkg;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
   // Source: SPVU001A Table 12-8. Only codes verified against the spec
-  // text are listed here; others are reserved (A0017).
+  // text are listed here; signed-compare codes (LT/LE/GT/GE) remain
+  // deferred until the table is re-read with cleaner PDF rendering
+  // (A0017 + A0021).
   parameter logic [3:0] CC_UC = 4'b0000;  // unconditional
-  parameter logic [3:0] CC_EQ = 4'b0100;  // equal       (Z = 1)
-  parameter logic [3:0] CC_NE = 4'b0111;  // not equal   (Z = 0)
+  parameter logic [3:0] CC_LO = 4'b0001;  // lower-than       (unsigned; C = 1; alias "B")
+  parameter logic [3:0] CC_LS = 4'b0010;  // lower-or-same    (unsigned; C | Z = 1)
+  parameter logic [3:0] CC_HI = 4'b0011;  // higher-than      (unsigned; ~C & ~Z = 1)
+  parameter logic [3:0] CC_EQ = 4'b0100;  // equal            (Z = 1)
+  parameter logic [3:0] CC_NE = 4'b0111;  // not-equal        (Z = 0)
+  parameter logic [3:0] CC_HS = 4'b1001;  // higher-or-same   (unsigned; C = 0; alias "NC")
 
   // What the control FSM needs from decode in order to execute. Fields are
   // populated only when the instruction class uses them; the rest hold safe

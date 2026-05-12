@@ -31,7 +31,8 @@
 | 0023 | Immediate arithmetic IW (ADDI, SUBI, CMPI) | complete |
 | 0024 | K-form shifts (RL, SLA, SLL, SRA, SRL) | complete |
 | 0025 | Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI) | complete |
-| 0026 | MOVE Rs, Rd (register-to-register) | in progress |
+| 0026 | MOVE Rs, Rd (register-to-register) | complete |
+| 0027 | JRcc unsigned compares (LO, LS, HI, HS) | in progress |
 
 ---
 
@@ -774,7 +775,7 @@ Commit:
 ---
 
 ### Task 0026: MOVE Rs, Rd (register-to-register)
-Status: in progress
+Status: complete
 Dependencies: Task 0011 (datapath wired).
 Spec source: SPVU001A A-14 chart row for MOVE Rs, Rd.
 Acceptance Criteria:
@@ -787,6 +788,28 @@ Acceptance Criteria:
 - Documentation: A0020 added for the F-bit deferral.
 Tests: tb_move_rr PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md, assumptions.md A0020, changelog.md, tasks.md.
+Commit:
+- 95e0a29
+
+---
+
+### Task 0027: JRcc unsigned compares (LO, LS, HI, HS)
+Status: in progress
+Dependencies: Task 0020 (JRcc framework).
+Spec source: SPVU001A Table 12-8 (universally defined codes; less
+  ambiguous than the signed compares).
+Acceptance Criteria:
+- Four new CC_* parameters in the package: CC_LO=0001, CC_LS=0010,
+  CC_HI=0011, CC_HS=1001.
+- Decoder accepts all four; the existing list-of-allowed-cc-values
+  expands.
+- Core's branch_taken evaluator computes each condition from ST flags.
+- `sim/tb/tb_jrcc_unsigned.sv` covers each cc's take and skip arms,
+  using a "sentinel register" pattern so the test cleanly
+  distinguishes "branch took" from "branch did not take".
+- Full regression: 24/24 PASS; lint clean.
+Tests: tb_jrcc_unsigned PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (JRcc row updated), changelog.md, tasks.md.
 Commit:
 - pending
 

@@ -305,6 +305,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   of a pattern, MOVE of zero (Z=1), MOVE of MIN_INT (N=1), and a
   B-file move. Encoder verified against hand-decoded
   `MOVE A1,A2 = 0x9022` and `MOVE B5,B7 = 0x90B7`.
+- Added **unsigned-compare condition codes** to JRcc: LO (cc=0001,
+  C=1), LS (cc=0010, C|Z), HI (cc=0011, ~C&~Z), HS (cc=1001, !C).
+  These are universally defined across the field and can be added
+  without ambiguity from the garbled spec table. Signed-compare
+  codes (LT/LE/GT/GE) remain deferred until cleaner spec access.
+- Added `sim/tb/tb_jrcc_unsigned.sv` — six scenarios covering each
+  cc's take and skip paths. Uses a "sentinel register" pattern:
+  each scenario pre-initializes its sentinel to a recognizable
+  marker, then the fall-through MOVI overwrites it only if the
+  branch did NOT take. The landing site writes elsewhere. This
+  cleanly distinguishes "branch took" from "branch didn't take"
+  by checking whether the sentinel still holds its marker.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

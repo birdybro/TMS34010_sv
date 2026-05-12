@@ -582,8 +582,12 @@ module tms34010_decode
     if (instr[15:12] == JRCC_TOP4 &&
         instr[7:0] != 8'h00 && instr[7:0] != 8'h80 &&
         (instr[11:8] == CC_UC ||
+         instr[11:8] == CC_LO ||
+         instr[11:8] == CC_LS ||
+         instr[11:8] == CC_HI ||
          instr[11:8] == CC_EQ ||
-         instr[11:8] == CC_NE)) begin
+         instr[11:8] == CC_NE ||
+         instr[11:8] == CC_HS)) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_JRCC_SHORT;
       decoded.branch_cc   = instr[11:8];
