@@ -207,13 +207,18 @@ module tms34010_core
   end
 
   // ---- Register-file selectors driven by decode ----------------------------
-  // Phase 3 currently has only MOVI which has no source-register read.
-  // Reads stay at A0 (idx 0) as a benign default; real source reads
-  // arrive with the first reg-reg ALU instruction.
-  assign rf_rs1_file = REG_FILE_A;
-  assign rf_rs1_idx  = 4'd0;
-  assign rf_rs2_file = REG_FILE_A;
-  assign rf_rs2_idx  = 4'd0;
+  // rs1 reads Rs (used as ALU `a` for reg-reg ops). rs2 reads Rd (used as
+  // ALU `b` for reg-reg ops where Rd is also a source, e.g. ADD Rs,Rd).
+  // For MOVI / MOVK, the rs1/rs2 reads still occur but their values are
+  // not routed to alu_a/b (the alu_b mux picks imm32 or zero-extended k5
+  // instead).
+  //
+  // TMS34010 reg-reg encoding constrains Rs and Rd to the same file, so
+  // a single `decoded.rd_file` drives both reads.
+  assign rf_rs1_file = decoded.rd_file;
+  assign rf_rs1_idx  = decoded.rs_idx;
+  assign rf_rs2_file = decoded.rd_file;
+  assign rf_rs2_idx  = decoded.rd_idx;
 
   // Writeback enable is a one-cycle pulse, gated by the FSM state.
   assign rf_wr_en   = (state_q == CORE_WRITEBACK) && decoded.wb_reg_en;

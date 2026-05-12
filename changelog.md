@@ -157,6 +157,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   update" contract).
 - Added `docs/assumptions.md` A0013 covering MOVK encoding, the
   no-flag-effect contract, and the K=0 = literal-0 hypothesis.
+- Fourth instruction (first arithmetic): **ADD Rs, Rd**. Encoding
+  `0100 000S SSSR DDDD` from SPVU001A Appendix A page A-14
+  (A0014/A0015). The TMS34010 reg-reg encoding shares a single R
+  bit between Rs and Rd, so **Rs and Rd must be in the same file**
+  for ADD and the rest of the reg-reg family. `decoded_instr_t` now
+  includes `rs_idx`; the core's regfile rs1/rs2 selectors are driven
+  from `decoded.rs_idx`/`decoded.rd_idx` (file shared).
+- Added `sim/tb/tb_add_rr.sv` — 4 ADD RR cases: simple positive add,
+  signed-overflow (0x7FFF_FFFF + 1 → 0x8000_0000 with N=1, V=1),
+  unsigned wrap to zero (0xFFFF_FFFF + 1 → 0 with C=1, Z=1), and a
+  B-file add (0x1111_1111 + 0x2222_2222 → 0x3333_3333) with all
+  flags clear. Encoding helper independently verified against the
+  hand-decoded `ADD A1,A2 → 0x4022`.
+- Resolved encoding-source uncertainty: extracted SPVU001A page A-14
+  via `pdftotext -layout` — this is the authoritative opcode chart
+  for every '34010 instruction. Logged as A0014.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

@@ -261,6 +261,44 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0014 — SPVU001A Appendix A encoding chart confirmed available
+- **Date**: 2026-05-12
+- **Status**: resolved (source confirmed)
+- **Source**: `third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf`
+  pages A-14 through A-15 contain the "General Instructions" 16-bit
+  opcode-chart table for every '34010 mnemonic. Extracted to
+  `/tmp/spvu001a.txt` via `pdftotext -layout` and verified against
+  cross-references (e.g. ADD Rs,Rd matches the assembler-listing
+  encoding `0x4022` for `ADD A1,A2`).
+- **Conclusion**: Future instruction implementations should cite the
+  SPVU001A A-14 chart row for their encoding rather than re-deriving
+  from assembler listings. This is the authoritative source.
+- **Architectural note from the chart**: TMS34010 reg-reg instructions
+  (ADD, ADDC, AND, ANDN, CMP, MOVE, XOR, MPYS/MPYU, DIVS/DIVU, ...)
+  share a single R bit (bit[4]) governing the file for BOTH Rs and
+  Rd. This means **Rs and Rd of a reg-reg op MUST be in the same
+  file** (A or B). Some MOVE variants and `EXGF` may use the
+  cross-file form in different bit positions; verify per-instruction.
+
+## A0015 — ADD Rs, Rd encoding (SPVU001A A-14)
+- **Date**: 2026-05-12
+- **Status**: active
+- **Source**: SPVU001A Appendix A, page A-14:
+    `ADD Rs,Rd    Add Registers    0100 000S SSSR DDDD    NCZV`
+- **Conclusion**:
+    bits[15:9] = 7'b0100000 (= 0x40)
+    bits[8:5]  = Rs index (4 bits; Rs file = R bit below)
+    bit[4]     = R          (file: 0 = A, 1 = B; for BOTH Rs and Rd)
+    bits[3:0]  = Rd index (4 bits)
+  Operation: Rs + Rd → Rd. Flags: N, C, Z, V from the sum.
+- **How to apply**: Verified against hand-computed
+  `ADD A1,A2 = 0x4022` and `ADD B5,B7 = 0x40B7` in
+  `tb_add_rr.sv`. If the chart row's "SSSR DDDD" interpretation
+  proves wrong (e.g. if there's a separate Rs file bit), update
+  decode and the test's encoding helper together.
+
+---
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

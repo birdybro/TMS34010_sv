@@ -4,23 +4,18 @@
 // Combinational instruction decoder.
 //
 // Currently recognized:
-//   MOVI IW K, Rd  — encoding 0x09C0 | (R<<4) | N
-//                    Operation: sign_extend(K, 32) → Rd
-//                    Next 16-bit word holds the immediate K.
-//                    Flag effects: N and Z set from result; C, V cleared.
-//   MOVI IL K, Rd  — encoding 0x09E0 | (R<<4) | N
-//                    Operation: K (32-bit) → Rd
-//                    Two 16-bit words follow: low half first, then high.
-//                    Flag effects: same as MOVI IW (A0011).
-//   MOVK K, Rd     — encoding 0x1800 | (K<<5) | (R<<4) | N
-//                    Operation: zero_extend(K, 32) → Rd     (per A0013)
-//                    Single-word instruction; K is 5 bits in bits[9:5].
-//                    Flag effects: **none** (SPVU004: "Note that this
-//                    instruction does not affect the status register").
+//   MOVI IW K, Rd  — `0x09C0 | (R<<4) | N`     +16-bit sign-extended imm
+//   MOVI IL K, Rd  — `0x09E0 | (R<<4) | N`     +32-bit imm (LO,HI)
+//   MOVK K, Rd     — `0x1800 | (K<<5) | (R<<4) | N`  (no flag update)
+//   ADD Rs, Rd     — `0100 000S SSSR DDDD`     (7-bit prefix 0x40)
+//                    Rs at bits[8:5], R at bit[4], Rd at bits[3:0].
+//                    Rs and Rd share the same file (architectural
+//                    constraint of TMS34010 reg-reg ops). Operation:
+//                    Rs + Rd → Rd; flags N/C/Z/V from the sum.
 //
-// (Flag policy is per A0009/A0011 until SPVU001A Appendix A is read in
-// detail. Encoding is per A0012 / A0013 extracted from SPVU004
-// assembler listings.)
+// Flag policy and encodings cite SPVU001A Appendix A (Instruction Set
+// summary chart, page A-14) and corresponding `docs/assumptions.md`
+// entries (A0011-A0014).
 //
 // Spec sources cited:
 //   third_party/TMS34010_Info/tools/assembler/
@@ -53,13 +48,20 @@ module tms34010_decode
 
   // Fixed-width views of the top opcode bits.
   logic [9:0] top10;
+  logic [6:0] top7;
   logic [5:0] top6;
   assign top10 = instr[INSTR_WORD_WIDTH-1:6];
+  assign top7  = instr[INSTR_WORD_WIDTH-1:9];
   assign top6  = instr[INSTR_WORD_WIDTH-1:10];
 
   // Opcode prefixes.
-  localparam logic [9:0] MOVI_TOP10 = 10'b00_0010_0111;
-  localparam logic [5:0] MOVK_TOP6  = 6'b00_0110;
+  localparam logic [9:0] MOVI_TOP10   = 10'b00_0010_0111;
+  localparam logic [5:0] MOVK_TOP6    = 6'b00_0110;
+  localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;     // 0x40 from SPVU001A A-14
+
+  // Reg-reg ops use bits[8:5] for Rs index.
+  reg_idx_t rs_idx_from_instr;
+  assign rs_idx_from_instr = instr[8:5];
 
   // Reg-field decoders (5 bits = file + 4-bit index).
   reg_file_t reg_file_from_instr;
@@ -75,6 +77,7 @@ module tms34010_decode
     decoded.iclass          = INSTR_ILLEGAL;
     decoded.rd_file         = REG_FILE_A;
     decoded.rd_idx          = '0;
+    decoded.rs_idx          = '0;
     decoded.needs_imm16     = 1'b0;
     decoded.needs_imm32     = 1'b0;
     decoded.imm_sign_extend = 1'b0;
@@ -130,6 +133,23 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_PASS_B;   // routed through ALU like MOVI
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;            // MOVK doesn't touch ST
+    end
+
+    // -----------------------------------------------------------------------
+    // ADD Rs, Rd  (reg-reg add; Rs and Rd in the same file)
+    // -----------------------------------------------------------------------
+    if (top7 == ADD_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_ADD_RR;
+      decoded.rd_file         = reg_file_from_instr;   // single R bit governs both
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.needs_imm16     = 1'b0;
+      decoded.needs_imm32     = 1'b0;
+      decoded.imm_sign_extend = 1'b0;
+      decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
     end
   end
 

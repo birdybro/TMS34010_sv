@@ -29,6 +29,7 @@ Required columns:
 | MOVI IW  | `0x09C0 \| (R<<4) \| N`, +16-bit imm | SPVU004 assembler listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi | N, Z (per A0011) | none | TBD | 16-bit immediate sign-extended to 32 bits → Rd. C, V cleared per A0011 / A0009. |
 | MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm (LO,HI) | SPVU004 listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi_il | N, Z (per A0011) | none | TBD | 32-bit immediate stored as two 16-bit words (low first, high second) → Rd. C, V cleared per A0011. |
 | MOVK     | `0x1800 \| (K<<5) \| (R<<4) \| N`, single word | SPVU004 (A0013); SPVU001A §"Move Constant" | implemented | tb_movk | **none** (spec: "does not affect the status register") | none | TBD | 5-bit zero-extended K → Rd. Confirmed against `MOVK 1,A12 → 0x182C` and `MOVK 8,B1 → 0x1911`. K=0 hypothesis logged in A0013. |
+| ADD Rs,Rd | `0100 000S SSSR DDDD` (= `0x4000 \| (S<<5) \| (R<<4) \| D`) | SPVU001A A-14 (A0014, A0015) | implemented | tb_add_rr | N, C, Z, V | none | TBD | Rs + Rd → Rd. First reg-reg arithmetic. Rs and Rd share file (single R bit). |
 
 ## Categories to populate (placeholder roadmap)
 

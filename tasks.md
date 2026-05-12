@@ -19,7 +19,8 @@
 | 0011 | Wire datapath modules into core | complete |
 | 0012 | Implement MOVI IW end-to-end | complete |
 | 0013 | Implement MOVI IL end-to-end | complete |
-| 0014 | Implement MOVK K, Rd | in progress |
+| 0014 | Implement MOVK K, Rd | complete |
+| 0015 | Implement ADD Rs, Rd | in progress |
 
 ---
 
@@ -471,7 +472,7 @@ Commit:
 ---
 
 ### Task 0014: Implement MOVK K, Rd
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0011 (datapath wired)
 Spec sources:
@@ -497,6 +498,39 @@ Tests:
 Docs:
 - `docs/instruction_coverage.md` — MOVK row added.
 - `docs/assumptions.md` — A0013 added.
+- `changelog.md`, `tasks.md`.
+Commit:
+- 2c351a3
+
+---
+
+### Task 0015: Implement ADD Rs, Rd
+Status: in progress
+Dependencies:
+- Task 0011 (datapath wired)
+Spec sources:
+- SPVU001A Appendix A page A-14 (A0014, A0015).
+Acceptance Criteria:
+- Decoder recognizes `bits[15:9] == 7'b0100000`; sets
+  `iclass=INSTR_ADD_RR`, `rs_idx=instr[8:5]`, `rd_file=instr[4]`,
+  `rd_idx=instr[3:0]`, `alu_op=ALU_OP_ADD`, both wb enables.
+- Package: `INSTR_ADD_RR` added to `instr_class_t`; `rs_idx` field
+  added to `decoded_instr_t`.
+- Core: regfile rs1 reads Rs and rs2 reads Rd. Both use
+  `decoded.rd_file` for the file bit (TMS34010 architectural
+  constraint).
+- `sim/tb/tb_add_rr.sv` covers four cases including signed overflow
+  and unsigned wrap; encoding helper independently re-derives the
+  hand-decoded `ADD A1,A2 → 0x4022`.
+- Full regression: 12/12 PASS; lint clean.
+Tests:
+- `scripts/sim.sh tb_add_rr` → PASS.
+- All previous 11 tests still PASS.
+- Lint clean.
+Docs:
+- `docs/instruction_coverage.md` — ADD Rs,Rd row added.
+- `docs/assumptions.md` — A0014 (chart source) and A0015 (ADD
+  encoding) added.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

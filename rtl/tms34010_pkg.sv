@@ -195,7 +195,8 @@ package tms34010_pkg;
     INSTR_ILLEGAL = 4'd0,
     INSTR_MOVI_IW = 4'd1,    // MOVI IW K, Rd  — 16-bit sign-extended immediate
     INSTR_MOVI_IL = 4'd2,    // MOVI IL K, Rd  — 32-bit immediate
-    INSTR_MOVK    = 4'd3     // MOVK K, Rd     — 5-bit zero-extended constant
+    INSTR_MOVK    = 4'd3,    // MOVK K, Rd     — 5-bit zero-extended constant
+    INSTR_ADD_RR  = 4'd4     // ADD Rs, Rd     — Rs + Rd → Rd; both same file
   } instr_class_t;
 
   // What the control FSM needs from decode in order to execute. Fields are
@@ -205,8 +206,12 @@ package tms34010_pkg;
   typedef struct packed {
     logic          illegal;     // 1 if the encoding is not recognized
     instr_class_t  iclass;      // dispatch class for the control FSM
-    reg_file_t     rd_file;     // destination register file (A or B)
+    reg_file_t     rd_file;     // destination register file (A or B); also
+                                // governs Rs file for reg-reg ops because
+                                // TMS34010 reg-reg ops constrain Rs and Rd
+                                // to the same file (single R bit in encoding).
     reg_idx_t      rd_idx;      // destination register index
+    reg_idx_t      rs_idx;      // source register index (reg-reg ops)
     logic          needs_imm16; // fetch one extra 16-bit word for immediate
     logic          needs_imm32; // fetch two extra 16-bit words; LO first then HI
     logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits
