@@ -17,7 +17,8 @@
 | 0009 | Status register (ST) | complete |
 | 0010 | Decode skeleton + full execute cycle | complete |
 | 0011 | Wire datapath modules into core | complete |
-| 0012 | Implement MOVI IW end-to-end | in progress |
+| 0012 | Implement MOVI IW end-to-end | complete |
+| 0013 | Implement MOVI IL end-to-end | in progress |
 
 ---
 
@@ -393,7 +394,7 @@ Commit:
 ---
 
 ### Task 0012: Implement MOVI IW end-to-end
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0011 (datapath wired)
 Spec sources:
@@ -431,6 +432,37 @@ Docs:
 - `docs/architecture.md` — decode row updated.
 - `docs/instruction_coverage.md` — first real row (MOVI IW) added.
 - `docs/assumptions.md` — A0011 (flag policy), A0012 (encoding).
+- `changelog.md`, `tasks.md`.
+Commit:
+- e1ff18e
+
+---
+
+### Task 0013: Implement MOVI IL end-to-end
+Status: in progress
+Dependencies:
+- Task 0012 (MOVI IW; FSM IMM_HI state already in place; imm32 assembly
+  already handles needs_imm32)
+Spec sources:
+- A0012 in `docs/assumptions.md` — encoding for MOVI IW/IL.
+- SPVU004 description: "In the long form, the operand is a 32-bit
+  signed value."
+Acceptance Criteria:
+- Decoder adds an arm matching `top10 == 0x027 && instr[5] == 1`.
+  Sets `iclass=INSTR_MOVI_IL`, `needs_imm32=1`, `imm_sign_extend=0`,
+  `alu_op=PASS_B`, `wb_reg_en=1`, `wb_flags_en=1`.
+- No core changes required — the FETCH_IMM_LO → FETCH_IMM_HI path,
+  imm32 assembly, and writeback wiring all already work.
+- `sim/tb/tb_movi_il.sv` runs 5 MOVI IL instructions with immediates
+  the IW form cannot encode (upper 16 bits ≠ sign-extension of
+  lower). Verifies destination registers via hierarchical reference.
+- Full regression: 10/10 PASS; lint clean.
+Tests:
+- `scripts/sim.sh tb_movi_il` → PASS.
+- All previous 9 tests still PASS.
+- Lint clean.
+Docs:
+- `docs/instruction_coverage.md` — MOVI IL row → implemented.
 - `changelog.md`, `tasks.md`.
 Commit:
 - pending

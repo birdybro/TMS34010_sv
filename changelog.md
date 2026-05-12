@@ -137,6 +137,16 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   and A0012 (MOVI IW encoding extracted from SPVU004 listings).
 - Added first real row to `docs/instruction_coverage.md` for MOVI
   IW; placeholder row for MOVI IL until Task 0013.
+- Second instruction: **MOVI IL K, Rd** (move 32-bit immediate to
+  register). Encoding `0x09E0 | (R<<4) | N` (A0012); 32-bit immediate
+  stored as two 16-bit words in memory (low half first, then high).
+  Exercises the existing `CORE_FETCH_IMM_HI` state and the
+  `imm32 = {imm_hi_q, imm_lo_q}` assembly path. Reuses the same
+  ALU PASS_B and writeback logic as MOVI IW; only one new arm in the
+  decoder.
+- Added `sim/tb/tb_movi_il.sv` — 5 MOVI IL instructions with
+  immediates that the IW form physically cannot encode (0xCAFE_BABE,
+  0xDEAD_BEEF, 0x0000_FFFF, 0xFFFF_0000, 0x0000_0000).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

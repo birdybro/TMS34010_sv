@@ -27,7 +27,7 @@ Required columns:
 | Mnemonic | Encoding | Source | Status      | Test | Flags | Memory | Cycles  | Notes |
 |----------|----------|--------|-------------|------|-------|--------|---------|-------|
 | MOVI IW  | `0x09C0 \| (R<<4) \| N`, +16-bit imm | SPVU004 assembler listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi | N, Z (per A0011) | none | TBD | 16-bit immediate sign-extended to 32 bits → Rd. C, V cleared per A0011 / A0009. |
-| MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm | SPVU004 listings | not started | none | TBD | none | TBD | Decoded space reserved; routes to ILLEGAL until Task 0013 wires the IMM_HI path. |
+| MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm (LO,HI) | SPVU004 listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi_il | N, Z (per A0011) | none | TBD | 32-bit immediate stored as two 16-bit words (low first, high second) → Rd. C, V cleared per A0011. |
 
 ## Categories to populate (placeholder roadmap)
 

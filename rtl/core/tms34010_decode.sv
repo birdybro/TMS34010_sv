@@ -5,16 +5,16 @@
 //
 // Currently recognized:
 //   MOVI IW K, Rd  — encoding 0x09C0 | (R<<4) | N
-//                    (R = file bit, N = 4-bit register index)
 //                    Operation: sign_extend(K, 32) → Rd
 //                    Next 16-bit word holds the immediate K.
 //                    Flag effects: N and Z set from result; C, V cleared.
-//                    (Flag policy is per A0009/A0011 until SPVU001A Appendix A
-//                    is read in detail.)
+//   MOVI IL K, Rd  — encoding 0x09E0 | (R<<4) | N
+//                    Operation: K (32-bit) → Rd
+//                    Two 16-bit words follow: low half first, then high.
+//                    Flag effects: same as MOVI IW (A0011).
 //
-// Reserved encoding (decoded but routed to ILLEGAL until Task 0013 lands):
-//   MOVI IL K, Rd  — encoding 0x09E0 | (R<<4) | N. The 32-bit immediate
-//                    follows in two more 16-bit words (LO first, then HI).
+// (Flag policy is per A0009/A0011 until SPVU001A Appendix A is read in
+// detail. Encoding is per A0012 extracted from SPVU004 assembler listings.)
 //
 // Spec sources cited:
 //   third_party/TMS34010_Info/tools/assembler/
@@ -26,9 +26,9 @@
 //   third_party/TMS34010_Info/bibliography/hdl-reimplementation/
 //     02-instruction-set.md  §"Encoding shape" + §"Move and load/store".
 //
-// Encoding layout (MOVI IW):
+// Encoding layout (MOVI IW / IL share the top-10 prefix):
 //   bits[15:6] = 10'b00_0010_0111   (= 0x027)
-//   bit[5]     = 0    (IW form; 1 = IL form)
+//   bit[5]     = 0 (MOVI IW, 16-bit imm) or 1 (MOVI IL, 32-bit imm)
 //   bit[4]     = R    (file bit: 0 = A file, 1 = B file)
 //   bits[3:0]  = N    (register index 0..15; idx 15 = SP alias)
 //
@@ -90,10 +90,20 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // MOVI IL K, Rd  — decoded but not yet executable (Task 0013).
-    // Routed to ILLEGAL so the core's illegal trap path catches it.
+    // MOVI IL K, Rd
     // -----------------------------------------------------------------------
-    // (Intentionally left to fall through to the ILLEGAL default for now.)
+    if (top10 == MOVI_TOP10 && instr[5] == 1'b1) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVI_IL;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.needs_imm16     = 1'b0;
+      decoded.needs_imm32     = 1'b1;
+      decoded.imm_sign_extend = 1'b0;   // 32-bit immediate is already full-width
+      decoded.alu_op          = ALU_OP_PASS_B;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
   end
 
 endmodule : tms34010_decode
