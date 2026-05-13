@@ -36,7 +36,8 @@
 | 0028 | NOP (No Operation) | complete |
 | 0029 | ADDC / SUBB Rs, Rd (carry-chain reg-reg) | complete |
 | 0030 | JRcc condition-code correction + signed compares | complete |
-| 0031 | JRcc long form (16-bit displacement) | in progress |
+| 0031 | JRcc long form (16-bit displacement) | complete |
+| 0032 | JUMP Rs (register-indirect jump) | in progress |
 
 ---
 
@@ -935,7 +936,7 @@ Commit:
 ---
 
 ### Task 0031: JRcc long form (16-bit displacement)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0030 (cc encoding fix + signed compares).
 - Tasks 0012/0013 (CORE_FETCH_IMM_LO path; needs_imm16 already wired
@@ -968,6 +969,36 @@ Tests: tb_jrcc_long PASS; the existing Verilator-clean regression
   set still PASS; lint clean.
 Docs: instruction_coverage.md (new JRcc-long row), changelog.md,
   tasks.md.
+Commit:
+- 355dad5
+
+---
+
+### Task 0032: JUMP Rs (register-indirect jump)
+Status: in progress
+Dependencies:
+- Task 0019 (PC load_en path); Task 0011 (regfile rs1 port).
+Spec source: SPVU001A page 12-98 ("Jump Indirect") + summary table.
+  Encoding `0000 0001 011R DDDD`; top11 = 11'b00000001_011 = 0x00B.
+Acceptance Criteria:
+- INSTR_JUMP_RS added to instr_class_t (6'd35).
+- Decoder recognizes the top11 prefix; `decoded.rd_file` and
+  `decoded.rs_idx` populated so the regfile's rs1 port reads Rs.
+  No writeback enables; no status update.
+- Core's PC-load mux gains an INSTR_JUMP_RS arm that unconditionally
+  loads PC with `{rf_rs1_data[31:4], 4'h0}` — Rs with the bottom
+  4 bits forced to 0 for word alignment.
+- `sim/tb/tb_jump_rs.sv` covers two scenarios: aligned target
+  (A-file Rs holding a word-aligned bit-address); messy LSBs
+  (B-file Rs with bottom nibble = 0xF, target should land at the
+  aligned position anyway). Plus a sentinel-untouched check
+  confirming neither fall-through MOVI ran, and the standard
+  illegal-flag check (memory NOP-pre-filled).
+- Encoding helper independently verified against
+  `jump_rs_enc(A, 1) = 0x0161` and `jump_rs_enc(B, 7) = 0x0177`.
+- Full Verilator regression: 26/26 PASS. Lint clean.
+Tests: tb_jump_rs PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (JUMP Rs row), changelog.md, tasks.md.
 Commit:
 - pending
 

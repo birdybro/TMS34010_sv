@@ -114,6 +114,12 @@ module tms34010_decode
   // (top9 = 9'b000000111); NOP's top9 = 9'b000000110, so no collision.
   localparam instr_word_t NOP_OPCODE = 16'h0300;
 
+  // JUMP Rs (register-indirect jump). Per SPVU001A page 12-98 +
+  // summary table line 13852: encoding `0000 0001 011R DDDD` —
+  // top11 = 11'b00000001_011. Semantics: Rs → PC, with the bottom
+  // 4 bits of PC forced to 0 (word alignment).
+  localparam logic [10:0] JUMP_RS_TOP11 = 11'b0000_0001_011;
+
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
   assign rs_idx_from_instr = instr[8:5];
@@ -703,6 +709,31 @@ module tms34010_decode
     if (instr == NOP_OPCODE) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_NOP;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // JUMP Rs (register-indirect jump)
+    //
+    // Encoding (SPVU001A page 12-98 + summary table):
+    //   bits[15:5] = 11'b00000001_011 (= 0x00B)
+    //   bit[4]     = R (file: 0 = A, 1 = B)
+    //   bits[3:0]  = Rs index
+    //
+    // Semantics: Rs → PC, with the bottom 4 bits of PC forced to 0.
+    // No status-register effect. Single-word instruction (no immediate).
+    //
+    // We populate the source-register selectors so the regfile's rs1
+    // port reads Rs; the core's PC-load mux then masks rf_rs1_data
+    // with `~32'hF` to enforce word alignment, and asserts pc_load_en
+    // in CORE_WRITEBACK.
+    // -----------------------------------------------------------------------
+    if (top11 == JUMP_RS_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_JUMP_RS;
+      decoded.rd_file     = reg_file_from_instr;   // same file bit governs Rs
+      decoded.rs_idx      = reg_idx_from_instr;    // Rs index lives in low 4 bits
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
     end

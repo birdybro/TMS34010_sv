@@ -228,9 +228,10 @@ package tms34010_pkg;
     INSTR_NOP        = 6'd31, // NOP              — no operation, PC advances only
     INSTR_ADDC_RR    = 6'd32, // ADDC Rs, Rd      — Rs + Rd + C → Rd (carry-in)
     INSTR_SUBB_RR    = 6'd33, // SUBB Rs, Rd      — Rd - Rs - C → Rd (borrow-in)
-    INSTR_JRCC_LONG  = 6'd34  // JRcc Address     — long form: 16-bit signed disp
+    INSTR_JRCC_LONG  = 6'd34, // JRcc Address     — long form: 16-bit signed disp
                               //                    in the following word; target =
                               //                    PC_after_both_fetches + disp*16
+    INSTR_JUMP_RS    = 6'd35  // JUMP Rs          — Rs → PC (bottom 4 bits cleared)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

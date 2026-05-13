@@ -370,6 +370,13 @@ module tms34010_core
             pc_load_value = branch_target_long;
           end
         end
+        INSTR_JUMP_RS: begin
+          // Unconditional indirect jump: load PC from Rs (read via rs1
+          // port) with the bottom 4 bits forced to 0 to enforce
+          // word alignment per SPVU001A page 12-98.
+          pc_load_en    = 1'b1;
+          pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
+        end
         default: ; // no branch
       endcase
     end

@@ -397,6 +397,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   (small positive disp), JREQ long taken via CMPI Z=1, JREQ long
   NOT taken via CMPI Z=0, and JRUC long with disp = +64 words to
   exercise the high byte of the disp word. Memory NOP-pre-filled.
+- Added **JUMP Rs (register-indirect jump)** — Task 0032. Per
+  SPVU001A page 12-98: encoding `0000 0001 011R DDDD`; semantics
+  `PC ← (Rs & ~0xF)` (word-aligned). Single-word instruction, no
+  status effect. `INSTR_JUMP_RS` joins the iclass enum; the
+  decoder routes the rs1 port to read Rs; the core's PC-load mux
+  gains an unconditional JUMP arm that masks the bottom 4 bits of
+  rf_rs1_data before writing it to the PC.
+- Added `sim/tb/tb_jump_rs.sv` — two scenarios: aligned A-file
+  target; messy-LSB B-file target (verifies the bottom-nibble mask).
+  Plus a sentinel check confirming no fall-through MOVI ran, and
+  the standard illegal-flag check (memory NOP-pre-filled).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
