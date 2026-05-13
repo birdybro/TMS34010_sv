@@ -309,20 +309,42 @@ module tms34010_core
                    && dsj_precondition;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
+  // LMO (Leftmost-One) datapath. Pure combinational — finds the
+  // highest-set bit of rf_rs1_data and computes Rd = 31 - bit_pos
+  // (i.e., one's-complement of the bit position in 5 bits). The
+  // upper 27 bits of Rd are zero. If rf_rs1_data == 0, Rd = 0 and
+  // the Z flag (gated by wb_flag_mask) is set.
+  logic [4:0]            lmo_bit_pos;
+  logic [DATA_WIDTH-1:0] lmo_result;
+  always_comb begin
+    // Iterate low-to-high so the LAST overwrite (highest set bit)
+    // wins. Synthesizable — no `break`, no run-time loop.
+    lmo_bit_pos = 5'd0;
+    for (int i = 0; i < DATA_WIDTH; i++) begin
+      if (rf_rs1_data[i]) lmo_bit_pos = 5'(i);
+    end
+    if (rf_rs1_data == '0)
+      lmo_result = '0;
+    else
+      lmo_result = {{(DATA_WIDTH-5){1'b0}}, ~lmo_bit_pos};
+  end
+
   // Regfile write-data mux. Several "Rd ← something" instructions
   // bypass the ALU/shifter and route a different source:
-  //   GETST → ST value
-  //   GETPC → current PC value
-  //   EXGPC → current PC value (the other half of the swap)
-  //   REV   → chip-revision constant (A0025)
+  //   GETST  → ST value
+  //   GETPC  → current PC value
+  //   EXGPC  → current PC value (the other half of the swap)
+  //   REV    → chip-revision constant (A0025)
+  //   LMO_RR → priority-encoder result
   // The default routes the shifter or ALU result per decoded.use_shifter.
   always_comb begin
     unique case (decoded.iclass)
-      INSTR_GETST: rf_wr_data = st_value;
+      INSTR_GETST:  rf_wr_data = st_value;
       INSTR_GETPC,
-      INSTR_EXGPC: rf_wr_data = pc_value;
-      INSTR_REV:   rf_wr_data = 32'h0000_0008;
-      default:     rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
+      INSTR_EXGPC:  rf_wr_data = pc_value;
+      INSTR_REV:    rf_wr_data = 32'h0000_0008;
+      INSTR_LMO_RR: rf_wr_data = lmo_result;
+      default:      rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
     endcase
   end
 
@@ -567,9 +589,11 @@ module tms34010_core
   alu_flags_t  flag_input;
   always_comb begin
     unique case (decoded.iclass)
-      INSTR_SETC: flag_input = '{n: 1'b0, c: 1'b1, z: 1'b0, v: 1'b0};
-      INSTR_CLRC: flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b0};
-      default:    flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
+      INSTR_SETC:   flag_input = '{n: 1'b0, c: 1'b1, z: 1'b0, v: 1'b0};
+      INSTR_CLRC:   flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b0};
+      INSTR_LMO_RR: flag_input = '{n: 1'b0, c: 1'b0,
+                                    z: (rf_rs1_data == '0), v: 1'b0};
+      default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
 

@@ -45,7 +45,8 @@
 | 0037 | BTST K/Rs + per-flag wb_flag_mask refactor | complete |
 | 0038 | CLRC / SETC / GETST / PUTST (status-reg ops) | complete |
 | 0039 | Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount) | complete |
-| 0040 | GETPC / EXGPC / REV (PC + revision register ops) | in progress |
+| 0040 | GETPC / EXGPC / REV (PC + revision register ops) | complete |
+| 0041 | LMO Rs, Rd (Leftmost-One priority encoder) | in progress |
 
 ---
 
@@ -1313,7 +1314,7 @@ Commit:
 ---
 
 ### Task 0040: GETPC / EXGPC / REV (PC + revision register ops)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0038 (status-reg manipulation; rf_wr_data mux already supports
   "non-ALU" sources). This task extends that mux pattern.
@@ -1347,6 +1348,42 @@ Acceptance Criteria:
 Tests: tb_pc_ops PASS; full Verilator regression PASS; lint clean.
 Docs: instruction_coverage.md (3 new rows), assumptions.md A0025,
   changelog.md, tasks.md.
+Commit:
+- e50d77a
+
+---
+
+### Task 0041: LMO Rs, Rd (Leftmost-One priority encoder)
+Status: in progress
+Dependencies:
+- Task 0037 (wb_flag_mask refactor — LMO uses Z-only updates per spec).
+Spec source: SPVU001A page 12-108 ("Find Leftmost One") + summary
+  table line 26955. Encoding `0110 101S SSSR DDDD` (top7 =
+  7'b0110_101). Status: Z = (Rs == 0); N, C, V unaffected.
+Acceptance Criteria:
+- INSTR_LMO_RR = 6'd57 added.
+- Decoder arm with top7 = 7'b0110_101 setting wb_reg_en=1,
+  wb_flag_mask = `'{n:0, c:0, z:1, v:0}` (Z-only via the mask
+  machinery added in Task 0037).
+- Core gains a combinational LMO datapath:
+    lmo_bit_pos = position of highest-set bit of rf_rs1_data
+                  (low-to-high scan; last hit wins → highest
+                  position; synthesizable without `break`)
+    lmo_result = (rf_rs1_data == 0) ? 32'h0
+                                    : {{27{1'b0}}, ~lmo_bit_pos}
+  rf_wr_data mux routes lmo_result for INSTR_LMO_RR.
+  flag_input mux delivers `{z: (rf_rs1_data == 0), others 0}`
+  for INSTR_LMO_RR; combined with the mask only Z updates.
+- `sim/tb/tb_lmo.sv` covers all 5 spec-table worked examples
+  (page 12-108):
+    Rs=0x00000000 → Rd=0, Z=1
+    Rs=0x00000001 → Rd=0x1F
+    Rs=0x00000010 → Rd=0x1B
+    Rs=0x08000000 → Rd=0x04
+    Rs=0x80000000 → Rd=0
+  Plus an N/C/V-preservation check after a CMP-set NCZV=1101.
+Tests: tb_lmo PASS; lint clean.
+Docs: instruction_coverage.md (LMO row), changelog.md, tasks.md.
 Commit:
 - pending
 

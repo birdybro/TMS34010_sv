@@ -581,6 +581,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   trap-sentinel MOVI right after EXGPC that must NOT execute, plus
   a known landing-site MOVI at the EXGPC target verifying the swap
   actually transferred control there).
+- Added **LMO Rs, Rd** (Task 0041) — Find Leftmost-One priority
+  encoder. Per SPVU001A page 12-108, encoding `0110 101S SSSR DDDD`
+  (top7 = 7'b0110_101). Semantics: Rd ← 31 - bit_pos(leftmost-1 in
+  Rs) in the bottom 5 bits (upper 27 = 0). If Rs == 0, Rd = 0 and
+  Z = 1. N, C, V Unaffected (via the wb_flag_mask from Task 0037).
+- Core gains a combinational LMO datapath: a synthesizable
+  low-to-high scan over Rs's 32 bits (the last hit wins, so we
+  end up with the highest-set bit position), then a conditional
+  one's-complement (5 bits) into the bottom of Rd. The `flag_input`
+  mux delivers `{z: (rs == 0), others: 0}` for INSTR_LMO_RR.
+- Added `sim/tb/tb_lmo.sv` — all 5 worked examples from the spec's
+  page-12-108 table (Rs=0, 1, 0x10, 0x08000000, 0x80000000) plus
+  an N/C/V-preservation check that runs a CMP to set NCZV=1101,
+  then an LMO, then verifies the three flags survived.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

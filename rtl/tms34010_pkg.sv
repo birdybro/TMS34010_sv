@@ -256,7 +256,10 @@ package tms34010_pkg;
     INSTR_RL_RR      = 6'd53, // RL  Rs, Rd        — rotate left by Rs[4:0]
     INSTR_GETPC      = 6'd54, // GETPC Rd          — Rd ← PC (current bit-addressed PC)
     INSTR_EXGPC      = 6'd55, // EXGPC Rd          — swap PC ↔ Rd (PC's low 4 bits cleared)
-    INSTR_REV        = 6'd56  // REV Rd            — Rd ← chip-revision number constant
+    INSTR_REV        = 6'd56, // REV Rd            — Rd ← chip-revision number constant
+    INSTR_LMO_RR     = 6'd57  // LMO Rs, Rd        — Rd ← 31 - bit_pos(leftmost-1 in Rs)
+                              //                     in bottom 5 bits; upper 27 bits = 0;
+                              //                     Z = (Rs == 0); N/C/V unaffected
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

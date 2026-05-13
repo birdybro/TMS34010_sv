@@ -102,6 +102,13 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // LMO Rs, Rd (Leftmost-One priority encoder). Per SPVU001A page 12-108
+  // + summary table line 26955: encoding `0110 101S SSSR DDDD`
+  // (top7 = 7'b0110_101 = 0x35). Rs and Rd same file; result =
+  // 31 - bit_pos(leftmost-1 in Rs) in bottom 5 bits; Z = (Rs == 0).
+  // N, C, V Unaffected — uses the wb_flag_mask added in Task 0037.
+  localparam logic [6:0] LMO_RR_TOP7  = 7'b0110_101;
+
   // Shift Rs-form family. Per SPVU001A summary table page A-15:
   //   SLA Rs, Rd : 0110 000S SSSR DDDD   (top7 = 7'b0110_000)
   //   SLL Rs, Rd : 0110 001S SSSR DDDD   (top7 = 7'b0110_001)
@@ -637,6 +644,26 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // LMO Rs, Rd  (Leftmost-One priority encoder)
+    //
+    // Rd <- 31 - bit_pos(leftmost-1 in Rs)  (5 bits; upper 27 bits = 0)
+    //   if Rs == 0: Rd <- 0; Z <- 1
+    //   else:        Z <- 0
+    // N, C, V "Unaffected" per SPVU001A page 12-108 — wb_flag_mask
+    // gates them out.
+    // -----------------------------------------------------------------------
+    if (top7 == LMO_RR_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_LMO_RR;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
 
     // -----------------------------------------------------------------------

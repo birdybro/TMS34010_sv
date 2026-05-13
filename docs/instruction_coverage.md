@@ -82,6 +82,7 @@ Required columns:
 | GETPC Rd | `0000 0001 010R DDDD` (= `0x0140 \| (R<<4) \| Rd`) | SPVU001A summary table | implemented | tb_pc_ops | none | none | TBD | Rd ← current PC (bit-addressed, captured at CORE_WRITEBACK). |
 | EXGPC Rd | `0000 0001 001R DDDD` (= `0x0120 \| (R<<4) \| Rd`) | SPVU001A summary table | implemented (A0025) | tb_pc_ops | none | none | TBD | Atomic swap PC ↔ Rd. PC ← `(old Rd & ~0xF)` (low 4 bits forced to 0 for word alignment per A0025); Rd ← old PC. Uses the regfile's async-read property to read the old Rd while writing the new value in the same WRITEBACK cycle. |
 | REV Rd   | `0000 0000 001R DDDD` (= `0x0020 \| (R<<4) \| Rd`) | SPVU001A page 12-233 (A0025) | implemented | tb_pc_ops | none | none | TBD | Rd ← chip-revision constant. Per the spec's worked example, value = `0x0000_0008`. |
+| LMO Rs, Rd | `0110 101S SSSR DDDD` (= `0x6A00 \| (Rs<<5) \| (R<<4) \| Rd`) | SPVU001A page 12-108 + summary table | implemented | tb_lmo | **Z only** (N/C/V Unaffected via wb_flag_mask) | none | TBD | Rd ← 31 - bit_pos(leftmost-1 in Rs) in bottom 5 bits (upper 27 bits = 0). If Rs = 0: Rd = 0 and Z = 1. Otherwise Z = 0. Useful for normalization/priority encoding. The 5 spec-table worked examples are the test vectors in tb_lmo. |
 
 ## Categories to populate (placeholder roadmap)
 
