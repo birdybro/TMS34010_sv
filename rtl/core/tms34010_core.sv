@@ -149,6 +149,16 @@ module tms34010_core
   assign disp_signed_12   = $signed({instr_word_q[7:0], 4'h0});
   assign branch_target_short = pc_value + ADDR_WIDTH'(disp_signed_12);
 
+  // Immediate latches — declared up here (before their first use in
+  // the branch_target_long / branch_target_jacc combinational
+  // computations below) because Questa is strict about forward
+  // references in `assign` statements, even though Verilator hoists
+  // them. The matching `always_ff` that actually latches imm_lo_q /
+  // imm_hi_q on memory acks lives further down (search for
+  // CORE_FETCH_IMM_LO / CORE_FETCH_IMM_HI).
+  instr_word_t imm_lo_q;
+  instr_word_t imm_hi_q;
+
   // Long-form JRcc target: PC_after_both_fetches + sign_extend(disp16) × 16.
   // By the time the FSM hits CORE_WRITEBACK, pc_value already equals
   // (PC_original + 32 bits) — the opcode FETCH and the IMM_LO FETCH each
@@ -183,14 +193,12 @@ module tms34010_core
   // Immediate latch
   //
   // Long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, ...) fetch
-  // one or two additional 16-bit words after the opcode word. We latch
-  // them into imm_lo_q / imm_hi_q during the CORE_FETCH_IMM_LO and
-  // CORE_FETCH_IMM_HI states, then sign-extend or concatenate into a
-  // 32-bit operand in CORE_EXECUTE.
+  // one or two additional 16-bit words after the opcode word. The
+  // imm_lo_q / imm_hi_q registers are DECLARED earlier (just before
+  // the branch_target_long block) so the assigns above can reference
+  // them under strict simulators like Questa; the always_ff that
+  // updates them sits here.
   // ---------------------------------------------------------------------------
-  instr_word_t imm_lo_q;
-  instr_word_t imm_hi_q;
-
   always_ff @(posedge clk) begin
     if (rst) begin
       imm_lo_q <= '0;
