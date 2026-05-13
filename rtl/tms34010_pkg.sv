@@ -248,7 +248,12 @@ package tms34010_pkg;
     INSTR_CLRC       = 6'd45, // CLRC              — ST.C ← 0; N, Z, V unchanged
     INSTR_SETC       = 6'd46, // SETC              — ST.C ← 1; N, Z, V unchanged
     INSTR_GETST      = 6'd47, // GETST Rd          — Rd ← ST
-    INSTR_PUTST      = 6'd48  // PUTST Rs          — ST ← Rs (full 32-bit write)
+    INSTR_PUTST      = 6'd48, // PUTST Rs          — ST ← Rs (full 32-bit write)
+    INSTR_SLA_RR     = 6'd49, // SLA Rs, Rd        — shift left arithmetic by Rs[4:0]
+    INSTR_SLL_RR     = 6'd50, // SLL Rs, Rd        — shift left logical by Rs[4:0]
+    INSTR_SRA_RR     = 6'd51, // SRA Rs, Rd        — shift right arithmetic by 2sCmp(Rs[4:0])
+    INSTR_SRL_RR     = 6'd52, // SRL Rs, Rd        — shift right logical by 2sCmp(Rs[4:0])
+    INSTR_RL_RR      = 6'd53  // RL  Rs, Rd        — rotate left by Rs[4:0]
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

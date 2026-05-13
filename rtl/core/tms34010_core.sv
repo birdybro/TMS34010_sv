@@ -516,14 +516,29 @@ module tms34010_core
 
   // Shifter datapath. Operand is the Rd register value (via rf_rs2_data,
   // which already reads decoded.rd_idx in the same file as the
-  // destination). Shift amount comes from decoded.k5 (the same K
-  // extraction used by MOVK/ADDK/SUBK). The output is muxed into the
-  // writeback paths above; it sits idle (combinationally driven from
-  // current operand state) when no shift instruction is decoded.
+  // destination). Shift amount comes from one of two sources:
+  //   - K-form shifts (SLA/SLL/SRA/SRL/RL K, Rd):  decoded.k5 (literal K)
+  //   - Rs-form left/rotate shifts (SLA/SLL/RL Rs, Rd):  Rs[4:0] directly
+  //   - Rs-form right shifts (SRA/SRL Rs, Rd):  2's complement of Rs[4:0]
+  //     (per spec page 12-219; "use the 2s complement value of the
+  //     5 LSBs in Rs"). The negation is done here in the amount mux.
+  logic [SHIFT_AMOUNT_WIDTH-1:0] shifter_amount;
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_SLA_RR,
+      INSTR_SLL_RR,
+      INSTR_RL_RR:  shifter_amount = rf_rs1_data[SHIFT_AMOUNT_WIDTH-1:0];
+      INSTR_SRA_RR,
+      INSTR_SRL_RR: shifter_amount = (~rf_rs1_data[SHIFT_AMOUNT_WIDTH-1:0])
+                                     + {{(SHIFT_AMOUNT_WIDTH-1){1'b0}}, 1'b1};
+      default:      shifter_amount = decoded.k5;
+    endcase
+  end
+
   tms34010_shifter u_shifter (
     .op    (decoded.shift_op),
     .a     (rf_rs2_data),
-    .amount(decoded.k5),
+    .amount(shifter_amount),
     .result(shifter_result),
     .flags (shifter_flags)
   );

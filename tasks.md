@@ -43,7 +43,8 @@
 | 0035 | DSJS Rd, Address (decrement-and-skip-jump short form) | complete |
 | 0036 | ABS / NEGB Rd (complete the unary family) | complete |
 | 0037 | BTST K/Rs + per-flag wb_flag_mask refactor | complete |
-| 0038 | CLRC / SETC / GETST / PUTST (status-reg ops) | in progress |
+| 0038 | CLRC / SETC / GETST / PUTST (status-reg ops) | complete |
+| 0039 | Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount) | in progress |
 
 ---
 
@@ -1237,7 +1238,7 @@ Commit:
 ---
 
 ### Task 0038: CLRC / SETC / GETST / PUTST (status-register manipulation)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0037 (wb_flag_mask used by CLRC/SETC for selective C-only updates).
 - Task 0009 (status register has full ST-write path used by PUTST).
@@ -1271,6 +1272,40 @@ Acceptance Criteria:
   `putst_enc(B,7) = 0x01B7`.
 Tests: tb_st_ops PASS; full Verilator regression PASS; lint clean.
 Docs: instruction_coverage.md (4 new rows), changelog.md, tasks.md.
+Commit:
+- 1236868
+
+---
+
+### Task 0039: Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount)
+Status: in progress
+Dependencies:
+- Task 0024 (K-form shifter wired; this task extends with a second
+  amount source).
+Spec source: SPVU001A summary table page A-15 + page 12-219 prose
+  (the per-shift detail pages). Encodings `0110 0NNS SSSR DDDD`
+  where NN selects {SLA, SLL, SRA, SRL, RL} per top7 prefixes
+  `7'b0110_000..100`.
+Acceptance Criteria:
+- Five new iclass values (INSTR_{SLA,SLL,SRA,SRL,RL}_RR) at
+  6'd49..53.
+- Decoder arms with the corresponding top7 prefixes, populating
+  `decoded.shift_op`, `decoded.rs_idx`, `decoded.rd_*`,
+  `use_shifter = 1`, `wb_reg_en = 1`, `wb_flags_en = 1`.
+- Core gains a `shifter_amount` mux signal:
+  - For `INSTR_SLA_RR/SLL_RR/RL_RR`: `shifter_amount = rf_rs1_data[4:0]`.
+  - For `INSTR_SRA_RR/SRL_RR`: `shifter_amount = (~rf_rs1_data[4:0]) + 1`
+    (2's complement per A0019-extended; the assembler emits the
+    negated amount).
+  - Default (K-form): `shifter_amount = decoded.k5` (unchanged).
+- `sim/tb/tb_shift_rr.sv` covers all 5 Rs-form shifts with shift
+  amount = 4. For SRA/SRL it uses A1 = 28 (5-bit 2's-comp of 4)
+  to drive the HW into a magnitude-4 right shift.
+- Encoding helper verified: `shift_rr_enc(SLL_top7, A1, A, A2) = 0x6222`,
+  `shift_rr_enc(SRA_top7, A3, A, A4) = 0x6464`.
+- Full Verilator regression PASS; lint clean.
+Tests: tb_shift_rr PASS; tb_shift_k unchanged; full regression PASS.
+Docs: instruction_coverage.md (5 new rows), changelog.md, tasks.md.
 Commit:
 - pending
 

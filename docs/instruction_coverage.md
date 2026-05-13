@@ -58,6 +58,11 @@ Required columns:
 | SRA K,Rd | `0010 10KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >>> K (sign-extending arithmetic right shift). |
 | SRL K,Rd | `0010 11KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >> K (logical right shift; MSB ← 0). |
 | RL  K,Rd | `0011 00KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd ROL K (rotate left). |
+| SLA Rs,Rd | `0110 000S SSSR DDDD` (= `0x6000 \| (Rs<<5) \| (R<<4) \| Rd`) | SPVU001A A-15 (A0019 ext.) | implemented | tb_shift_rr | N, C, Z, V | none | TBD | Rd << Rs[4:0] (arithmetic; shift amount from Rs's low 5 bits). |
+| SLL Rs,Rd | `0110 001S SSSR DDDD` | SPVU001A A-15 | implemented | tb_shift_rr | N, C, Z | none | TBD | Rd << Rs[4:0] (logical). |
+| SRA Rs,Rd | `0110 010S SSSR DDDD` | SPVU001A A-15 (A0019 ext.) | implemented | tb_shift_rr | N, C, Z | none | TBD | Rd >>> magnitude(Rs[4:0]) — per spec, the HW uses the **2's complement** of Rs[4:0] as the magnitude (assembler emits `-amount` mod 32). Core's shifter-amount mux applies the negation. |
+| SRL Rs,Rd | `0110 011S SSSR DDDD` | SPVU001A A-15 | implemented | tb_shift_rr | C, Z | none | TBD | Rd >> magnitude(Rs[4:0]) (logical; same 2sCmp convention as SRA). |
+| RL  Rs,Rd | `0110 100S SSSR DDDD` | SPVU001A A-15 | implemented | tb_shift_rr | C, Z | none | TBD | Rd ROL Rs[4:0]. |
 | ADDI IL K,Rd | `0000 1011 001R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Rd + K32 → Rd. |
 | SUBI IL K,Rd | `0000 1101 000R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Rd - K32 → Rd. **Different base prefix from the rest of the IL family.** |
 | CMPI IL K,Rd | `0000 1011 011R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Flags from Rd - K32; Rd unchanged. |

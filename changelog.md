@@ -547,6 +547,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   custom ST value, then SETC and CLRC each followed by a GETST
   capture, then bit-level checks confirming CLRC/SETC truly only
   touch C (N/Z/V preserved from the prior PUTST value).
+- Added **Shift Rs-form family** — SLA / SLL / SRA / SRL / RL with
+  the shift amount sourced from Rs's low 5 bits instead of a 5-bit
+  literal (Task 0039). Five new iclass values and decoder arms with
+  the `0110_0NN` top-7 prefix shape from SPVU001A page A-15. The
+  core's shifter-amount input gains a new mux: K-form arms drive
+  `decoded.k5` (unchanged); Rs-form left/rotate shifts (SLA/SLL/RL)
+  drive `rf_rs1_data[4:0]` directly; Rs-form right shifts (SRA/SRL)
+  drive `(~rf_rs1_data[4:0]) + 1` to apply the 2's-complement
+  convention spelled out on page 12-219 ("the SRA Rs, Rd and SRL
+  Rs, Rd use the 2s complement value of the 5 LSBs in Rs"). This
+  extends A0019 to cover the Rs form.
+- Added `sim/tb/tb_shift_rr.sv` — five scenarios, one per opcode,
+  each shifting by 4. For SRA/SRL the test loads A1 = 28 (5-bit
+  2's-comp of -4) to drive a magnitude-4 right shift, verifying
+  the negation in the shifter-amount mux end-to-end.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

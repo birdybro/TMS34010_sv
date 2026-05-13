@@ -102,6 +102,23 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // Shift Rs-form family. Per SPVU001A summary table page A-15:
+  //   SLA Rs, Rd : 0110 000S SSSR DDDD   (top7 = 7'b0110_000)
+  //   SLL Rs, Rd : 0110 001S SSSR DDDD   (top7 = 7'b0110_001)
+  //   SRA Rs, Rd : 0110 010S SSSR DDDD   (top7 = 7'b0110_010)
+  //   SRL Rs, Rd : 0110 011S SSSR DDDD   (top7 = 7'b0110_011)
+  //   RL  Rs, Rd : 0110 100S SSSR DDDD   (top7 = 7'b0110_100)
+  //
+  // The shift amount comes from Rs[4:0]. Per A0019 (extended for the
+  // Rs-form): "the SRA Rs, Rd and SRL Rs, Rd use the 2s complement
+  // value of the 5 LSBs in Rs". So the core's shifter-amount mux must
+  // negate Rs[4:0] for the right-shift opcodes.
+  localparam logic [6:0] SLA_RR_TOP7  = 7'b0110_000;
+  localparam logic [6:0] SLL_RR_TOP7  = 7'b0110_001;
+  localparam logic [6:0] SRA_RR_TOP7  = 7'b0110_010;
+  localparam logic [6:0] SRL_RR_TOP7  = 7'b0110_011;
+  localparam logic [6:0] RL_RR_TOP7   = 7'b0110_100;
+
   // JRcc short form: chart row "1100 code xxxx xxxx" with any cc.
   // bits[15:12] = 4'b1100; bits[11:8] = cc (4 bits); bits[7:0] = signed
   // 8-bit displacement. The two low-byte values 0x00 and 0x80 are reserved
@@ -545,6 +562,69 @@ module tms34010_decode
           decoded.wb_flags_en     = 1'b1;
         end
       endcase
+    end
+
+    // -----------------------------------------------------------------------
+    // Shift Rs-form family (SLA / SLL / SRA / SRL / RL Rs, Rd)
+    //
+    // Shift amount comes from rf_rs1_data[4:0]; the core's
+    // shifter-amount mux applies the 2's-complement negation for
+    // SRA/SRL per A0019 (extended).
+    // -----------------------------------------------------------------------
+    if (top7 == SLA_RR_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SLA_RR;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.shift_op    = SHIFT_OP_SLA;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top7 == SLL_RR_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SLL_RR;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.shift_op    = SHIFT_OP_SLL;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top7 == SRA_RR_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SRA_RR;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.shift_op    = SHIFT_OP_SRA;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top7 == SRL_RR_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SRL_RR;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.shift_op    = SHIFT_OP_SRL;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+    if (top7 == RL_RR_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_RL_RR;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.shift_op    = SHIFT_OP_RL;
+      decoded.use_shifter = 1'b1;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
     end
 
     // -----------------------------------------------------------------------
