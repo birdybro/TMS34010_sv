@@ -33,7 +33,8 @@
 | 0025 | Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI) | complete |
 | 0026 | MOVE Rs, Rd (register-to-register) | complete |
 | 0027 | JRcc unsigned compares (LO, LS, HI, HS) | complete |
-| 0028 | NOP (No Operation) | in progress |
+| 0028 | NOP (No Operation) | complete |
+| 0029 | ADDC / SUBB Rs, Rd (carry-chain reg-reg) | in progress |
 
 ---
 
@@ -817,7 +818,7 @@ Commit:
 ---
 
 ### Task 0028: NOP (No Operation)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0010 (decode skeleton; FSM walks FETCH→DECODE→EXECUTE→WRITEBACK
   → FETCH with default writeback gates).
@@ -844,6 +845,46 @@ Acceptance Criteria:
 Tests: tb_nop PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (NOP row), assumptions.md A0021,
   changelog.md, tasks.md.
+Commit:
+- 0288d0f
+
+---
+
+### Task 0029: ADDC / SUBB Rs, Rd (carry-chain reg-reg arithmetic)
+Status: in progress
+Dependencies:
+- Task 0015/0016 (reg-reg shape + ALU has ADDC/SUBB ops + cin wired
+  from st_c + SUB-style operand swap pattern available).
+Spec source: SPVU001A page 12-37 (ADDC), page 12-248 (SUBB), plus the
+  instruction-summary table. Encodings `0100 001S SSSR DDDD` (ADDC)
+  and `0100 011S SSSR DDDD` (SUBB). A0022 captures the carry/borrow
+  semantics and the use of the spec's worked examples as test vectors.
+Acceptance Criteria:
+- `instr_class_t` widened from 5 to 6 bits to make room past
+  INSTR_NOP (5'd31). All existing enumerators kept their integer
+  values; new entries are INSTR_ADDC_RR = 6'd32 and
+  INSTR_SUBB_RR = 6'd33.
+- Decoder: two new arms with 7-bit prefixes `7'b0100_001` (ADDC) and
+  `7'b0100_011` (SUBB), each setting `alu_op = ALU_OP_{ADDC,SUBB}`,
+  `wb_reg_en = 1`, `wb_flags_en = 1`.
+- Core: SUBB joins the alu_a / alu_b operand-swap groups (alu_a = Rd,
+  alu_b = Rs) so the ALU computes `Rd - Rs - cin`. ADDC uses the
+  default routing because the operation is commutative on its
+  register operands.
+- `sim/tb/tb_addc_subb.sv` covers five cases landing in distinct
+  destinations: ADDC C=0; ADDC C=1; SUBB C=0; SUBB C=1; and the
+  SPVU001A page 12-248 row 7 signed-overflow vector
+  (`0x7FFFFFFE - 0xFFFFFFFE` with C=0 → `0x80000000`, NCZV=1101).
+  Final ST is checked against the spec NCZV row. Memory is pre-filled
+  with NOP so end-of-program stays valid.
+- A0022 records the semantics and test-vector source.
+- Full Verilator regression of the 13 testbenches that already pass
+  cleanly under Verilator: 13/13 PASS. RTL lint clean. Questa
+  regression to be run on the Windows dev box.
+Tests: tb_addc_subb PASS; the previous Verilator-clean regression set
+  still PASS; lint clean.
+Docs: instruction_coverage.md (ADDC + SUBB rows), assumptions.md
+  A0022, changelog.md, tasks.md.
 Commit:
 - pending
 

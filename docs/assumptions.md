@@ -398,6 +398,19 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Why this matters**: The encoding superficially looks like it could be part of the unary family (`0000 0011 1xxx xxxx`, page A-14 — top9 = `9'b000000111`). It is NOT — NOP's top9 is `9'b000000110` (bit[7]=0). ABS A0 has the same alphanumeric "0x0300" mnemonic flavor but is actually `0x0380` (bit[7]=1 to enter the unary family). The decoder treats them as fully disjoint encodings.
 - **How to apply**: Recognize `instr == 16'h0300` directly. Both writeback gates stay 0; PC advance is the only effect, and that happens for free via the FETCH-ack pulse.
 
+---
+
+## A0022 — ADDC / SUBB carry-in / borrow-in semantics resolved against SPVU001A
+- **Date**: 2026-05-12
+- **Status**: resolved against SPVU001A pages 12-37 (ADDC) and 12-248 (SUBB), plus the instruction-summary table.
+- **Source**: `third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf` §"ADDC" page 12-37 and §"SUBB" page 12-248.
+- **Conclusion**:
+  - ADDC: `Rd = Rs + Rd + C`. Flags N, C, Z, V from the 33-bit sum.
+  - SUBB: `Rd = Rd - Rs - C`. Flags N, C, Z, V; C is the borrow-out from the 33-bit subtractor `(a + ~b + (1 - cin))`.
+  - C means: for SUB/SUBB, "1 if there is a borrow, 0 otherwise" (quoted from the SUBB page 12-248 prose). The ALU already implements this convention (page A0009 records it).
+- **Test-vector source**: SPVU001A page 12-248 supplies 14 worked SUBB examples covering positive/negative operands, both cin values, and the signed-overflow corner case `0x7FFFFFFE - 0xFFFFFFFE` (row 7 in the spec table). `sim/tb/tb_addc_subb.sv` uses row 7 as its signed-overflow check.
+- **How to apply**: The ALU already does the right thing for `ALU_OP_ADDC` and `ALU_OP_SUBB`; decoder selects them and core-side operand routing follows the existing SUB pattern (alu_a = Rd, alu_b = Rs) for SUBB. ADDC uses the default routing because the operation is commutative on its register operands.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

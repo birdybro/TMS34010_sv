@@ -190,41 +190,44 @@ package tms34010_pkg;
   typedef logic [INSTR_WORD_WIDTH-1:0] instr_word_t;
 
   // Instruction class — used by the core control FSM to pick the
-  // decode/execute/memory/writeback path.
-  typedef enum logic [4:0] {
-    INSTR_ILLEGAL    = 5'd0,
-    INSTR_MOVI_IW    = 5'd1,  // MOVI IW K, Rd    — 16-bit sign-extended immediate
-    INSTR_MOVI_IL    = 5'd2,  // MOVI IL K, Rd    — 32-bit immediate
-    INSTR_MOVK       = 5'd3,  // MOVK K, Rd       — 5-bit zero-extended constant
-    INSTR_ADD_RR     = 5'd4,  // ADD Rs, Rd       — Rs + Rd → Rd; both same file
-    INSTR_SUB_RR     = 5'd5,  // SUB Rs, Rd       — Rd - Rs → Rd; both same file
-    INSTR_AND_RR     = 5'd6,  // AND Rs, Rd       — Rd & Rs  → Rd
-    INSTR_ANDN_RR    = 5'd7,  // ANDN Rs, Rd      — Rd & ~Rs → Rd
-    INSTR_OR_RR      = 5'd8,  // OR Rs, Rd        — Rd | Rs  → Rd
-    INSTR_XOR_RR     = 5'd9,  // XOR Rs, Rd       — Rd ^ Rs  → Rd
-    INSTR_CMP_RR     = 5'd10, // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
-    INSTR_JRCC_SHORT = 5'd11, // JRcc short       — conditional relative jump
+  // decode/execute/memory/writeback path. Widened to 6 bits in Task
+  // 0029 when ADDC/SUBB pushed the count past 32.
+  typedef enum logic [5:0] {
+    INSTR_ILLEGAL    = 6'd0,
+    INSTR_MOVI_IW    = 6'd1,  // MOVI IW K, Rd    — 16-bit sign-extended immediate
+    INSTR_MOVI_IL    = 6'd2,  // MOVI IL K, Rd    — 32-bit immediate
+    INSTR_MOVK       = 6'd3,  // MOVK K, Rd       — 5-bit zero-extended constant
+    INSTR_ADD_RR     = 6'd4,  // ADD Rs, Rd       — Rs + Rd → Rd; both same file
+    INSTR_SUB_RR     = 6'd5,  // SUB Rs, Rd       — Rd - Rs → Rd; both same file
+    INSTR_AND_RR     = 6'd6,  // AND Rs, Rd       — Rd & Rs  → Rd
+    INSTR_ANDN_RR    = 6'd7,  // ANDN Rs, Rd      — Rd & ~Rs → Rd
+    INSTR_OR_RR      = 6'd8,  // OR Rs, Rd        — Rd | Rs  → Rd
+    INSTR_XOR_RR     = 6'd9,  // XOR Rs, Rd       — Rd ^ Rs  → Rd
+    INSTR_CMP_RR     = 6'd10, // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
+    INSTR_JRCC_SHORT = 6'd11, // JRcc short       — conditional relative jump
                               //                    (cc=0 = UC = unconditional)
-    INSTR_ADDK       = 5'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
-    INSTR_SUBK       = 5'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
-    INSTR_NEG        = 5'd14, // NEG Rd           — 0 - Rd → Rd
-    INSTR_NOT        = 5'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
-    INSTR_ADDI_IW    = 5'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
-    INSTR_SUBI_IW    = 5'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
-    INSTR_CMPI_IW    = 5'd18, // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
-    INSTR_SLA_K      = 5'd19, // SLA K, Rd        — Rd << K (arithmetic, may set V)
-    INSTR_SLL_K      = 5'd20, // SLL K, Rd        — Rd << K (logical)
-    INSTR_SRA_K      = 5'd21, // SRA K, Rd        — Rd >>> K (arithmetic / sign-extend)
-    INSTR_SRL_K      = 5'd22, // SRL K, Rd        — Rd >> K  (logical, MSB ← 0)
-    INSTR_RL_K       = 5'd23, // RL K, Rd         — Rd ROL K (rotate left)
-    INSTR_ADDI_IL    = 5'd24, // ADDI IL K, Rd    — Rd + K32 → Rd
-    INSTR_SUBI_IL    = 5'd25, // SUBI IL K, Rd    — Rd - K32 → Rd
-    INSTR_CMPI_IL    = 5'd26, // CMPI IL K, Rd    — flags from Rd - K32; Rd unchanged
-    INSTR_ANDI_IL    = 5'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
-    INSTR_ORI_IL     = 5'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
-    INSTR_XORI_IL    = 5'd29, // XORI IL K, Rd    — Rd ^ K32 → Rd
-    INSTR_MOVE_RR    = 5'd30, // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)
-    INSTR_NOP        = 5'd31  // NOP              — no operation, PC advances only
+    INSTR_ADDK       = 6'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
+    INSTR_SUBK       = 6'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
+    INSTR_NEG        = 6'd14, // NEG Rd           — 0 - Rd → Rd
+    INSTR_NOT        = 6'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
+    INSTR_ADDI_IW    = 6'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
+    INSTR_SUBI_IW    = 6'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
+    INSTR_CMPI_IW    = 6'd18, // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
+    INSTR_SLA_K      = 6'd19, // SLA K, Rd        — Rd << K (arithmetic, may set V)
+    INSTR_SLL_K      = 6'd20, // SLL K, Rd        — Rd << K (logical)
+    INSTR_SRA_K      = 6'd21, // SRA K, Rd        — Rd >>> K (arithmetic / sign-extend)
+    INSTR_SRL_K      = 6'd22, // SRL K, Rd        — Rd >> K  (logical, MSB ← 0)
+    INSTR_RL_K       = 6'd23, // RL K, Rd         — Rd ROL K (rotate left)
+    INSTR_ADDI_IL    = 6'd24, // ADDI IL K, Rd    — Rd + K32 → Rd
+    INSTR_SUBI_IL    = 6'd25, // SUBI IL K, Rd    — Rd - K32 → Rd
+    INSTR_CMPI_IL    = 6'd26, // CMPI IL K, Rd    — flags from Rd - K32; Rd unchanged
+    INSTR_ANDI_IL    = 6'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
+    INSTR_ORI_IL     = 6'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
+    INSTR_XORI_IL    = 6'd29, // XORI IL K, Rd    — Rd ^ K32 → Rd
+    INSTR_MOVE_RR    = 6'd30, // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)
+    INSTR_NOP        = 6'd31, // NOP              — no operation, PC advances only
+    INSTR_ADDC_RR    = 6'd32, // ADDC Rs, Rd      — Rs + Rd + C → Rd (carry-in)
+    INSTR_SUBB_RR    = 6'd33  // SUBB Rs, Rd      — Rd - Rs - C → Rd (borrow-in)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

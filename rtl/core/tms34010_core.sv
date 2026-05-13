@@ -266,6 +266,7 @@ module tms34010_core
   always_comb begin
     unique case (decoded.iclass)
       INSTR_SUB_RR,
+      INSTR_SUBB_RR,
       INSTR_ANDN_RR,
       INSTR_CMP_RR,
       INSTR_ADDK,
@@ -301,6 +302,7 @@ module tms34010_core
       INSTR_ADDK,
       INSTR_SUBK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_SUB_RR,
+      INSTR_SUBB_RR,
       INSTR_ANDN_RR,
       INSTR_CMP_RR:  alu_b = rf_rs1_data;   // Rs is the "second" operand
       default:       alu_b = rf_rs2_data;

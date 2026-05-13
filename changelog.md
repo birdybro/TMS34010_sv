@@ -331,6 +331,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   the illegal-flag check meaningful at end-of-test.
 - Added `docs/assumptions.md` A0021 capturing the NOP encoding source
   and the encoding distinction from the unary family.
+- Added **ADDC Rs, Rd** (`0100 001S SSSR DDDD`) and **SUBB Rs, Rd**
+  (`0100 011S SSSR DDDD`) — reg-reg arithmetic with carry-in /
+  borrow-in from ST.C, used for extended-precision arithmetic chained
+  with ADD/SUB/SUBI/etc. Both write N, C, Z, V from the 33-bit
+  adder/subtractor. The ALU already implemented ADDC/SUBB; the work
+  here is decode arms, the SUBB operand-swap (alu_a=Rd, alu_b=Rs to
+  match SUB), and the test. A0022 captures the semantics and the use
+  of SPVU001A page 12-248's worked SUBB examples as test vectors.
+- Widened `instr_class_t` from 5 to 6 bits (Task 0029) — INSTR_NOP at
+  5'd31 had exhausted the 5-bit space. All existing enumerator values
+  preserved; only the enum width and the literal-width prefixes
+  changed.
+- Added `sim/tb/tb_addc_subb.sv` — five test cases landing in distinct
+  destinations: ADDC with C=0; ADDC with C=1; SUBB with C=0; SUBB
+  with C=1; and the SPVU001A page 12-248 row 7 spec vector
+  (`0x7FFFFFFE - 0xFFFFFFFE` with C=0 → `0x80000000`, NCZV=1101)
+  serving as the signed-overflow corner case. The carry-in for each
+  test is set up using either MOVI/MOVK (preserve / clear C) or a
+  deliberately-overflowing ADD (set C=1).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

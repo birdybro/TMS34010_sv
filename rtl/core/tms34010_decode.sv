@@ -93,7 +93,9 @@ module tms34010_decode
   // and treats it as a full 32-bit register copy (A0020).
   localparam logic [5:0] MOVE_RR_TOP6 = 6'b100100;  // 1001 00FS SSSR DDDD
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
+  localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
+  localparam logic [6:0] SUBB_RR_TOP7 = 7'b0100_011;  // chart: 0100 011S SSSR DDDD
   localparam logic [6:0] AND_RR_TOP7  = 7'b0101_000;  // chart: 0101 000S SSSR DDDD
   localparam logic [6:0] ANDN_RR_TOP7 = 7'b0101_001;  // chart: 0101 001S SSSR DDDD
   localparam logic [6:0] OR_RR_TOP7   = 7'b0101_010;  // chart: 0101 010S SSSR DDDD
@@ -486,6 +488,28 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
+    // ADDC Rs, Rd  (Rs + Rd + C → Rd; carry-in from ST.C)
+    //
+    // Spec source: SPVU001A page 12-37 (per-instruction page) and the
+    // instruction-summary table — encoding `0100 001S SSSR DDDD`. Used
+    // for extended-precision arithmetic chained with ADD/ADDI/ADDK.
+    //
+    // ADDC is commutative on its register operands so the default
+    // operand routing (alu_a=Rs, alu_b=Rd) needs no swap. The ALU
+    // already wires alu_cin from st_c, so this just selects ALU_OP_ADDC.
+    // -----------------------------------------------------------------------
+    if (top7 == ADDC_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_ADDC_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.alu_op          = ALU_OP_ADDC;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
     // SUB Rs, Rd  (Rd - Rs → Rd; same-file constraint)
     // -----------------------------------------------------------------------
     if (top7 == SUB_RR_TOP7) begin
@@ -498,6 +522,29 @@ module tms34010_decode
       // (a - b) = (Rd - Rs) → Rd, matching the spec "Rd - Rs → Rd".
       // See the alu_b mux in tms34010_core.sv for the swap.
       decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // SUBB Rs, Rd  (Rd - Rs - C → Rd; borrow-in from ST.C)
+    //
+    // Spec source: SPVU001A page 12-248 (per-instruction page) and the
+    // instruction-summary table — encoding `0100 011S SSSR DDDD`. Used
+    // for extended-precision arithmetic chained with SUB/SUBI/SUBK.
+    //
+    // Same operand-swap as SUB: alu_a = Rd, alu_b = Rs so the ALU
+    // computes a - b - cin = Rd - Rs - C. SUBB just selects ALU_OP_SUBB.
+    // SPVU001A page 12-248 provides authoritative test vectors; see
+    // tb_addc_subb for the rows used.
+    // -----------------------------------------------------------------------
+    if (top7 == SUBB_RR_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_SUBB_RR;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.alu_op          = ALU_OP_SUBB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
     end
