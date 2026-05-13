@@ -66,8 +66,8 @@ Required columns:
 | XORI IL K,Rd | `0000 1011 110R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, Z | none | TBD | Rd ^ K32 → Rd. |
 | MOVE Rs, Rd  | `1001 00FS SSSR DDDD` | SPVU001A A-14 (A0020) | implemented (F ignored) | tb_move_rr | N, Z | none | TBD | Rs → Rd. Field-size selector F currently ignored; full 32-bit copy. MOVE *Rs/Rd indirect variants still ILLEGAL pending Phase 5 field-size machinery. |
 | NOP          | `0000 0011 0000 0000` (= `0x0300`) | SPVU001A §"NOP" page 12-170 (A0021) | implemented | tb_nop | **none** ("processor status is otherwise unaffected") | none | TBD | No operation — PC advances to the next instruction, ST and registers untouched. Distinct from the unary family at `0000 0011 1xxx xxxx`; ABS A0 = `0x0380`, not `0x0300`. |
-| ABS Rd    | `0000 0011 100R DDDD` (bits[6:5]=00) | SPVU001A A-14 | **not started** | none | N, C, Z, V (with V on MIN_INT) | none | TBD | Deferred — ALU does not currently have an ABS op; would need a conditional NEG plus the V-on-MIN_INT subtlety. |
-| NEGB Rd   | `0000 0011 110R DDDD` (bits[6:5]=10) | SPVU001A A-14 | **not started** | none | N, C, Z, V | none | TBD | Deferred — needs C-input handling (`Rd = -Rd - C`). |
+| ABS Rd    | `0000 0011 100R DDDD` (= `0x0380 \| (R<<4) \| Rd`) | SPVU001A page 12-34 | implemented (A0024) | tb_abs_negb | N, Z, V (C cleared per A0024; spec says C unaffected) | none | TBD | `Rd ← \|Rd\|` via ALU_OP_ABS (conditional select between `a` and `0-a` based on the sign of `0-a`). V=1 when Rd was 0x80000000 (MIN_INT — `\|Rd\|` can't be represented; spec returns Rd unchanged). N reflects the sign of `0-Rd`, NOT the sign of the result. |
+| NEGB Rd   | `0000 0011 110R DDDD` (= `0x03C0 \| (R<<4) \| Rd`) | SPVU001A page 12-168 | implemented | tb_abs_negb | N, C, Z, V | none | TBD | `Rd ← -Rd - C` via ALU_OP_SUBB with alu_a=0, alu_b=Rd. Used in sequence with NEG/SUB/SUBB/SUBI for multi-register negation. Spec page 12-168 provides 12 worked example vectors; tb_abs_negb uses four of them. |
 
 ## Categories to populate (placeholder roadmap)
 

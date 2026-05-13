@@ -331,6 +331,7 @@ module tms34010_core
       INSTR_SUBK,
       INSTR_NEG,
       INSTR_NOT,
+      INSTR_ABS,
       INSTR_ADDI_IW,
       INSTR_SUBI_IW,
       INSTR_CMPI_IW,
@@ -344,6 +345,7 @@ module tms34010_core
       INSTR_DSJEQ,
       INSTR_DSJNE,
       INSTR_DSJS:    alu_a = rf_rs2_data;   // Rd is the operand
+      INSTR_NEGB:    alu_a = '0;            // NEGB: 0 - Rd - C via SUBB
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end

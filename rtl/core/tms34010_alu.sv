@@ -175,6 +175,26 @@ module tms34010_alu
         flags.z = (b == '0);
       end
 
+      ALU_OP_ABS: begin
+        // |a|. Uses the existing neg_result (= 0 - a).
+        // - If neg_result is non-negative (sign bit 0), then a was
+        //   negative (and small enough to flip): |a| = neg_result.
+        // - If neg_result is negative (sign bit 1), then either a was
+        //   already non-negative (|a| = a) OR a == MIN_INT and the
+        //   negate overflowed (|a| can't be represented; spec returns
+        //   a unchanged with V=1). Both → result = a.
+        // Status bits per SPVU001A page 12-34:
+        //   N = sign of (0 - a)            (NOT sign of |a|)
+        //   C = "Unaffected" per spec — we set 0 here (A0024).
+        //   Z = (original a == 0)
+        //   V = (a == 0x8000_0000)         (MIN_INT overflow)
+        result   = neg_result[DATA_WIDTH-1] ? a : neg_result;
+        flags.n  = neg_result[DATA_WIDTH-1];
+        flags.z  = (a == '0);
+        flags.c  = 1'b0;
+        flags.v  = (a == 32'h8000_0000);
+      end
+
       default: begin
         // Unreachable in synthesis (unique case covers every enum value).
         // Defaults already applied above.

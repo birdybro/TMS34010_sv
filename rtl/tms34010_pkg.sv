@@ -122,7 +122,9 @@ package tms34010_pkg;
     ALU_OP_NOT    = 4'd9,
     ALU_OP_NEG    = 4'd10,
     ALU_OP_PASS_A = 4'd11,
-    ALU_OP_PASS_B = 4'd12
+    ALU_OP_PASS_B = 4'd12,
+    ALU_OP_ABS    = 4'd13   // |a|; result mux'd between a and (0-a) based on
+                            // sign bit. V on MIN_INT. See A0024.
   } alu_op_t;
 
   typedef struct packed {
@@ -237,8 +239,10 @@ package tms34010_pkg;
     INSTR_DSJNE      = 6'd38, // DSJNE Rd, Address — if Z=0: DSJ semantics; else skip
     INSTR_JACC       = 6'd39, // JAcc Address      — absolute-form conditional jump
                               //                     (low byte = 0x80; 32-bit abs addr follows)
-    INSTR_DSJS       = 6'd40  // DSJS Rd, Address  — short form: 5-bit offset + 1-bit
+    INSTR_DSJS       = 6'd40, // DSJS Rd, Address  — short form: 5-bit offset + 1-bit
                               //                     direction; single-word instruction
+    INSTR_ABS        = 6'd41, // ABS Rd            — |Rd| → Rd (V on MIN_INT)
+    INSTR_NEGB       = 6'd42  // NEGB Rd           — (2s_comp Rd) - C → Rd (borrow-in)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

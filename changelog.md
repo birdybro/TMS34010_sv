@@ -464,6 +464,30 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   executed back-target MOVI so the backward jump lands at a known
   sentinel), and the 0→0xFFFFFFFF spec corner case. Distinct
   counter registers per scenario; halt at end-of-program.
+- Added **ABS Rd** and **NEGB Rd** (Task 0036) — completes the
+  unary-instruction family that NEG and NOT started in Task 0022.
+  Per SPVU001A pages 12-34 (ABS) and 12-168 (NEGB), encodings
+  `0000 0011 100R DDDD` (ABS) and `0000 0011 110R DDDD` (NEGB).
+  - ABS uses a new ALU_OP_ABS that mux-selects between `a` and
+    `0-a` based on the sign of `0-a`. V=1 only when Rd was MIN_INT
+    (`0x8000_0000`), matching the spec's V-overflow convention.
+    N reflects the sign of `0-Rd` (NOT the sign of the result),
+    again per spec.
+  - NEGB reuses ALU_OP_SUBB with alu_a forced to 0 by a new core
+    mux arm; the existing carry-in path (from ST.C) gives
+    `Rd ← 0 - Rd - C` as required.
+- Added `sim/tb/tb_abs_negb.sv` — 6 ABS test vectors lifted verbatim
+  from SPVU001A page 12-34's worked example table (positive max,
+  -1 → +1, MIN_INT V-flag case, MIN_INT+1, zero, and a generic
+  negative). 4 NEGB vectors from page 12-168 covering both
+  carry-in values × representative operands. Final ST.NCZV is
+  cross-checked against the last NEGB row's NCZV column.
+- Added `docs/assumptions.md` A0024 documenting one deviation: ABS
+  currently CLEARS C, but the spec says C should be "Unaffected".
+  This is a consequence of the project's still-all-or-nothing
+  `wb_flags_en`. The fix is a per-flag mask in
+  `decoded_instr_t` + `tms34010_status_reg`, planned to land
+  together with BTST (which also needs selective Z-only updates).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

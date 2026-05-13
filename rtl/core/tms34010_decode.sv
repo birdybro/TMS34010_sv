@@ -481,12 +481,30 @@ module tms34010_decode
     // -----------------------------------------------------------------------
     if (instr[15:7] == UNARY_TOP9) begin
       case (instr[6:5])
+        2'b00: begin   // ABS  (A0024: C unaffected → we clear, see assumption)
+          decoded.illegal         = 1'b0;
+          decoded.iclass          = INSTR_ABS;
+          decoded.rd_file         = reg_file_from_instr;
+          decoded.rd_idx          = reg_idx_from_instr;
+          decoded.alu_op          = ALU_OP_ABS;
+          decoded.wb_reg_en       = 1'b1;
+          decoded.wb_flags_en     = 1'b1;
+        end
         2'b01: begin   // NEG
           decoded.illegal         = 1'b0;
           decoded.iclass          = INSTR_NEG;
           decoded.rd_file         = reg_file_from_instr;
           decoded.rd_idx          = reg_idx_from_instr;
           decoded.alu_op          = ALU_OP_NEG;
+          decoded.wb_reg_en       = 1'b1;
+          decoded.wb_flags_en     = 1'b1;
+        end
+        2'b10: begin   // NEGB  (Rd ← 0 - Rd - C; uses SUBB with a=0)
+          decoded.illegal         = 1'b0;
+          decoded.iclass          = INSTR_NEGB;
+          decoded.rd_file         = reg_file_from_instr;
+          decoded.rd_idx          = reg_idx_from_instr;
+          decoded.alu_op          = ALU_OP_SUBB;
           decoded.wb_reg_en       = 1'b1;
           decoded.wb_flags_en     = 1'b1;
         end
@@ -499,7 +517,6 @@ module tms34010_decode
           decoded.wb_reg_en       = 1'b1;
           decoded.wb_flags_en     = 1'b1;
         end
-        default: ;   // ABS / NEGB → ILLEGAL until landed
       endcase
     end
 

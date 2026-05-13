@@ -40,7 +40,8 @@
 | 0032 | JUMP Rs (register-indirect jump) | complete |
 | 0033 | DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-jump family) | complete |
 | 0034 | JAcc Address (absolute conditional jump) | complete |
-| 0035 | DSJS Rd, Address (decrement-and-skip-jump short form) | in progress |
+| 0035 | DSJS Rd, Address (decrement-and-skip-jump short form) | complete |
+| 0036 | ABS / NEGB Rd (complete the unary family) | in progress |
 
 ---
 
@@ -1088,7 +1089,7 @@ Commit:
 ---
 
 ### Task 0035: DSJS Rd, Address (decrement-and-skip-jump short form)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0033 (DSJ-family precondition/nonzero gating + alu_a/alu_b
   mux entries; reused with INSTR_DSJS added).
@@ -1124,6 +1125,49 @@ Acceptance Criteria:
 - Branch-family regression: all 9 branch tbs PASS.
 Tests: tb_dsjs PASS; branch-family regression PASS; lint clean.
 Docs: instruction_coverage.md (DSJS row), changelog.md, tasks.md.
+Commit:
+- c60c723
+
+---
+
+### Task 0036: ABS / NEGB Rd (complete the unary family)
+Status: in progress
+Dependencies:
+- Task 0022 (unary-family decoder framework + ALU_OP_NEG / NOT).
+- Task 0029 (ALU_OP_SUBB; NEGB is implemented as SUBB with alu_a=0).
+Spec source: SPVU001A page 12-34 (ABS), page 12-168 (NEGB). Encodings
+  from the unary chart (`0000 0011 1ooR DDDD` with `oo` selecting
+  sub-op): ABS = bits[6:5]=00; NEGB = bits[6:5]=10.
+Acceptance Criteria:
+- INSTR_ABS = 6'd41 and INSTR_NEGB = 6'd42 added to instr_class_t.
+- ALU_OP_ABS = 4'd13 added to alu_op_t.
+- `tms34010_alu.sv` gains an ALU_OP_ABS arm: result is the conditional
+  select between `a` (when `0-a` has its sign bit set — either a was
+  already non-negative or a == MIN_INT) and `0-a` (when `0-a` is
+  non-negative — i.e., a was negative and small enough to flip).
+  N is set to the sign of `0-a` per spec; Z = (a == 0); V on MIN_INT
+  overflow. **C is cleared (A0024 deviation)** — spec says "Unaffected"
+  but the project's wb_flags_en is currently all-or-nothing.
+- NEGB reuses ALU_OP_SUBB. Core's alu_a mux gains an `INSTR_NEGB`
+  arm forcing `alu_a = '0`; the default alu_b mux already routes
+  `rf_rs2_data` (Rd) when not overridden, so ALU computes
+  `0 - Rd - C` as required.
+- Decoder's unary-family case statement gains the `2'b00` (ABS) and
+  `2'b10` (NEGB) sub-op arms; ILLEGAL fallthrough removed.
+- `sim/tb/tb_abs_negb.sv` runs 6 ABS test vectors from the spec
+  example table (page 12-34) and 4 NEGB vectors from page 12-168.
+  Final ST.NCZV checked against the spec NCZV column for NEGB's
+  last scenario (`-1 - 1 → 0, NCZV = 0110` per the last row).
+- Encoding helper verified: `abs_enc(A,1) = 0x0381`,
+  `negb_enc(A,1) = 0x03C1`.
+- A0024 added to docs/assumptions.md documenting the C-clear
+  deviation and the deferred per-flag-mask refactor (also flagging
+  BTST as the natural next instruction to motivate that refactor).
+Tests: tb_abs_negb PASS; tb_neg_not / tb_alu / tb_sub_rr /
+  tb_addc_subb regression PASS; lint clean.
+Docs: instruction_coverage.md (ABS / NEGB rows updated from "not
+  started" to "implemented"), assumptions.md A0024, changelog.md,
+  tasks.md.
 Commit:
 - pending
 

@@ -438,6 +438,16 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Test-vector source**: SPVU001A page 12-248 supplies 14 worked SUBB examples covering positive/negative operands, both cin values, and the signed-overflow corner case `0x7FFFFFFE - 0xFFFFFFFE` (row 7 in the spec table). `sim/tb/tb_addc_subb.sv` uses row 7 as its signed-overflow check.
 - **How to apply**: The ALU already does the right thing for `ALU_OP_ADDC` and `ALU_OP_SUBB`; decoder selects them and core-side operand routing follows the existing SUB pattern (alu_a = Rd, alu_b = Rs) for SUBB. ADDC uses the default routing because the operation is commutative on its register operands.
 
+---
+
+## A0024 — ABS clears ST.C (spec says "Unaffected"); proper per-flag mask deferred
+- **Date**: 2026-05-12
+- **Status**: active deviation, deferred fix
+- **Source**: SPVU001A page 12-34 ("Store Absolute Value") — explicitly states C is "Unaffected" by ABS.
+- **Conclusion / current implementation**: `tms34010_alu.sv`'s `ALU_OP_ABS` arm sets `flags.c = 1'b0`, and the surrounding control gates the flag update with `wb_flags_en` as a single all-or-nothing bit. Because of that, ABS in this implementation effectively CLEARS C, rather than leaving it unaffected. The N/Z/V flags match the spec; C is the only deviation.
+- **Why this deviation exists**: the project has not yet added a per-flag mask in the writeback path. The same gap will arise for BTST (which only updates Z per spec) and for any other instruction the spec marks "Unaffected" on individual flags. The plan is to add `wb_flag_mask : alu_flags_t` to `decoded_instr_t` and a 4-bit mask input to `tms34010_status_reg`, then back-fill each instruction's mask. Until that lands, ABS and any future "C unaffected" instructions follow the A0009 logical-ops convention (C cleared).
+- **How to apply**: When BTST or another "selective flag update" instruction is implemented, do the per-flag mask refactor together with that task. At that point, ABS's `ALU_OP_ABS` arm should drop the `flags.c = 0` assignment (so the mask gates it as a true unaffected flag), and a regression vector covering "ABS preserves C across a sequence" should be added to `tb_abs_negb`.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file
