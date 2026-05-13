@@ -42,7 +42,8 @@
 | 0034 | JAcc Address (absolute conditional jump) | complete |
 | 0035 | DSJS Rd, Address (decrement-and-skip-jump short form) | complete |
 | 0036 | ABS / NEGB Rd (complete the unary family) | complete |
-| 0037 | BTST K/Rs + per-flag wb_flag_mask refactor | in progress |
+| 0037 | BTST K/Rs + per-flag wb_flag_mask refactor | complete |
+| 0038 | CLRC / SETC / GETST / PUTST (status-reg ops) | in progress |
 
 ---
 
@@ -1175,7 +1176,7 @@ Commit:
 ---
 
 ### Task 0037: BTST K/Rs + per-flag wb_flag_mask refactor
-Status: in progress
+Status: complete
 Dependencies:
 - Tasks 0009 (status register), 0017 (logical ops + ALU_OP_AND).
 - Task 0036 (ABS — its A0024 C-clear deviation is RESOLVED by the
@@ -1230,6 +1231,46 @@ Tests: tb_btst PASS; broader regression including tb_movi/tb_movk/
 Docs: instruction_coverage.md (BTST K + Rs rows added; ABS row
   updated to reflect resolved deviation), assumptions.md (A0024
   marked RESOLVED), changelog.md, tasks.md.
+Commit:
+- d9a75b0
+
+---
+
+### Task 0038: CLRC / SETC / GETST / PUTST (status-register manipulation)
+Status: in progress
+Dependencies:
+- Task 0037 (wb_flag_mask used by CLRC/SETC for selective C-only updates).
+- Task 0009 (status register has full ST-write path used by PUTST).
+Spec source: SPVU001A summary table page A-14:
+  CLRC  : 0x0320
+  SETC  : 0x0DE0
+  GETST Rd : 0000 0001 100R DDDD
+  PUTST Rs : 0000 0001 101R DDDD
+Acceptance Criteria:
+- Four new iclass enumerators (INSTR_CLRC/SETC/GETST/PUTST,
+  6'd45..48).
+- Decoder arms:
+  - CLRC/SETC: single fixed encodings, `wb_reg_en=0`,
+    `wb_flags_en=1`, `wb_flag_mask = {c-only}`.
+  - GETST: top11 = 0x00C, `wb_reg_en=1`, no flag update.
+  - PUTST: top11 = 0x00D, `wb_reg_en=0`, no flag update; the
+    full-ST-write happens via st_write_en in the core.
+- Core:
+  - Flag-input mux gains SETC arm (`flags_in.c = 1`) and CLRC arm
+    (`flags_in.c = 0`); paired with the c-only mask from the
+    decoder, only ST.C updates.
+  - rf_wr_data mux gains GETST arm routing `st_value`.
+  - `st_write_en` now derives from `(CORE_WRITEBACK && iclass == PUTST)`;
+    `st_write_data = rf_rs1_data`.
+- `sim/tb/tb_st_ops.sv` verifies a PUTST → GETST round-trip with a
+  custom ST value, then a SETC followed by GETST, then a CLRC
+  followed by GETST. Each captured GETST result is cross-checked
+  bit-by-bit, and the final ST.{N,C,Z,V} are checked individually
+  to confirm CLRC/SETC truly leave N/Z/V alone.
+- Encoding helpers verified: `getst_enc(A,5) = 0x0185`,
+  `putst_enc(B,7) = 0x01B7`.
+Tests: tb_st_ops PASS; full Verilator regression PASS; lint clean.
+Docs: instruction_coverage.md (4 new rows), changelog.md, tasks.md.
 Commit:
 - pending
 

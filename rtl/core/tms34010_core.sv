@@ -309,7 +309,15 @@ module tms34010_core
                    && dsj_precondition;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
-  assign rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
+  // Regfile write-data mux. GETST routes the status register out via
+  // the same write port (Rd ← ST). Otherwise: shifter or ALU result
+  // per decoded.use_shifter.
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_GETST: rf_wr_data = st_value;
+      default:     rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
+    endcase
+  end
 
   // ALU operand selection.
   //
@@ -385,8 +393,11 @@ module tms34010_core
   // Status-register inputs. Flag-update is gated by FSM state, like the
   // regfile write. Full ST write port is unused until POPST lands.
   assign st_flag_update_en = (state_q == CORE_WRITEBACK) && decoded.wb_flags_en;
-  assign st_write_en       = 1'b0;
-  assign st_write_data     = '0;
+  // PUTST: fire the full ST-write port in CORE_WRITEBACK with Rs as
+  // the new 32-bit ST value. Other instructions leave the full-write
+  // port idle.
+  assign st_write_en   = (state_q == CORE_WRITEBACK) && (decoded.iclass == INSTR_PUTST);
+  assign st_write_data = rf_rs1_data;
 
   // ---- Branch-condition evaluator -----------------------------------------
   // Combinational decode of decoded.branch_cc against the current ST
@@ -519,8 +530,18 @@ module tms34010_core
 
   // Flag-input mux: status register samples either ALU flags or shifter
   // flags depending on the source of the result.
+  // Flag-input mux: SET/CLR-C inject a constant C value (paired with
+  // the wb_flag_mask = c-only in their decoder arms); other
+  // flag-affecting instructions get their flags from the ALU or shifter
+  // per `decoded.use_shifter`.
   alu_flags_t  flag_input;
-  assign flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_SETC: flag_input = '{n: 1'b0, c: 1'b1, z: 1'b0, v: 1'b0};
+      INSTR_CLRC: flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b0};
+      default:    flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
+    endcase
+  end
 
   tms34010_status_reg u_status_reg (
     .clk             (clk),

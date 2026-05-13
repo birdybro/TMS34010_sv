@@ -529,6 +529,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   CMP-NCZV=1101 → BTST → halt sequence directly verifying that
   N, C, V are preserved across the BTST (the wb_flag_mask
   end-to-end check).
+- Added **CLRC / SETC / GETST / PUTST** (Task 0038) — the
+  status-register manipulation family.
+  - CLRC (0x0320) / SETC (0x0DE0): single-fixed-encoding control
+    instructions. Both use the new wb_flag_mask with c-only
+    enabled. The core's flag-input mux gains constant `{c:0,…}`
+    and `{c:1,…}` arms so only ST.C is touched; N, Z, V are truly
+    Unaffected.
+  - GETST Rd (`0x0180 | (R<<4) | Rd`): copies the 32-bit status
+    register into Rd. The core's `rf_wr_data` mux gains an arm
+    routing `st_value` for this iclass.
+  - PUTST Rs (`0x01A0 | (R<<4) | Rs`): full 32-bit write of Rs
+    into ST. Uses the existing `st_write_en` + `st_write_data`
+    path; the N/C/Z/V bits embedded in Rs become the new flags
+    automatically.
+- Added `sim/tb/tb_st_ops.sv` — PUTST + GETST round-trip with a
+  custom ST value, then SETC and CLRC each followed by a GETST
+  capture, then bit-level checks confirming CLRC/SETC truly only
+  touch C (N/Z/V preserved from the prior PUTST value).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

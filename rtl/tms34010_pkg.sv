@@ -244,7 +244,11 @@ package tms34010_pkg;
     INSTR_ABS        = 6'd41, // ABS Rd            — |Rd| → Rd (V on MIN_INT)
     INSTR_NEGB       = 6'd42, // NEGB Rd           — (2s_comp Rd) - C → Rd (borrow-in)
     INSTR_BTST_K     = 6'd43, // BTST K, Rd        — test bit K of Rd; only Z updates
-    INSTR_BTST_RR    = 6'd44  // BTST Rs, Rd       — test bit Rs[4:0] of Rd; Z only
+    INSTR_BTST_RR    = 6'd44, // BTST Rs, Rd       — test bit Rs[4:0] of Rd; Z only
+    INSTR_CLRC       = 6'd45, // CLRC              — ST.C ← 0; N, Z, V unchanged
+    INSTR_SETC       = 6'd46, // SETC              — ST.C ← 1; N, Z, V unchanged
+    INSTR_GETST      = 6'd47, // GETST Rd          — Rd ← ST
+    INSTR_PUTST      = 6'd48  // PUTST Rs          — ST ← Rs (full 32-bit write)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

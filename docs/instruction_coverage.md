@@ -70,6 +70,10 @@ Required columns:
 | NEGB Rd   | `0000 0011 110R DDDD` (= `0x03C0 \| (R<<4) \| Rd`) | SPVU001A page 12-168 | implemented | tb_abs_negb | N, C, Z, V | none | TBD | `Rd ← -Rd - C` via ALU_OP_SUBB with alu_a=0, alu_b=Rd. Used in sequence with NEG/SUB/SUBB/SUBI for multi-register negation. Spec page 12-168 provides 12 worked example vectors; tb_abs_negb uses four of them. |
 | BTST K, Rd  | `0001 11KK KKKR DDDD` (= `0x1C00 \| (K<<5) \| (R<<4) \| Rd`) | SPVU001A page 12-46 + summary table | implemented | tb_btst | **Z only** (N/C/V truly Unaffected via wb_flag_mask) | none | TBD | Test bit K of Rd (K in 0..31). Z = 1 if bit K of Rd is 0, else Z = 0. Rd not written. Uses ALU_OP_AND with alu_b = `32'd1 << K`. |
 | BTST Rs, Rd | `0100 101S SSSR DDDD` (= `0x4A00 \| (Rs<<5) \| (R<<4) \| Rd`) | SPVU001A page 12-47 + summary table | implemented | tb_btst | **Z only** (N/C/V Unaffected) | none | TBD | Same as BTST K but bit index comes from Rs[4:0]. Uses ALU_OP_AND with alu_b = `32'd1 << rf_rs1_data[4:0]`. |
+| CLRC | `0x0320` (single fixed encoding) | SPVU001A summary table page A-14 | implemented | tb_st_ops | **C only** (cleared; N, Z, V Unaffected via wb_flag_mask) | none | TBD | Clear ST.C to 0. Uses constant-flags mux + wb_flag_mask = c-only. |
+| SETC | `0x0DE0` (single fixed encoding) | SPVU001A summary table | implemented | tb_st_ops | **C only** (set; N, Z, V Unaffected) | none | TBD | Set ST.C to 1. Symmetric to CLRC. |
+| GETST Rd | `0000 0001 100R DDDD` (= `0x0180 \| (R<<4) \| Rd`) | SPVU001A summary table | implemented | tb_st_ops | none (status unaffected) | none | TBD | Rd ← ST (32-bit copy of the status register). regfile-write-data mux routes `st_value` for this iclass. |
+| PUTST Rs | `0000 0001 101R DDDD` (= `0x01A0 \| (R<<4) \| Rs`) | SPVU001A summary table | implemented | tb_st_ops | N, C, Z, V (whatever the source register contains at those bit positions) | none | TBD | ST ← Rs (full 32-bit write). Uses the existing `st_write_en` + `st_write_data` path on the status register; the in-Rs N/C/Z/V bits become the new ST flags. |
 
 ## Categories to populate (placeholder roadmap)
 

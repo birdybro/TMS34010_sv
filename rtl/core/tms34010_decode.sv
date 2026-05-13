@@ -136,6 +136,18 @@ module tms34010_decode
   localparam logic [10:0] DSJEQ_TOP11 = 11'b0000_1101_101;
   localparam logic [10:0] DSJNE_TOP11 = 11'b0000_1101_110;
 
+  // Status-register manipulation: single-fixed-encoding opcodes
+  // CLRC / SETC (clear/set carry) and the two-register GETST / PUTST.
+  // Per SPVU001A summary table (page A-14):
+  //   CLRC  = 16'h0320  ("0000 0011 0010 0000")
+  //   SETC  = 16'h0DE0  ("0000 1101 1110 0000")
+  //   GETST Rd : top11 = 11'b00000001_100 = 0x00C  ⇒ base 0x0180
+  //   PUTST Rs : top11 = 11'b00000001_101 = 0x00D  ⇒ base 0x01A0
+  localparam instr_word_t CLRC_OPCODE   = 16'h0320;
+  localparam instr_word_t SETC_OPCODE   = 16'h0DE0;
+  localparam logic [10:0] GETST_TOP11   = 11'b0000_0001_100;
+  localparam logic [10:0] PUTST_TOP11   = 11'b0000_0001_101;
+
   // BTST K, Rd and BTST Rs, Rd (Test Register Bit). Per SPVU001A
   // pages 12-46/12-47 + summary table lines 26942/26943:
   //   BTST K, Rd  : 0001 11KK KKKR DDDD   (top6 = 6'b000111 = 0x07)
@@ -920,6 +932,69 @@ module tms34010_decode
       decoded.wb_reg_en    = 1'b0;          // Rd is NOT written
       decoded.wb_flags_en  = 1'b1;
       decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
+    // CLRC : ST.C ← 0. Single fixed encoding 0x0320. N, Z, V unaffected.
+    // Implemented via the new per-flag mask: only C updates, and the
+    // C value comes from a custom-flags mux in the core (set to 0).
+    // -----------------------------------------------------------------------
+    if (instr == CLRC_OPCODE) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_CLRC;
+      decoded.wb_reg_en    = 1'b0;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b0, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
+    // SETC : ST.C ← 1. Single fixed encoding 0x0DE0. Same mask as CLRC.
+    // -----------------------------------------------------------------------
+    if (instr == SETC_OPCODE) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_SETC;
+      decoded.wb_reg_en    = 1'b0;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b0, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
+    // GETST Rd : Rd ← ST. Per the summary table, top11 = 11'b00000001_100.
+    // bit[4]=R, bits[3:0]=Rd. Status bits unaffected.
+    //
+    // The core's regfile-write-data mux gains an INSTR_GETST arm
+    // routing `st_value` to `rf_wr_data`.
+    // -----------------------------------------------------------------------
+    if (top11 == GETST_TOP11) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_GETST;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // PUTST Rs : ST ← Rs (full 32-bit write). top11 = 11'b00000001_101.
+    // bit[4]=R, bits[3:0]=Rs (the chart writes DODD but it's the
+    // source-register field).
+    //
+    // We use the existing full ST-write path (st_write_en + st_write_data
+    // in the core), driving st_write_data from rf_rs1_data (which is
+    // already gated by decoded.rd_file/rs_idx in this kind of arm).
+    //
+    // Per spec summary table page A-15, PUTST DOES affect N C Z V —
+    // because the bits being copied to ST happen to lie at the N/C/Z/V
+    // positions. Our full-write path stores all 32 bits, so this is
+    // automatically correct.
+    // -----------------------------------------------------------------------
+    if (top11 == PUTST_TOP11) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_PUTST;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rs_idx       = reg_idx_from_instr;   // Rs index for the rs1 read
+      decoded.wb_reg_en    = 1'b0;
+      decoded.wb_flags_en  = 1'b0;                  // full ST write covers all bits
     end
 
     // -----------------------------------------------------------------------
