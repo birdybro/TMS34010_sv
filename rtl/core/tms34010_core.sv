@@ -309,12 +309,19 @@ module tms34010_core
                    && dsj_precondition;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
-  // Regfile write-data mux. GETST routes the status register out via
-  // the same write port (Rd ← ST). Otherwise: shifter or ALU result
-  // per decoded.use_shifter.
+  // Regfile write-data mux. Several "Rd ← something" instructions
+  // bypass the ALU/shifter and route a different source:
+  //   GETST → ST value
+  //   GETPC → current PC value
+  //   EXGPC → current PC value (the other half of the swap)
+  //   REV   → chip-revision constant (A0025)
+  // The default routes the shifter or ALU result per decoded.use_shifter.
   always_comb begin
     unique case (decoded.iclass)
       INSTR_GETST: rf_wr_data = st_value;
+      INSTR_GETPC,
+      INSTR_EXGPC: rf_wr_data = pc_value;
+      INSTR_REV:   rf_wr_data = 32'h0000_0008;
       default:     rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
     endcase
   end
@@ -449,6 +456,14 @@ module tms34010_core
           // word alignment per SPVU001A page 12-98.
           pc_load_en    = 1'b1;
           pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
+        end
+        INSTR_EXGPC: begin
+          // Atomic swap PC ↔ Rd: PC ← old Rd (with bottom 4 bits forced
+          // to 0 per A0025), Rd ← PC (via the rf_wr_data mux above).
+          // rf_rs2_data is the async-read value of decoded.rd_idx in
+          // the same file as the destination — i.e., the OLD Rd value.
+          pc_load_en    = 1'b1;
+          pc_load_value = {rf_rs2_data[ADDR_WIDTH-1:4], 4'h0};
         end
         INSTR_DSJ,
         INSTR_DSJEQ,

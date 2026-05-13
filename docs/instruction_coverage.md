@@ -79,6 +79,9 @@ Required columns:
 | SETC | `0x0DE0` (single fixed encoding) | SPVU001A summary table | implemented | tb_st_ops | **C only** (set; N, Z, V Unaffected) | none | TBD | Set ST.C to 1. Symmetric to CLRC. |
 | GETST Rd | `0000 0001 100R DDDD` (= `0x0180 \| (R<<4) \| Rd`) | SPVU001A summary table | implemented | tb_st_ops | none (status unaffected) | none | TBD | Rd ← ST (32-bit copy of the status register). regfile-write-data mux routes `st_value` for this iclass. |
 | PUTST Rs | `0000 0001 101R DDDD` (= `0x01A0 \| (R<<4) \| Rs`) | SPVU001A summary table | implemented | tb_st_ops | N, C, Z, V (whatever the source register contains at those bit positions) | none | TBD | ST ← Rs (full 32-bit write). Uses the existing `st_write_en` + `st_write_data` path on the status register; the in-Rs N/C/Z/V bits become the new ST flags. |
+| GETPC Rd | `0000 0001 010R DDDD` (= `0x0140 \| (R<<4) \| Rd`) | SPVU001A summary table | implemented | tb_pc_ops | none | none | TBD | Rd ← current PC (bit-addressed, captured at CORE_WRITEBACK). |
+| EXGPC Rd | `0000 0001 001R DDDD` (= `0x0120 \| (R<<4) \| Rd`) | SPVU001A summary table | implemented (A0025) | tb_pc_ops | none | none | TBD | Atomic swap PC ↔ Rd. PC ← `(old Rd & ~0xF)` (low 4 bits forced to 0 for word alignment per A0025); Rd ← old PC. Uses the regfile's async-read property to read the old Rd while writing the new value in the same WRITEBACK cycle. |
+| REV Rd   | `0000 0000 001R DDDD` (= `0x0020 \| (R<<4) \| Rd`) | SPVU001A page 12-233 (A0025) | implemented | tb_pc_ops | none | none | TBD | Rd ← chip-revision constant. Per the spec's worked example, value = `0x0000_0008`. |
 
 ## Categories to populate (placeholder roadmap)
 

@@ -44,7 +44,8 @@
 | 0036 | ABS / NEGB Rd (complete the unary family) | complete |
 | 0037 | BTST K/Rs + per-flag wb_flag_mask refactor | complete |
 | 0038 | CLRC / SETC / GETST / PUTST (status-reg ops) | complete |
-| 0039 | Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount) | in progress |
+| 0039 | Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount) | complete |
+| 0040 | GETPC / EXGPC / REV (PC + revision register ops) | in progress |
 
 ---
 
@@ -1278,7 +1279,7 @@ Commit:
 ---
 
 ### Task 0039: Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0024 (K-form shifter wired; this task extends with a second
   amount source).
@@ -1306,6 +1307,46 @@ Acceptance Criteria:
 - Full Verilator regression PASS; lint clean.
 Tests: tb_shift_rr PASS; tb_shift_k unchanged; full regression PASS.
 Docs: instruction_coverage.md (5 new rows), changelog.md, tasks.md.
+Commit:
+- 7381452
+
+---
+
+### Task 0040: GETPC / EXGPC / REV (PC + revision register ops)
+Status: in progress
+Dependencies:
+- Task 0038 (status-reg manipulation; rf_wr_data mux already supports
+  "non-ALU" sources). This task extends that mux pattern.
+Spec source: SPVU001A summary table A-16:
+  GETPC Rd  : 0000 0001 010R DDDD
+  EXGPC Rd  : 0000 0001 001R DDDD
+  REV   Rd  : 0000 0000 001R DDDD
+  Plus SPVU001A page 12-233 (REV constant value example).
+Acceptance Criteria:
+- Three new iclass values (INSTR_GETPC=54, INSTR_EXGPC=55,
+  INSTR_REV=56).
+- Decoder arms recognizing the top11 prefixes 0x00A / 0x009 / 0x001.
+- Core's `rf_wr_data` mux extended with:
+  - INSTR_GETPC, INSTR_EXGPC → pc_value
+  - INSTR_REV → 32'h0000_0008 (the revision constant per A0025)
+- Core's PC-load mux extended with an INSTR_EXGPC arm:
+  `pc_load_value = {rf_rs2_data[31:4], 4'h0}` (word-aligned per A0025;
+  rs2 reads decoded.rd_idx, async, so it sees the OLD Rd value during
+  the same WRITEBACK cycle that writes the new value).
+- A0025 added documenting the REV constant choice (taken from the
+  spec's worked example) and the bottom-nibble PC alignment for EXGPC.
+- `sim/tb/tb_pc_ops.sv` exercises all three:
+  - GETPC verifies A1 = `(getpc_word_index + 1) * 16` (the bit
+    address after the single-word PC advance).
+  - REV verifies A2 = 0x00000008.
+  - EXGPC verifies (a) A3 = old PC at the EXGPC's WRITEBACK; (b) the
+    CPU lands at the target word and the sentinel MOVI there writes
+    A4 = 0xCAFE_FACE; (c) the trap MOVI right after EXGPC does NOT
+    execute (its target register stays unchanged).
+- Encoding helpers verified.
+Tests: tb_pc_ops PASS; full Verilator regression PASS; lint clean.
+Docs: instruction_coverage.md (3 new rows), assumptions.md A0025,
+  changelog.md, tasks.md.
 Commit:
 - pending
 

@@ -440,6 +440,16 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0025 — REV constant and EXGPC bottom-nibble PC alignment
+- **Date**: 2026-05-12
+- **Status**: active (pending a careful spec re-read on a clean PDF)
+- **Source**: SPVU001A page 12-233 (REV) and the corresponding EXGPC page.
+- **REV constant**: The spec's bit-format chart for REV is largely "undefined", but the worked example on page 12-233 explicitly shows `REV A1 → 0x0000_0008`. The implementation emits the constant `32'h0000_0008` (chip revision 8). If a different revision is later required, change the `INSTR_REV` arm in `tms34010_core.sv`'s `rf_wr_data` mux.
+- **EXGPC bottom-nibble mask**: TMS34010 PC values are word-aligned (the low 4 bits of an externally-loaded PC are forced to 0). JUMP Rs and JAcc both do this explicitly per their spec pages. EXGPC is in the same class — when PC is loaded from Rd, the low 4 bits are likewise masked. The implementation does `pc_load_value = {rf_rs2_data[31:4], 4'h0}`. The Rd-receives-PC half of the swap is NOT masked (Rd just holds the full pre-swap PC value).
+- **How to apply**: If a future spec re-read finds a different revision number or a different alignment convention for EXGPC, adjust `tms34010_core.sv` accordingly and update the `tb_pc_ops.sv` checks. The current values are the most defensible read of the 1988 User's Guide.
+
+---
+
 ## A0024 — ABS clears ST.C (spec says "Unaffected"); RESOLVED by Task 0037
 - **Date**: 2026-05-12
 - **Status**: **RESOLVED** in Task 0037 (commit hash recorded in tasks.md). A `wb_flag_mask : alu_flags_t` field was added to `decoded_instr_t`, and `tms34010_status_reg.sv` now gates each of N/C/Z/V independently with `flag_update_mask`. The decoder's ABS arm sets `wb_flag_mask = '{n:1, c:0, z:1, v:1}`, so ABS now correctly leaves C "Unaffected" per SPVU001A page 12-34. BTST (Task 0037) uses the same mask machinery with `'{n:0, c:0, z:1, v:0}` for its spec-mandated Z-only update; `tb_btst.sv` directly verifies that N, C, V are preserved across a BTST when set via a prior CMP.

@@ -165,6 +165,18 @@ module tms34010_decode
   localparam logic [10:0] GETST_TOP11   = 11'b0000_0001_100;
   localparam logic [10:0] PUTST_TOP11   = 11'b0000_0001_101;
 
+  // GETPC, EXGPC, REV — small PC/revision register-context ops.
+  // Per SPVU001A summary table page A-16:
+  //   GETPC Rd  : 0000 0001 010R DDDD  (top11 = 11'b00000001_010 = 0x00A)
+  //   EXGPC Rd  : 0000 0001 001R DDDD  (top11 = 11'b00000001_001 = 0x009)
+  //   REV   Rd  : 0000 0000 001R DDDD  (top11 = 11'b00000000_001 = 0x001)
+  // REV value: per spec page 12-233, the chart bits are largely
+  // "undefined" but the worked example shows `REV A1 → 0x00000008`
+  // (see A0025). We emit 32'h0000_0008 as the constant.
+  localparam logic [10:0] GETPC_TOP11   = 11'b0000_0001_010;
+  localparam logic [10:0] EXGPC_TOP11   = 11'b0000_0001_001;
+  localparam logic [10:0] REV_TOP11     = 11'b0000_0000_001;
+
   // BTST K, Rd and BTST Rs, Rd (Test Register Bit). Per SPVU001A
   // pages 12-46/12-47 + summary table lines 26942/26943:
   //   BTST K, Rd  : 0001 11KK KKKR DDDD   (top6 = 6'b000111 = 0x07)
@@ -1075,6 +1087,54 @@ module tms34010_decode
       decoded.rs_idx       = reg_idx_from_instr;   // Rs index for the rs1 read
       decoded.wb_reg_en    = 1'b0;
       decoded.wb_flags_en  = 1'b0;                  // full ST write covers all bits
+    end
+
+    // -----------------------------------------------------------------------
+    // GETPC Rd : Rd ← PC. Per SPVU001A summary table A-16.
+    // The current PC is bit-addressed; we deliver pc_value (the value
+    // observed at CORE_WRITEBACK, which already reflects the opcode
+    // fetch's PC advance).
+    // -----------------------------------------------------------------------
+    if (top11 == GETPC_TOP11) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_GETPC;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // EXGPC Rd : atomic swap PC ↔ Rd. Per the spec, the low 4 bits of
+    // the new PC are forced to 0 (word alignment, per A0025).
+    //
+    // We use the regfile's rs2 port (which reads decoded.rd_idx) to
+    // get the OLD Rd value for the PC-load. The regfile write port
+    // simultaneously stores pc_value into Rd. Because the regfile is
+    // async-read + sync-write, rf_rs2_data sees the OLD value during
+    // the same WRITEBACK cycle, so the swap is atomic.
+    // -----------------------------------------------------------------------
+    if (top11 == EXGPC_TOP11) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_EXGPC;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // REV Rd : Rd ← chip revision-number constant. Per spec example
+    // (page 12-233), the value is 32'h0000_0008 (A0025). Status bits
+    // unaffected.
+    // -----------------------------------------------------------------------
+    if (top11 == REV_TOP11) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_REV;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b0;
     end
 
     // -----------------------------------------------------------------------

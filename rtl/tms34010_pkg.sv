@@ -253,7 +253,10 @@ package tms34010_pkg;
     INSTR_SLL_RR     = 6'd50, // SLL Rs, Rd        — shift left logical by Rs[4:0]
     INSTR_SRA_RR     = 6'd51, // SRA Rs, Rd        — shift right arithmetic by 2sCmp(Rs[4:0])
     INSTR_SRL_RR     = 6'd52, // SRL Rs, Rd        — shift right logical by 2sCmp(Rs[4:0])
-    INSTR_RL_RR      = 6'd53  // RL  Rs, Rd        — rotate left by Rs[4:0]
+    INSTR_RL_RR      = 6'd53, // RL  Rs, Rd        — rotate left by Rs[4:0]
+    INSTR_GETPC      = 6'd54, // GETPC Rd          — Rd ← PC (current bit-addressed PC)
+    INSTR_EXGPC      = 6'd55, // EXGPC Rd          — swap PC ↔ Rd (PC's low 4 bits cleared)
+    INSTR_REV        = 6'd56  // REV Rd            — Rd ← chip-revision number constant
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

@@ -562,6 +562,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   each shifting by 4. For SRA/SRL the test loads A1 = 28 (5-bit
   2's-comp of -4) to drive a magnitude-4 right shift, verifying
   the negation in the shifter-amount mux end-to-end.
+- Added **GETPC / EXGPC / REV** (Task 0040) — three small
+  PC/register-context ops.
+  - GETPC Rd: copies the current pc_value (at CORE_WRITEBACK, i.e.,
+    one word past the GETPC opcode) into Rd.
+  - EXGPC Rd: atomic swap PC ↔ Rd. The new PC has its bottom 4 bits
+    forced to 0 (word alignment per A0025); the regfile's async-read
+    rf_rs2_data delivers the OLD Rd value during the same WRITEBACK
+    cycle that writes the new Rd, so no extra pipeline stage is
+    needed.
+  - REV Rd: writes the chip-revision constant 0x0000_0008 into Rd,
+    per the spec's worked example on page 12-233.
+- Added `docs/assumptions.md` A0025 capturing two related choices:
+  the REV constant value and the EXGPC bottom-nibble PC mask. Both
+  are clean reads of the 1988 User's Guide.
+- Added `sim/tb/tb_pc_ops.sv` — verifies GETPC's PC bit-address
+  capture, REV's constant write, and EXGPC's atomic swap (with a
+  trap-sentinel MOVI right after EXGPC that must NOT execute, plus
+  a known landing-site MOVI at the EXGPC target verifying the swap
+  actually transferred control there).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
