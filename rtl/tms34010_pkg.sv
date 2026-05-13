@@ -242,7 +242,9 @@ package tms34010_pkg;
     INSTR_DSJS       = 6'd40, // DSJS Rd, Address  — short form: 5-bit offset + 1-bit
                               //                     direction; single-word instruction
     INSTR_ABS        = 6'd41, // ABS Rd            — |Rd| → Rd (V on MIN_INT)
-    INSTR_NEGB       = 6'd42  // NEGB Rd           — (2s_comp Rd) - C → Rd (borrow-in)
+    INSTR_NEGB       = 6'd42, // NEGB Rd           — (2s_comp Rd) - C → Rd (borrow-in)
+    INSTR_BTST_K     = 6'd43, // BTST K, Rd        — test bit K of Rd; only Z updates
+    INSTR_BTST_RR    = 6'd44  // BTST Rs, Rd       — test bit Rs[4:0] of Rd; Z only
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
@@ -286,6 +288,11 @@ package tms34010_pkg;
     logic [3:0]    branch_cc;   // condition code for JRcc / JAcc / DSJcc
     logic          wb_reg_en;   // 1 ⇒ regfile write in CORE_WRITEBACK
     logic          wb_flags_en; // 1 ⇒ ST flag update in CORE_WRITEBACK
+    // Per-flag mask: which of {N,C,Z,V} actually take their new value
+    // from `alu_flags` when wb_flags_en is set. All-ones = "full update"
+    // (the default for arithmetic). BTST uses {n:0,c:0,z:1,v:0}; ABS
+    // uses {n:1,c:0,z:1,v:1} to leave C "Unaffected" per spec.
+    alu_flags_t    wb_flag_mask;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg

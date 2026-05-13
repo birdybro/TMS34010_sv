@@ -440,13 +440,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
-## A0024 — ABS clears ST.C (spec says "Unaffected"); proper per-flag mask deferred
+## A0024 — ABS clears ST.C (spec says "Unaffected"); RESOLVED by Task 0037
 - **Date**: 2026-05-12
-- **Status**: active deviation, deferred fix
-- **Source**: SPVU001A page 12-34 ("Store Absolute Value") — explicitly states C is "Unaffected" by ABS.
-- **Conclusion / current implementation**: `tms34010_alu.sv`'s `ALU_OP_ABS` arm sets `flags.c = 1'b0`, and the surrounding control gates the flag update with `wb_flags_en` as a single all-or-nothing bit. Because of that, ABS in this implementation effectively CLEARS C, rather than leaving it unaffected. The N/Z/V flags match the spec; C is the only deviation.
-- **Why this deviation exists**: the project has not yet added a per-flag mask in the writeback path. The same gap will arise for BTST (which only updates Z per spec) and for any other instruction the spec marks "Unaffected" on individual flags. The plan is to add `wb_flag_mask : alu_flags_t` to `decoded_instr_t` and a 4-bit mask input to `tms34010_status_reg`, then back-fill each instruction's mask. Until that lands, ABS and any future "C unaffected" instructions follow the A0009 logical-ops convention (C cleared).
-- **How to apply**: When BTST or another "selective flag update" instruction is implemented, do the per-flag mask refactor together with that task. At that point, ABS's `ALU_OP_ABS` arm should drop the `flags.c = 0` assignment (so the mask gates it as a true unaffected flag), and a regression vector covering "ABS preserves C across a sequence" should be added to `tb_abs_negb`.
+- **Status**: **RESOLVED** in Task 0037 (commit hash recorded in tasks.md). A `wb_flag_mask : alu_flags_t` field was added to `decoded_instr_t`, and `tms34010_status_reg.sv` now gates each of N/C/Z/V independently with `flag_update_mask`. The decoder's ABS arm sets `wb_flag_mask = '{n:1, c:0, z:1, v:1}`, so ABS now correctly leaves C "Unaffected" per SPVU001A page 12-34. BTST (Task 0037) uses the same mask machinery with `'{n:0, c:0, z:1, v:0}` for its spec-mandated Z-only update; `tb_btst.sv` directly verifies that N, C, V are preserved across a BTST when set via a prior CMP.
+- **Source**: SPVU001A page 12-34 ("Store Absolute Value") — "C Unaffected".
+- **Original deviation**: the ALU arm was forced to assign `flags.c = 1'b0` because `wb_flags_en` was all-or-nothing. Now `flags.c` from the ALU is still 0 (defensive default), but the mask blocks the update so C retains its prior value.
+- **How to apply going forward**: any new instruction whose spec lists a flag as "Unaffected" should override `wb_flag_mask` in its decoder arm. The default initialization in the decoder's always_comb sets the mask to all-ones, so arithmetic instructions continue to update all four flags without explicit `wb_flag_mask` lines.
 
 ## TODO / spec-uncertain (waiting on detailed read)
 

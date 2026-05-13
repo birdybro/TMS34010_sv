@@ -344,7 +344,9 @@ module tms34010_core
       INSTR_DSJ,
       INSTR_DSJEQ,
       INSTR_DSJNE,
-      INSTR_DSJS:    alu_a = rf_rs2_data;   // Rd is the operand
+      INSTR_DSJS,
+      INSTR_BTST_K,
+      INSTR_BTST_RR: alu_a = rf_rs2_data;   // Rd is the operand
       INSTR_NEGB:    alu_a = '0;            // NEGB: 0 - Rd - C via SUBB
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
@@ -369,6 +371,8 @@ module tms34010_core
       INSTR_DSJEQ,
       INSTR_DSJNE,
       INSTR_DSJS:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
+      INSTR_BTST_K:  alu_b = 32'd1 << decoded.k5;
+      INSTR_BTST_RR: alu_b = 32'd1 << rf_rs1_data[4:0];
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -519,17 +523,18 @@ module tms34010_core
   assign flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
 
   tms34010_status_reg u_status_reg (
-    .clk           (clk),
-    .rst           (rst),
-    .flag_update_en(st_flag_update_en),
-    .flags_in      (flag_input),
-    .st_write_en   (st_write_en),
-    .st_write_data (st_write_data),
-    .st_o          (st_value),
-    .n_o           (st_n),
-    .c_o           (st_c),
-    .z_o           (st_z),
-    .v_o           (st_v)
+    .clk             (clk),
+    .rst             (rst),
+    .flag_update_en  (st_flag_update_en),
+    .flags_in        (flag_input),
+    .flag_update_mask(decoded.wb_flag_mask),
+    .st_write_en     (st_write_en),
+    .st_write_data   (st_write_data),
+    .st_o            (st_value),
+    .n_o             (st_n),
+    .c_o             (st_c),
+    .z_o             (st_z),
+    .v_o             (st_v)
   );
 
   // Currently-unused datapath observability — keep the lint sweep

@@ -27,6 +27,7 @@ module tb_status_reg;
   // ---------------------------------------------------------------------------
   logic                  flag_update_en;
   alu_flags_t            flags_in;
+  alu_flags_t            flag_update_mask;
   logic                  st_write_en;
   logic [DATA_WIDTH-1:0] st_write_data;
 
@@ -34,17 +35,18 @@ module tb_status_reg;
   logic                  n_o, c_o, z_o, v_o;
 
   tms34010_status_reg dut (
-    .clk           (clk),
-    .rst           (rst),
-    .flag_update_en(flag_update_en),
-    .flags_in      (flags_in),
-    .st_write_en   (st_write_en),
-    .st_write_data (st_write_data),
-    .st_o          (st_o),
-    .n_o           (n_o),
-    .c_o           (c_o),
-    .z_o           (z_o),
-    .v_o           (v_o)
+    .clk             (clk),
+    .rst             (rst),
+    .flag_update_en  (flag_update_en),
+    .flags_in        (flags_in),
+    .flag_update_mask(flag_update_mask),
+    .st_write_en     (st_write_en),
+    .st_write_data   (st_write_data),
+    .st_o            (st_o),
+    .n_o             (n_o),
+    .c_o             (c_o),
+    .z_o             (z_o),
+    .v_o             (v_o)
   );
 
   int unsigned failures;
@@ -78,11 +80,12 @@ module tb_status_reg;
   endfunction
 
   initial begin : main
-    failures        = 0;
-    flag_update_en  = 1'b0;
-    flags_in        = '0;
-    st_write_en     = 1'b0;
-    st_write_data   = '0;
+    failures         = 0;
+    flag_update_en   = 1'b0;
+    flags_in         = '0;
+    flag_update_mask = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b1};   // default: full update
+    st_write_en      = 1'b0;
+    st_write_data    = '0;
 
     // 1. Reset clears ST.
     repeat (3) @(posedge clk);

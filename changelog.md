@@ -488,6 +488,47 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   `wb_flags_en`. The fix is a per-flag mask in
   `decoded_instr_t` + `tms34010_status_reg`, planned to land
   together with BTST (which also needs selective Z-only updates).
+- **A0024 RESOLVED in Task 0037** via the per-flag-mask refactor
+  described below.
+
+### Changed
+- **Per-flag writeback mask** (Task 0037): added
+  `wb_flag_mask : alu_flags_t` to `decoded_instr_t` and a
+  `flag_update_mask` input to `tms34010_status_reg.sv`. The status
+  register's always_ff now gates each of N, C, Z, V independently:
+  a flag updates iff `flag_update_en && flag_update_mask.{flag}`.
+  The decoder's always_comb defaults `wb_flag_mask = '1` so every
+  pre-existing instruction continues with full flag-update behavior
+  unchanged. New instructions that need selective updates override
+  the mask in their decoder arms.
+- ABS arm now sets `wb_flag_mask = '{n:1, c:0, z:1, v:1}` so C is
+  truly "Unaffected" per SPVU001A page 12-34. (A0024 was created
+  in Task 0036 as a deviation; Task 0037 marks it RESOLVED.)
+- `sim/tb/tb_status_reg.sv` updated to drive the new `flag_update_mask`
+  port with all-ones for its existing pre-refactor checks.
+
+### Added
+- **BTST K, Rd** and **BTST Rs, Rd** (Task 0037) — Bit-Test family.
+  Per SPVU001A pages 12-46 / 12-47 + summary table lines
+  26942/26943, encodings `0001 11KK KKKR DDDD` (BTST K) and
+  `0100 101S SSSR DDDD` (BTST Rs). Semantics: test a single bit
+  of Rd (selected by K or by Rs[4:0]); Z = 1 iff that bit is 0.
+  Rd is NOT written. N, C, V are truly Unaffected (verified via the
+  new mask).
+- Implementation:
+  - `INSTR_BTST_K = 6'd43`, `INSTR_BTST_RR = 6'd44` in iclass.
+  - Decoder arms with `alu_op = ALU_OP_AND`, `wb_reg_en = 0`,
+    `wb_flag_mask = '{n:0, c:0, z:1, v:0}`.
+  - Core's alu_b mux drives `32'd1 << decoded.k5` for BTST K and
+    `32'd1 << rf_rs1_data[4:0]` for BTST Rs. alu_a = Rd via the
+    existing rs2-swap group. The resulting AND has a single bit
+    set iff that bit was 1 in Rd, so Z falls out of the standard
+    "Z = (result == 0)" ALU convention.
+- Added `sim/tb/tb_btst.sv` — 5 JRZ/JRNE-probed scenarios covering
+  BTST K (with K=0, K=1, K=31) and BTST Rs forms; plus a final
+  CMP-NCZV=1101 → BTST → halt sequence directly verifying that
+  N, C, V are preserved across the BTST (the wb_flag_mask
+  end-to-end check).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

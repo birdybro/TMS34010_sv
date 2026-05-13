@@ -136,6 +136,16 @@ module tms34010_decode
   localparam logic [10:0] DSJEQ_TOP11 = 11'b0000_1101_101;
   localparam logic [10:0] DSJNE_TOP11 = 11'b0000_1101_110;
 
+  // BTST K, Rd and BTST Rs, Rd (Test Register Bit). Per SPVU001A
+  // pages 12-46/12-47 + summary table lines 26942/26943:
+  //   BTST K, Rd  : 0001 11KK KKKR DDDD   (top6 = 6'b000111 = 0x07)
+  //   BTST Rs, Rd : 0100 101S SSSR DDDD   (top7 = 7'b0100_101)
+  // Both forms test a single bit of Rd (selected by K or by Rs[4:0])
+  // and set Z = !bit; N, C, V are Unaffected per spec — the wb_flag_mask
+  // blocks updates to those three flags.
+  localparam logic [5:0] BTST_K_TOP6   = 6'b000111;
+  localparam logic [6:0] BTST_RR_TOP7  = 7'b0100_101;
+
   // DSJS Rd, Address (Decrement-and-Skip-Jump Short — single-word).
   // Per SPVU001A page 12-74 + summary table line 13844:
   //   `0011 1Dxx xxxR DDDD` — top5 = 5'b00111.
@@ -178,6 +188,10 @@ module tms34010_decode
     decoded.branch_cc       = '0;
     decoded.wb_reg_en       = 1'b0;
     decoded.wb_flags_en     = 1'b0;
+    // Default flag-update mask = all-ones. Instructions that need
+    // selective updates (BTST → Z only; ABS → all but C) override
+    // this in their arms below.
+    decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b1};
 
     // -----------------------------------------------------------------------
     // MOVI IW K, Rd
@@ -481,7 +495,7 @@ module tms34010_decode
     // -----------------------------------------------------------------------
     if (instr[15:7] == UNARY_TOP9) begin
       case (instr[6:5])
-        2'b00: begin   // ABS  (A0024: C unaffected → we clear, see assumption)
+        2'b00: begin   // ABS: spec says C is "Unaffected" — mask blocks C.
           decoded.illegal         = 1'b0;
           decoded.iclass          = INSTR_ABS;
           decoded.rd_file         = reg_file_from_instr;
@@ -489,6 +503,7 @@ module tms34010_decode
           decoded.alu_op          = ALU_OP_ABS;
           decoded.wb_reg_en       = 1'b1;
           decoded.wb_flags_en     = 1'b1;
+          decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
         end
         2'b01: begin   // NEG
           decoded.illegal         = 1'b0;
@@ -882,6 +897,49 @@ module tms34010_decode
       decoded.alu_op      = ALU_OP_SUB;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b0;          // spec: N/C/Z/V unaffected
+    end
+
+    // -----------------------------------------------------------------------
+    // BTST K, Rd  (Test Register Bit — Constant)
+    //
+    // Encoding: bits[15:10] = 6'b000111, bits[9:5] = K (5-bit unsigned
+    // bit index), bit[4] = R, bits[3:0] = Rd index. Per SPVU001A
+    // page 12-46 + summary table line 26942. Status: Z = !(bit_K_of_Rd);
+    // N, C, V unaffected — gated via wb_flag_mask.
+    //
+    // The bit-mask `1 << K` is computed in the core (alu_b mux) and
+    // ANDed with Rd. The Z flag from the AND result is what we want.
+    // -----------------------------------------------------------------------
+    if (top6 == BTST_K_TOP6) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_BTST_K;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.k5           = instr[9:5];   // bit index for the test
+      decoded.alu_op       = ALU_OP_AND;
+      decoded.wb_reg_en    = 1'b0;          // Rd is NOT written
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
+    // BTST Rs, Rd  (Test Register Bit — Register)
+    //
+    // Encoding: bits[15:9] = 7'b0100_101 (top7), bits[8:5] = Rs idx,
+    // bit[4] = R, bits[3:0] = Rd idx. Per SPVU001A page 12-47 +
+    // summary table line 26943. Bit index is Rs[4:0].
+    // Same flag policy as BTST K (Z only).
+    // -----------------------------------------------------------------------
+    if (top7 == BTST_RR_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_BTST_RR;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.alu_op       = ALU_OP_AND;
+      decoded.wb_reg_en    = 1'b0;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
   end
 

@@ -41,7 +41,8 @@
 | 0033 | DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-jump family) | complete |
 | 0034 | JAcc Address (absolute conditional jump) | complete |
 | 0035 | DSJS Rd, Address (decrement-and-skip-jump short form) | complete |
-| 0036 | ABS / NEGB Rd (complete the unary family) | in progress |
+| 0036 | ABS / NEGB Rd (complete the unary family) | complete |
+| 0037 | BTST K/Rs + per-flag wb_flag_mask refactor | in progress |
 
 ---
 
@@ -1131,7 +1132,7 @@ Commit:
 ---
 
 ### Task 0036: ABS / NEGB Rd (complete the unary family)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0022 (unary-family decoder framework + ALU_OP_NEG / NOT).
 - Task 0029 (ALU_OP_SUBB; NEGB is implemented as SUBB with alu_a=0).
@@ -1168,6 +1169,67 @@ Tests: tb_abs_negb PASS; tb_neg_not / tb_alu / tb_sub_rr /
 Docs: instruction_coverage.md (ABS / NEGB rows updated from "not
   started" to "implemented"), assumptions.md A0024, changelog.md,
   tasks.md.
+Commit:
+- aac06d5
+
+---
+
+### Task 0037: BTST K/Rs + per-flag wb_flag_mask refactor
+Status: in progress
+Dependencies:
+- Tasks 0009 (status register), 0017 (logical ops + ALU_OP_AND).
+- Task 0036 (ABS — its A0024 C-clear deviation is RESOLVED by the
+  refactor that lands here).
+Spec source: SPVU001A pages 12-46 (BTST K, Rd) and 12-47 (BTST Rs, Rd)
+  + summary table lines 26942/26943. Encodings `0001 11KK KKKR DDDD`
+  (BTST K) and `0100 101S SSSR DDDD` (BTST Rs). Status: Z = !bit;
+  N, C, V "Unaffected" per spec.
+Acceptance Criteria:
+- **wb_flag_mask refactor** (architectural):
+  - `decoded_instr_t` gains `wb_flag_mask : alu_flags_t` field.
+  - `tms34010_status_reg.sv` gains a `flag_update_mask` input;
+    per-bit gating on N/C/Z/V update in the always_ff.
+  - `tms34010_core.sv` wires `decoded.wb_flag_mask` into the
+    status_reg's new input.
+  - Decoder's always_comb defaults `decoded.wb_flag_mask = '1` (all
+    flags update) so every existing arm Just Works — no per-arm
+    changes needed except for instructions that DO want selective
+    updates.
+  - `tb_status_reg.sv` updated for the new port (driven all-ones by
+    default; existing checks unchanged).
+- **A0024 resolved**: ABS arm in the decoder now sets
+  `wb_flag_mask = '{n:1, c:0, z:1, v:1}`. ABS becomes spec-correct
+  for C — the flag is truly "Unaffected". A0024 marked RESOLVED.
+- **BTST**:
+  - INSTR_BTST_K = 6'd43 and INSTR_BTST_RR = 6'd44 added to
+    instr_class_t.
+  - Decoder: top6 = 6'b000111 (BTST K) and top7 = 7'b0100_101
+    (BTST Rs) arms with `alu_op = ALU_OP_AND`, `wb_reg_en = 0`,
+    `wb_flag_mask = '{n:0, c:0, z:1, v:0}`.
+  - Core's alu_a mux: INSTR_BTST_K and INSTR_BTST_RR join the
+    swap group (alu_a = Rd via rs2 port).
+  - Core's alu_b mux: new arms drive `32'd1 << decoded.k5` for
+    BTST K and `32'd1 << rf_rs1_data[4:0]` for BTST Rs.
+- `sim/tb/tb_btst.sv`: 5 scenarios using JRZ/JRNE probes to verify
+  Z-flag behavior for each BTST (since the JRcc destination
+  register reveals Z without needing direct ST sampling between
+  BTSTs). Plus a final CMP-NCZV=1101 → BTST → halt sequence that
+  verifies N, C, V are preserved unchanged across the BTST.
+- Encoding helpers verified: `btst_k_enc(0,A0) = 0x1C00`,
+  `btst_k_enc(1,A2) = 0x1C22`, `btst_k_enc(31,A0) = 0x1FE0`,
+  `btst_rr_enc(A3,A4) = 0x4A64`.
+- Full Verilator regression: all existing tbs still PASS after the
+  flag-mask refactor. tb_btst PASS. tb_status_reg unit test PASS
+  (with the new port wired with mask=all-ones).
+- BTST Rs/K is the first instruction in the project to exercise the
+  per-flag mask; ABS retroactively becomes the second instruction.
+Tests: tb_btst PASS; broader regression including tb_movi/tb_movk/
+  tb_add_rr/tb_sub_rr/tb_cmp_rr/tb_logical_rr/tb_addc_subb/
+  tb_immi_iw/tb_shift_k/tb_neg_not/tb_abs_negb/tb_jrcc_short/
+  tb_jrcc_signed/tb_dsj PASS; lint clean.
+Docs: instruction_coverage.md (BTST K + Rs rows added; ABS row
+  updated to reflect resolved deviation), assumptions.md (A0024
+  marked RESOLVED), changelog.md, tasks.md.
 Commit:
 - pending
 

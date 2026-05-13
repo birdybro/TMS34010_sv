@@ -44,6 +44,10 @@ module tms34010_status_reg
   // Selective flag update from ALU/shifter.
   input  logic                  flag_update_en,
   input  alu_flags_t            flags_in,
+  // Per-flag mask: which of N, C, Z, V should actually update when
+  // `flag_update_en` is high. All-ones is the standard case (full
+  // arithmetic flag update). BTST sets only `z`. ABS sets all but `c`.
+  input  alu_flags_t            flag_update_mask,
 
   // Full ST write (POPST, MMFM-of-ST, debug load, etc.).
   input  logic                  st_write_en,
@@ -65,10 +69,10 @@ module tms34010_status_reg
     end else if (st_write_en) begin
       st_q <= st_write_data;
     end else if (flag_update_en) begin
-      st_q[ST_N_BIT] <= flags_in.n;
-      st_q[ST_C_BIT] <= flags_in.c;
-      st_q[ST_Z_BIT] <= flags_in.z;
-      st_q[ST_V_BIT] <= flags_in.v;
+      if (flag_update_mask.n) st_q[ST_N_BIT] <= flags_in.n;
+      if (flag_update_mask.c) st_q[ST_C_BIT] <= flags_in.c;
+      if (flag_update_mask.z) st_q[ST_Z_BIT] <= flags_in.z;
+      if (flag_update_mask.v) st_q[ST_V_BIT] <= flags_in.v;
     end
   end
 
