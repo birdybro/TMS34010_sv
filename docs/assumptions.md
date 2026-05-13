@@ -310,14 +310,14 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0017 — JRcc condition codes (subset implemented)
 - **Date**: 2026-05-12
-- **Status**: active, **partial — most codes deferred**
+- **Status**: SUPERSEDED by A0023 (Task 0030). The "EQ=0100, NE=0111" guesses recorded here turned out to be WRONG — those codes are actually LT and GT. A0023 captures the corrected table; this entry is preserved for historical context.
 - **Source**: SPVU001A §12.7 + Table 12-8 "Condition Codes for JRcc and JAcc Instructions" (page 12-31).
-- **Conclusion (verified subset only)**:
-  - `cc = 0000` → UC (unconditional, always)
-  - `cc = 0100` → EQ / Z (Z = 1)
-  - `cc = 0111` → NE / NZ (Z = 0)
-  These three are extracted with high confidence from the table text. The remaining 13 condition codes (LO/B, LS, HI, HS/NC, LT, LE, GT, GE, P/NN, N, V, NV, plus the X/Y XY-coordinate variants) are visible in the table but the `pdftotext -layout` output is too garbled to reliably attribute codes to mnemonics without an OCR re-pass or a visual read of the PDF.
-- **How to apply**: The decoder explicitly enumerates only the three verified codes (`cc == CC_UC || cc == CC_EQ || cc == CC_NE`); any other cc value on a JRcc-shape encoding falls through to ILLEGAL. This is the spec-discipline-correct behavior: a real program that uses, say, JRGT will trap loudly rather than mis-branch silently. When the full Table 12-8 is verified, add the remaining cc constants to the package and the matching arms in the decoder + core's branch_taken evaluator.
+- **Original conclusion (verified subset only)**:
+  - `cc = 0000` → UC (unconditional, always)  [CORRECT — preserved in A0023]
+  - `cc = 0100` → EQ / Z (Z = 1)              [**WRONG** — actually LT]
+  - `cc = 0111` → NE / NZ (Z = 0)             [**WRONG** — actually GT]
+  Task 0027 added LO=0001, LS=0010, HI=0011, HS=1001 — those four happened to be correct.
+- **Note**: the prior PDF extraction (without `-layout`) collapsed Table 12-8 into unparseable columns, which led to the guess. A clean re-extraction with `pdftotext -layout` on the long-form JRcc page (12-96) yielded the unambiguous table now recorded in A0023.
 
 ---
 
@@ -397,6 +397,33 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Conclusion**: NOP is a single fixed 16-bit opcode `0x0300`, not an alias of another instruction. ST is NOT updated; no register is written; the only architectural effect is PC advancing by one instruction word.
 - **Why this matters**: The encoding superficially looks like it could be part of the unary family (`0000 0011 1xxx xxxx`, page A-14 — top9 = `9'b000000111`). It is NOT — NOP's top9 is `9'b000000110` (bit[7]=0). ABS A0 has the same alphanumeric "0x0300" mnemonic flavor but is actually `0x0380` (bit[7]=1 to enter the unary family). The decoder treats them as fully disjoint encodings.
 - **How to apply**: Recognize `instr == 16'h0300` directly. Both writeback gates stay 0; PC advance is the only effect, and that happens for free via the FETCH-ack pulse.
+
+---
+
+## A0023 — JRcc / JAcc condition codes resolved against the spec table
+- **Date**: 2026-05-12
+- **Status**: resolved against SPVU001A Table 12-8, re-extracted with `pdftotext -layout` from the long-form JRcc page (page 12-96 of the 1988 User's Guide). The same table appears on the short-form JRcc page (12-95) with identical codes.
+- **Source**: `third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf` Table 12-8 "Condition Codes for JRcc and JAcc Instructions".
+- **Correction**: the prior A0017 guess of EQ=0100 / NE=0111 was wrong. The correct table is:
+
+  | Code (binary) | Mnemonic | Aliases   | Status-bit condition          | Type     |
+  |---------------|----------|-----------|--------------------------------|----------|
+  | 0000          | UC       |           | (always)                       | uncond   |
+  | 0001          | LO       | B         | C = 1                          | unsigned |
+  | 0010          | LS       | YLE       | C \| Z = 1                     | unsigned |
+  | 0011          | HI       | YGT       | ~C & ~Z = 1                    | unsigned |
+  | 0100          | LT       | XLE       | (N ^ V) = 1                    | signed   |
+  | 0101          | GE       | XGT, YZ   | (N ^ V) = 0                    | signed   |
+  | 0110          | LE       |           | (N ^ V) \| Z = 1               | signed   |
+  | 0111          | GT       |           | ~(N ^ V) & ~Z = 1              | signed   |
+  | 1001          | HS       | NC        | C = 0                          | unsigned |
+  | 1010          | EQ       | Z         | Z = 1                          | equality |
+  | 1011          | NE       | NZ        | Z = 0                          | equality |
+
+  Codes not listed (1000, 1100..1111) are V/NV/P/N and the JRYxx XY-compare codes, deferred for a later task.
+- **Implementation**: the package `CC_*` parameters were re-pointed at the correct codes. The decoder accepts the 11 codes above; other JRcc-shape codes still fall through to ILLEGAL (defensive). The core's `branch_taken` evaluator gained four new arms for LT/LE/GT/GE.
+- **Tests**: `tb_jrcc_signed.sv` exercises all four signed cc's both directions; `tb_jrcc_short.sv` and `tb_jrcc_unsigned.sv` continue to pass with the corrected EQ/NE constants (their encoding helpers compose the cc by name, so changing the constant value made the assembled instructions match the spec).
+- **Lesson** (also captured in the `pdf-layout-for-charts` memory): always use `pdftotext -layout` for tabular spec material. The original extraction without `-layout` is the root cause of the bug fixed here.
 
 ---
 

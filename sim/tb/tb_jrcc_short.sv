@@ -105,16 +105,17 @@ module tb_jrcc_short;
   initial begin : main
     failures = 0;
 
-    // Encoding sanity:
-    //   JREQ +5 = 1100 0100 0000 0101 = 0xC405
-    //   JRNE +5 = 1100 0111 0000 0101 = 0xC705
-    if (jrcc_short_enc(CC_EQ, 8'sd5) !== 16'hC405) begin
-      $display("TEST_RESULT: FAIL: JREQ +5 enc = %04h, expected C405",
+    // Encoding sanity (corrected per SPVU001A Table 12-8 re-extracted
+    // in Task 0030; see A0023). EQ = 1010, NE = 1011.
+    //   JREQ +5 = 1100 1010 0000 0101 = 0xCA05
+    //   JRNE +5 = 1100 1011 0000 0101 = 0xCB05
+    if (jrcc_short_enc(CC_EQ, 8'sd5) !== 16'hCA05) begin
+      $display("TEST_RESULT: FAIL: JREQ +5 enc = %04h, expected CA05",
                jrcc_short_enc(CC_EQ, 8'sd5));
       failures++;
     end
-    if (jrcc_short_enc(CC_NE, 8'sd5) !== 16'hC705) begin
-      $display("TEST_RESULT: FAIL: JRNE +5 enc = %04h, expected C705",
+    if (jrcc_short_enc(CC_NE, 8'sd5) !== 16'hCB05) begin
+      $display("TEST_RESULT: FAIL: JRNE +5 enc = %04h, expected CB05",
                jrcc_short_enc(CC_NE, 8'sd5));
       failures++;
     end

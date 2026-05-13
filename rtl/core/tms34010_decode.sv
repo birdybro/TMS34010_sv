@@ -638,6 +638,10 @@ module tms34010_decode
          instr[11:8] == CC_LO ||
          instr[11:8] == CC_LS ||
          instr[11:8] == CC_HI ||
+         instr[11:8] == CC_LT ||
+         instr[11:8] == CC_LE ||
+         instr[11:8] == CC_GT ||
+         instr[11:8] == CC_GE ||
          instr[11:8] == CC_EQ ||
          instr[11:8] == CC_NE ||
          instr[11:8] == CC_HS)) begin

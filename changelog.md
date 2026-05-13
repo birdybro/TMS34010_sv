@@ -351,6 +351,41 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   test is set up using either MOVI/MOVK (preserve / clear C) or a
   deliberately-overflowing ADD (set C=1).
 
+### Fixed
+- **JRcc EQ/NE condition codes were WRONG.** A0017 (Task 0020) guessed
+  CC_EQ = `4'b0100` and CC_NE = `4'b0111` from a garbled `pdftotext`
+  extraction of Table 12-8. SPVU001A actually defines those codes as
+  the signed-compare LT and GT, respectively. The correct encodings,
+  confirmed by a clean `pdftotext -layout` re-extraction from the
+  long-form JRcc page (12-96), are EQ = `4'b1010` and NE = `4'b1011`.
+  Task 0030 corrects the package constants. Existing tests passed
+  only because their encoding helpers composed the cc field from the
+  same wrong constants; with the package fix the helpers now produce
+  the spec-correct binary for JREQ (0xCAdd) and JRNE (0xCBdd). The
+  two hard-coded hex sanity checks in `tb_jrcc_short.sv` were
+  updated. A0017 marked SUPERSEDED; A0023 records the full corrected
+  Table 12-8.
+- Lesson: `pdftotext` without `-layout` mangles columnar charts beyond
+  recoverability. The new `pdf-layout-for-charts` memory captures
+  this so future spec extractions use the right invocation.
+
+### Added (continued)
+- **Signed-compare JRcc condition codes (Task 0030)**: LT (`4'b0100`,
+  `N^V = 1`), GE (`4'b0101`, `N^V = 0`), LE (`4'b0110`, `(N^V) | Z`),
+  GT (`4'b0111`, `!(N^V) & !Z`). The decoder accepts all 11 confirmed
+  cc codes now (UC, LO, LS, HI, LT, GE, LE, GT, HS, EQ, NE). Codes
+  not in this list still trap as ILLEGAL.
+- Added `sim/tb/tb_jrcc_signed.sv` — eight scenarios spanning all
+  four signed cc's in both directions, using the sentinel-register
+  pattern from `tb_jrcc_unsigned.sv` (each sentinel is pre-set to a
+  marker; if the JRcc takes, the marker survives; if it falls through,
+  the marker is overwritten). The operand pairs (Rd, Rs) = (-5, 5),
+  (5, -5), and (5, 5) drive the (N, V, Z) flags such that each cc's
+  take and skip paths are both exercised.
+- Added `docs/assumptions.md` A0023 with the full corrected Table
+  12-8 (11 currently-recognized codes; deferred codes for P/N, V/NV,
+  JRYxx XY-compares explicitly listed).
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

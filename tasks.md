@@ -34,7 +34,8 @@
 | 0026 | MOVE Rs, Rd (register-to-register) | complete |
 | 0027 | JRcc unsigned compares (LO, LS, HI, HS) | complete |
 | 0028 | NOP (No Operation) | complete |
-| 0029 | ADDC / SUBB Rs, Rd (carry-chain reg-reg) | in progress |
+| 0029 | ADDC / SUBB Rs, Rd (carry-chain reg-reg) | complete |
+| 0030 | JRcc condition-code correction + signed compares | in progress |
 
 ---
 
@@ -851,7 +852,7 @@ Commit:
 ---
 
 ### Task 0029: ADDC / SUBB Rs, Rd (carry-chain reg-reg arithmetic)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0015/0016 (reg-reg shape + ALU has ADDC/SUBB ops + cin wired
   from st_c + SUB-style operand swap pattern available).
@@ -885,6 +886,48 @@ Tests: tb_addc_subb PASS; the previous Verilator-clean regression set
   still PASS; lint clean.
 Docs: instruction_coverage.md (ADDC + SUBB rows), assumptions.md
   A0022, changelog.md, tasks.md.
+Commit:
+- ccf6450
+
+---
+
+### Task 0030: JRcc condition-code correction + signed compares
+Status: in progress
+Dependencies:
+- Task 0027 (unsigned-compare JRcc framework).
+Spec source: SPVU001A Table 12-8, re-extracted with `pdftotext -layout`
+  from the long-form JRcc page (page 12-96). A0023 captures the
+  corrected table; A0017 marked superseded.
+Acceptance Criteria:
+- Recognize and correct the EQ/NE encoding bug introduced in Task
+  0020 / A0017: `CC_EQ` from `4'b0100` → `4'b1010`, `CC_NE` from
+  `4'b0111` → `4'b1011`. The original guesses turned out to be the
+  signed-compare LT and GT codes, not EQ/NE.
+- Add the four signed-compare cc parameters: `CC_LT = 4'b0100`,
+  `CC_GE = 4'b0101`, `CC_LE = 4'b0110`, `CC_GT = 4'b0111`.
+- Decoder accepts all 11 verified cc values (UC, LO, LS, HI, LT, GE,
+  LE, GT, HS, EQ, NE); other JRcc-shape codes still fall through to
+  ILLEGAL (defensive).
+- Core's `branch_taken` evaluator gains four new arms with the
+  standard signed-compare logic: LT = `N^V`; GE = `!(N^V)`;
+  LE = `(N^V) | Z`; GT = `!(N^V) & !Z`.
+- `tb_jrcc_short.sv` sanity hex-constants updated from `0xC405` /
+  `0xC705` → `0xCA05` / `0xCB05` for JREQ/JRNE +5. The
+  encoding helper itself composes the cc by name and tracks the
+  package change automatically.
+- `tb_jrcc_signed.sv` added: 8 scenarios spanning all 4 signed cc's
+  in both directions (take + skip), using the sentinel-register
+  pattern from `tb_jrcc_unsigned.sv`.
+- A0023 added (full corrected cc table). A0017 marked superseded but
+  preserved for historical context. A0009-style lesson about
+  `pdftotext -layout` on charts cross-referenced.
+- Full Verilator regression of 24 testbenches that pass cleanly under
+  Verilator: 24/24 PASS. Lint clean.
+Tests: tb_jrcc_signed PASS; tb_jrcc_short/unsigned/jruc_short PASS;
+  the previously Verilator-clean regression set still PASS; lint clean.
+Docs: instruction_coverage.md (JRcc row updated to 11 cc codes),
+  assumptions.md (A0023 added, A0017 superseded), changelog.md,
+  tasks.md.
 Commit:
 - pending
 

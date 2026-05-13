@@ -231,17 +231,22 @@ package tms34010_pkg;
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
-  // Source: SPVU001A Table 12-8. Only codes verified against the spec
-  // text are listed here; signed-compare codes (LT/LE/GT/GE) remain
-  // deferred until the table is re-read with cleaner PDF rendering
-  // (A0017 + A0021).
+  // Source: SPVU001A Table 12-8 ("Condition Codes for JRcc and JAcc
+  // Instructions"), as re-extracted cleanly with `pdftotext -layout`
+  // from the long-form JRcc page (12-96). The earlier (A0017) hand-
+  // guess of EQ=0100 and NE=0111 was WRONG — those codes are actually
+  // LT and GT, respectively. Corrected in Task 0030; see A0023.
   parameter logic [3:0] CC_UC = 4'b0000;  // unconditional
   parameter logic [3:0] CC_LO = 4'b0001;  // lower-than       (unsigned; C = 1; alias "B")
   parameter logic [3:0] CC_LS = 4'b0010;  // lower-or-same    (unsigned; C | Z = 1)
   parameter logic [3:0] CC_HI = 4'b0011;  // higher-than      (unsigned; ~C & ~Z = 1)
-  parameter logic [3:0] CC_EQ = 4'b0100;  // equal            (Z = 1)
-  parameter logic [3:0] CC_NE = 4'b0111;  // not-equal        (Z = 0)
+  parameter logic [3:0] CC_LT = 4'b0100;  // less-than        (signed;   N ^ V = 1)
+  parameter logic [3:0] CC_GE = 4'b0101;  // greater-or-equal (signed;   N ^ V = 0; alias "JRZ" in spec when comparing-to-zero? — see A0023)
+  parameter logic [3:0] CC_LE = 4'b0110;  // less-or-equal    (signed;   (N ^ V) | Z = 1)
+  parameter logic [3:0] CC_GT = 4'b0111;  // greater-than     (signed;   !(N ^ V) & !Z = 1)
   parameter logic [3:0] CC_HS = 4'b1001;  // higher-or-same   (unsigned; C = 0; alias "NC")
+  parameter logic [3:0] CC_EQ = 4'b1010;  // equal            (Z = 1; alias "JRZ")
+  parameter logic [3:0] CC_NE = 4'b1011;  // not-equal        (Z = 0; alias "JRNZ")
 
   // What the control FSM needs from decode in order to execute. Fields are
   // populated only when the instruction class uses them; the rest hold safe

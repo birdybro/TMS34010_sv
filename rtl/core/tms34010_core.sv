@@ -326,12 +326,16 @@ module tms34010_core
   always_comb begin
     unique case (decoded.branch_cc)
       CC_UC:   branch_taken = 1'b1;
-      CC_LO:   branch_taken = st_c;                  // unsigned <
-      CC_LS:   branch_taken = st_c | st_z;            // unsigned <=
-      CC_HI:   branch_taken = !st_c & !st_z;          // unsigned >
-      CC_EQ:   branch_taken = st_z;                   // =
-      CC_NE:   branch_taken = !st_z;                  // !=
-      CC_HS:   branch_taken = !st_c;                  // unsigned >=  (== NC)
+      CC_LO:   branch_taken = st_c;                   // unsigned <
+      CC_LS:   branch_taken = st_c | st_z;             // unsigned <=
+      CC_HI:   branch_taken = !st_c & !st_z;           // unsigned >
+      CC_LT:   branch_taken = st_n ^ st_v;             // signed   <
+      CC_LE:   branch_taken = (st_n ^ st_v) | st_z;    // signed   <=
+      CC_GT:   branch_taken = !(st_n ^ st_v) & !st_z;  // signed   >
+      CC_GE:   branch_taken = !(st_n ^ st_v);          // signed   >=
+      CC_EQ:   branch_taken = st_z;                    // =
+      CC_NE:   branch_taken = !st_z;                   // !=
+      CC_HS:   branch_taken = !st_c;                   // unsigned >=  (== NC)
       default: branch_taken = 1'b0;
     endcase
   end
