@@ -136,6 +136,14 @@ module tms34010_decode
   localparam logic [10:0] DSJEQ_TOP11 = 11'b0000_1101_101;
   localparam logic [10:0] DSJNE_TOP11 = 11'b0000_1101_110;
 
+  // DSJS Rd, Address (Decrement-and-Skip-Jump Short — single-word).
+  // Per SPVU001A page 12-74 + summary table line 13844:
+  //   `0011 1Dxx xxxR DDDD` — top5 = 5'b00111.
+  // Bit[10] = D (direction: 0=forward, 1=backward).
+  // Bits[9:5] = 5-bit unsigned offset (words from PC').
+  // Bit[4] = file (R). Bits[3:0] = Rd index.
+  localparam logic [4:0]  DSJS_TOP5  = 5'b0011_1;
+
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
   assign rs_idx_from_instr = instr[8:5];
@@ -827,6 +835,36 @@ module tms34010_decode
       decoded.needs_imm32 = 1'b1;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // DSJS Rd, Address (Decrement-and-Skip-Jump Short, single-word)
+    //
+    // Encoding (SPVU001A page 12-74 + summary table line 13844):
+    //   bits[15:11] = 5'b00111
+    //   bit[10]     = D (direction; 0 = forward, 1 = backward)
+    //   bits[9:5]   = 5-bit unsigned offset (words from PC')
+    //   bit[4]      = R (file)
+    //   bits[3:0]   = Rd index
+    //
+    // Semantics: Rd ← Rd - 1; if Rd' != 0, branch (PC' +/- offset*16);
+    // else fall through. Status bits N/C/Z/V unaffected.
+    //
+    // The decoder identifies the class and sets the SAME control as
+    // DSJ (alu_op=SUB, k5=1, wb_reg_en=1, wb_flags_en=0). The
+    // direction and offset are not captured in the decoded struct;
+    // the core extracts them combinationally from instr_word_q[10]
+    // and instr_word_q[9:5] for the branch-target computation.
+    // -----------------------------------------------------------------------
+    if (instr[15:11] == DSJS_TOP5) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_DSJS;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = 5'd1;          // alu_b = 1 via K-form mux arm
+      decoded.alu_op      = ALU_OP_SUB;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b0;          // spec: N/C/Z/V unaffected
     end
   end
 

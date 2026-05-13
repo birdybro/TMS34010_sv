@@ -166,6 +166,19 @@ module tms34010_core
   logic [ADDR_WIDTH-1:0] branch_target_jacc;
   assign branch_target_jacc = {imm_hi_q, imm_lo_q[INSTR_WORD_WIDTH-1:4], 4'h0};
 
+  // DSJS short-form target: PC' ± offset×16 bits.
+  // pc_value at CORE_WRITEBACK already equals PC' (= PC_original + 16
+  // after the single-word opcode fetch). instr_word_q[10] is the
+  // direction bit; instr_word_q[9:5] is the 5-bit unsigned offset.
+  logic [ADDR_WIDTH-1:0] branch_target_dsjs;
+  logic signed [9:0]     dsjs_disp_bits;
+  // Build positive bit-offset = {1'b0, offset5, 4'h0} (signed 10-bit
+  // value in [0, +496]), then negate when D=1.
+  assign dsjs_disp_bits = instr_word_q[10]
+                        ? -10'($signed({1'b0, instr_word_q[9:5], 4'h0}))
+                        :  10'($signed({1'b0, instr_word_q[9:5], 4'h0}));
+  assign branch_target_dsjs = pc_value + ADDR_WIDTH'(dsjs_disp_bits);
+
   // ---------------------------------------------------------------------------
   // Immediate latch
   //
@@ -272,7 +285,8 @@ module tms34010_core
   logic dsj_precondition;
   always_comb begin
     unique case (decoded.iclass)
-      INSTR_DSJ:    dsj_precondition = 1'b1;
+      INSTR_DSJ,
+      INSTR_DSJS:   dsj_precondition = 1'b1;
       INSTR_DSJEQ:  dsj_precondition = st_z;
       INSTR_DSJNE:  dsj_precondition = !st_z;
       default:      dsj_precondition = 1'b1;
@@ -328,7 +342,8 @@ module tms34010_core
       INSTR_XORI_IL,
       INSTR_DSJ,
       INSTR_DSJEQ,
-      INSTR_DSJNE:   alu_a = rf_rs2_data;   // Rd is the operand
+      INSTR_DSJNE,
+      INSTR_DSJS:    alu_a = rf_rs2_data;   // Rd is the operand
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -350,7 +365,8 @@ module tms34010_core
       INSTR_SUBK,
       INSTR_DSJ,
       INSTR_DSJEQ,
-      INSTR_DSJNE:   alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
+      INSTR_DSJNE,
+      INSTR_DSJS:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -439,6 +455,16 @@ module tms34010_core
           if (branch_taken) begin
             pc_load_en    = 1'b1;
             pc_load_value = branch_target_jacc;
+          end
+        end
+        INSTR_DSJS: begin
+          // Short-form decrement-and-skip-jump. Branch taken iff the
+          // post-decrement Rd is non-zero (dsj_precondition = 1 for
+          // DSJS just like DSJ). Target = PC' ± offset×16 per
+          // instr_word_q[10] direction bit.
+          if (dsj_rd_nonzero) begin
+            pc_load_en    = 1'b1;
+            pc_load_value = branch_target_dsjs;
           end
         end
         default: ; // no branch

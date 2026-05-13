@@ -39,7 +39,8 @@
 | 0031 | JRcc long form (16-bit displacement) | complete |
 | 0032 | JUMP Rs (register-indirect jump) | complete |
 | 0033 | DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-jump family) | complete |
-| 0034 | JAcc Address (absolute conditional jump) | in progress |
+| 0034 | JAcc Address (absolute conditional jump) | complete |
+| 0035 | DSJS Rd, Address (decrement-and-skip-jump short form) | in progress |
 
 ---
 
@@ -1055,7 +1056,7 @@ Commit:
 ---
 
 ### Task 0034: JAcc Address (absolute conditional jump)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0030 (corrected cc encoding + signed compares).
 - Tasks 0012-0013 (CORE_FETCH_IMM_HI path; needs_imm32 already wired
@@ -1081,6 +1082,48 @@ Acceptance Criteria:
   Memory NOP-pre-filled; final scenario ends with `0xC0FF` halt.
 Tests: tb_jacc PASS; Verilator regression PASS; lint clean.
 Docs: instruction_coverage.md (new JAcc row), changelog.md, tasks.md.
+Commit:
+- ae618c3
+
+---
+
+### Task 0035: DSJS Rd, Address (decrement-and-skip-jump short form)
+Status: in progress
+Dependencies:
+- Task 0033 (DSJ-family precondition/nonzero gating + alu_a/alu_b
+  mux entries; reused with INSTR_DSJS added).
+Spec source: SPVU001A page 12-74 ("Decrement Register and Skip Jump
+  - Short") + summary table line 13844. Encoding `0011 1Dxx xxxR DDDD`
+  (top5 = 5'b00111). bit[10] = D (direction); bits[9:5] = 5-bit
+  unsigned offset; bit[4] = R; bits[3:0] = Rd index. Single-word
+  instruction, no immediate fetch.
+Acceptance Criteria:
+- INSTR_DSJS = 6'd40 added to instr_class_t.
+- Decoder: top5 == 5'b00111 → INSTR_DSJS, with alu_op=SUB, k5=1,
+  wb_reg_en=1, wb_flags_en=0. Direction and offset are NOT captured
+  in the decoded struct — they're extracted in the core directly
+  from instr_word_q[10] and instr_word_q[9:5].
+- Core:
+  - INSTR_DSJS joins the alu_a swap group (Rd via rs2) and the
+    K-form alu_b mux arm (k5=1 → alu_b=1).
+  - dsj_precondition for DSJS = 1'b1 (unconditional, like DSJ).
+  - New branch_target_dsjs = pc_value + (D ? -off*16 : +off*16),
+    where pc_value at WRITEBACK already equals PC' (= PC_original
+    + 16 after the single-word opcode fetch). PC-load mux gains a
+    new INSTR_DSJS arm gated by dsj_rd_nonzero.
+- `sim/tb/tb_dsjs.sv` covers four scenarios:
+  - Forward DSJS Rd=9→8 take (sentinel preserved);
+  - Forward DSJS Rd=1→0 skip (fall-through runs);
+  - Backward DSJS Rd=5→4 take, choreographed so the backward target
+    is a known MOVI that writes a sentinel (verifies the D=1 path
+    end-to-end);
+  - Forward DSJS Rd=0→0xFFFFFFFF take (verifies the decrement-of-0
+    case from the spec example table).
+- Encoding helper verified: `dsjs_enc(D=0, off=5, A, 5) = 0x38A5`,
+  `dsjs_enc(D=1, off=5, A, 5) = 0x3CA5`.
+- Branch-family regression: all 9 branch tbs PASS.
+Tests: tb_dsjs PASS; branch-family regression PASS; lint clean.
+Docs: instruction_coverage.md (DSJS row), changelog.md, tasks.md.
 Commit:
 - pending
 

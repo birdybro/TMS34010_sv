@@ -445,6 +445,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   with deliberately-messy bottom nibble (verifies the alignment
   mask), JAEQ absolute taken via CMPI Z=1, JANE absolute NOT taken
   via CMPI Z=1 (fall-through MOVI runs).
+- Added **DSJS Rd, Address** (Task 0035) — the single-word
+  short-form decrement-and-skip-jump that completes the DSJ family.
+  Per SPVU001A page 12-74: encoding `0011 1Dxx xxxR DDDD`. The
+  D bit (10) selects direction (0 = forward, 1 = backward); the
+  5-bit offset (bits[9:5]) gives the word-displacement. Target =
+  PC' ± offset×16. Rd is decremented unconditionally; branch is
+  taken iff post-decrement Rd != 0. Status N/C/Z/V unaffected.
+- The core extracts the direction bit and offset combinationally
+  from `instr_word_q[10]` and `[9:5]` for `branch_target_dsjs`,
+  rather than carrying them in the decoded struct. `INSTR_DSJS`
+  joins the DSJ-family alu_a swap group, the K-form alu_b mux
+  arm, and the dsj_precondition logic (with precondition = 1
+  like DSJ). A new PC-load mux arm fires the branch when
+  `dsj_rd_nonzero` (the post-decrement is nonzero).
+- Added `sim/tb/tb_dsjs.sv` — four scenarios: forward take (9→8),
+  forward skip (1→0), backward take (choreographed with a pre-
+  executed back-target MOVI so the backward jump lands at a known
+  sentinel), and the 0→0xFFFFFFFF spec corner case. Distinct
+  counter registers per scenario; halt at end-of-program.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
