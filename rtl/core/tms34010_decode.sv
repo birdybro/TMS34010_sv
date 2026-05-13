@@ -790,6 +790,44 @@ module tms34010_decode
         default:     decoded.iclass = INSTR_ILLEGAL;
       endcase
     end
+
+    // -----------------------------------------------------------------------
+    // JAcc Address (absolute-form conditional jump)
+    //
+    // Encoding (SPVU001A page 12-91 + summary table):
+    //   word 0:  1100 cccc 1000 0000     (low byte = 0x80 unlocks JAcc)
+    //   word 1:  16 LSBs of absolute address
+    //   word 2:  16 MSBs of absolute address
+    //
+    // Semantics: if condition true, PC ← address (with bottom 4 bits
+    // forced to 0 per spec). N/C/Z/V unaffected by the instruction.
+    //
+    // Reuses the same 11-cc recognized set as JRcc (A0023). The 32-bit
+    // address fetch uses the existing IMM_LO/IMM_HI path via
+    // needs_imm32=1, just like MOVI IL — but the core extracts the
+    // address from {imm_hi_q, imm_lo_q} for a PC load, not for the
+    // register file.
+    // -----------------------------------------------------------------------
+    if (instr[15:12] == JRCC_TOP4 &&
+        instr[7:0] == 8'h80 &&
+        (instr[11:8] == CC_UC ||
+         instr[11:8] == CC_LO ||
+         instr[11:8] == CC_LS ||
+         instr[11:8] == CC_HI ||
+         instr[11:8] == CC_LT ||
+         instr[11:8] == CC_LE ||
+         instr[11:8] == CC_GT ||
+         instr[11:8] == CC_GE ||
+         instr[11:8] == CC_EQ ||
+         instr[11:8] == CC_NE ||
+         instr[11:8] == CC_HS)) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_JACC;
+      decoded.branch_cc   = instr[11:8];
+      decoded.needs_imm32 = 1'b1;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+    end
   end
 
 endmodule : tms34010_decode

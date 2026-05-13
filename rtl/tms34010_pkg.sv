@@ -234,7 +234,9 @@ package tms34010_pkg;
     INSTR_JUMP_RS    = 6'd35, // JUMP Rs          — Rs → PC (bottom 4 bits cleared)
     INSTR_DSJ        = 6'd36, // DSJ Rd, Address  — Rd-1→Rd; if Rd!=0 branch (long form)
     INSTR_DSJEQ      = 6'd37, // DSJEQ Rd, Address — if Z=1: DSJ semantics; else skip
-    INSTR_DSJNE      = 6'd38  // DSJNE Rd, Address — if Z=0: DSJ semantics; else skip
+    INSTR_DSJNE      = 6'd38, // DSJNE Rd, Address — if Z=0: DSJ semantics; else skip
+    INSTR_JACC       = 6'd39  // JAcc Address      — absolute-form conditional jump
+                              //                     (low byte = 0x80; 32-bit abs addr follows)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

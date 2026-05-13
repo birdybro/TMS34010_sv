@@ -38,7 +38,8 @@
 | 0030 | JRcc condition-code correction + signed compares | complete |
 | 0031 | JRcc long form (16-bit displacement) | complete |
 | 0032 | JUMP Rs (register-indirect jump) | complete |
-| 0033 | DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-jump family) | in progress |
+| 0033 | DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-jump family) | complete |
+| 0034 | JAcc Address (absolute conditional jump) | in progress |
 
 ---
 
@@ -1006,7 +1007,7 @@ Commit:
 ---
 
 ### Task 0033: DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-skip-jump family)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0014 (K-form alu_b path; reused with k5=1).
 - Task 0016 (SUB-style operand swap; reused with alu_a=Rd, alu_b=1).
@@ -1048,6 +1049,38 @@ Tests: tb_dsj PASS; full Verilator-friendly regression PASS;
   lint clean.
 Docs: instruction_coverage.md (3 new rows + DSJS deferred note),
   changelog.md, tasks.md.
+Commit:
+- 23b3aa7
+
+---
+
+### Task 0034: JAcc Address (absolute conditional jump)
+Status: in progress
+Dependencies:
+- Task 0030 (corrected cc encoding + signed compares).
+- Tasks 0012-0013 (CORE_FETCH_IMM_HI path; needs_imm32 already wired
+  for MOVI IL etc.).
+Spec source: SPVU001A page 12-91 ("Jump Absolute Conditional") +
+  summary table. Encoding: opcode word `1100 cccc 1000 0000` (low
+  byte = `0x80` unlocks the absolute form), followed by 32-bit
+  absolute target address (LO word first, then HI word).
+Acceptance Criteria:
+- INSTR_JACC added to instr_class_t (6'd39).
+- Decoder recognizes JRCC-shape encodings with `disp8 == 0x80` and
+  one of the 11 recognized cc codes (A0023). Sets
+  `iclass = INSTR_JACC`, `needs_imm32 = 1`, `branch_cc = cc`,
+  `wb_reg_en = 0`, `wb_flags_en = 0` (status unaffected).
+- Core gains `branch_target_jacc = {imm_hi_q, imm_lo_q[15:4], 4'h0}`
+  (32-bit absolute target with bottom 4 bits forced to 0 per spec
+  page 12-91 word-alignment requirement).
+- PC-load mux extended with INSTR_JACC arm gated by `branch_taken`,
+  reusing the existing JRcc condition evaluator.
+- `sim/tb/tb_jacc.sv` covers three scenarios: JAUC absolute taken
+  with messy bottom-nibble target (verifies alignment mask); JAEQ
+  absolute taken via CMPI Z=1; JANE absolute NOT taken via CMPI Z=1.
+  Memory NOP-pre-filled; final scenario ends with `0xC0FF` halt.
+Tests: tb_jacc PASS; Verilator regression PASS; lint clean.
+Docs: instruction_coverage.md (new JAcc row), changelog.md, tasks.md.
 Commit:
 - pending
 

@@ -432,6 +432,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   are now captured in the `testbench-pitfalls` memory.
 - DSJS (Decrement and Skip Jump — Short, single-word, 5-bit offset +
   direction bit) explicitly deferred — different encoding shape.
+- Added **JAcc Address (absolute conditional jump)** — Task 0034.
+  Per SPVU001A page 12-91: when the JRcc-shape opcode word's low
+  byte is `0x80`, the next two words are a 32-bit absolute target
+  address (LO, HI). PC ← address with bottom 4 bits forced to 0
+  (spec-mandated word alignment). `INSTR_JACC` joins the iclass
+  enum; the decoder routes it to `needs_imm32 = 1`; the core's new
+  `branch_target_jacc` assembles `{imm_hi_q, imm_lo_q[15:4], 4'h0}`
+  and feeds it into a new PC-load arm gated by the existing JRcc
+  `branch_taken` evaluator.
+- Added `sim/tb/tb_jacc.sv` — three scenarios: JAUC absolute taken
+  with deliberately-messy bottom nibble (verifies the alignment
+  mask), JAEQ absolute taken via CMPI Z=1, JANE absolute NOT taken
+  via CMPI Z=1 (fall-through MOVI runs).
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

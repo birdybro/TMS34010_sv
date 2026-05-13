@@ -159,6 +159,13 @@ module tms34010_core
   assign disp_signed_20   = $signed({imm_lo_q, 4'h0});
   assign branch_target_long = pc_value + ADDR_WIDTH'(disp_signed_20);
 
+  // JAcc absolute target: PC ← address with the bottom 4 bits forced to 0
+  // (spec page 12-91 explicitly: "lower four bits of the program counter
+  // are set to 0"). Address is assembled from the two 16-bit imm words
+  // already fetched via needs_imm32, same as MOVI IL.
+  logic [ADDR_WIDTH-1:0] branch_target_jacc;
+  assign branch_target_jacc = {imm_hi_q, imm_lo_q[INSTR_WORD_WIDTH-1:4], 4'h0};
+
   // ---------------------------------------------------------------------------
   // Immediate latch
   //
@@ -423,6 +430,15 @@ module tms34010_core
           if (dsj_precondition && dsj_rd_nonzero) begin
             pc_load_en    = 1'b1;
             pc_load_value = branch_target_long;
+          end
+        end
+        INSTR_JACC: begin
+          // Absolute conditional jump: PC ← {imm_hi_q, imm_lo_q} with
+          // the bottom 4 bits forced to 0 (word alignment per spec
+          // page 12-91). Re-uses the JRcc condition evaluator.
+          if (branch_taken) begin
+            pc_load_en    = 1'b1;
+            pc_load_value = branch_target_jacc;
           end
         end
         default: ; // no branch
