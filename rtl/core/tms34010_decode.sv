@@ -120,6 +120,22 @@ module tms34010_decode
   // 4 bits of PC forced to 0 (word alignment).
   localparam logic [10:0] JUMP_RS_TOP11 = 11'b0000_0001_011;
 
+  // DSJ family: two-word instructions with a 16-bit signed
+  // displacement following the opcode word. Per SPVU001A pages
+  // 12-70..12-73 + summary table lines 27021-27023:
+  //   DSJ   Rd, Address : 0000 1101 100R DDDD + 16-bit offset
+  //   DSJEQ Rd, Address : 0000 1101 101R DDDD + 16-bit offset
+  //   DSJNE Rd, Address : 0000 1101 110R DDDD + 16-bit offset
+  // All three: status bits unaffected. Rd is decremented (when the
+  // pre-condition holds), and the branch is taken iff the
+  // post-decrement Rd is nonzero. Target math: PC' + offset*16,
+  // where PC' is the address of the instruction following the
+  // two-word DSJ — i.e., pc_value at CORE_WRITEBACK after both
+  // FETCH/IMM_LO advances.
+  localparam logic [10:0] DSJ_TOP11   = 11'b0000_1101_100;
+  localparam logic [10:0] DSJEQ_TOP11 = 11'b0000_1101_101;
+  localparam logic [10:0] DSJNE_TOP11 = 11'b0000_1101_110;
+
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
   assign rs_idx_from_instr = instr[8:5];
@@ -736,6 +752,43 @@ module tms34010_decode
       decoded.rs_idx      = reg_idx_from_instr;    // Rs index lives in low 4 bits
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // DSJ / DSJEQ / DSJNE Rd, Address  (Decrement Rd and Skip Jump)
+    //
+    // All three share:
+    //   - bits[4]    = R (file)
+    //   - bits[3:0]  = Rd index
+    //   - 16-bit signed offset in the next instruction word
+    //   - alu computes Rd - 1 (alu_a = Rd via the swap group; alu_b = 1
+    //     via the K-form arm with decoded.k5 = 5'd1)
+    //   - wb_reg_en = 1 (write decremented Rd; gated by core based on
+    //     the pre-condition for DSJEQ/DSJNE)
+    //   - wb_flags_en = 0 (status bits unaffected per the spec)
+    //   - needs_imm16 = 1 (fetch the offset word)
+    //
+    // The branch decision and the Rd-writeback gating both depend on
+    // runtime state (ST.Z and post-decrement Rd nonzero). Those gates
+    // live in the core, not the decoder. The decoder just identifies
+    // the class.
+    // -----------------------------------------------------------------------
+    if (top11 == DSJ_TOP11 || top11 == DSJEQ_TOP11 || top11 == DSJNE_TOP11) begin
+      decoded.illegal     = 1'b0;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.k5          = 5'd1;          // alu_b = 1 via K-form mux arm
+      decoded.alu_op      = ALU_OP_SUB;    // alu computes Rd - 1
+      decoded.needs_imm16 = 1'b1;
+      decoded.imm_sign_extend = 1'b0;      // offset is consumed directly, not via imm32
+      decoded.wb_reg_en   = 1'b1;          // gated further by core (DSJEQ/DSJNE)
+      decoded.wb_flags_en = 1'b0;          // spec: N/C/Z/V unaffected
+      unique case (top11)
+        DSJ_TOP11:   decoded.iclass = INSTR_DSJ;
+        DSJEQ_TOP11: decoded.iclass = INSTR_DSJEQ;
+        DSJNE_TOP11: decoded.iclass = INSTR_DSJNE;
+        default:     decoded.iclass = INSTR_ILLEGAL;
+      endcase
     end
   end
 

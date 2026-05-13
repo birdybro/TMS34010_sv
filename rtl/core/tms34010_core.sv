@@ -255,10 +255,37 @@ module tms34010_core
   assign rf_rs2_file = decoded.rd_file;
   assign rf_rs2_idx  = decoded.rd_idx;
 
+  // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
+  // subsequent jump) happens only if the Z bit pre-condition holds:
+  //   - DSJ:   unconditional   → gate = 1
+  //   - DSJEQ: gated on Z=1    → gate = st_z
+  //   - DSJNE: gated on Z=0    → gate = !st_z
+  // For non-DSJ instructions this signal is irrelevant; we default
+  // it to 1 so it doesn't interfere with their writebacks.
+  logic dsj_precondition;
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_DSJ:    dsj_precondition = 1'b1;
+      INSTR_DSJEQ:  dsj_precondition = st_z;
+      INSTR_DSJNE:  dsj_precondition = !st_z;
+      default:      dsj_precondition = 1'b1;
+    endcase
+  end
+
+  // "Will Rd be zero after the decrement?" — needed for the DSJ
+  // branch decision. alu_result at WRITEBACK is the decremented Rd
+  // (when iclass is one of the DSJ family).
+  logic dsj_rd_nonzero;
+  assign dsj_rd_nonzero = (alu_result != '0);
+
   // Writeback enable is a one-cycle pulse, gated by the FSM state.
   // Writeback data and flag-input come from either the ALU or the
-  // shifter depending on `decoded.use_shifter`.
-  assign rf_wr_en   = (state_q == CORE_WRITEBACK) && decoded.wb_reg_en;
+  // shifter depending on `decoded.use_shifter`. For DSJEQ/DSJNE the
+  // dsj_precondition further gates the write: if Z doesn't match the
+  // pre-condition the spec mandates Rd is left unchanged.
+  assign rf_wr_en   = (state_q == CORE_WRITEBACK)
+                   && decoded.wb_reg_en
+                   && dsj_precondition;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
   assign rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
@@ -291,7 +318,10 @@ module tms34010_core
       INSTR_CMPI_IL,
       INSTR_ANDI_IL,
       INSTR_ORI_IL,
-      INSTR_XORI_IL: alu_a = rf_rs2_data;   // Rd is the operand
+      INSTR_XORI_IL,
+      INSTR_DSJ,
+      INSTR_DSJEQ,
+      INSTR_DSJNE:   alu_a = rf_rs2_data;   // Rd is the operand
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -310,7 +340,10 @@ module tms34010_core
       INSTR_XORI_IL: alu_b = imm32;
       INSTR_MOVK,
       INSTR_ADDK,
-      INSTR_SUBK:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
+      INSTR_SUBK,
+      INSTR_DSJ,
+      INSTR_DSJEQ,
+      INSTR_DSJNE:   alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -376,6 +409,21 @@ module tms34010_core
           // word alignment per SPVU001A page 12-98.
           pc_load_en    = 1'b1;
           pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
+        end
+        INSTR_DSJ,
+        INSTR_DSJEQ,
+        INSTR_DSJNE: begin
+          // Decrement-and-skip-jump family. Branch taken iff the
+          // runtime pre-condition (always for DSJ; Z gate for
+          // DSJEQ/DSJNE) holds AND the post-decrement Rd is nonzero.
+          // Target shape matches the long-form JRcc:
+          //   target = PC' + sign_extend(offset16) * 16
+          // where PC' is pc_value at WRITEBACK (already advanced
+          // through the opcode + offset-word fetches).
+          if (dsj_precondition && dsj_rd_nonzero) begin
+            pc_load_en    = 1'b1;
+            pc_load_value = branch_target_long;
+          end
         end
         default: ; // no branch
       endcase

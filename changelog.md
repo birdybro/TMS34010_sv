@@ -408,6 +408,30 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   target; messy-LSB B-file target (verifies the bottom-nibble mask).
   Plus a sentinel check confirming no fall-through MOVI ran, and
   the standard illegal-flag check (memory NOP-pre-filled).
+- Added **DSJ / DSJEQ / DSJNE Rd, Address** (Task 0033) — the
+  Decrement-and-Skip-Jump family for loop primitives. Per SPVU001A
+  pages 12-70..12-73, encodings `0000 1101 100R DDDD`,
+  `_101R_`, `_110R_` followed by a 16-bit signed word-offset.
+  Semantics: decrement Rd (if pre-condition holds for the
+  conditional variants — Z=1 for DSJEQ, Z=0 for DSJNE); if the
+  post-decrement value is non-zero, branch by `offset×16`; else
+  fall through. Status register unaffected.
+- The core gains a `dsj_precondition` signal that gates `rf_wr_en`
+  (so DSJEQ Z=0 / DSJNE Z=1 leave Rd untouched per spec) and the
+  PC-load (so the branch only fires when both the pre-condition and
+  the `alu_result != 0` post-decrement check hold). Branch target
+  reuses the existing `branch_target_long` computation. DSJ-family
+  joins the alu_a operand-swap group (Rd routes to alu_a) and the
+  K-form alu_b mux arm (decoded.k5 = 1 → alu_b = 32'd1).
+- Added `sim/tb/tb_dsj.sv` — eight scenarios using DISTINCT counter
+  registers per scenario (so end-of-test checks aren't clobbered by
+  subsequent scenarios), covering the SPVU001A spec-table boundary
+  cases for all three instructions. Test ends with a `0xC0FF`
+  infinite-loop halt to prevent memory wraparound re-executing the
+  program. Both gotchas (the comment-swallow and the halt pattern)
+  are now captured in the `testbench-pitfalls` memory.
+- DSJS (Decrement and Skip Jump — Short, single-word, 5-bit offset +
+  direction bit) explicitly deferred — different encoding shape.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

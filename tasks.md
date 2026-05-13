@@ -37,7 +37,8 @@
 | 0029 | ADDC / SUBB Rs, Rd (carry-chain reg-reg) | complete |
 | 0030 | JRcc condition-code correction + signed compares | complete |
 | 0031 | JRcc long form (16-bit displacement) | complete |
-| 0032 | JUMP Rs (register-indirect jump) | in progress |
+| 0032 | JUMP Rs (register-indirect jump) | complete |
+| 0033 | DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-jump family) | in progress |
 
 ---
 
@@ -975,7 +976,7 @@ Commit:
 ---
 
 ### Task 0032: JUMP Rs (register-indirect jump)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0019 (PC load_en path); Task 0011 (regfile rs1 port).
 Spec source: SPVU001A page 12-98 ("Jump Indirect") + summary table.
@@ -999,6 +1000,54 @@ Acceptance Criteria:
 - Full Verilator regression: 26/26 PASS. Lint clean.
 Tests: tb_jump_rs PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (JUMP Rs row), changelog.md, tasks.md.
+Commit:
+- 19b075b
+
+---
+
+### Task 0033: DSJ / DSJEQ / DSJNE Rd, Address (decrement-and-skip-jump family)
+Status: in progress
+Dependencies:
+- Task 0014 (K-form alu_b path; reused with k5=1).
+- Task 0016 (SUB-style operand swap; reused with alu_a=Rd, alu_b=1).
+- Task 0031 (16-bit signed-displacement target math; reused from JRcc long).
+Spec source: SPVU001A pages 12-70 (DSJ), 12-72 (DSJEQ), 12-73 (DSJNE)
+  + the instruction-summary table. All three: encoding
+  `0000 1101 1xxR DDDD` followed by a 16-bit signed word-offset.
+Acceptance Criteria:
+- INSTR_DSJ, INSTR_DSJEQ, INSTR_DSJNE added to instr_class_t (6'd36..38).
+- Decoder: one combined arm that recognizes any of the three top11
+  prefixes (`11'b00001101_100`, `_101`, `_110`) and dispatches the
+  iclass via an inner `unique case`. Sets `alu_op = ALU_OP_SUB`,
+  `decoded.k5 = 5'd1`, `needs_imm16 = 1`, `wb_reg_en = 1`,
+  `wb_flags_en = 0` (status unaffected per the spec).
+- Core gains:
+  - `dsj_precondition` signal: 1 for DSJ; `st_z` for DSJEQ; `!st_z`
+    for DSJNE; 1 (default — no-op) for other iclasses. This gates
+    rf_wr_en so DSJEQ Z=0 / DSJNE Z=1 leave Rd untouched per spec.
+  - `dsj_rd_nonzero = (alu_result != 0)`: true when the
+    post-decrement Rd is non-zero.
+  - PC-load mux arm for the three iclasses fires
+    `dsj_precondition && dsj_rd_nonzero`, reusing `branch_target_long`.
+- DSJ-family joins the alu_a swap group (Rd via rs2 port) and the
+  alu_b K-form mux arm (decoded.k5 = 1 → alu_b = 32'd1).
+- `sim/tb/tb_dsj.sv` exercises 8 scenarios across all three
+  instructions, with distinct counter registers per scenario so the
+  end-of-test checks don't get clobbered by subsequent scenarios.
+  Includes the four SPVU001A spec-table boundary cases (Rd=9 take;
+  Rd=1 skip; Rd=0 take wraps to -1; Z=mismatch no-op). Test ends
+  with a `0xC0FF` halt (JRUC short -1 = jump-to-self) to prevent
+  memory wraparound re-executing the program and clobbering the
+  per-scenario counter registers.
+- Encoding helpers verified against `dsj_enc(A,5) = 0x0D85`,
+  `dsjeq_enc(A,5) = 0x0DA5`, `dsjne_enc(A,5) = 0x0DC5`.
+- DSJS (single-word short form with 5-bit offset + direction bit)
+  explicitly deferred to a future task — different encoding shape.
+- Full Verilator regression: 27/27 PASS. Lint clean.
+Tests: tb_dsj PASS; full Verilator-friendly regression PASS;
+  lint clean.
+Docs: instruction_coverage.md (3 new rows + DSJS deferred note),
+  changelog.md, tasks.md.
 Commit:
 - pending
 
