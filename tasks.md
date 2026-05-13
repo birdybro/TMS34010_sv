@@ -35,7 +35,8 @@
 | 0027 | JRcc unsigned compares (LO, LS, HI, HS) | complete |
 | 0028 | NOP (No Operation) | complete |
 | 0029 | ADDC / SUBB Rs, Rd (carry-chain reg-reg) | complete |
-| 0030 | JRcc condition-code correction + signed compares | in progress |
+| 0030 | JRcc condition-code correction + signed compares | complete |
+| 0031 | JRcc long form (16-bit displacement) | in progress |
 
 ---
 
@@ -892,7 +893,7 @@ Commit:
 ---
 
 ### Task 0030: JRcc condition-code correction + signed compares
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0027 (unsigned-compare JRcc framework).
 Spec source: SPVU001A Table 12-8, re-extracted with `pdftotext -layout`
@@ -927,6 +928,45 @@ Tests: tb_jrcc_signed PASS; tb_jrcc_short/unsigned/jruc_short PASS;
   the previously Verilator-clean regression set still PASS; lint clean.
 Docs: instruction_coverage.md (JRcc row updated to 11 cc codes),
   assumptions.md (A0023 added, A0017 superseded), changelog.md,
+  tasks.md.
+Commit:
+- 61c5b1c
+
+---
+
+### Task 0031: JRcc long form (16-bit displacement)
+Status: in progress
+Dependencies:
+- Task 0030 (cc encoding fix + signed compares).
+- Tasks 0012/0013 (CORE_FETCH_IMM_LO path; needs_imm16 already wired
+  for MOVI IW and IW-immediate arithmetic).
+Spec source: SPVU001A page 12-96 ("Jump Relative Conditional - ±32K
+  Words"), referring to the same Table 12-8 the short form uses.
+Acceptance Criteria:
+- INSTR_JRCC_LONG added to instr_class_t (6'd34).
+- Decoder recognizes JRCC-shape encodings where the opcode word's
+  low byte is exactly `0x00` (the long-form marker) and the cc field
+  is one of the 11 recognized codes from A0023. Sets
+  `iclass = INSTR_JRCC_LONG`, `needs_imm16 = 1`, `branch_cc = cc`,
+  `wb_reg_en = 0`, `wb_flags_en = 0`. The absolute-form marker
+  (low byte = `0x80`) remains deferred.
+- Core gains a combinational `branch_target_long = pc_value +
+  sign_extend({imm_lo_q, 4'h0})`. The PC at CORE_WRITEBACK already
+  reflects both fetches (opcode + disp), so `pc_value` is the
+  spec's PC' — same target formula shape as the short form.
+- PC-load mux extended with an INSTR_JRCC_LONG arm gated by
+  `branch_taken`.
+- `sim/tb/tb_jrcc_long.sv` covers four scenarios: JRUC long taken
+  with small positive disp; JREQ long taken via CMPI Z=1; JREQ long
+  NOT taken via CMPI Z=0; JRUC long with a larger positive disp
+  (+64 words) that exercises the high byte of the disp word. Memory
+  pre-filled with NOP so end-of-program doesn't trip
+  `illegal_opcode_o`.
+- Verilator regression of the 25 Verilator-friendly testbenches:
+  25/25 PASS. Lint clean.
+Tests: tb_jrcc_long PASS; the existing Verilator-clean regression
+  set still PASS; lint clean.
+Docs: instruction_coverage.md (new JRcc-long row), changelog.md,
   tasks.md.
 Commit:
 - pending

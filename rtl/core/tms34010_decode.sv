@@ -632,6 +632,8 @@ module tms34010_decode
     // more carefully — better to trap on an unverified condition than
     // silently mis-branch.
     // -----------------------------------------------------------------------
+    // Short form: `1100 cccc dddd dddd` with dddd_dddd != 0x00 and != 0x80.
+    // Target = PC_post_fetch + sign_extend(disp8) × 16 (per A0016).
     if (instr[15:12] == JRCC_TOP4 &&
         instr[7:0] != 8'h00 && instr[7:0] != 8'h80 &&
         (instr[11:8] == CC_UC ||
@@ -648,6 +650,46 @@ module tms34010_decode
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_JRCC_SHORT;
       decoded.branch_cc   = instr[11:8];
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // JRcc long form (16-bit signed displacement)
+    //
+    // Encoding: `1100 cccc 0000 0000` followed by a 16-bit signed-word
+    // displacement in the next instruction word. Per SPVU001A page 12-96:
+    // "The assembler calculates the offset as (Address - PC')/16 and
+    // inserts the resulting offset into the second instruction word of
+    // the opcode. The range for this form of the JRcc instruction is
+    // -32,768 to +32,767 words (excluding 0)."
+    //
+    // Target math (A0016 generalized): branch_target_long =
+    // PC_after_both_fetches + sign_extend(disp16) × 16. By the time the
+    // FSM is in CORE_WRITEBACK, PC has already been advanced twice
+    // (once per FETCH ack), so `pc_value` already equals
+    // PC_original + 32 — matching the spec's PC'.
+    //
+    // The absolute-form marker (disp8 == 0x80) remains deferred; only
+    // disp8 == 0x00 unlocks the long form here.
+    // -----------------------------------------------------------------------
+    if (instr[15:12] == JRCC_TOP4 &&
+        instr[7:0] == 8'h00 &&
+        (instr[11:8] == CC_UC ||
+         instr[11:8] == CC_LO ||
+         instr[11:8] == CC_LS ||
+         instr[11:8] == CC_HI ||
+         instr[11:8] == CC_LT ||
+         instr[11:8] == CC_LE ||
+         instr[11:8] == CC_GT ||
+         instr[11:8] == CC_GE ||
+         instr[11:8] == CC_EQ ||
+         instr[11:8] == CC_NE ||
+         instr[11:8] == CC_HS)) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_JRCC_LONG;
+      decoded.branch_cc   = instr[11:8];
+      decoded.needs_imm16 = 1'b1;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
     end

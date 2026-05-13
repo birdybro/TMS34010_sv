@@ -385,6 +385,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Added `docs/assumptions.md` A0023 with the full corrected Table
   12-8 (11 currently-recognized codes; deferred codes for P/N, V/NV,
   JRYxx XY-compares explicitly listed).
+- Added **JRcc long form (16-bit displacement)** — Task 0031. Per
+  SPVU001A page 12-96, when the opcode word's low byte is `0x00`,
+  the next 16-bit word is a signed word-displacement and the range
+  becomes ±32K words. `INSTR_JRCC_LONG` joins the iclass enum; the
+  decoder routes the long form to `needs_imm16 = 1`; the core's
+  `branch_target_long` adds the sign-extended disp×16 to the PC
+  value seen at CORE_WRITEBACK (which has already advanced through
+  both fetches, matching the spec's PC').
+- Added `sim/tb/tb_jrcc_long.sv` — four scenarios: JRUC long taken
+  (small positive disp), JREQ long taken via CMPI Z=1, JREQ long
+  NOT taken via CMPI Z=0, and JRUC long with disp = +64 words to
+  exercise the high byte of the disp word. Memory NOP-pre-filled.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

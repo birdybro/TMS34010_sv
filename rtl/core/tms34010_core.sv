@@ -149,6 +149,16 @@ module tms34010_core
   assign disp_signed_12   = $signed({instr_word_q[7:0], 4'h0});
   assign branch_target_short = pc_value + ADDR_WIDTH'(disp_signed_12);
 
+  // Long-form JRcc target: PC_after_both_fetches + sign_extend(disp16) × 16.
+  // By the time the FSM hits CORE_WRITEBACK, pc_value already equals
+  // (PC_original + 32 bits) — the opcode FETCH and the IMM_LO FETCH each
+  // advanced the PC by 16. `imm_lo_q` holds the 16-bit displacement word.
+  // {disp16, 4'h0} is a 20-bit value; sign bit at [19] equals imm_lo_q[15].
+  logic [ADDR_WIDTH-1:0]   branch_target_long;
+  logic signed [19:0]      disp_signed_20;
+  assign disp_signed_20   = $signed({imm_lo_q, 4'h0});
+  assign branch_target_long = pc_value + ADDR_WIDTH'(disp_signed_20);
+
   // ---------------------------------------------------------------------------
   // Immediate latch
   //
@@ -352,6 +362,12 @@ module tms34010_core
           if (branch_taken) begin
             pc_load_en    = 1'b1;
             pc_load_value = branch_target_short;
+          end
+        end
+        INSTR_JRCC_LONG: begin
+          if (branch_taken) begin
+            pc_load_en    = 1'b1;
+            pc_load_value = branch_target_long;
           end
         end
         default: ; // no branch
