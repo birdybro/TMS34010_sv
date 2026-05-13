@@ -223,7 +223,8 @@ package tms34010_pkg;
     INSTR_ANDI_IL    = 5'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
     INSTR_ORI_IL     = 5'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
     INSTR_XORI_IL    = 5'd29, // XORI IL K, Rd    — Rd ^ K32 → Rd
-    INSTR_MOVE_RR    = 5'd30  // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)
+    INSTR_MOVE_RR    = 5'd30, // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)
+    INSTR_NOP        = 5'd31  // NOP              — no operation, PC advances only
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

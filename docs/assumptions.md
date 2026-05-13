@@ -390,6 +390,14 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0021 — NOP encoding = 0x0300 (single fixed encoding)
+- **Date**: 2026-05-12
+- **Status**: resolved against SPVU001A §"NOP" page 12-170 and the instruction-summary table on the same page (mnemonic, full 16-bit encoding `0000 0011 0000 0000`).
+- **Source**: `third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf` §"NOP" page 12-170. Description: "The program counter is incremented to point to the next instruction. The processor status is otherwise unaffected."
+- **Conclusion**: NOP is a single fixed 16-bit opcode `0x0300`, not an alias of another instruction. ST is NOT updated; no register is written; the only architectural effect is PC advancing by one instruction word.
+- **Why this matters**: The encoding superficially looks like it could be part of the unary family (`0000 0011 1xxx xxxx`, page A-14 — top9 = `9'b000000111`). It is NOT — NOP's top9 is `9'b000000110` (bit[7]=0). ABS A0 has the same alphanumeric "0x0300" mnemonic flavor but is actually `0x0380` (bit[7]=1 to enter the unary family). The decoder treats them as fully disjoint encodings.
+- **How to apply**: Recognize `instr == 16'h0300` directly. Both writeback gates stay 0; PC advance is the only effect, and that happens for free via the FETCH-ack pulse.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

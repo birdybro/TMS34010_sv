@@ -32,7 +32,8 @@
 | 0024 | K-form shifts (RL, SLA, SLL, SRA, SRL) | complete |
 | 0025 | Immediate IL batch (ADDI/SUBI/CMPI/ANDI/ORI/XORI) | complete |
 | 0026 | MOVE Rs, Rd (register-to-register) | complete |
-| 0027 | JRcc unsigned compares (LO, LS, HI, HS) | in progress |
+| 0027 | JRcc unsigned compares (LO, LS, HI, HS) | complete |
+| 0028 | NOP (No Operation) | in progress |
 
 ---
 
@@ -794,7 +795,7 @@ Commit:
 ---
 
 ### Task 0027: JRcc unsigned compares (LO, LS, HI, HS)
-Status: in progress
+Status: complete
 Dependencies: Task 0020 (JRcc framework).
 Spec source: SPVU001A Table 12-8 (universally defined codes; less
   ambiguous than the signed compares).
@@ -810,6 +811,39 @@ Acceptance Criteria:
 - Full regression: 24/24 PASS; lint clean.
 Tests: tb_jrcc_unsigned PASS; full regression PASS; lint clean.
 Docs: instruction_coverage.md (JRcc row updated), changelog.md, tasks.md.
+Commit:
+- 1addcc2
+
+---
+
+### Task 0028: NOP (No Operation)
+Status: in progress
+Dependencies:
+- Task 0010 (decode skeleton; FSM walks FETCH→DECODE→EXECUTE→WRITEBACK
+  → FETCH with default writeback gates).
+Spec source: SPVU001A §"NOP" page 12-170 plus instruction-summary table
+  on the same page (A0021). Encoding = `0000 0011 0000 0000` = `0x0300`.
+Acceptance Criteria:
+- `INSTR_NOP` added to `instr_class_t` enum (5'd31).
+- Decoder recognizes the single fixed encoding `0x0300` and returns
+  `iclass = INSTR_NOP`, `wb_reg_en = 0`, `wb_flags_en = 0`, no
+  needs_imm*.
+- No core changes required — defaults handle "valid but no datapath
+  action"; PC advance comes for free via the existing FETCH-ack pulse.
+- `sim/tb/tb_nop.sv` validates: NOP encoding helper = 0x0300; A0
+  retains the MOVI value across NOP; B5 holds the post-NOP MOVK value
+  (proves PC advanced through NOP); ST.N and ST.Z preserved across
+  NOP+MOVK (proves NOP did not update flags); `illegal_opcode_o == 0`
+  (NOP not flagged). Memory pre-filled with NOP so end-of-program
+  doesn't trip the illegal latch — also exercises NOP many more times
+  as a bonus.
+- A0021 documents the encoding source and the distinction from the
+  unary family (ABS A0 = `0x0380`, not `0x0300`).
+- Full regression: clean on the testbenches that pass under both
+  Questa and Verilator; lint clean.
+Tests: tb_nop PASS; full regression PASS; lint clean.
+Docs: instruction_coverage.md (NOP row), assumptions.md A0021,
+  changelog.md, tasks.md.
 Commit:
 - pending
 

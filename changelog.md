@@ -317,6 +317,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   branch did NOT take. The landing site writes elsewhere. This
   cleanly distinguishes "branch took" from "branch didn't take"
   by checking whether the sentinel still holds its marker.
+- Added **NOP (No Operation)** — single fixed encoding `0x0300` per
+  SPVU001A §"NOP" page 12-170 (A0021). `INSTR_NOP` joins the
+  instruction-class enum; the decoder recognizes the exact 16-bit
+  pattern; both writeback gates stay 0 so the only architectural
+  effect is the PC advance the FETCH-ack pulse already provides. No
+  core changes required. Distinct from the unary family at
+  `0000 0011 1xxx xxxx` (ABS A0 = `0x0380`, not `0x0300`).
+- Added `sim/tb/tb_nop.sv` — exercises MOVI → NOP → MOVK and verifies
+  A0 untouched across NOP, B5 reached (PC advanced), ST.N/ST.Z
+  preserved, and `illegal_opcode_o == 0`. Memory is pre-filled with
+  NOP so the CPU keeps NOPing past the meaningful program, keeping
+  the illegal-flag check meaningful at end-of-test.
+- Added `docs/assumptions.md` A0021 capturing the NOP encoding source
+  and the encoding distinction from the unary family.
 
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,

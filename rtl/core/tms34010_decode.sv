@@ -106,6 +106,12 @@ module tms34010_decode
   // (long-relative and absolute-form markers respectively).
   localparam logic [3:0] JRCC_TOP4 = 4'b1100;
 
+  // NOP: single full encoding, no operand fields. Per SPVU001A page
+  // 12-170 instruction-summary table: NOP = 0000 0011 0000 0000 = 0x0300
+  // (A0021). Distinct from the unary family at 0000 0011 1xxx xxxx
+  // (top9 = 9'b000000111); NOP's top9 = 9'b000000110, so no collision.
+  localparam instr_word_t NOP_OPCODE = 16'h0300;
+
   // Reg-reg ops use bits[8:5] for Rs index.
   reg_idx_t rs_idx_from_instr;
   assign rs_idx_from_instr = instr[8:5];
@@ -591,6 +597,19 @@ module tms34010_decode
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_JRCC_SHORT;
       decoded.branch_cc   = instr[11:8];
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // NOP — no operation. Single fixed encoding 0x0300 (A0021). Decoded as
+    // valid; both writeback gates stay 0 so the FSM walks the full
+    // FETCH→DECODE→EXECUTE→WRITEBACK loop with no datapath effect, leaving
+    // PC advance (driven by FETCH ack) as the only architectural change.
+    // -----------------------------------------------------------------------
+    if (instr == NOP_OPCODE) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_NOP;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
     end
