@@ -454,6 +454,9 @@ module tms34010_core
       INSTR_BTST_K,
       INSTR_BTST_RR: alu_a = rf_rs2_data;   // Rd is the operand
       INSTR_NEGB:    alu_a = '0;            // NEGB: 0 - Rd - C via SUBB
+      INSTR_PUSHST,
+      INSTR_POPST,
+      INSTR_CALL_RS: alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -480,7 +483,8 @@ module tms34010_core
       INSTR_BTST_K:  alu_b = 32'd1 << decoded.k5;
       INSTR_BTST_RR: alu_b = 32'd1 << rf_rs1_data[4:0];
       INSTR_PUSHST,
-      INSTR_POPST:   alu_b = 32'd32;
+      INSTR_POPST,
+      INSTR_CALL_RS: alu_b = 32'd32;
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -629,6 +633,15 @@ module tms34010_core
             pc_load_en    = 1'b1;
             pc_load_value = branch_target_dsjs;
           end
+        end
+        INSTR_CALL_RS: begin
+          // Subroutine call indirect: PC <- Rs (with bottom 4 bits
+          // forced to 0 per SPVU001A page 12-47 "always sets the four
+          // LSBs of the program counter to 0"). The return address
+          // PC' has already been pushed to mem[new SP] in
+          // CORE_MEMORY by the time we reach this WRITEBACK arm.
+          pc_load_en    = 1'b1;
+          pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
         end
         default: ; // no branch
       endcase
@@ -830,11 +843,22 @@ module tms34010_core
           INSTR_POPST: begin
             // Read 32-bit ST from mem[OLD SP]. The increment-by-32
             // happens via the ALU; we don't want alu_result here,
-            // we want the pre-increment SP value (rf_rs1_data).
+            // we want the pre-increment SP value. POPST has
+            // rd_idx=15 (SP) on rs2 — so rs2 gives OLD SP.
             mem_req   = 1'b1;
             mem_we    = 1'b0;
-            mem_addr  = rf_rs1_data;       // = current SP
+            mem_addr  = rf_rs2_data;       // = current SP
             mem_size  = 6'd32;
+          end
+          INSTR_CALL_RS: begin
+            // Push PC' to mem[new SP]. new SP = alu_result = SP - 32.
+            // pc_value at this point is PC' (= original PC + 16 after
+            // the opcode fetch advance) — exactly the return address.
+            mem_req   = 1'b1;
+            mem_we    = 1'b1;
+            mem_addr  = alu_result;        // = SP - 32
+            mem_size  = 6'd32;
+            mem_wdata = pc_value;          // PC' (return address)
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase

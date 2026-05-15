@@ -113,6 +113,18 @@ module tms34010_decode
   // increments SP by 32. Status bits all written by the loaded value.
   localparam instr_word_t POPST_OPCODE  = 16'h01C0;
 
+  // CALL Rs — Call Subroutine Indirect. Per SPVU001A page 12-47 +
+  // summary table line 27018. Encoding `0000 1001 001R DDDD`:
+  //   top11 = 11'b00001001_001 = 0x049
+  //   bit[4] = R (file of Rs)
+  //   bits[3:0] = Rs index
+  // Semantics:
+  //   SP -= 32
+  //   mem[new SP] = PC'   (where PC' = address of next instruction)
+  //   PC = Rs              (with bottom 4 bits forced to 0 for word align)
+  // Status bits all "Unaffected".
+  localparam logic [10:0] CALL_RS_TOP11 = 11'b0000_1001_001;
+
   // DINT / EINT — single-fixed-encoding interrupt-enable control.
   // Per SPVU001A summary table (page A-14):
   //   DINT = 0x0360  (0000 0011 0110 0000) — clear ST.IE (bit 21)
@@ -842,6 +854,30 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_ADD;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;          // ST update via st_write_en, not flag mask
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // CALL Rs — Call Subroutine Indirect.
+    //   SP -= 32;  mem[SP] = PC';  PC = Rs  (with bottom 4 bits cleared)
+    //
+    // Setup: rs2 reads SP (rd_idx=15) so the ALU's swap-group can put
+    // it on alu_a; rs1 reads Rs (rs_idx from instr[3:0]) so the PC-load
+    // mux can read it via rf_rs1_data. ALU computes alu_a - alu_b =
+    // SP - 32 via the constant-32 mux entry. The CORE_MEMORY arm
+    // writes pc_value (= PC' at that point in the FSM) to mem[alu_result].
+    // CORE_WRITEBACK then updates SP (rf_wr_en) and loads PC (pc_load_en).
+    // Status bits all Unaffected.
+    // -----------------------------------------------------------------------
+    if (top11 == CALL_RS_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_CALL_RS;
+      decoded.rd_file         = reg_file_from_instr;  // = R bit (file of Rs)
+      decoded.rd_idx          = REG_SP_IDX;            // write back to SP
+      decoded.rs_idx          = reg_idx_from_instr;    // Rs read via rs1 port
+      decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
       decoded.needs_memory_op = 1'b1;
     end
 

@@ -736,6 +736,30 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   verify ST recovered, SP restored, and the four flag bits in the
   popped ST match `ST_SEED[31:28]`.
 
+### Added (Task 0049 — CALL Rs)
+- Implemented **CALL Rs** (= `0x0920 | (R<<4) | Rs`) — the first
+  subroutine-call instruction. Per SPVU001A page 12-47:
+    SP -= 32
+    mem[new SP] = PC'      (return address)
+    PC = Rs                 (with bottom 4 bits cleared for alignment)
+- INSTR_CALL_RS = 7'd66. Decoder arm with top11 = 0x049. Reuses the
+  memory-write path from PUSHST plus the bottom-nibble-mask PC-load
+  pattern from JUMP Rs.
+- Core changes:
+  - `alu_a` swap group factored: INSTR_PUSHST, INSTR_POPST, and
+    INSTR_CALL_RS all read SP via rs2 (since rd_idx=15 for all three).
+  - `alu_b` mux: all three constants converge on `32'd32`.
+  - CORE_MEMORY: new INSTR_CALL_RS arm. mem_addr = alu_result
+    (= new SP), mem_we=1, mem_size=32, mem_wdata=pc_value (= PC',
+    which is the bit-address of the instruction following the CALL
+    opcode at this point in the FSM).
+  - PC-load mux: INSTR_CALL_RS unconditionally loads PC with
+    `{rf_rs1_data[31:4], 4'h0}` (Rs with bottom nibble cleared).
+- Added `sim/tb/tb_call_rs.sv` — places a subroutine at word 100
+  that writes A6 = 0xCAFE_BABE; CALL A5 (= 0x640 = word 100*16);
+  verifies (a) subroutine ran, (b) SP decremented, (c) mem[126..127]
+  holds PC' (= bit-address of the instruction right after the CALL).
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

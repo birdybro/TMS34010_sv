@@ -53,7 +53,8 @@
 | 0045 | EXGF Rd, F (exchange field definition) | complete |
 | 0046 | DINT / EINT (interrupt-enable control) | complete |
 | 0047 | Memory-write infrastructure + PUSHST | complete |
-| 0048 | POPST (PUSHST inverse; first memory-read instr) | in progress |
+| 0048 | POPST (PUSHST inverse; first memory-read instr) | complete |
+| 0049 | CALL Rs (Call Subroutine Indirect) | in progress |
 
 ---
 
@@ -1636,7 +1637,7 @@ Commit:
 ---
 
 ### Task 0048: POPST (PUSHST inverse; first memory-read-into-ST instr)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0047 (CORE_MEMORY state, 32-bit memory transactions, st_write_en
   path, regfile SP alias — all reused).
@@ -1669,6 +1670,55 @@ Acceptance Criteria:
     7. Per-flag check: ST.N/C/Z/V each match ST_SEED[31:28].
 Tests: tb_popst PASS; tb_pushst still PASS; lint clean.
 Docs: instruction_coverage.md (POPST row), changelog.md, tasks.md.
+Commit:
+- 5c32697
+
+---
+
+### Task 0049: CALL Rs (Call Subroutine Indirect)
+Status: in progress
+Dependencies:
+- Task 0047 (memory-write infrastructure + CORE_MEMORY state).
+- Task 0032 (JUMP Rs — same PC-load-from-register pattern with
+  bottom-nibble word-alignment mask).
+Spec source: SPVU001A page 12-47 + summary table line 27018.
+  CALL Rs encoding `0000 1001 001R DDDD` (top11 = 0x049).
+  Semantics:
+    SP -= 32
+    mem[new SP] = PC'    (PC' = address of next instruction word)
+    PC = Rs              (with bottom 4 bits cleared)
+  Status bits all "Unaffected".
+Acceptance Criteria:
+- INSTR_CALL_RS = 7'd66.
+- Decoder arm with top11 = 11'b00001001_001 (= 0x049). Sets:
+    - rs_idx     = instr[3:0]   (Rs index — read via rs1)
+    - rd_idx     = REG_SP_IDX   (write SP; read SP via rs2)
+    - rd_file    = instr[4]     (file of Rs)
+    - alu_op     = SUB
+    - wb_reg_en  = 1
+    - wb_flags_en = 0
+    - needs_memory_op = 1
+- Core's alu_a swap group: INSTR_PUSHST/POPST/CALL_RS all join (alu_a
+  = rs2 = SP). This factors the SP read for all three stack ops.
+- Core's alu_b mux: same three iclasses → 32'd32.
+- CORE_MEMORY new arm for INSTR_CALL_RS: mem_we=1, mem_addr=alu_result
+  (= SP-32), mem_size=32, mem_wdata=pc_value (= PC' at CORE_MEMORY
+  time, since the FETCH-ack advance has already happened).
+- PC-load mux new arm for INSTR_CALL_RS: unconditional pc_load_en=1
+  with pc_load_value = {rf_rs1_data[31:4], 4'h0}.
+- `sim/tb/tb_call_rs.sv` verifies:
+    1. The CALLed subroutine runs (sentinel-write MOVI at the
+       subroutine entry succeeds).
+    2. A trap MOVI right AFTER the CALL opcode does NOT run.
+    3. SP decremented by 32.
+    4. The two 16-bit memory words at the new SP hold the bit-address
+       of the instruction following the CALL opcode (= PC').
+- Encoding helpers verified: `call_rs_enc(A,5) = 0x0925`,
+  `call_rs_enc(B,5) = 0x0935`.
+Tests: tb_call_rs PASS; tb_pushst & tb_popst still PASS (the
+  alu_a swap-group addition is benign for them — both decoded sources
+  alias SP anyway); lint clean.
+Docs: instruction_coverage.md (CALL Rs row), changelog.md, tasks.md.
 Commit:
 - pending
 
