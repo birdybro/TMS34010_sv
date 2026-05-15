@@ -479,7 +479,8 @@ module tms34010_core
       INSTR_DSJS:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_BTST_K:  alu_b = 32'd1 << decoded.k5;
       INSTR_BTST_RR: alu_b = 32'd1 << rf_rs1_data[4:0];
-      INSTR_PUSHST:  alu_b = 32'd32;
+      INSTR_PUSHST,
+      INSTR_POPST:   alu_b = 32'd32;
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -522,7 +523,8 @@ module tms34010_core
                         (decoded.iclass == INSTR_SETF)  ||
                         (decoded.iclass == INSTR_EXGF)  ||
                         (decoded.iclass == INSTR_DINT)  ||
-                        (decoded.iclass == INSTR_EINT));
+                        (decoded.iclass == INSTR_EINT)  ||
+                        (decoded.iclass == INSTR_POPST));
   always_comb begin
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
@@ -530,6 +532,7 @@ module tms34010_core
       INSTR_EXGF:  st_write_data = exgf_new_st;
       INSTR_DINT:  st_write_data = st_value & ~(32'd1 << ST_IE_BIT);
       INSTR_EINT:  st_write_data = st_value |  (32'd1 << ST_IE_BIT);
+      INSTR_POPST: st_write_data = mem_rdata;        // popped 32-bit ST value
       default:     st_write_data = '0;
     endcase
   end
@@ -812,16 +815,29 @@ module tms34010_core
       end
 
       CORE_MEMORY: begin
-        // Memory transaction state. For now only PUSHST exercises this
-        // (write ST to mem[alu_result] as a 32-bit transfer). The
-        // memory IF is driven below; on ack we move to WRITEBACK.
-        if (decoded.iclass == INSTR_PUSHST) begin
-          mem_req   = 1'b1;
-          mem_we    = 1'b1;
-          mem_addr  = alu_result;        // = SP - 32
-          mem_size  = 6'd32;
-          mem_wdata = st_value;          // ST
-        end
+        // Memory transaction state for instructions that set
+        // decoded.needs_memory_op. The IF signals (mem_req, mem_we,
+        // mem_addr, mem_size, mem_wdata) are driven per iclass.
+        unique case (decoded.iclass)
+          INSTR_PUSHST: begin
+            // Write ST to mem[new SP] as a 32-bit transfer.
+            mem_req   = 1'b1;
+            mem_we    = 1'b1;
+            mem_addr  = alu_result;        // = SP - 32
+            mem_size  = 6'd32;
+            mem_wdata = st_value;          // ST
+          end
+          INSTR_POPST: begin
+            // Read 32-bit ST from mem[OLD SP]. The increment-by-32
+            // happens via the ALU; we don't want alu_result here,
+            // we want the pre-increment SP value (rf_rs1_data).
+            mem_req   = 1'b1;
+            mem_we    = 1'b0;
+            mem_addr  = rf_rs1_data;       // = current SP
+            mem_size  = 6'd32;
+          end
+          default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
+        endcase
         if (mem_ack) begin
           state_d = CORE_WRITEBACK;
         end

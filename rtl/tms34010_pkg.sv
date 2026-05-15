@@ -290,7 +290,8 @@ package tms34010_pkg;
                               //                     bits all "Unaffected".
     INSTR_DINT       = 7'd62, // DINT              — clear ST.IE  (disable interrupts)
     INSTR_EINT       = 7'd63, // EINT              — set ST.IE    (enable interrupts)
-    INSTR_PUSHST     = 7'd64  // PUSHST            — SP -= 32; mem[SP] <- ST (32-bit write)
+    INSTR_PUSHST     = 7'd64, // PUSHST            — SP -= 32; mem[SP] <- ST (32-bit write)
+    INSTR_POPST      = 7'd65  // POPST             — ST <- mem[SP]; SP += 32 (32-bit read)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

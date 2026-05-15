@@ -712,6 +712,30 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   MMFM, MOVE memory-indirect, and MOVB all unblock on this
   infrastructure.
 
+### Added (Task 0048 — POPST)
+- Implemented **POPST** (= 0x01C0) — the inverse of PUSHST and the
+  first instruction in the project that reads a 32-bit memory word
+  and writes it to a non-regfile destination (ST). Per SPVU001A:
+  `ST <- mem[SP]; SP <- SP + 32`. All four status flags are taken
+  from the popped value's bits[31:28].
+- INSTR_POPST = 7'd65. Decoder arm matches the literal opcode and
+  sets `alu_op = ADD` (so the ALU produces `SP + 32` for the
+  regfile-SP writeback), `wb_reg_en = 1`, `needs_memory_op = 1`.
+  `wb_flags_en` stays 0 because the ST update goes through
+  `st_write_en`/`st_write_data`, not the per-flag mask path.
+- Core changes:
+  - `alu_b` mux: INSTR_POPST joins PUSHST's `→ 32'd32` entry.
+  - `CORE_MEMORY` arm for POPST drives `mem_we=0`,
+    `mem_addr = rf_rs1_data` (= OLD SP, NOT `alu_result`), `mem_size=32`.
+  - `st_write_en` triggers for INSTR_POPST as well as PUTST/SETF/
+    EXGF/DINT/EINT.
+  - `st_write_data` mux: INSTR_POPST → `mem_rdata` (the popped
+    32-bit value).
+- Added `sim/tb/tb_popst.sv` — runs a full PUSHST/POPST round-trip:
+  seed ST, PUSHST, clobber ST with a different value, POPST,
+  verify ST recovered, SP restored, and the four flag bits in the
+  popped ST match `ST_SEED[31:28]`.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

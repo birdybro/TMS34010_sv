@@ -52,7 +52,8 @@
 | 0044 | SEXT / ZEXT Rd, F (field-size extension) | complete |
 | 0045 | EXGF Rd, F (exchange field definition) | complete |
 | 0046 | DINT / EINT (interrupt-enable control) | complete |
-| 0047 | Memory-write infrastructure + PUSHST | in progress |
+| 0047 | Memory-write infrastructure + PUSHST | complete |
+| 0048 | POPST (PUSHST inverse; first memory-read instr) | in progress |
 
 ---
 
@@ -1586,7 +1587,7 @@ Commit:
 ---
 
 ### Task 0047: Memory-write infrastructure + PUSHST
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0042 (ST register pinning — PUSHST writes the full ST value).
 - Task 0009 (regfile SP alias — PUSHST reads/writes A15 = SP).
@@ -1629,6 +1630,45 @@ Acceptance Criteria:
 Tests: tb_pushst PASS; full Verilator regression PASS; lint clean.
 Docs: instruction_coverage.md (PUSHST row added with the memory
   column = "write"), changelog.md, tasks.md.
+Commit:
+- fd5b1c0
+
+---
+
+### Task 0048: POPST (PUSHST inverse; first memory-read-into-ST instr)
+Status: in progress
+Dependencies:
+- Task 0047 (CORE_MEMORY state, 32-bit memory transactions, st_write_en
+  path, regfile SP alias — all reused).
+Spec source: SPVU001A summary table page A-16. POPST = 0x01C0;
+  semantics `ST <- mem[SP]; SP <- SP + 32`. All four status flags are
+  written by the popped value.
+Acceptance Criteria:
+- INSTR_POPST = 7'd65.
+- Decoder arm matching the literal 0x01C0 encoding. Sets rs_idx=15,
+  rd_idx=15, alu_op=ADD (so the ALU computes SP+32 for the SP
+  writeback), wb_reg_en=1, wb_flags_en=0 (ST update goes through
+  st_write_en, not the per-flag mask path), needs_memory_op=1.
+- Core's alu_b mux: INSTR_POPST joins INSTR_PUSHST's `→ 32'd32` entry.
+- Core's CORE_MEMORY state extended with an INSTR_POPST arm:
+  mem_req=1, mem_we=0, mem_addr=`rf_rs1_data` (the OLD SP value —
+  NOT `alu_result`, since we read BEFORE the increment), mem_size=32.
+- Core's st_write_en list extended to fire for INSTR_POPST; the
+  st_write_data mux gets a `mem_rdata` arm for POPST. Note: mem_rdata
+  is a registered output from the memory model that holds the last
+  fetched value, so it's still valid in the WRITEBACK cycle one
+  cycle after the CORE_MEMORY ack.
+- `sim/tb/tb_popst.sv` does a round-trip:
+    1. Set SP = `0x0000_0800` (via MOVE A0, A15).
+    2. PUTST a seed `ST_SEED = 0xC3C3_03C3`.
+    3. PUSHST — drops SP to `0x07E0`, writes ST to mem[126..127].
+    4. PUTST a different ST_TMP (= reset value `0x10`) and GETST →
+       confirms clobbered ST = ST_TMP.
+    5. POPST — recovers ST = ST_SEED, restores SP = `0x0000_0800`.
+    6. GETST captures the restored ST → A4 should equal ST_SEED.
+    7. Per-flag check: ST.N/C/Z/V each match ST_SEED[31:28].
+Tests: tb_popst PASS; tb_pushst still PASS; lint clean.
+Docs: instruction_coverage.md (POPST row), changelog.md, tasks.md.
 Commit:
 - pending
 

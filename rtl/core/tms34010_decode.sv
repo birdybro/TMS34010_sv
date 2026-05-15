@@ -107,6 +107,11 @@ module tms34010_decode
   // (`0000 0001 1110 0000`). Sets SP -= 32 then writes ST as a
   // 32-bit word to mem[new_SP]. Status bits unaffected.
   localparam instr_word_t PUSHST_OPCODE = 16'h01E0;
+  // POPST — pop status register from stack. Per SPVU001A summary
+  // table page A-16: single fixed encoding 0x01C0
+  // (`0000 0001 1100 0000`). Reads 32-bit ST from mem[SP], then
+  // increments SP by 32. Status bits all written by the loaded value.
+  localparam instr_word_t POPST_OPCODE  = 16'h01C0;
 
   // DINT / EINT — single-fixed-encoding interrupt-enable control.
   // Per SPVU001A summary table (page A-14):
@@ -811,6 +816,32 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // POPST — pop ST from stack. Per SPVU001A summary table:
+    //   ST <- mem[SP]    (32-bit read)
+    //   SP <- SP + 32
+    // Single fixed encoding 0x01C0. All status bits are written by
+    // the popped value (since the read covers all 32 bits of ST).
+    //
+    // ALU computes (SP + 32): alu_a = rf_rs1_data (= SP), alu_b = 32
+    // via the same constant-32 mux entry PUSHST uses, alu_op = ADD.
+    // The mem read uses the OLD SP (= rf_rs1_data) — not alu_result —
+    // because we read BEFORE the increment. WRITEBACK then writes
+    // the new SP via the regfile and the new ST via st_write_en
+    // (st_write_data = mem_rdata).
+    // -----------------------------------------------------------------------
+    if (instr == POPST_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_POPST;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;
+      decoded.rs_idx          = REG_SP_IDX;
+      decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;          // ST update via st_write_en, not flag mask
       decoded.needs_memory_op = 1'b1;
     end
 
