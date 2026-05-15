@@ -90,7 +90,9 @@ module tb_status_reg;
     // 1. Reset clears ST.
     repeat (3) @(posedge clk);
     #1;
-    check("after reset", 32'd0, 1'b0, 1'b0, 1'b0, 1'b0);
+    // Per SPVU001A §5.2 page 5-18, ST resets to 0x0000_0010 (FS0 = 16).
+    // Flag bits (N/C/Z/V at 31..28) all clear.
+    check("after reset", ST_RESET_VALUE, 1'b0, 1'b0, 1'b0, 1'b0);
 
     rst = 1'b0;
     #1;

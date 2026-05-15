@@ -158,22 +158,40 @@ package tms34010_pkg;
   parameter int unsigned SHIFT_AMOUNT_WIDTH = 5;  // 32-bit shifter, 0..31
 
   // ---------------------------------------------------------------------------
-  // Status register bit positions
+  // Status register layout — VERIFIED against SPVU001A §5.2 (Table 5-2,
+  // page 5-18). The original A0010 placeholder for N/C/Z/V at bits
+  // 31..28 happened to be correct; the field-size bits and IE/PBX are
+  // now pinned to their authoritative positions.
   //
-  // Spec: bibliography/hdl-reimplementation/03-registers.md §"Status register"
-  //   ("Read SPVU001A Chapter 2 for the exact bit layout").
+  //   Bits[4:0]   FS0     Field Size 0  (5-bit; 00000 → field-size 32)
+  //   Bit[5]      FE0     Field Extend 0 (0 = zero-ext, 1 = sign-ext)
+  //   Bits[10:6]  FS1     Field Size 1
+  //   Bit[11]     FE1     Field Extend 1
+  //   Bits[20:12] reserved (preserved as written; reset = 0)
+  //   Bit[21]     IE      Interrupt Enable (DINT clears, EINT sets)
+  //   Bits[24:22] reserved
+  //   Bit[25]     PBX     PixBlt Executing
+  //   Bits[27:26] reserved
+  //   Bit[28]     V       Overflow
+  //   Bit[29]     Z       Zero
+  //   Bit[30]     C       Carry
+  //   Bit[31]     N       Negative
   //
-  // The N/C/Z/V flag positions below are PLACEHOLDERS pending detailed
-  // SPVU001A read. See docs/assumptions.md A0010. Consumers reference the
-  // ST module's named flag outputs (`n_o`, `c_o`, `z_o`, `v_o`) rather than
-  // bit positions directly; the bit positions matter only to PUSHST /
-  // POPST / MMTM ST / MMFM ST. When the layout is confirmed, only these
-  // parameters change.
+  // ST resets to 0x0000_0010 per spec page 5-18 → FS0 = 16 at reset.
   // ---------------------------------------------------------------------------
-  parameter int unsigned ST_N_BIT = 31;
-  parameter int unsigned ST_C_BIT = 30;
-  parameter int unsigned ST_Z_BIT = 29;
-  parameter int unsigned ST_V_BIT = 28;
+  parameter int unsigned ST_FS0_LO  = 0;
+  parameter int unsigned ST_FS0_HI  = 4;
+  parameter int unsigned ST_FE0_BIT = 5;
+  parameter int unsigned ST_FS1_LO  = 6;
+  parameter int unsigned ST_FS1_HI  = 10;
+  parameter int unsigned ST_FE1_BIT = 11;
+  parameter int unsigned ST_IE_BIT  = 21;
+  parameter int unsigned ST_PBX_BIT = 25;
+  parameter int unsigned ST_V_BIT   = 28;
+  parameter int unsigned ST_Z_BIT   = 29;
+  parameter int unsigned ST_C_BIT   = 30;
+  parameter int unsigned ST_N_BIT   = 31;
+  parameter logic [DATA_WIDTH-1:0] ST_RESET_VALUE = 32'h0000_0010;
 
   // ---------------------------------------------------------------------------
   // Instruction word + decoded-instruction skeleton

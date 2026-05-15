@@ -440,6 +440,29 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
+## A0010 — RESOLVED: status-register bit positions
+- **Date resolved**: 2026-05-14 (Task 0042)
+- **Status**: **RESOLVED** against SPVU001A §5.2 Table 5-2 (page 5-18).
+- **Original placeholder**: A0010 had N/C/Z/V at bits 31..28 as a guess.
+- **Verified layout** (now baked into `rtl/tms34010_pkg.sv`):
+  - bits[4:0]  = FS0  (5-bit field-size 0; encoding `00000` → size 32)
+  - bit[5]     = FE0
+  - bits[10:6] = FS1
+  - bit[11]    = FE1
+  - bits[12:20]= reserved
+  - bit[21]    = IE  (interrupt enable; DINT clears, EINT sets)
+  - bits[22:24]= reserved
+  - bit[25]    = PBX (PixBlt Executing)
+  - bits[26:27]= reserved
+  - bit[28]    = V
+  - bit[29]    = Z
+  - bit[30]    = C
+  - bit[31]    = N
+- **Reset value**: ST resets to `0x0000_0010` per spec page 5-18 — i.e., FS0 = 16, all flags clear. `tms34010_status_reg.sv` now uses `ST_RESET_VALUE = 32'h0000_0010` from the package.
+- **Lesson**: the N/C/Z/V placeholders happened to be right; FS/FE/IE/PBX are now anchored to authoritative bit positions for use by SETF, EXGF, SEXT, ZEXT, MOVE-field, DINT/EINT, and PIXBLT-related instructions.
+
+---
+
 ## A0025 — REV constant and EXGPC bottom-nibble PC alignment
 - **Date**: 2026-05-12
 - **Status**: active (pending a careful spec re-read on a clean PDF)

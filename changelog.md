@@ -596,6 +596,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   an N/C/V-preservation check that runs a CMP to set NCZV=1101,
   then an LMO, then verifies the three flags survived.
 
+### Changed (Task 0042 — Phase 5 foundation)
+- **Status register layout finalized** against SPVU001A §5.2 Table 5-2
+  (page 5-18). The N/C/Z/V positions at 31..28 (originally A0010
+  placeholders) happened to match the spec; the new constants pin
+  down FS0[4:0], FE0[5], FS1[10:6], FE1[11], IE[21], PBX[25] to
+  their authoritative positions.
+- `tms34010_pkg.sv` gains six new ST-bit-position parameters plus
+  `ST_RESET_VALUE = 32'h0000_0010` (per spec page 5-18 — FS0 = 16
+  at reset, all flags clear).
+- `tms34010_status_reg.sv` initializes `st_q` to `ST_RESET_VALUE`
+  on reset instead of all-zeros.
+- `sim/tb/tb_status_reg.sv`'s "after reset" check updated for the
+  new reset value.
+- `docs/assumptions.md` A0010 marked RESOLVED with the full layout
+  spelled out.
+- No instruction changes in this task — it's foundational for the
+  upcoming SETF / EXGF / SEXT / ZEXT / DINT / EINT tasks.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

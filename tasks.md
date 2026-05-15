@@ -46,7 +46,8 @@
 | 0038 | CLRC / SETC / GETST / PUTST (status-reg ops) | complete |
 | 0039 | Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount) | complete |
 | 0040 | GETPC / EXGPC / REV (PC + revision register ops) | complete |
-| 0041 | LMO Rs, Rd (Leftmost-One priority encoder) | in progress |
+| 0041 | LMO Rs, Rd (Leftmost-One priority encoder) | complete |
+| 0042 | ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX) | in progress |
 
 ---
 
@@ -1354,7 +1355,7 @@ Commit:
 ---
 
 ### Task 0041: LMO Rs, Rd (Leftmost-One priority encoder)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0037 (wb_flag_mask refactor — LMO uses Z-only updates per spec).
 Spec source: SPVU001A page 12-108 ("Find Leftmost One") + summary
@@ -1384,6 +1385,42 @@ Acceptance Criteria:
   Plus an N/C/V-preservation check after a CMP-set NCZV=1101.
 Tests: tb_lmo PASS; lint clean.
 Docs: instruction_coverage.md (LMO row), changelog.md, tasks.md.
+Commit:
+- 8d8d5f6
+
+---
+
+### Task 0042: ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX positions + reset value)
+Status: in progress
+Dependencies:
+- Task 0009 (status register exists).
+- Task 0037 (per-flag mask machinery, prerequisite for Phase 5).
+Spec source: SPVU001A §5.2 Table 5-2 (page 5-18). The N/C/Z/V positions
+  31..28 happen to match the earlier A0010 placeholders; this task
+  pins down the field-size bits and IE/PBX to their authoritative
+  positions and locks ST's reset value to `0x0000_0010` (FS0 = 16).
+Acceptance Criteria:
+- `rtl/tms34010_pkg.sv` gains `ST_FS0_LO/HI`, `ST_FE0_BIT`,
+  `ST_FS1_LO/HI`, `ST_FE1_BIT`, `ST_IE_BIT`, `ST_PBX_BIT`
+  parameters, and a `ST_RESET_VALUE = 32'h0000_0010` constant.
+- `rtl/core/tms34010_status_reg.sv` initializes `st_q` to
+  `ST_RESET_VALUE` instead of all-zeros.
+- `sim/tb/tb_status_reg.sv`'s "after reset" check updated to expect
+  the new value (`ST_RESET_VALUE`, flags all zero).
+- A0010 marked RESOLVED; the resolution note in `docs/assumptions.md`
+  spells out the full ST layout.
+- This task is foundational: it adds no instruction. Subsequent
+  Phase 5 tasks (SETF, EXGF, SEXT, ZEXT) and the DINT/EINT pair
+  use these constants.
+- Functional regression (13 Verilator-clean tbs) PASS, including
+  `tb_st_ops` (which uses PUTST/GETST round-trips that don't depend
+  on the reset value).
+Tests: 13/13 Verilator regression PASS; lint clean (modulo
+  UNUSEDPARAM warnings on the new constants — they're used by the
+  next tasks). Questa lint also clean.
+Docs: assumptions.md (A0010 marked RESOLVED with full layout),
+  changelog.md, tasks.md. No instruction_coverage.md change since no
+  instructions land here.
 Commit:
 - pending
 

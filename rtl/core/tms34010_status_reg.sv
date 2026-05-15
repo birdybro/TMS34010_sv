@@ -65,7 +65,7 @@ module tms34010_status_reg
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      st_q <= '0;
+      st_q <= ST_RESET_VALUE;
     end else if (st_write_en) begin
       st_q <= st_write_data;
     end else if (flag_update_en) begin
