@@ -456,7 +456,8 @@ module tms34010_core
       INSTR_NEGB:    alu_a = '0;            // NEGB: 0 - Rd - C via SUBB
       INSTR_PUSHST,
       INSTR_POPST,
-      INSTR_CALL_RS: alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
+      INSTR_CALL_RS,
+      INSTR_RETS:    alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -485,6 +486,7 @@ module tms34010_core
       INSTR_PUSHST,
       INSTR_POPST,
       INSTR_CALL_RS: alu_b = 32'd32;
+      INSTR_RETS:    alu_b = 32'd32 + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -642,6 +644,15 @@ module tms34010_core
           // CORE_MEMORY by the time we reach this WRITEBACK arm.
           pc_load_en    = 1'b1;
           pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
+        end
+        INSTR_RETS: begin
+          // Return from subroutine: PC <- popped value (= mem_rdata,
+          // which the memory model still holds after the ack since it
+          // doesn't clear on IDLE). The popped value is already
+          // word-aligned (since it was pushed by a CALL/CALLA/CALLR
+          // or TRAP), so no bottom-nibble mask is needed.
+          pc_load_en    = 1'b1;
+          pc_load_value = mem_rdata;
         end
         default: ; // no branch
       endcase
@@ -859,6 +870,14 @@ module tms34010_core
             mem_addr  = alu_result;        // = SP - 32
             mem_size  = 6'd32;
             mem_wdata = pc_value;          // PC' (return address)
+          end
+          INSTR_RETS: begin
+            // Pop PC from mem[OLD SP]. mem_addr = current SP value
+            // (rf_rs2_data) — NOT alu_result, which is SP + 32 + 16*N.
+            mem_req   = 1'b1;
+            mem_we    = 1'b0;
+            mem_addr  = rf_rs2_data;       // = current SP
+            mem_size  = 6'd32;
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase

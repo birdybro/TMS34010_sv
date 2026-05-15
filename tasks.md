@@ -54,7 +54,8 @@
 | 0046 | DINT / EINT (interrupt-enable control) | complete |
 | 0047 | Memory-write infrastructure + PUSHST | complete |
 | 0048 | POPST (PUSHST inverse; first memory-read instr) | complete |
-| 0049 | CALL Rs (Call Subroutine Indirect) | in progress |
+| 0049 | CALL Rs (Call Subroutine Indirect) | complete |
+| 0050 | RETS [N] (Return from Subroutine) | in progress |
 
 ---
 
@@ -1676,7 +1677,7 @@ Commit:
 ---
 
 ### Task 0049: CALL Rs (Call Subroutine Indirect)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0047 (memory-write infrastructure + CORE_MEMORY state).
 - Task 0032 (JUMP Rs — same PC-load-from-register pattern with
@@ -1719,6 +1720,44 @@ Tests: tb_call_rs PASS; tb_pushst & tb_popst still PASS (the
   alu_a swap-group addition is benign for them — both decoded sources
   alias SP anyway); lint clean.
 Docs: instruction_coverage.md (CALL Rs row), changelog.md, tasks.md.
+Commit:
+- 728d94c
+
+---
+
+### Task 0050: RETS [N] (Return from Subroutine)
+Status: in progress
+Dependencies:
+- Task 0048 (POPST — same pop-from-stack pattern).
+- Task 0049 (CALL Rs — for end-to-end round-trip testing).
+Spec source: SPVU001A page 12-231 + summary table line 27036.
+  Encoding `0000 1001 011N NNNN` (top11 = 0x04B; bits[4:0] = N).
+  Semantics:
+    PC <- mem[SP]    (32-bit pop)
+    SP <- SP + 32 + 16*N
+  Status bits all "Unaffected". RETS with no operand = RETS 0.
+Acceptance Criteria:
+- INSTR_RETS = 7'd67. Decoded.k5 carries the N field.
+- Decoder arm matches top11 = 0x04B (= 11'b00001001_011). Sets
+  rs_idx=15, rd_idx=15, k5=instr[4:0], alu_op=ADD, wb_reg_en=1,
+  needs_memory_op=1.
+- alu_a swap group adds INSTR_RETS (alu_a = SP via rs2).
+- alu_b mux new entry: INSTR_RETS → `32'd32 + (decoded.k5 << 4)`.
+  This delivers 32 + 16*N for N ∈ {0..31} → range 32..528.
+- CORE_MEMORY new arm: mem_we=0, mem_addr=rf_rs2_data (= OLD SP),
+  mem_size=32.
+- PC-load mux: INSTR_RETS sets `pc_load_en = 1`, `pc_load_value =
+  mem_rdata`. The popped value is taken as-is (no bottom-nibble
+  mask) because the pushed PC was already word-aligned.
+- `sim/tb/tb_rets.sv` runs a full CALL → subroutine → RETS round-trip
+  using the same memory layout as `tb_call_rs.sv`. Adds a "pre-return
+  sentinel" pattern: A7 is set to `0xAAAA_AAAA` BEFORE the CALL; the
+  post-CALL instruction writes A7 = `0x0000_BEEF` — that MOVI runs
+  if and only if RETS actually returned. So a passing test directly
+  exercises the round trip.
+Tests: tb_rets PASS; tb_call_rs / tb_pushst / tb_popst still PASS;
+  lint clean.
+Docs: instruction_coverage.md (RETS row), changelog.md, tasks.md.
 Commit:
 - pending
 

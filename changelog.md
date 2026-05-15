@@ -760,6 +760,32 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   verifies (a) subroutine ran, (b) SP decremented, (c) mem[126..127]
   holds PC' (= bit-address of the instruction right after the CALL).
 
+### Added (Task 0050 — RETS [N])
+- Implemented **RETS [N]** per SPVU001A page 12-231. Encoding
+  `0000 1001 011N NNNN` (`0x0960 | N`). Semantics:
+    PC <- mem[SP]    (32-bit pop)
+    SP <- SP + 32 + 16*N
+  Status bits all "Unaffected". N at instr[4:0] is an optional
+  argument-pop count (0..31); RETS without N defaults to N=0.
+- INSTR_RETS = 7'd67. The decoder routes `instr[4:0] → decoded.k5`.
+- Core changes:
+  - alu_a swap group: INSTR_RETS joins (alu_a = SP via rs2).
+  - alu_b mux new entry: `INSTR_RETS → 32'd32 + (decoded.k5 << 4)`.
+    Computes 32 + 16*N. For N=0 → 32; for N=31 → 528 (per the spec
+    page-12-231 worked example showing `SP -> SP+0x210` for N=31).
+  - CORE_MEMORY: INSTR_RETS arm reads 32 bits from `rf_rs2_data` (=
+    old SP), `mem_we=0`, `mem_size=32`.
+  - PC-load mux: INSTR_RETS unconditionally loads `mem_rdata` into
+    PC (no bottom-nibble mask, since the popped PC was already
+    word-aligned when pushed).
+- Added `sim/tb/tb_rets.sv` — full CALL → subroutine → RETS
+  round-trip. Pre-CALL sentinel `A7 = 0xAAAA_AAAA`; subroutine
+  writes A6 = 0xCAFE_BABE then RETS; post-CALL MOVI writes
+  A7 = 0x0000_BEEF — that MOVI only runs if RETS actually returned
+  correctly. So end-of-test `A7 == 0xBEEF` directly confirms the
+  full subroutine round-trip, with `SP` restored to the original
+  value.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

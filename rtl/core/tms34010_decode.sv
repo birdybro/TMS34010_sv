@@ -125,6 +125,16 @@ module tms34010_decode
   // Status bits all "Unaffected".
   localparam logic [10:0] CALL_RS_TOP11 = 11'b0000_1001_001;
 
+  // RETS [N] — Return from Subroutine. Per SPVU001A page 12-231 +
+  // summary table line 27036. Encoding `0000 1001 011N NNNN`:
+  //   top11 = 11'b00001001_011 = 0x04B
+  //   bits[4:0] = N (5-bit unsigned arg-pop count, 0..31)
+  // Semantics:
+  //   PC <- mem[SP]   (32-bit pop)
+  //   SP <- SP + 32 + 16*N
+  // Status bits all "Unaffected". RETS without N = RETS 0.
+  localparam logic [10:0] RETS_TOP11    = 11'b0000_1001_011;
+
   // DINT / EINT — single-fixed-encoding interrupt-enable control.
   // Per SPVU001A summary table (page A-14):
   //   DINT = 0x0360  (0000 0011 0110 0000) — clear ST.IE (bit 21)
@@ -876,6 +886,30 @@ module tms34010_decode
       decoded.rd_idx          = REG_SP_IDX;            // write back to SP
       decoded.rs_idx          = reg_idx_from_instr;    // Rs read via rs1 port
       decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // RETS [N] — Return from Subroutine. Inverse of CALL Rs (mostly).
+    //   PC <- mem[SP];  SP <- SP + 32 + 16*N
+    // N at instr[4:0]. Status bits all Unaffected.
+    //
+    // The mem-read uses the OLD SP value (rf_rs2_data, since both
+    // ports read SP via rd_idx=15/rs_idx=15); the popped value goes
+    // directly to pc_load_value in WRITEBACK. ALU computes
+    // SP + 32 + 16*N via a custom alu_b mux entry that combines
+    // 32'd32 with `decoded.k5` left-shifted by 4.
+    // -----------------------------------------------------------------------
+    if (top11 == RETS_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_RETS;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;
+      decoded.rs_idx          = REG_SP_IDX;
+      decoded.k5              = instr[4:0];       // N (0..31)
+      decoded.alu_op          = ALU_OP_ADD;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;
       decoded.needs_memory_op = 1'b1;

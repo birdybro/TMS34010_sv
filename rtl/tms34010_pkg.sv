@@ -292,8 +292,10 @@ package tms34010_pkg;
     INSTR_EINT       = 7'd63, // EINT              — set ST.IE    (enable interrupts)
     INSTR_PUSHST     = 7'd64, // PUSHST            — SP -= 32; mem[SP] <- ST (32-bit write)
     INSTR_POPST      = 7'd65, // POPST             — ST <- mem[SP]; SP += 32 (32-bit read)
-    INSTR_CALL_RS    = 7'd66  // CALL Rs           — SP -= 32; mem[SP] <- PC'; PC <- Rs
+    INSTR_CALL_RS    = 7'd66, // CALL Rs           — SP -= 32; mem[SP] <- PC'; PC <- Rs
                               //                     (with bottom 4 bits forced to 0).
+    INSTR_RETS       = 7'd67  // RETS [N]          — PC <- mem[SP]; SP += 32 + 16*N
+                              //                     N at instr[4:0], range 0..31.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
