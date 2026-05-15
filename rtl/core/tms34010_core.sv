@@ -317,6 +317,37 @@ module tms34010_core
                    && dsj_precondition;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
+  // SEXT / ZEXT field-extension datapath. Per SPVU001A pages 12-238
+  // (SEXT) and 12-256 (ZEXT): take the low `FS` bits of Rd, then
+  // either sign-extend (copy the field MSB into bits[31:FS]) or
+  // zero-extend (clear bits[31:FS]). FS is read from the F-selected
+  // pair in ST (FS0 if instr_word_q[9]=0, FS1 if =1). FS=5'b00000
+  // encodes a field-size of 32 per Table 5-3, so the data is the
+  // full 32-bit register and no extension is needed.
+  logic [4:0]            fs_selected;
+  logic [DATA_WIDTH-1:0] field_mask;
+  logic                  field_msb;
+  logic [DATA_WIDTH-1:0] sext_result;
+  logic [DATA_WIDTH-1:0] zext_result;
+  assign fs_selected = instr_word_q[9]
+                     ? st_value[ST_FS1_HI:ST_FS1_LO]
+                     : st_value[ST_FS0_HI:ST_FS0_LO];
+  always_comb begin
+    if (fs_selected == 5'd0) begin
+      // Field-size = 32: identity.
+      field_mask  = '1;
+      field_msb   = rf_rs2_data[DATA_WIDTH-1];
+      sext_result = rf_rs2_data;
+      zext_result = rf_rs2_data;
+    end else begin
+      field_mask  = (32'd1 << fs_selected) - 32'd1;
+      field_msb   = rf_rs2_data[fs_selected - 5'd1];
+      sext_result = field_msb ? ((rf_rs2_data & field_mask) | ~field_mask)
+                              :  (rf_rs2_data & field_mask);
+      zext_result = rf_rs2_data & field_mask;
+    end
+  end
+
   // LMO (Leftmost-One) datapath. Pure combinational — finds the
   // highest-set bit of rf_rs1_data and computes Rd = 31 - bit_pos
   // (i.e., one's-complement of the bit position in 5 bits). The
@@ -352,6 +383,8 @@ module tms34010_core
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
       INSTR_LMO_RR: rf_wr_data = lmo_result;
+      INSTR_SEXT:   rf_wr_data = sext_result;
+      INSTR_ZEXT:   rf_wr_data = zext_result;
       default:      rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
     endcase
   end
@@ -631,6 +664,10 @@ module tms34010_core
       INSTR_CLRC:   flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b0};
       INSTR_LMO_RR: flag_input = '{n: 1'b0, c: 1'b0,
                                     z: (rf_rs1_data == '0), v: 1'b0};
+      INSTR_SEXT:   flag_input = '{n: sext_result[DATA_WIDTH-1], c: 1'b0,
+                                    z: (sext_result == '0), v: 1'b0};
+      INSTR_ZEXT:   flag_input = '{n: 1'b0, c: 1'b0,
+                                    z: (zext_result == '0), v: 1'b0};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end

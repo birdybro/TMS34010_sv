@@ -48,7 +48,8 @@
 | 0040 | GETPC / EXGPC / REV (PC + revision register ops) | complete |
 | 0041 | LMO Rs, Rd (Leftmost-One priority encoder) | complete |
 | 0042 | ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX) | complete |
-| 0043 | SETF FS, FE, F (set field-size params) | in progress |
+| 0043 | SETF FS, FE, F (set field-size params) | complete |
+| 0044 | SEXT / ZEXT Rd, F (field-size extension) | in progress |
 
 ---
 
@@ -1428,7 +1429,7 @@ Commit:
 ---
 
 ### Task 0043: SETF FS, FE, F (set field-size parameters)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0042 (ST layout constants + reset value).
 Spec source: SPVU001A page 12-237 + summary table line 26978.
@@ -1459,6 +1460,46 @@ Acceptance Criteria:
 Tests: tb_setf PASS; tb_st_ops/tb_btst/tb_lmo/tb_abs_negb/tb_movi/
   tb_cmp_rr/tb_jrcc_short/tb_jrcc_signed all still PASS; lint clean.
 Docs: instruction_coverage.md (SETF row), changelog.md, tasks.md.
+Commit:
+- 6332e86
+
+---
+
+### Task 0044: SEXT / ZEXT Rd, F (sign-/zero-extend a field)
+Status: in progress
+Dependencies:
+- Task 0042 (ST field-size constants).
+- Task 0043 (SETF — needed to load FS0/FS1 for spec test vectors).
+- Task 0037 (per-flag wb_flag_mask).
+Spec source: SPVU001A pages 12-238 (SEXT) and 12-256 (ZEXT) plus
+  summary table lines 26979 / 27011. Encodings:
+    SEXT: bits[15:10]=000001, bit[9]=F, bit[8]=1, bits[7:5]=000,
+          bit[4]=R, bits[3:0]=Rd  →  base 0x0500
+    ZEXT: same but bits[7:5]=001  →  base 0x0520
+Acceptance Criteria:
+- INSTR_SEXT = 6'd59, INSTR_ZEXT = 6'd60.
+- Decoder predicates: top6==000001 AND bit[8]==1 AND bits[7:5]==000
+  (SEXT) or ==001 (ZEXT). wb_flag_mask for SEXT = `{n:1, c:0, z:1, v:0}`;
+  for ZEXT = `{n:0, c:0, z:1, v:0}` (Z-only per spec).
+- Core's SEXT/ZEXT datapath:
+  - `fs_selected` reads FS0 (bits[ST_FS0_HI:ST_FS0_LO]) or FS1 from
+    `st_value` based on `instr_word_q[9]`.
+  - `field_mask` = (1 << fs_selected) - 1, with the FS=0 → 32 case
+    handled as identity (mask = all-ones, no extension).
+  - `field_msb` = `rf_rs2_data[fs_selected - 1]` (variable bit-index;
+    Verilog/Verilator/Questa all synthesize this as a 32:1 mux).
+  - `sext_result` = (field_msb) ? (Rd & mask) | ~mask : (Rd & mask).
+  - `zext_result` = Rd & mask.
+- rf_wr_data and flag_input muxes extended with SEXT/ZEXT arms.
+- `sim/tb/tb_sext_zext.sv` runs 6 SEXT spec-vector scenarios (FS=15,
+  16, 17 × F=0, 1) and 5 ZEXT spec-vector scenarios (FS=32 via the
+  0 encoding, 31, 1, 16 × F=0/1). Each scenario uses a distinct
+  destination so end-of-test verification is independent.
+- Encoding helpers verified inline.
+- Lint clean.
+Tests: tb_sext_zext PASS; 16-tb sanity regression PASS.
+Docs: instruction_coverage.md (SEXT + ZEXT rows), changelog.md,
+  tasks.md.
 Commit:
 - pending
 

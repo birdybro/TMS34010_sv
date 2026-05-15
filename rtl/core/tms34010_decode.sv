@@ -692,6 +692,39 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
+    // SEXT Rd, F : sign-extend the low FS<F> bits of Rd to 32 bits.
+    //   Encoding: bits[15:10]=6'b000001, bit[9]=F, bit[8]=1,
+    //             bits[7:5]=3'b000, bit[4]=R, bits[3:0]=Rd.
+    //   Flags: N from result, Z from result; C and V "Unaffected".
+    //
+    // ZEXT Rd, F : zero-extend the low FS<F> bits of Rd to 32 bits.
+    //   Same encoding shape but bits[7:5]=3'b001.
+    //   Flags: Z only; N, C, V "Unaffected".
+    //
+    // F is read directly from instr_word_q[9] in the core; the SEXT/
+    // ZEXT datapath there reads the F-selected FS field from st_value
+    // and constructs the appropriate mask + extension.
+    // -----------------------------------------------------------------------
+    if (instr[15:10] == SETF_TOP6 && instr[8] && (instr[7:5] == 3'b000)) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_SEXT;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+    if (instr[15:10] == SETF_TOP6 && instr[8] && (instr[7:5] == 3'b001)) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_ZEXT;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
     // ADD Rs, Rd  (reg-reg add; Rs and Rd in the same file)
     // -----------------------------------------------------------------------
     if (top7 == ADD_RR_TOP7) begin

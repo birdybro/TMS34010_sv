@@ -278,9 +278,13 @@ package tms34010_pkg;
     INSTR_LMO_RR     = 6'd57, // LMO Rs, Rd        — Rd ← 31 - bit_pos(leftmost-1 in Rs)
                               //                     in bottom 5 bits; upper 27 bits = 0;
                               //                     Z = (Rs == 0); N/C/V unaffected
-    INSTR_SETF       = 6'd58  // SETF FS, FE, F    — set field-size params for FS<F>/FE<F>
+    INSTR_SETF       = 6'd58, // SETF FS, FE, F    — set field-size params for FS<F>/FE<F>
                               //                     (F bit at instr[9]; FE at instr[5];
                               //                     FS at instr[4:0]). Status unaffected.
+    INSTR_SEXT       = 6'd59, // SEXT Rd, F        — sign-extend low FS<F> bits to 32;
+                              //                     flags N, Z (C, V unaffected via mask).
+    INSTR_ZEXT       = 6'd60  // ZEXT Rd, F        — zero-extend low FS<F> bits to 32;
+                              //                     flag Z only (N, C, V unaffected).
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

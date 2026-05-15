@@ -633,6 +633,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   FS1/FE1 update, FS=0 encodes 32, FS=31 boundary, and N/C/V/Z
   preservation across SETF.
 
+### Added (Task 0044 — SEXT and ZEXT)
+- Implemented **SEXT Rd, F** (sign-extend a field) per SPVU001A page
+  12-238 and **ZEXT Rd, F** (zero-extend) per page 12-256. Both
+  share the encoding shape `0000 01F1 SS_R_DDDD` with bits[7:5]
+  selecting sub-op (000 = SEXT, 001 = ZEXT). The F bit at instr[9]
+  selects FS0/FS1 from ST.
+- Core gains a field-extension datapath: `fs_selected` reads the
+  F-chosen FS bits from `st_value`; `field_mask` is built dynamically
+  (`(1 << fs_selected) - 1`, with FS=0 treated as identity per
+  Table 5-3's "encoding 00000 = size 32"); `sext_result` and
+  `zext_result` are then a mask + optional sign-fill.
+- Flag policy via wb_flag_mask: SEXT updates N, Z (C, V Unaffected);
+  ZEXT updates only Z (N, C, V Unaffected) — both spec-correct.
+- Added `sim/tb/tb_sext_zext.sv` running the spec's worked examples
+  verbatim: 6 SEXT vectors (FS = 15, 16, 17 × F = 0, 1) and 5 ZEXT
+  vectors (FS = 32-encoded-as-0, 31, 1, 16 × F = 0/1).
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect
