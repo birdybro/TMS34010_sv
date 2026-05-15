@@ -102,6 +102,12 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // PUSHST — push status register onto stack. Per SPVU001A summary
+  // table page A-16: single fixed encoding 0x01E0
+  // (`0000 0001 1110 0000`). Sets SP -= 32 then writes ST as a
+  // 32-bit word to mem[new_SP]. Status bits unaffected.
+  localparam instr_word_t PUSHST_OPCODE = 16'h01E0;
+
   // DINT / EINT — single-fixed-encoding interrupt-enable control.
   // Per SPVU001A summary table (page A-14):
   //   DINT = 0x0360  (0000 0011 0110 0000) — clear ST.IE (bit 21)
@@ -273,6 +279,7 @@ module tms34010_decode
     // selective updates (BTST → Z only; ABS → all but C) override
     // this in their arms below.
     decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b1};
+    decoded.needs_memory_op = 1'b0;
 
     // -----------------------------------------------------------------------
     // MOVI IW K, Rd
@@ -782,6 +789,29 @@ module tms34010_decode
       decoded.iclass      = INSTR_EINT;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // PUSHST — push ST onto the stack. Per SPVU001A summary table:
+    //   SP <- SP - 32; mem[SP] <- ST  (32-bit write).
+    // Single fixed encoding 0x01E0. Status bits Unaffected.
+    //
+    // ALU computes (SP - 32): alu_a = rf_rs1_data (reads A15 = SP via
+    // the regfile's SP-alias); alu_b = 32 via a new core-side mux
+    // entry; alu_op = SUB. Then the core fires a 32-bit memory write
+    // to alu_result with mem_wdata = st_value; finally WRITEBACK
+    // updates SP (rd_idx=15) with alu_result.
+    // -----------------------------------------------------------------------
+    if (instr == PUSHST_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PUSHST;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;     // write back to SP (= A15)
+      decoded.rs_idx          = REG_SP_IDX;     // read SP via rs1 port
+      decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
     end
 
     // -----------------------------------------------------------------------

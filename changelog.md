@@ -685,6 +685,33 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   still preserved. The scattered bit pattern in the seed catches
   any accidental wider write.
 
+### Added (Task 0047 — Memory-write infrastructure + PUSHST)
+- **Memory-write infrastructure** is now live. The core's
+  previously-stubbed `CORE_MEMORY` FSM state actively drives
+  `mem_req`/`mem_we`/`mem_addr`/`mem_size`/`mem_wdata` for write
+  transactions and transitions to `CORE_WRITEBACK` on `mem_ack`.
+  A new `decoded.needs_memory_op` field signals the decoder's
+  intent to slot a memory transaction between EXECUTE and WRITEBACK.
+- `sim_memory_model.sv` now handles 32-bit reads and writes
+  atomically: when `latched_size == 32`, two adjacent 16-bit words
+  are written/read in a single ack. (16-bit transactions remain
+  single-word as before.)
+- `instr_class_t` widened from 6 to 7 bits (INSTR_PUSHST = 64
+  overflowed the prior 6-bit cap).
+- **PUSHST** (= 0x01E0) implemented as the first user of the
+  memory-write path. `SP <- SP - 32; mem[SP] <- ST`. ALU computes
+  the new SP via SUB with `alu_b = 32` (new mux entry); the
+  CORE_MEMORY state writes ST to mem[alu_result] as a 32-bit
+  transfer; WRITEBACK updates SP (regfile index 15 = SP alias).
+  Status bits Unaffected per spec.
+- Added `sim/tb/tb_pushst.sv` — initializes SP to a mid-memory
+  bit-address, PUTSTs a seed pattern, runs PUSHST, then verifies
+  (a) SP decremented by 32, (b) both 16-bit memory words at the
+  new SP hold the low/high halves of ST, (c) ST itself is unchanged.
+- Going forward: POPST, CALL/CALLA/CALLR, RETS/RETI, TRAP, MMTM/
+  MMFM, MOVE memory-indirect, and MOVB all unblock on this
+  infrastructure.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

@@ -58,6 +58,7 @@ module sim_memory_model
   logic [ADDR_WIDTH-1:0]       latched_addr;
   logic                        latched_we;
   logic [DATA_WIDTH-1:0]       latched_wdata;
+  logic [FIELD_SIZE_WIDTH-1:0] latched_size;
 
   // Sim-only init: zero the backing store so addresses the testbench
   // hasn't preloaded read back as 0 rather than X. The memory model is
@@ -96,12 +97,14 @@ module sim_memory_model
             latched_addr  <= mem_addr;
             latched_we    <= mem_we;
             latched_wdata <= mem_wdata;
+            latched_size  <= mem_size;
             state_q       <= MEM_ACK;
-            // Surface alignment bugs early. 16-bit fetches must have
-            // mem_addr[3:0] == 0 in Phase 1.
-            if (!mem_we && mem_size == INSTR_WORD_BITS &&
+            // Surface alignment bugs early. Word-aligned fetches must
+            // have mem_addr[3:0] == 0 (16-bit-aligned).
+            if (!mem_we &&
+                (mem_size == INSTR_WORD_BITS || mem_size == 6'd32) &&
                 mem_addr[3:0] != 4'h0) begin
-              $display("sim_memory_model[%0t]: WARN: 16-bit read at non-aligned addr=%08h",
+              $display("sim_memory_model[%0t]: WARN: aligned read at non-aligned addr=%08h",
                        $time, mem_addr);
             end
           end
@@ -110,10 +113,21 @@ module sim_memory_model
         MEM_ACK: begin
           mem_ack <= 1'b1;
           if (latched_we) begin
+            // Write low half to word[idx]; for 32-bit writes also
+            // write high half to word[idx+1]. Atomic single-ack.
             mem[word_idx] <= latched_wdata[15:0];
-            mem_rdata     <= '0;
+            if (latched_size == 6'd32) begin
+              mem[word_idx + 1] <= latched_wdata[31:16];
+            end
+            mem_rdata <= '0;
           end else begin
-            mem_rdata <= {16'h0, mem[word_idx]};
+            // Read low half; for 32-bit reads also concat high half
+            // from word[idx+1].
+            if (latched_size == 6'd32) begin
+              mem_rdata <= {mem[word_idx + 1], mem[word_idx]};
+            end else begin
+              mem_rdata <= {16'h0, mem[word_idx]};
+            end
           end
           state_q <= MEM_IDLE;
         end

@@ -212,84 +212,85 @@ package tms34010_pkg;
   // Instruction class — used by the core control FSM to pick the
   // decode/execute/memory/writeback path. Widened to 6 bits in Task
   // 0029 when ADDC/SUBB pushed the count past 32.
-  typedef enum logic [5:0] {
-    INSTR_ILLEGAL    = 6'd0,
-    INSTR_MOVI_IW    = 6'd1,  // MOVI IW K, Rd    — 16-bit sign-extended immediate
-    INSTR_MOVI_IL    = 6'd2,  // MOVI IL K, Rd    — 32-bit immediate
-    INSTR_MOVK       = 6'd3,  // MOVK K, Rd       — 5-bit zero-extended constant
-    INSTR_ADD_RR     = 6'd4,  // ADD Rs, Rd       — Rs + Rd → Rd; both same file
-    INSTR_SUB_RR     = 6'd5,  // SUB Rs, Rd       — Rd - Rs → Rd; both same file
-    INSTR_AND_RR     = 6'd6,  // AND Rs, Rd       — Rd & Rs  → Rd
-    INSTR_ANDN_RR    = 6'd7,  // ANDN Rs, Rd      — Rd & ~Rs → Rd
-    INSTR_OR_RR      = 6'd8,  // OR Rs, Rd        — Rd | Rs  → Rd
-    INSTR_XOR_RR     = 6'd9,  // XOR Rs, Rd       — Rd ^ Rs  → Rd
-    INSTR_CMP_RR     = 6'd10, // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
-    INSTR_JRCC_SHORT = 6'd11, // JRcc short       — conditional relative jump
+  typedef enum logic [6:0] {
+    INSTR_ILLEGAL    = 7'd0,
+    INSTR_MOVI_IW    = 7'd1,  // MOVI IW K, Rd    — 16-bit sign-extended immediate
+    INSTR_MOVI_IL    = 7'd2,  // MOVI IL K, Rd    — 32-bit immediate
+    INSTR_MOVK       = 7'd3,  // MOVK K, Rd       — 5-bit zero-extended constant
+    INSTR_ADD_RR     = 7'd4,  // ADD Rs, Rd       — Rs + Rd → Rd; both same file
+    INSTR_SUB_RR     = 7'd5,  // SUB Rs, Rd       — Rd - Rs → Rd; both same file
+    INSTR_AND_RR     = 7'd6,  // AND Rs, Rd       — Rd & Rs  → Rd
+    INSTR_ANDN_RR    = 7'd7,  // ANDN Rs, Rd      — Rd & ~Rs → Rd
+    INSTR_OR_RR      = 7'd8,  // OR Rs, Rd        — Rd | Rs  → Rd
+    INSTR_XOR_RR     = 7'd9,  // XOR Rs, Rd       — Rd ^ Rs  → Rd
+    INSTR_CMP_RR     = 7'd10, // CMP Rs, Rd       — flags from (Rd - Rs); Rd unchanged
+    INSTR_JRCC_SHORT = 7'd11, // JRcc short       — conditional relative jump
                               //                    (cc=0 = UC = unconditional)
-    INSTR_ADDK       = 6'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
-    INSTR_SUBK       = 6'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
-    INSTR_NEG        = 6'd14, // NEG Rd           — 0 - Rd → Rd
-    INSTR_NOT        = 6'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
-    INSTR_ADDI_IW    = 6'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
-    INSTR_SUBI_IW    = 6'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
-    INSTR_CMPI_IW    = 6'd18, // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
-    INSTR_SLA_K      = 6'd19, // SLA K, Rd        — Rd << K (arithmetic, may set V)
-    INSTR_SLL_K      = 6'd20, // SLL K, Rd        — Rd << K (logical)
-    INSTR_SRA_K      = 6'd21, // SRA K, Rd        — Rd >>> K (arithmetic / sign-extend)
-    INSTR_SRL_K      = 6'd22, // SRL K, Rd        — Rd >> K  (logical, MSB ← 0)
-    INSTR_RL_K       = 6'd23, // RL K, Rd         — Rd ROL K (rotate left)
-    INSTR_ADDI_IL    = 6'd24, // ADDI IL K, Rd    — Rd + K32 → Rd
-    INSTR_SUBI_IL    = 6'd25, // SUBI IL K, Rd    — Rd - K32 → Rd
-    INSTR_CMPI_IL    = 6'd26, // CMPI IL K, Rd    — flags from Rd - K32; Rd unchanged
-    INSTR_ANDI_IL    = 6'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
-    INSTR_ORI_IL     = 6'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
-    INSTR_XORI_IL    = 6'd29, // XORI IL K, Rd    — Rd ^ K32 → Rd
-    INSTR_MOVE_RR    = 6'd30, // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)
-    INSTR_NOP        = 6'd31, // NOP              — no operation, PC advances only
-    INSTR_ADDC_RR    = 6'd32, // ADDC Rs, Rd      — Rs + Rd + C → Rd (carry-in)
-    INSTR_SUBB_RR    = 6'd33, // SUBB Rs, Rd      — Rd - Rs - C → Rd (borrow-in)
-    INSTR_JRCC_LONG  = 6'd34, // JRcc Address     — long form: 16-bit signed disp
+    INSTR_ADDK       = 7'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
+    INSTR_SUBK       = 7'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
+    INSTR_NEG        = 7'd14, // NEG Rd           — 0 - Rd → Rd
+    INSTR_NOT        = 7'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
+    INSTR_ADDI_IW    = 7'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
+    INSTR_SUBI_IW    = 7'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
+    INSTR_CMPI_IW    = 7'd18, // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
+    INSTR_SLA_K      = 7'd19, // SLA K, Rd        — Rd << K (arithmetic, may set V)
+    INSTR_SLL_K      = 7'd20, // SLL K, Rd        — Rd << K (logical)
+    INSTR_SRA_K      = 7'd21, // SRA K, Rd        — Rd >>> K (arithmetic / sign-extend)
+    INSTR_SRL_K      = 7'd22, // SRL K, Rd        — Rd >> K  (logical, MSB ← 0)
+    INSTR_RL_K       = 7'd23, // RL K, Rd         — Rd ROL K (rotate left)
+    INSTR_ADDI_IL    = 7'd24, // ADDI IL K, Rd    — Rd + K32 → Rd
+    INSTR_SUBI_IL    = 7'd25, // SUBI IL K, Rd    — Rd - K32 → Rd
+    INSTR_CMPI_IL    = 7'd26, // CMPI IL K, Rd    — flags from Rd - K32; Rd unchanged
+    INSTR_ANDI_IL    = 7'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
+    INSTR_ORI_IL     = 7'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
+    INSTR_XORI_IL    = 7'd29, // XORI IL K, Rd    — Rd ^ K32 → Rd
+    INSTR_MOVE_RR    = 7'd30, // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)
+    INSTR_NOP        = 7'd31, // NOP              — no operation, PC advances only
+    INSTR_ADDC_RR    = 7'd32, // ADDC Rs, Rd      — Rs + Rd + C → Rd (carry-in)
+    INSTR_SUBB_RR    = 7'd33, // SUBB Rs, Rd      — Rd - Rs - C → Rd (borrow-in)
+    INSTR_JRCC_LONG  = 7'd34, // JRcc Address     — long form: 16-bit signed disp
                               //                    in the following word; target =
                               //                    PC_after_both_fetches + disp*16
-    INSTR_JUMP_RS    = 6'd35, // JUMP Rs          — Rs → PC (bottom 4 bits cleared)
-    INSTR_DSJ        = 6'd36, // DSJ Rd, Address  — Rd-1→Rd; if Rd!=0 branch (long form)
-    INSTR_DSJEQ      = 6'd37, // DSJEQ Rd, Address — if Z=1: DSJ semantics; else skip
-    INSTR_DSJNE      = 6'd38, // DSJNE Rd, Address — if Z=0: DSJ semantics; else skip
-    INSTR_JACC       = 6'd39, // JAcc Address      — absolute-form conditional jump
+    INSTR_JUMP_RS    = 7'd35, // JUMP Rs          — Rs → PC (bottom 4 bits cleared)
+    INSTR_DSJ        = 7'd36, // DSJ Rd, Address  — Rd-1→Rd; if Rd!=0 branch (long form)
+    INSTR_DSJEQ      = 7'd37, // DSJEQ Rd, Address — if Z=1: DSJ semantics; else skip
+    INSTR_DSJNE      = 7'd38, // DSJNE Rd, Address — if Z=0: DSJ semantics; else skip
+    INSTR_JACC       = 7'd39, // JAcc Address      — absolute-form conditional jump
                               //                     (low byte = 0x80; 32-bit abs addr follows)
-    INSTR_DSJS       = 6'd40, // DSJS Rd, Address  — short form: 5-bit offset + 1-bit
+    INSTR_DSJS       = 7'd40, // DSJS Rd, Address  — short form: 5-bit offset + 1-bit
                               //                     direction; single-word instruction
-    INSTR_ABS        = 6'd41, // ABS Rd            — |Rd| → Rd (V on MIN_INT)
-    INSTR_NEGB       = 6'd42, // NEGB Rd           — (2s_comp Rd) - C → Rd (borrow-in)
-    INSTR_BTST_K     = 6'd43, // BTST K, Rd        — test bit K of Rd; only Z updates
-    INSTR_BTST_RR    = 6'd44, // BTST Rs, Rd       — test bit Rs[4:0] of Rd; Z only
-    INSTR_CLRC       = 6'd45, // CLRC              — ST.C ← 0; N, Z, V unchanged
-    INSTR_SETC       = 6'd46, // SETC              — ST.C ← 1; N, Z, V unchanged
-    INSTR_GETST      = 6'd47, // GETST Rd          — Rd ← ST
-    INSTR_PUTST      = 6'd48, // PUTST Rs          — ST ← Rs (full 32-bit write)
-    INSTR_SLA_RR     = 6'd49, // SLA Rs, Rd        — shift left arithmetic by Rs[4:0]
-    INSTR_SLL_RR     = 6'd50, // SLL Rs, Rd        — shift left logical by Rs[4:0]
-    INSTR_SRA_RR     = 6'd51, // SRA Rs, Rd        — shift right arithmetic by 2sCmp(Rs[4:0])
-    INSTR_SRL_RR     = 6'd52, // SRL Rs, Rd        — shift right logical by 2sCmp(Rs[4:0])
-    INSTR_RL_RR      = 6'd53, // RL  Rs, Rd        — rotate left by Rs[4:0]
-    INSTR_GETPC      = 6'd54, // GETPC Rd          — Rd ← PC (current bit-addressed PC)
-    INSTR_EXGPC      = 6'd55, // EXGPC Rd          — swap PC ↔ Rd (PC's low 4 bits cleared)
-    INSTR_REV        = 6'd56, // REV Rd            — Rd ← chip-revision number constant
-    INSTR_LMO_RR     = 6'd57, // LMO Rs, Rd        — Rd ← 31 - bit_pos(leftmost-1 in Rs)
+    INSTR_ABS        = 7'd41, // ABS Rd            — |Rd| → Rd (V on MIN_INT)
+    INSTR_NEGB       = 7'd42, // NEGB Rd           — (2s_comp Rd) - C → Rd (borrow-in)
+    INSTR_BTST_K     = 7'd43, // BTST K, Rd        — test bit K of Rd; only Z updates
+    INSTR_BTST_RR    = 7'd44, // BTST Rs, Rd       — test bit Rs[4:0] of Rd; Z only
+    INSTR_CLRC       = 7'd45, // CLRC              — ST.C ← 0; N, Z, V unchanged
+    INSTR_SETC       = 7'd46, // SETC              — ST.C ← 1; N, Z, V unchanged
+    INSTR_GETST      = 7'd47, // GETST Rd          — Rd ← ST
+    INSTR_PUTST      = 7'd48, // PUTST Rs          — ST ← Rs (full 32-bit write)
+    INSTR_SLA_RR     = 7'd49, // SLA Rs, Rd        — shift left arithmetic by Rs[4:0]
+    INSTR_SLL_RR     = 7'd50, // SLL Rs, Rd        — shift left logical by Rs[4:0]
+    INSTR_SRA_RR     = 7'd51, // SRA Rs, Rd        — shift right arithmetic by 2sCmp(Rs[4:0])
+    INSTR_SRL_RR     = 7'd52, // SRL Rs, Rd        — shift right logical by 2sCmp(Rs[4:0])
+    INSTR_RL_RR      = 7'd53, // RL  Rs, Rd        — rotate left by Rs[4:0]
+    INSTR_GETPC      = 7'd54, // GETPC Rd          — Rd ← PC (current bit-addressed PC)
+    INSTR_EXGPC      = 7'd55, // EXGPC Rd          — swap PC ↔ Rd (PC's low 4 bits cleared)
+    INSTR_REV        = 7'd56, // REV Rd            — Rd ← chip-revision number constant
+    INSTR_LMO_RR     = 7'd57, // LMO Rs, Rd        — Rd ← 31 - bit_pos(leftmost-1 in Rs)
                               //                     in bottom 5 bits; upper 27 bits = 0;
                               //                     Z = (Rs == 0); N/C/V unaffected
-    INSTR_SETF       = 6'd58, // SETF FS, FE, F    — set field-size params for FS<F>/FE<F>
+    INSTR_SETF       = 7'd58, // SETF FS, FE, F    — set field-size params for FS<F>/FE<F>
                               //                     (F bit at instr[9]; FE at instr[5];
                               //                     FS at instr[4:0]). Status unaffected.
-    INSTR_SEXT       = 6'd59, // SEXT Rd, F        — sign-extend low FS<F> bits to 32;
+    INSTR_SEXT       = 7'd59, // SEXT Rd, F        — sign-extend low FS<F> bits to 32;
                               //                     flags N, Z (C, V unaffected via mask).
-    INSTR_ZEXT       = 6'd60, // ZEXT Rd, F        — zero-extend low FS<F> bits to 32;
+    INSTR_ZEXT       = 7'd60, // ZEXT Rd, F        — zero-extend low FS<F> bits to 32;
                               //                     flag Z only (N, C, V unaffected).
-    INSTR_EXGF       = 6'd61, // EXGF Rd, F        — atomic swap Rd[5:0] ↔ FE<F>:FS<F>
+    INSTR_EXGF       = 7'd61, // EXGF Rd, F        — atomic swap Rd[5:0] ↔ FE<F>:FS<F>
                               //                     in ST; Rd[31:6] cleared. Status
                               //                     bits all "Unaffected".
-    INSTR_DINT       = 6'd62, // DINT              — clear ST.IE  (disable interrupts)
-    INSTR_EINT       = 6'd63  // EINT              — set ST.IE    (enable interrupts)
+    INSTR_DINT       = 7'd62, // DINT              — clear ST.IE  (disable interrupts)
+    INSTR_EINT       = 7'd63, // EINT              — set ST.IE    (enable interrupts)
+    INSTR_PUSHST     = 7'd64  // PUSHST            — SP -= 32; mem[SP] <- ST (32-bit write)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
@@ -338,6 +339,11 @@ package tms34010_pkg;
     // (the default for arithmetic). BTST uses {n:0,c:0,z:1,v:0}; ABS
     // uses {n:1,c:0,z:1,v:1} to leave C "Unaffected" per spec.
     alu_flags_t    wb_flag_mask;
+    // 1 ⇒ instruction includes a memory transaction (read or write)
+    // in the CORE_MEMORY state between EXECUTE and WRITEBACK. PUSHST
+    // is the first user; later: POPST, CALL, RETS, MMTM, MMFM, MOVE
+    // indirect, MOVB, TRAP.
+    logic          needs_memory_op;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg

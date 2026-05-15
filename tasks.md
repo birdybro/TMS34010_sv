@@ -51,7 +51,8 @@
 | 0043 | SETF FS, FE, F (set field-size params) | complete |
 | 0044 | SEXT / ZEXT Rd, F (field-size extension) | complete |
 | 0045 | EXGF Rd, F (exchange field definition) | complete |
-| 0046 | DINT / EINT (interrupt-enable control) | in progress |
+| 0046 | DINT / EINT (interrupt-enable control) | complete |
+| 0047 | Memory-write infrastructure + PUSHST | in progress |
 
 ---
 
@@ -1554,7 +1555,7 @@ Commit:
 ---
 
 ### Task 0046: DINT / EINT — interrupt-enable control
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0042 (ST.IE bit position pinned at bit 21).
 - Task 0038 (full ST-write path; reused).
@@ -1579,6 +1580,55 @@ Acceptance Criteria:
 Tests: tb_dint_eint PASS; lint clean.
 Docs: instruction_coverage.md (DINT + EINT rows), changelog.md,
   tasks.md.
+Commit:
+- 5e6c3c9
+
+---
+
+### Task 0047: Memory-write infrastructure + PUSHST
+Status: in progress
+Dependencies:
+- Task 0042 (ST register pinning — PUSHST writes the full ST value).
+- Task 0009 (regfile SP alias — PUSHST reads/writes A15 = SP).
+Spec source: SPVU001A summary table page A-16 (PUSHST = 0x01E0).
+  PUSHST is `SP <- SP - 32; mem[SP] <- ST` with status bits Unaffected.
+Acceptance Criteria:
+- **Architectural changes**:
+  - `decoded_instr_t` gains a `needs_memory_op` field that the
+    decoder sets when an instruction requires a CORE_MEMORY-state
+    transaction between EXECUTE and WRITEBACK.
+  - The core's FSM transition `CORE_EXECUTE → state_d` now selects
+    `CORE_MEMORY` when `needs_memory_op` is set, else
+    `CORE_WRITEBACK` as before.
+  - The previously-stubbed `CORE_MEMORY` state now drives the
+    memory IF (`mem_req`, `mem_we`, `mem_addr`, `mem_size`,
+    `mem_wdata`) for write transactions and waits for `mem_ack`
+    before transitioning to `CORE_WRITEBACK`.
+  - `sim_memory_model.sv` extended to atomically handle 32-bit
+    writes (and reads): when `latched_size == 6'd32`, two adjacent
+    16-bit words are written/read in a single ack.
+  - `instr_class_t` widened from 6 to 7 bits to accommodate
+    INSTR_PUSHST (= 6'd64, which overflowed the previous 6-bit cap).
+- **PUSHST instruction**:
+  - INSTR_PUSHST = 7'd64.
+  - Decoder arm matching the literal 0x01E0 encoding. Sets
+    `rs_idx = 15` (read SP via rs1), `rd_idx = 15` (write back
+    to SP), `alu_op = SUB`, `wb_reg_en = 1`, `wb_flags_en = 0`,
+    `needs_memory_op = 1`.
+  - Core's alu_b mux gets an `INSTR_PUSHST → 32'd32` entry so the
+    ALU computes `SP - 32`.
+  - The CORE_MEMORY state drives the memory write with
+    `mem_addr = alu_result`, `mem_wdata = st_value`, `mem_size = 32`.
+- `sim/tb/tb_pushst.sv` initializes SP = `0x0000_0800` (= word 128),
+  PUTSTs a seed ST = `0xC3C3_03C3`, runs PUSHST, then verifies:
+  (a) SP = `0x0000_07E0`, (b) `mem[word 126]` = `0x03C3`, `mem[word 127]`
+  = `0xC3C3`, (c) ST itself is unchanged. The standard halt/run pattern.
+- This is the FIRST instruction in the project that uses the memory
+  write path; future tasks (POPST, CALL, RETS, MMTM, MMFM, TRAP,
+  MOVE *Rd) will all build on this scaffolding.
+Tests: tb_pushst PASS; full Verilator regression PASS; lint clean.
+Docs: instruction_coverage.md (PUSHST row added with the memory
+  column = "write"), changelog.md, tasks.md.
 Commit:
 - pending
 

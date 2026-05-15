@@ -89,6 +89,7 @@ Required columns:
 | EXGF Rd, F | `1101 01F1 000R DDDD` (= `0xD500 \| (F<<9) \| (R<<4) \| Rd`) | SPVU001A page 12-77 + summary table | implemented | tb_exgf | **none** (Unaffected) | none | TBD | Atomic swap: Rd[5:0] ↔ {FE<F>, FS<F>} in ST. Rd's upper 26 bits cleared after the swap. Core uses async-read rf_rs2_data to read the OLD Rd value while writing the new (FE:FS) value in the same WRITEBACK cycle. |
 | DINT | `0x0360` (single fixed encoding) | SPVU001A summary table | implemented | tb_dint_eint | **none** (Unaffected) | none | TBD | Clear ST.IE (bit 21) — disable maskable interrupts. Implemented via the full-ST-write path with `st_value & ~(1<<21)`. |
 | EINT | `0x0D60` (single fixed encoding) | SPVU001A summary table | implemented | tb_dint_eint | **none** (Unaffected) | none | TBD | Set ST.IE (bit 21) — enable maskable interrupts. Symmetric to DINT. |
+| PUSHST | `0x01E0` (single fixed encoding) | SPVU001A summary table page A-16 | implemented | tb_pushst | **none** (Unaffected) | **write** (32-bit) | TBD | `SP <- SP - 32; mem[SP] <- ST`. First user of the memory-write infrastructure (Task 0047): introduces `decoded.needs_memory_op` + the active CORE_MEMORY FSM state + 32-bit writes through the sim memory model. ALU computes the new SP via SUB with alu_b = 32. Single-cycle memory write thanks to the model's word-pair atomic ack. |
 
 ## Categories to populate (placeholder roadmap)
 

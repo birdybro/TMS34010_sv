@@ -479,6 +479,7 @@ module tms34010_core
       INSTR_DSJS:    alu_b = {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_BTST_K:  alu_b = 32'd1 << decoded.k5;
       INSTR_BTST_RR: alu_b = 32'd1 << rf_rs1_data[4:0];
+      INSTR_PUSHST:  alu_b = 32'd32;
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -802,15 +803,28 @@ module tms34010_core
 
       CORE_EXECUTE: begin
         // ALU output and flags are combinational from decoded.alu_op,
-        // alu_a, alu_b, and st_c. CORE_EXECUTE simply lets that result
-        // settle for one cycle so CORE_WRITEBACK can latch it.
-        state_d = CORE_WRITEBACK;
+        // alu_a, alu_b, and st_c. CORE_EXECUTE lets that result settle
+        // for one cycle. For instructions that need a memory
+        // transaction (PUSHST and the rest of the stack/CALL family),
+        // route through CORE_MEMORY first; otherwise go straight to
+        // CORE_WRITEBACK.
+        state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
 
       CORE_MEMORY: begin
-        // Unused in Phase 3 — no instruction yet reaches this state.
-        // Reserved for memory-touching instructions (Phase 4+).
-        state_d = CORE_WRITEBACK;
+        // Memory transaction state. For now only PUSHST exercises this
+        // (write ST to mem[alu_result] as a 32-bit transfer). The
+        // memory IF is driven below; on ack we move to WRITEBACK.
+        if (decoded.iclass == INSTR_PUSHST) begin
+          mem_req   = 1'b1;
+          mem_we    = 1'b1;
+          mem_addr  = alu_result;        // = SP - 32
+          mem_size  = 6'd32;
+          mem_wdata = st_value;          // ST
+        end
+        if (mem_ack) begin
+          state_d = CORE_WRITEBACK;
+        end
       end
 
       CORE_WRITEBACK: begin
