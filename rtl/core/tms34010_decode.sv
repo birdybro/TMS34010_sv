@@ -102,6 +102,15 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // DINT / EINT — single-fixed-encoding interrupt-enable control.
+  // Per SPVU001A summary table (page A-14):
+  //   DINT = 0x0360  (0000 0011 0110 0000) — clear ST.IE (bit 21)
+  //   EINT = 0x0D60  (0000 1101 0110 0000) — set ST.IE
+  // Status flag bits (N, C, Z, V) all unaffected. Implemented via
+  // a full ST-write that reads current ST, modifies bit 21, writes back.
+  localparam instr_word_t DINT_OPCODE = 16'h0360;
+  localparam instr_word_t EINT_OPCODE = 16'h0D60;
+
   // EXGF Rd, F — Exchange Field Definition. Per SPVU001A page 12-77 +
   // summary table line 26954. Encoding `1101 01F1 000R DDDD`:
   //   bits[15:10] = 6'b110101  (= 0x35)
@@ -753,6 +762,26 @@ module tms34010_decode
       decoded.rd_idx       = reg_idx_from_instr;
       decoded.wb_reg_en    = 1'b1;
       decoded.wb_flags_en  = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // DINT : clear ST.IE (disable interrupts). Single fixed encoding 0x0360.
+    // EINT : set   ST.IE (enable  interrupts). Single fixed encoding 0x0D60.
+    // Status bits N, C, Z, V all unaffected. The core constructs the new
+    // ST value by reading current st_value, clearing or setting bit 21,
+    // and using the existing full-ST-write path.
+    // -----------------------------------------------------------------------
+    if (instr == DINT_OPCODE) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_DINT;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+    end
+    if (instr == EINT_OPCODE) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_EINT;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
     end
 
     // -----------------------------------------------------------------------

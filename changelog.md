@@ -668,6 +668,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   because MOVI's default wb_flag_mask updates N/C/Z/V and would
   otherwise clobber the freshly-PUTST'd ST.
 
+### Added (Task 0046 — DINT and EINT)
+- Implemented **DINT (`0x0360`)** and **EINT (`0x0D60`)** — single-
+  fixed-encoding interrupt-enable control instructions. DINT clears
+  ST.IE (bit 21); EINT sets it. All status flag bits Unaffected.
+  Implemented via the existing full-ST-write path with a small
+  st_write_data mux extension:
+    INSTR_DINT → `st_value & ~(1 << ST_IE_BIT)`
+    INSTR_EINT → `st_value |  (1 << ST_IE_BIT)`
+- `st_write_en` now triggers for {PUTST, SETF, EXGF, DINT, EINT}.
+- Finally uses the `ST_IE_BIT` constant from Task 0042 — resolves
+  one of the UNUSEDPARAM lint warnings.
+- Added `sim/tb/tb_dint_eint.sv` — PUTSTs the seed value
+  `0xA5A5_05A5 & ~IE`, then EINT → GETST → check IE=1 and other
+  bits preserved, then DINT → GETST → check IE=0 and other bits
+  still preserved. The scattered bit pattern in the seed catches
+  any accidental wider write.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

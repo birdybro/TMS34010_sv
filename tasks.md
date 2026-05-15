@@ -50,7 +50,8 @@
 | 0042 | ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX) | complete |
 | 0043 | SETF FS, FE, F (set field-size params) | complete |
 | 0044 | SEXT / ZEXT Rd, F (field-size extension) | complete |
-| 0045 | EXGF Rd, F (exchange field definition) | in progress |
+| 0045 | EXGF Rd, F (exchange field definition) | complete |
+| 0046 | DINT / EINT (interrupt-enable control) | in progress |
 
 ---
 
@@ -1507,7 +1508,7 @@ Commit:
 ---
 
 ### Task 0045: EXGF Rd, F (Exchange Field Definition)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0042 (ST field-size constants).
 - Task 0038 (PUTST path / `st_write_en` machinery; used by EXGF to
@@ -1547,6 +1548,37 @@ Acceptance Criteria:
 Tests: tb_exgf PASS; tb_st_ops/tb_setf/tb_sext_zext also PASS;
   lint clean.
 Docs: instruction_coverage.md (EXGF row), changelog.md, tasks.md.
+Commit:
+- b883a89
+
+---
+
+### Task 0046: DINT / EINT — interrupt-enable control
+Status: in progress
+Dependencies:
+- Task 0042 (ST.IE bit position pinned at bit 21).
+- Task 0038 (full ST-write path; reused).
+Spec source: SPVU001A summary table page A-14. Encodings:
+  DINT = 0x0360 (clear IE), EINT = 0x0D60 (set IE). Status N, C, Z, V
+  all "Unaffected".
+Acceptance Criteria:
+- INSTR_DINT = 6'd62, INSTR_EINT = 6'd63.
+- Decoder arms matching the two single-fixed encodings.
+- Core's `st_write_en` extended to fire for INSTR_DINT and
+  INSTR_EINT (now `iclass ∈ {PUTST, SETF, EXGF, DINT, EINT}`).
+- Core's `st_write_data` mux adds:
+    INSTR_DINT → `st_value & ~(1 << ST_IE_BIT)`
+    INSTR_EINT → `st_value |  (1 << ST_IE_BIT)`
+- `sim/tb/tb_dint_eint.sv` seeds ST via PUTST with a known
+  bit-pattern (IE=0), runs EINT then GETST, runs DINT then GETST,
+  and verifies (a) the IE bit toggles as expected and (b) all
+  other ST bits are preserved (the pattern `0xA5A5_05A5` has bits
+  scattered so any accidental wider write is detected).
+- IE bit position `ST_IE_BIT` from Task 0042 now finally used —
+  resolves one of the UNUSEDPARAM lint warnings.
+Tests: tb_dint_eint PASS; lint clean.
+Docs: instruction_coverage.md (DINT + EINT rows), changelog.md,
+  tasks.md.
 Commit:
 - pending
 

@@ -519,12 +519,16 @@ module tms34010_core
   assign st_write_en = (state_q == CORE_WRITEBACK)
                     && ((decoded.iclass == INSTR_PUTST) ||
                         (decoded.iclass == INSTR_SETF)  ||
-                        (decoded.iclass == INSTR_EXGF));
+                        (decoded.iclass == INSTR_EXGF)  ||
+                        (decoded.iclass == INSTR_DINT)  ||
+                        (decoded.iclass == INSTR_EINT));
   always_comb begin
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
       INSTR_SETF:  st_write_data = setf_new_st;
       INSTR_EXGF:  st_write_data = exgf_new_st;
+      INSTR_DINT:  st_write_data = st_value & ~(32'd1 << ST_IE_BIT);
+      INSTR_EINT:  st_write_data = st_value |  (32'd1 << ST_IE_BIT);
       default:     st_write_data = '0;
     endcase
   end

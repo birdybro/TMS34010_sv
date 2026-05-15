@@ -87,6 +87,8 @@ Required columns:
 | SEXT Rd, F | `0000 01F1 000R DDDD` (= `0x0500 \| (F<<9) \| (R<<4) \| Rd`) | SPVU001A page 12-238 + summary table | implemented | tb_sext_zext | N, Z (C, V Unaffected via wb_flag_mask) | none | TBD | Sign-extend the low `FS<F>` bits of Rd to 32 bits. F bit at instr[9] selects FS0 (F=0) or FS1 (F=1) from ST. FS = 5'b00000 encodes field-size 32 (identity). |
 | ZEXT Rd, F | `0000 01F1 001R DDDD` (= `0x0520 \| (F<<9) \| (R<<4) \| Rd`) | SPVU001A page 12-256 + summary table | implemented | tb_sext_zext | **Z only** (N, C, V Unaffected) | none | TBD | Zero-extend the low `FS<F>` bits of Rd to 32 bits. Same F-bit + FS source as SEXT. |
 | EXGF Rd, F | `1101 01F1 000R DDDD` (= `0xD500 \| (F<<9) \| (R<<4) \| Rd`) | SPVU001A page 12-77 + summary table | implemented | tb_exgf | **none** (Unaffected) | none | TBD | Atomic swap: Rd[5:0] ↔ {FE<F>, FS<F>} in ST. Rd's upper 26 bits cleared after the swap. Core uses async-read rf_rs2_data to read the OLD Rd value while writing the new (FE:FS) value in the same WRITEBACK cycle. |
+| DINT | `0x0360` (single fixed encoding) | SPVU001A summary table | implemented | tb_dint_eint | **none** (Unaffected) | none | TBD | Clear ST.IE (bit 21) — disable maskable interrupts. Implemented via the full-ST-write path with `st_value & ~(1<<21)`. |
+| EINT | `0x0D60` (single fixed encoding) | SPVU001A summary table | implemented | tb_dint_eint | **none** (Unaffected) | none | TBD | Set ST.IE (bit 21) — enable maskable interrupts. Symmetric to DINT. |
 
 ## Categories to populate (placeholder roadmap)
 

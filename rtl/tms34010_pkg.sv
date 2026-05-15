@@ -285,9 +285,11 @@ package tms34010_pkg;
                               //                     flags N, Z (C, V unaffected via mask).
     INSTR_ZEXT       = 6'd60, // ZEXT Rd, F        — zero-extend low FS<F> bits to 32;
                               //                     flag Z only (N, C, V unaffected).
-    INSTR_EXGF       = 6'd61  // EXGF Rd, F        — atomic swap Rd[5:0] ↔ FE<F>:FS<F>
+    INSTR_EXGF       = 6'd61, // EXGF Rd, F        — atomic swap Rd[5:0] ↔ FE<F>:FS<F>
                               //                     in ST; Rd[31:6] cleared. Status
                               //                     bits all "Unaffected".
+    INSTR_DINT       = 6'd62, // DINT              — clear ST.IE  (disable interrupts)
+    INSTR_EINT       = 6'd63  // EINT              — set ST.IE    (enable interrupts)
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
