@@ -275,9 +275,12 @@ package tms34010_pkg;
     INSTR_GETPC      = 6'd54, // GETPC Rd          — Rd ← PC (current bit-addressed PC)
     INSTR_EXGPC      = 6'd55, // EXGPC Rd          — swap PC ↔ Rd (PC's low 4 bits cleared)
     INSTR_REV        = 6'd56, // REV Rd            — Rd ← chip-revision number constant
-    INSTR_LMO_RR     = 6'd57  // LMO Rs, Rd        — Rd ← 31 - bit_pos(leftmost-1 in Rs)
+    INSTR_LMO_RR     = 6'd57, // LMO Rs, Rd        — Rd ← 31 - bit_pos(leftmost-1 in Rs)
                               //                     in bottom 5 bits; upper 27 bits = 0;
                               //                     Z = (Rs == 0); N/C/V unaffected
+    INSTR_SETF       = 6'd58  // SETF FS, FE, F    — set field-size params for FS<F>/FE<F>
+                              //                     (F bit at instr[9]; FE at instr[5];
+                              //                     FS at instr[4:0]). Status unaffected.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

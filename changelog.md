@@ -614,6 +614,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - No instruction changes in this task — it's foundational for the
   upcoming SETF / EXGF / SEXT / ZEXT / DINT / EINT tasks.
 
+### Added (Task 0043 — SETF FS, FE, F)
+- Implemented **SETF FS, FE, F** per SPVU001A page 12-237. Encoding
+  `0000 01F1 01FE FFFFF` — bit[9]=F selector, bit[5]=FE, bits[4:0]=FS.
+  When F=0, updates FS0/FE0; when F=1, updates FS1/FE1. FS=0 encodes
+  field-size 32 (per Table 5-3). Other ST bits (flags, the other FS/FE
+  pair, IE, PBX, reserved) are preserved — verified end-to-end by a
+  CMP-set-NCZV → SETF → GETST sequence in tb_setf.
+- Core changes:
+  - `st_write_en` now fires for both INSTR_PUTST (existing) and
+    INSTR_SETF.
+  - `st_write_data` is a small case mux: PUTST routes Rs unchanged;
+    SETF routes a spliced-ST value built by reading the current
+    `st_value` and overwriting the F-selected FS/FE bits with the
+    literal values pulled directly from `instr_word_q[4:0]` and
+    `instr_word_q[5]`.
+- Added `sim/tb/tb_setf.sv` — 5 scenarios covering FS0/FE0 update,
+  FS1/FE1 update, FS=0 encodes 32, FS=31 boundary, and N/C/V/Z
+  preservation across SETF.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

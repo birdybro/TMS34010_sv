@@ -102,6 +102,17 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // SETF FS, FE, F — Set Field Parameters. Per SPVU001A page 12-237 +
+  // summary table line 26978. Encoding `0000 01F1 01FE FFFF`:
+  //   bits[15:10] = 6'b000001  (top6 of the field-size-config family)
+  //   bit[9]      = F  (selector: 0 = update FS0/FE0; 1 = update FS1/FE1)
+  //   bit[8]      = 1  (constant — distinguishes from JUMP/family at bits[15:8]=0x01)
+  //   bits[7:6]   = 2'b01 (SETF sub-op marker; SEXT/ZEXT use 00x here)
+  //   bit[5]      = FE (new FE value)
+  //   bits[4:0]   = FS (new FS value; 5'b00000 → field-size 32)
+  // Status bits all "Unaffected" per spec.
+  localparam logic [5:0] SETF_TOP6  = 6'b000001;
+
   // LMO Rs, Rd (Leftmost-One priority encoder). Per SPVU001A page 12-108
   // + summary table line 26955: encoding `0110 101S SSSR DDDD`
   // (top7 = 7'b0110_101 = 0x35). Rs and Rd same file; result =
@@ -664,6 +675,20 @@ module tms34010_decode
       decoded.wb_reg_en    = 1'b1;
       decoded.wb_flags_en  = 1'b1;
       decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
+    // SETF FS, FE, F : update the field-size pair selected by F bit
+    // (instr[9]).  Status bits unaffected. The core constructs the new
+    // ST value by reading st_value, modifying the F-selected FS/FE
+    // bits, and writing back via st_write_en. Operand extraction
+    // happens in the core directly from instr_word_q (F, FE, FS).
+    // -----------------------------------------------------------------------
+    if (instr[15:10] == SETF_TOP6 && instr[8] && (instr[7:6] == 2'b01)) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_SETF;
+      decoded.wb_reg_en    = 1'b0;
+      decoded.wb_flags_en  = 1'b0;
     end
 
     // -----------------------------------------------------------------------

@@ -430,11 +430,41 @@ module tms34010_core
   // Status-register inputs. Flag-update is gated by FSM state, like the
   // regfile write. Full ST write port is unused until POPST lands.
   assign st_flag_update_en = (state_q == CORE_WRITEBACK) && decoded.wb_flags_en;
-  // PUTST: fire the full ST-write port in CORE_WRITEBACK with Rs as
-  // the new 32-bit ST value. Other instructions leave the full-write
-  // port idle.
-  assign st_write_en   = (state_q == CORE_WRITEBACK) && (decoded.iclass == INSTR_PUTST);
-  assign st_write_data = rf_rs1_data;
+  // ST-write data + enable. Two instructions drive the full ST-write
+  // path:
+  //   PUTST Rs: ST ← Rs (full copy).
+  //   SETF FS, FE, F: read current ST, splice the F-selected FS/FE
+  //                   pair with the new values from the instruction
+  //                   word, write back.
+  //
+  // SETF operand extraction (from instr_word_q):
+  //   F  = instr_word_q[9]
+  //   FE = instr_word_q[5]
+  //   FS = instr_word_q[4:0]
+  logic [DATA_WIDTH-1:0] setf_new_st;
+  always_comb begin
+    setf_new_st = st_value;  // start from current
+    if (instr_word_q[9]) begin
+      // F=1: update FS1 (bits[10:6]) and FE1 (bit[11]).
+      setf_new_st[ST_FS1_HI:ST_FS1_LO] = instr_word_q[4:0];
+      setf_new_st[ST_FE1_BIT]          = instr_word_q[5];
+    end else begin
+      // F=0: update FS0 (bits[4:0]) and FE0 (bit[5]).
+      setf_new_st[ST_FS0_HI:ST_FS0_LO] = instr_word_q[4:0];
+      setf_new_st[ST_FE0_BIT]          = instr_word_q[5];
+    end
+  end
+
+  assign st_write_en = (state_q == CORE_WRITEBACK)
+                    && ((decoded.iclass == INSTR_PUTST) ||
+                        (decoded.iclass == INSTR_SETF));
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_PUTST: st_write_data = rf_rs1_data;
+      INSTR_SETF:  st_write_data = setf_new_st;
+      default:     st_write_data = '0;
+    endcase
+  end
 
   // ---- Branch-condition evaluator -----------------------------------------
   // Combinational decode of decoded.branch_cc against the current ST

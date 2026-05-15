@@ -47,7 +47,8 @@
 | 0039 | Shift Rs-form (SLA/SLL/SRA/SRL/RL with Rs amount) | complete |
 | 0040 | GETPC / EXGPC / REV (PC + revision register ops) | complete |
 | 0041 | LMO Rs, Rd (Leftmost-One priority encoder) | complete |
-| 0042 | ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX) | in progress |
+| 0042 | ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX) | complete |
+| 0043 | SETF FS, FE, F (set field-size params) | in progress |
 
 ---
 
@@ -1391,7 +1392,7 @@ Commit:
 ---
 
 ### Task 0042: ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX positions + reset value)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0009 (status register exists).
 - Task 0037 (per-flag mask machinery, prerequisite for Phase 5).
@@ -1421,6 +1422,43 @@ Tests: 13/13 Verilator regression PASS; lint clean (modulo
 Docs: assumptions.md (A0010 marked RESOLVED with full layout),
   changelog.md, tasks.md. No instruction_coverage.md change since no
   instructions land here.
+Commit:
+- d7a0ed3
+
+---
+
+### Task 0043: SETF FS, FE, F (set field-size parameters)
+Status: in progress
+Dependencies:
+- Task 0042 (ST layout constants + reset value).
+Spec source: SPVU001A page 12-237 + summary table line 26978.
+  Encoding bits: `[15:10]=000001 [9]=F [8]=1 [7:6]=01 [5]=FE [4:0]=FS`.
+  Per spec, F selects the FS/FE pair (0 = FS0/FE0; 1 = FS1/FE1).
+  FS = 0 encodes field-size 32 (Table 5-3). All status bits "Unaffected".
+Acceptance Criteria:
+- INSTR_SETF = 6'd58 added.
+- Decoder predicate: top6 = 6'b000001, bit[8] = 1, bits[7:6] = 2'b01.
+- Core's `st_write_en` extended to fire for INSTR_SETF as well as
+  INSTR_PUTST.
+- Core's `st_write_data` becomes a mux:
+  - INSTR_PUTST → rf_rs1_data (existing)
+  - INSTR_SETF  → splice current `st_value` with the F-selected
+                   FS/FE pair replaced by `instr_word_q[4:0]` /
+                   `instr_word_q[5]`. Reads F from `instr_word_q[9]`.
+- `sim/tb/tb_setf.sv` runs 5 scenarios: SETF 17/1/0 → FS0/FE0;
+  SETF 8/0/1 → FS1/FE1 (FS0/FE0 from previous SETF preserved);
+  SETF 0/1/0 → FS=0 encodes field-size 32 (the encoding edge case);
+  SETF 31/1/1 → boundary; and a CMP-set-NCZV → SETF → GETST sequence
+  to verify N, C, Z, V are preserved by SETF.
+- Status-preservation check verified directly via GETST captures
+  and via final ST flag-bit outputs.
+- Encoding helpers verified: setf_enc(17,1,0)=0x0571,
+  setf_enc(8,0,1)=0x0748.
+- Lint clean (modulo UNUSEDPARAM on the still-unused FS/FE
+  constants — SEXT/ZEXT in the next task uses them).
+Tests: tb_setf PASS; tb_st_ops/tb_btst/tb_lmo/tb_abs_negb/tb_movi/
+  tb_cmp_rr/tb_jrcc_short/tb_jrcc_signed all still PASS; lint clean.
+Docs: instruction_coverage.md (SETF row), changelog.md, tasks.md.
 Commit:
 - pending
 
