@@ -49,7 +49,8 @@
 | 0041 | LMO Rs, Rd (Leftmost-One priority encoder) | complete |
 | 0042 | ST layout finalization (FS0/FE0/FS1/FE1/IE/PBX) | complete |
 | 0043 | SETF FS, FE, F (set field-size params) | complete |
-| 0044 | SEXT / ZEXT Rd, F (field-size extension) | in progress |
+| 0044 | SEXT / ZEXT Rd, F (field-size extension) | complete |
+| 0045 | EXGF Rd, F (exchange field definition) | in progress |
 
 ---
 
@@ -1466,7 +1467,7 @@ Commit:
 ---
 
 ### Task 0044: SEXT / ZEXT Rd, F (sign-/zero-extend a field)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0042 (ST field-size constants).
 - Task 0043 (SETF — needed to load FS0/FS1 for spec test vectors).
@@ -1500,6 +1501,52 @@ Acceptance Criteria:
 Tests: tb_sext_zext PASS; 16-tb sanity regression PASS.
 Docs: instruction_coverage.md (SEXT + ZEXT rows), changelog.md,
   tasks.md.
+Commit:
+- 4c16ad8
+
+---
+
+### Task 0045: EXGF Rd, F (Exchange Field Definition)
+Status: in progress
+Dependencies:
+- Task 0042 (ST field-size constants).
+- Task 0038 (PUTST path / `st_write_en` machinery; used by EXGF to
+  write the modified ST).
+Spec source: SPVU001A page 12-77 + summary table line 26954.
+  Encoding `1101 01F1 000R DDDD`:
+    bits[15:10] = 6'b110101  (= 0x35)
+    bit[9]      = F  (selector: 0 = FE0/FS0; 1 = FE1/FS1)
+    bit[8]      = 1  (constant)
+    bits[7:5]   = 000 (sub-op)
+    bit[4]      = R  (file)
+    bits[3:0]   = Rd index
+  Semantics (atomic): Rd[5:0] ↔ {FE<F>, FS<F>} in ST. Rd[31:6] cleared.
+  Status bits all "Unaffected".
+Acceptance Criteria:
+- INSTR_EXGF = 6'd61.
+- Decoder predicate: bits[15:10]==EXGF_TOP6 AND bit[8]==1 AND
+  bits[7:5]==000. wb_reg_en=1, wb_flags_en=0.
+- Core gains a small EXGF datapath:
+    exgf_cur_fs/fe: read FS<F>/FE<F> from st_value via instr_word_q[9].
+    exgf_new_rd = {26'b0, exgf_cur_fe, exgf_cur_fs}.
+    exgf_new_st = st_value with the F-selected slot overwritten by
+                  rf_rs2_data[5:0] (i.e., the OLD Rd value, since
+                  the regfile is async-read).
+- rf_wr_data mux: INSTR_EXGF → exgf_new_rd.
+- st_write_en: now `iclass ∈ {PUTST, SETF, EXGF}`.
+- st_write_data: INSTR_EXGF → exgf_new_st.
+- `sim/tb/tb_exgf.sv` runs both spec-page-12-77 worked examples:
+    EXGF A1, F=0: A1=0xFFFFFFC0, ST=0xF0000FFF
+                 → A1=0x0000003F, ST=0xF0000FC0
+    EXGF A3, F=1: A3=0xFFFFFFC0, ST=0xF0000FFF
+                 → A3=0x0000003F, ST=0xF000003F
+- Crucial test-design point: MOVI to load registers MUST happen
+  BEFORE PUTST sets the target ST, because MOVI's wb_flag_mask
+  defaults to all-1s and so MOVI clobbers ST.{N,C,Z,V}. The test
+  comment explains this trap and the sequence.
+Tests: tb_exgf PASS; tb_st_ops/tb_setf/tb_sext_zext also PASS;
+  lint clean.
+Docs: instruction_coverage.md (EXGF row), changelog.md, tasks.md.
 Commit:
 - pending
 

@@ -650,6 +650,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   verbatim: 6 SEXT vectors (FS = 15, 16, 17 × F = 0, 1) and 5 ZEXT
   vectors (FS = 32-encoded-as-0, 31, 1, 16 × F = 0/1).
 
+### Added (Task 0045 — EXGF Rd, F)
+- Implemented **EXGF Rd, F** per SPVU001A page 12-77. Encoding
+  `1101 01F1 000R DDDD` — top6 = 0x35, F at instr[9]. Atomic swap of
+  Rd's low 6 bits with the F-selected `{FE, FS}` pair in ST; Rd's
+  upper 26 bits are cleared.
+- Core gains a small atomic-swap datapath: `exgf_cur_fs`/`exgf_cur_fe`
+  read the OLD field values from ST; `exgf_new_rd = {26'b0, cur_fe,
+  cur_fs}`; `exgf_new_st` splices the OLD Rd[5:0] (from the
+  async-read rf_rs2_data, which sees the value BEFORE the same-cycle
+  write) into the F-selected slot. `st_write_en` now triggers for
+  INSTR_EXGF as well as PUTST and SETF; the st_write_data mux gains
+  the matching arm.
+- Added `sim/tb/tb_exgf.sv` running both spec-page-12-77 worked
+  examples (F=0 and F=1) verbatim. Test-design note in the file
+  documents a gotcha: MOVI must precede PUTST when seeding ST,
+  because MOVI's default wb_flag_mask updates N/C/Z/V and would
+  otherwise clobber the freshly-PUTST'd ST.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

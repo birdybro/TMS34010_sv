@@ -317,6 +317,33 @@ module tms34010_core
                    && dsj_precondition;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = decoded.rd_idx;
+  // EXGF (Exchange Field Definition) datapath. Per SPVU001A page 12-77:
+  // Rd's low 6 bits swap with the F-selected FE:FS pair (1 + 5 bits)
+  // in ST. Rd's upper 26 bits are cleared after the swap.
+  //
+  // Because the regfile is async-read, rf_rs2_data delivers the OLD
+  // Rd value during the same CORE_WRITEBACK cycle that writes the
+  // new value — so a single-cycle atomic swap is straightforward.
+  logic [4:0]            exgf_cur_fs;
+  logic                  exgf_cur_fe;
+  logic [DATA_WIDTH-1:0] exgf_new_rd;
+  logic [DATA_WIDTH-1:0] exgf_new_st;
+  assign exgf_cur_fs = instr_word_q[9] ? st_value[ST_FS1_HI:ST_FS1_LO]
+                                       : st_value[ST_FS0_HI:ST_FS0_LO];
+  assign exgf_cur_fe = instr_word_q[9] ? st_value[ST_FE1_BIT]
+                                       : st_value[ST_FE0_BIT];
+  assign exgf_new_rd = {{(DATA_WIDTH-6){1'b0}}, exgf_cur_fe, exgf_cur_fs};
+  always_comb begin
+    exgf_new_st = st_value;
+    if (instr_word_q[9]) begin
+      exgf_new_st[ST_FS1_HI:ST_FS1_LO] = rf_rs2_data[4:0];
+      exgf_new_st[ST_FE1_BIT]          = rf_rs2_data[5];
+    end else begin
+      exgf_new_st[ST_FS0_HI:ST_FS0_LO] = rf_rs2_data[4:0];
+      exgf_new_st[ST_FE0_BIT]          = rf_rs2_data[5];
+    end
+  end
+
   // SEXT / ZEXT field-extension datapath. Per SPVU001A pages 12-238
   // (SEXT) and 12-256 (ZEXT): take the low `FS` bits of Rd, then
   // either sign-extend (copy the field MSB into bits[31:FS]) or
@@ -385,6 +412,7 @@ module tms34010_core
       INSTR_LMO_RR: rf_wr_data = lmo_result;
       INSTR_SEXT:   rf_wr_data = sext_result;
       INSTR_ZEXT:   rf_wr_data = zext_result;
+      INSTR_EXGF:   rf_wr_data = exgf_new_rd;
       default:      rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
     endcase
   end
@@ -490,11 +518,13 @@ module tms34010_core
 
   assign st_write_en = (state_q == CORE_WRITEBACK)
                     && ((decoded.iclass == INSTR_PUTST) ||
-                        (decoded.iclass == INSTR_SETF));
+                        (decoded.iclass == INSTR_SETF)  ||
+                        (decoded.iclass == INSTR_EXGF));
   always_comb begin
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
       INSTR_SETF:  st_write_data = setf_new_st;
+      INSTR_EXGF:  st_write_data = exgf_new_st;
       default:     st_write_data = '0;
     endcase
   end

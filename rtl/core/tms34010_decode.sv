@@ -102,6 +102,19 @@ module tms34010_decode
   localparam logic [6:0] XOR_RR_TOP7  = 7'b0101_011;  // chart: 0101 011S SSSR DDDD
   localparam logic [6:0] CMP_RR_TOP7  = 7'b0100_100;  // chart: 0100 100S SSSR DDDD
 
+  // EXGF Rd, F — Exchange Field Definition. Per SPVU001A page 12-77 +
+  // summary table line 26954. Encoding `1101 01F1 000R DDDD`:
+  //   bits[15:10] = 6'b110101  (= 0x35)
+  //   bit[9]      = F  (selector: 0 = FS0/FE0; 1 = FS1/FE1)
+  //   bit[8]      = 1  (constant)
+  //   bits[7:5]   = 000 (sub-op)
+  //   bit[4]      = R  (file)
+  //   bits[3:0]   = Rd index
+  // The instruction atomically swaps Rd's low 6 bits with the F-selected
+  // FE:FS pair (1 + 5 bits) in ST. Rd's upper 26 bits are cleared.
+  // All four status bits (N, C, Z, V) "Unaffected" per spec.
+  localparam logic [5:0] EXGF_TOP6  = 6'b110101;
+
   // SETF FS, FE, F — Set Field Parameters. Per SPVU001A page 12-237 +
   // summary table line 26978. Encoding `0000 01F1 01FE FFFF`:
   //   bits[15:10] = 6'b000001  (top6 of the field-size-config family)
@@ -722,6 +735,24 @@ module tms34010_decode
       decoded.wb_reg_en    = 1'b1;
       decoded.wb_flags_en  = 1'b1;
       decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+
+    // -----------------------------------------------------------------------
+    // EXGF Rd, F : atomic swap Rd[5:0] ↔ FE<F>:FS<F> in ST. Rd's
+    // upper 26 bits are cleared. Status unaffected.
+    //
+    // The core handles both halves of the swap in one CORE_WRITEBACK
+    // cycle: rf_wr_data delivers the new Rd (= {26'b0, FE_old, FS_old}),
+    // and st_write_en+st_write_data deliver the new ST (= current ST
+    // with the F-selected slot replaced by Rd_old[5:0]).
+    // -----------------------------------------------------------------------
+    if (instr[15:10] == EXGF_TOP6 && instr[8] && (instr[7:5] == 3'b000)) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_EXGF;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b0;
     end
 
     // -----------------------------------------------------------------------
