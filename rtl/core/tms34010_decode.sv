@@ -125,6 +125,17 @@ module tms34010_decode
   // Status bits all "Unaffected".
   localparam logic [10:0] CALL_RS_TOP11 = 11'b0000_1001_001;
 
+  // CALLA Address — Call Subroutine Absolute. Per SPVU001A page 12-48
+  // + summary table line 27019. Single fixed opcode `0x0D5F` followed
+  // by a 32-bit absolute target address. PC' is pushed; new PC = the
+  // absolute address with bottom 4 bits forced to 0. Status unaffected.
+  localparam instr_word_t CALLA_OPCODE  = 16'h0D5F;
+  // CALLR Address — Call Subroutine Relative. Per SPVU001A page 12-49
+  // + summary table line 27020. Single fixed opcode `0x0D3F` followed
+  // by a 16-bit signed word-offset. PC' is pushed; new PC =
+  // PC' + sign_extend(disp16) × 16. Status unaffected.
+  localparam instr_word_t CALLR_OPCODE  = 16'h0D3F;
+
   // RETS [N] — Return from Subroutine. Per SPVU001A page 12-231 +
   // summary table line 27036. Encoding `0000 1001 011N NNNN`:
   //   top11 = 11'b00001001_011 = 0x04B
@@ -910,6 +921,44 @@ module tms34010_decode
       decoded.rs_idx          = REG_SP_IDX;
       decoded.k5              = instr[4:0];       // N (0..31)
       decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // CALLA Address — Call Subroutine Absolute. 3-word instruction:
+    //   opcode (0x0D5F) + 16-bit LO + 16-bit HI of the absolute
+    //   target.  Same FSM flow as MOVI IL: opcode → IMM_LO → IMM_HI →
+    //   EXECUTE → CORE_MEMORY (write PC') → WRITEBACK (load PC,
+    //   write SP).  The target uses the existing `branch_target_jacc`
+    //   datapath (absolute with bottom 4 bits cleared).
+    // -----------------------------------------------------------------------
+    if (instr == CALLA_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_CALLA;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;       // SP write back
+      decoded.alu_op          = ALU_OP_SUB;       // SP - 32
+      decoded.needs_imm32     = 1'b1;             // fetch the 32-bit address
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // CALLR Address — Call Subroutine Relative. 2-word instruction:
+    //   opcode (0x0D3F) + 16-bit signed disp.  Same FSM flow as
+    //   JRcc long: opcode → IMM_LO → EXECUTE → CORE_MEMORY (write
+    //   PC') → WRITEBACK (load PC = PC' + sign_ext(disp16)*16, write SP).
+    // -----------------------------------------------------------------------
+    if (instr == CALLR_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_CALLR;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;
+      decoded.alu_op          = ALU_OP_SUB;
+      decoded.needs_imm16     = 1'b1;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;
       decoded.needs_memory_op = 1'b1;

@@ -457,6 +457,8 @@ module tms34010_core
       INSTR_PUSHST,
       INSTR_POPST,
       INSTR_CALL_RS,
+      INSTR_CALLA,
+      INSTR_CALLR,
       INSTR_RETS:    alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
@@ -485,7 +487,9 @@ module tms34010_core
       INSTR_BTST_RR: alu_b = 32'd1 << rf_rs1_data[4:0];
       INSTR_PUSHST,
       INSTR_POPST,
-      INSTR_CALL_RS: alu_b = 32'd32;
+      INSTR_CALL_RS,
+      INSTR_CALLA,
+      INSTR_CALLR:   alu_b = 32'd32;
       INSTR_RETS:    alu_b = 32'd32 + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
@@ -644,6 +648,18 @@ module tms34010_core
           // CORE_MEMORY by the time we reach this WRITEBACK arm.
           pc_load_en    = 1'b1;
           pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
+        end
+        INSTR_CALLA: begin
+          // Absolute call: PC <- {imm_hi_q, imm_lo_q} with bottom 4
+          // bits cleared. Same target as JAcc (branch_target_jacc).
+          pc_load_en    = 1'b1;
+          pc_load_value = branch_target_jacc;
+        end
+        INSTR_CALLR: begin
+          // Relative call: PC <- PC' + sign_ext(disp16) * 16. Same
+          // target as JRcc long-form (branch_target_long).
+          pc_load_en    = 1'b1;
+          pc_load_value = branch_target_long;
         end
         INSTR_RETS: begin
           // Return from subroutine: PC <- popped value (= mem_rdata,
@@ -861,10 +877,18 @@ module tms34010_core
             mem_addr  = rf_rs2_data;       // = current SP
             mem_size  = 6'd32;
           end
-          INSTR_CALL_RS: begin
+          INSTR_CALL_RS,
+          INSTR_CALLA,
+          INSTR_CALLR: begin
             // Push PC' to mem[new SP]. new SP = alu_result = SP - 32.
-            // pc_value at this point is PC' (= original PC + 16 after
-            // the opcode fetch advance) — exactly the return address.
+            // pc_value at this point is PC' — the address of the
+            // first instruction AFTER the CALL's full encoding:
+            //   CALL Rs:  PC + 16 bits  (single-word opcode)
+            //   CALLR:    PC + 32 bits  (opcode + 16-bit disp)
+            //   CALLA:    PC + 48 bits  (opcode + 16-bit LO + 16-bit HI)
+            // All three increments have already happened by the time
+            // we enter CORE_MEMORY (via the FETCH / FETCH_IMM_LO /
+            // FETCH_IMM_HI advances).
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = alu_result;        // = SP - 32

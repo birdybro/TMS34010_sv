@@ -786,6 +786,35 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   full subroutine round-trip, with `SP` restored to the original
   value.
 
+### Added (Task 0051 — CALLA + CALLR)
+- Implemented **CALLA Address** (= `0x0D5F` + 32-bit absolute) and
+  **CALLR Address** (= `0x0D3F` + 16-bit signed disp). Both per
+  SPVU001A pages 12-48 / 12-49. Each pushes PC' (the post-CALL
+  return address) and jumps:
+    CALLA  PC <- absolute address (low 4 bits cleared)
+    CALLR  PC <- PC' + sign_ext(disp16) * 16
+- INSTR_CALLA = 7'd68, INSTR_CALLR = 7'd69.
+- Decoder: two new single-fixed-encoding arms. CALLA sets
+  `needs_imm32 = 1`; CALLR sets `needs_imm16 = 1`. Both set
+  `needs_memory_op = 1`, `alu_op = SUB`, `wb_reg_en = 1`,
+  `wb_flags_en = 0`.
+- Core changes:
+  - Both join the alu_a swap group (alu_a = SP via rs2) and the
+    constant-32 alu_b mux entry.
+  - CORE_MEMORY: CALLA / CALLR / CALL_RS now share a single arm
+    that pushes `pc_value` (the FSM-advanced PC' for each variant)
+    to `mem[alu_result]`.
+  - PC-load mux: CALLA → `branch_target_jacc` (same as JAcc);
+    CALLR → `branch_target_long` (same as JRcc long form). Both
+    target paths were already in place from Tasks 0031 / 0034.
+- Added `sim/tb/tb_calla_callr.sv` — two full call/return round
+  trips. Scenario A uses CALLA with target = 0x0640 (= word 100
+  bit-address). Scenario B uses CALLR with a computed positive
+  disp that lands on word 200. Each subroutine writes a distinct
+  marker register and ends with RETS; each post-CALL MOVI writes
+  another marker that only runs if the return landed correctly.
+  Final SP must equal the original SP after both round-trips.
+
 ### Changed
 - `rtl/core/tms34010_core.sv` now also instantiates `tms34010_regfile`,
   `tms34010_alu`, and `tms34010_status_reg`. Datapath wires connect

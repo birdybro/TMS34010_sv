@@ -55,7 +55,8 @@
 | 0047 | Memory-write infrastructure + PUSHST | complete |
 | 0048 | POPST (PUSHST inverse; first memory-read instr) | complete |
 | 0049 | CALL Rs (Call Subroutine Indirect) | complete |
-| 0050 | RETS [N] (Return from Subroutine) | in progress |
+| 0050 | RETS [N] (Return from Subroutine) | complete |
+| 0051 | CALLA / CALLR (absolute + relative call) | in progress |
 
 ---
 
@@ -1726,7 +1727,7 @@ Commit:
 ---
 
 ### Task 0050: RETS [N] (Return from Subroutine)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0048 (POPST — same pop-from-stack pattern).
 - Task 0049 (CALL Rs — for end-to-end round-trip testing).
@@ -1758,6 +1759,54 @@ Acceptance Criteria:
 Tests: tb_rets PASS; tb_call_rs / tb_pushst / tb_popst still PASS;
   lint clean.
 Docs: instruction_coverage.md (RETS row), changelog.md, tasks.md.
+Commit:
+- a747083
+
+---
+
+### Task 0051: CALLA / CALLR (absolute + relative subroutine calls)
+Status: in progress
+Dependencies:
+- Task 0047 (memory-write infrastructure).
+- Task 0049 (CALL Rs — same stack-push pattern).
+- Task 0031 (JRcc long — `branch_target_long` reused for CALLR).
+- Task 0034 (JAcc — `branch_target_jacc` reused for CALLA).
+Spec source: SPVU001A pages 12-48 (CALLA) and 12-49 (CALLR). Both:
+  Push PC' to stack (SP -= 32), then jump.
+    CALLA = 0x0D5F + 32-bit absolute target; PC <- address (low 4
+            bits cleared).
+    CALLR = 0x0D3F + 16-bit signed disp;     PC <- PC' + disp*16.
+  Status bits all "Unaffected".
+Acceptance Criteria:
+- INSTR_CALLA = 7'd68, INSTR_CALLR = 7'd69.
+- Decoder: single-fixed-encoding arms for the two opcodes. Both set
+  rd_idx=15, alu_op=SUB, wb_reg_en=1, wb_flags_en=0,
+  needs_memory_op=1. CALLA additionally sets needs_imm32=1
+  (fetches LO + HI of the target address). CALLR additionally sets
+  needs_imm16=1 (fetches the displacement word).
+- Core's alu_a / alu_b swap groups: INSTR_CALLA and INSTR_CALLR
+  join the existing PUSHST/POPST/CALL_RS group (alu_a = SP via
+  rs2; alu_b = 32 constant).
+- CORE_MEMORY arms for CALLA and CALLR: SAME as CALL_RS — push
+  pc_value (= PC' at that point in the FSM) to mem[alu_result].
+  Because each instruction fetches a different number of words
+  before reaching CORE_MEMORY, pc_value naturally takes the
+  correct PC' value (CALL Rs: PC+16; CALLR: PC+32; CALLA: PC+48).
+- PC-load mux:
+  - INSTR_CALLA → branch_target_jacc (same as JAcc).
+  - INSTR_CALLR → branch_target_long (same as JRcc long).
+- `sim/tb/tb_calla_callr.sv` runs two full call/return round trips:
+    A) CALLA 0x0000_0640 → subroutine at word 100 writes A6 and RETS.
+    B) CALLR with computed positive disp → subroutine at word 200
+       writes A9 and RETS.
+  Post-CALLA and post-CALLR MOVIs write distinct sentinel values to
+  prove the returns landed correctly. Final SP back at the initial
+  value after both round-trips.
+Tests: tb_calla_callr PASS; tb_pushst/tb_popst/tb_call_rs/tb_rets
+  still PASS; broader stack + JAcc/JRcc-long regression PASS;
+  lint clean.
+Docs: instruction_coverage.md (CALLA + CALLR rows), changelog.md,
+  tasks.md.
 Commit:
 - pending
 
