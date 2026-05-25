@@ -56,7 +56,8 @@
 | 0048 | POPST (PUSHST inverse; first memory-read instr) | complete |
 | 0049 | CALL Rs (Call Subroutine Indirect) | complete |
 | 0050 | RETS [N] (Return from Subroutine) | complete |
-| 0051 | CALLA / CALLR (absolute + relative call) | in progress |
+| 0051 | CALLA / CALLR (absolute + relative call) | complete |
+| 0052 | RETI + multi-transaction memory FSM       | complete |
 
 ---
 
@@ -1765,7 +1766,7 @@ Commit:
 ---
 
 ### Task 0051: CALLA / CALLR (absolute + relative subroutine calls)
-Status: in progress
+Status: complete
 Dependencies:
 - Task 0047 (memory-write infrastructure).
 - Task 0049 (CALL Rs — same stack-push pattern).
@@ -1807,6 +1808,64 @@ Tests: tb_calla_callr PASS; tb_pushst/tb_popst/tb_call_rs/tb_rets
   lint clean.
 Docs: instruction_coverage.md (CALLA + CALLR rows), changelog.md,
   tasks.md.
+Commit:
+- b05a46f (CALLA + CALLR).
+
+---
+
+### Task 0052: RETI + multi-transaction memory FSM
+Status: complete
+Dependencies:
+- Task 0047 (memory-write infrastructure / CORE_MEMORY).
+- Task 0048 (POPST — popped-value → st_write_data path).
+- Task 0050 (RETS — popped-value → PC-load path).
+Spec source: SPVU001A page 12-230 + summary table. Single fixed
+  encoding `0x0940`. Semantics:
+    ST <- mem[SP]; SP += 32   (step 0: restore ST)
+    PC <- mem[SP]; SP += 32   (step 1: restore PC)
+  Status bits "Restored from popped ST" (i.e., the full 32-bit ST
+  is written, all four flag bits included).
+Acceptance Criteria:
+- INSTR_RETI = 7'd70.
+- Decoder: single-fixed-encoding arm with rd_idx=15, rs_idx=15,
+  alu_op=ADD, wb_reg_en=1, wb_flags_en=0, needs_memory_op=1.
+- Core: alu_a swap group includes INSTR_RETI (alu_a = SP via rs2);
+  alu_b mux includes INSTR_RETI → `32'd64` (total SP increment for
+  both pops).
+- New multi-transaction infrastructure:
+  - `mem_op_step` (2-bit) counter increments on every `mem_ack`
+    while in CORE_MEMORY for multi-step iclasses; held at 0 for
+    all single-transaction iclasses.
+  - `popped_st_q` / `popped_pc_q` latch `mem_rdata` at the right
+    step.
+  - CORE_MEMORY → CORE_WRITEBACK transition now gates on
+    `mem_op_step == 1` for INSTR_RETI (single-step iclasses
+    transition on every ack as before).
+- CORE_MEMORY arm for INSTR_RETI: 32-bit read at `rf_rs2_data`
+  (step 0) or `rf_rs2_data + 32` (step 1).
+- st_write_en includes INSTR_RETI; st_write_data mux returns
+  `popped_st_q` for INSTR_RETI (full-ST write — all four flag bits
+  restored atomically through the existing `st_write_en` priority
+  path in the status register).
+- PC-load mux: INSTR_RETI sets `pc_load_en = 1`, `pc_load_value =
+  popped_pc_q`.
+- `sim/tb/tb_reti.sv`: hand-built stack frame (no TRAP yet — that's
+  the next task). Pre-place saved ST at `mem[SP]` and saved PC at
+  `mem[SP+32]`, plus a `0xC0FF` halt sentinel at the popped-PC
+  target. Critically, the popped-PC target MUST be a halt and
+  nothing else — any instruction at the target would update N/Z
+  and clobber the popped flag bits before the testbench could
+  sample them. Verifications: ST = popped value (incl. all flag
+  bits); PC >= popped-PC target (i.e., second pop landed); SP =
+  SP_INIT + 64.
+Tests: tb_reti PASS; the full 23-tb regression set still PASS;
+  Verilator lint clean (`verilator --lint-only -Wall ...`).
+Docs: instruction_coverage.md (RETI row), changelog.md, tasks.md.
+Memory: tb-flag-side-effects.md (testbenches that verify ST after a
+  control transfer MUST land on a halt sentinel — captured this
+  lesson after the first tb_reti run failed with
+  `expected=cafebabe actual=0afebabe` because a MOVI at the popped
+  PC cleared N and Z before the check).
 Commit:
 - pending
 

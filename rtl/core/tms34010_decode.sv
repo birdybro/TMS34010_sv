@@ -125,6 +125,13 @@ module tms34010_decode
   // Status bits all "Unaffected".
   localparam logic [10:0] CALL_RS_TOP11 = 11'b0000_1001_001;
 
+  // RETI — Return from Interrupt. Per SPVU001A page 12-230 + summary
+  // table line 27037. Single fixed encoding `0x0940`. Pops both ST
+  // and PC from the stack (in that order) — two consecutive 32-bit
+  // reads. SP increments by 32 after each pop (total +64).
+  // All four status flag bits + IE come from the popped ST.
+  localparam instr_word_t RETI_OPCODE   = 16'h0940;
+
   // CALLA Address — Call Subroutine Absolute. Per SPVU001A page 12-48
   // + summary table line 27019. Single fixed opcode `0x0D5F` followed
   // by a 32-bit absolute target address. PC' is pushed; new PC = the
@@ -961,6 +968,30 @@ module tms34010_decode
       decoded.needs_imm16     = 1'b1;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // RETI — Return from Interrupt. Two-pop memory sequence:
+    //   step 0: ST <- mem[SP];     SP intermediate = SP + 32
+    //   step 1: PC <- mem[SP+32];  SP final        = SP + 64
+    // The core's multi-step CORE_MEMORY sequence handles both reads,
+    // latches the popped values, then WRITEBACK fires both the
+    // st_write_en path (with the popped ST) and pc_load_en (with the
+    // popped PC), plus the regfile write of the new SP.
+    //
+    // ALU computes the FINAL SP via SP + 64.  alu_a = SP via rs2;
+    // alu_b = 64 via a new mux entry.
+    // -----------------------------------------------------------------------
+    if (instr == RETI_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_RETI;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;
+      decoded.rs_idx          = REG_SP_IDX;
+      decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;          // ST update via st_write_en
       decoded.needs_memory_op = 1'b1;
     end
 

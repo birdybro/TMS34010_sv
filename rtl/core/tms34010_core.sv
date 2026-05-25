@@ -190,6 +190,43 @@ module tms34010_core
   assign branch_target_dsjs = pc_value + ADDR_WIDTH'(dsjs_disp_bits);
 
   // ---------------------------------------------------------------------------
+  // Multi-step memory transaction support
+  //
+  // Some instructions (RETI, TRAP, MMTM, MMFM) chain multiple memory
+  // transactions within a single CORE_MEMORY stay. `mem_op_step` ticks
+  // through 0, 1, ... as each ack arrives; the FSM only exits to
+  // CORE_WRITEBACK on the final step. The `popped_st_q` / `popped_pc_q`
+  // / `mem_data_q` latches capture mem_rdata between transactions
+  // since `mem_rdata` itself is overwritten by the next read.
+  // ---------------------------------------------------------------------------
+  logic [1:0]            mem_op_step;
+  logic [DATA_WIDTH-1:0] popped_st_q;
+  logic [DATA_WIDTH-1:0] popped_pc_q;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      mem_op_step <= 2'd0;
+      popped_st_q <= '0;
+      popped_pc_q <= '0;
+    end else if (state_q == CORE_MEMORY && mem_ack) begin
+      // Latch popped values per-iclass per-step before moving on.
+      if (decoded.iclass == INSTR_RETI) begin
+        if (mem_op_step == 2'd0) popped_st_q <= mem_rdata;
+        if (mem_op_step == 2'd1) popped_pc_q <= mem_rdata;
+      end
+      // Step counter: advance unless this is the final step for the
+      // iclass, in which case reset to 0 for the next instruction.
+      unique case (decoded.iclass)
+        INSTR_RETI: mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
+        default:    mem_op_step <= 2'd0;
+      endcase
+    end else if (state_q != CORE_MEMORY) begin
+      // Defensive reset between instructions.
+      mem_op_step <= 2'd0;
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // Immediate latch
   //
   // Long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, ...) fetch
@@ -459,7 +496,8 @@ module tms34010_core
       INSTR_CALL_RS,
       INSTR_CALLA,
       INSTR_CALLR,
-      INSTR_RETS:    alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
+      INSTR_RETS,
+      INSTR_RETI:    alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -491,6 +529,7 @@ module tms34010_core
       INSTR_CALLA,
       INSTR_CALLR:   alu_b = 32'd32;
       INSTR_RETS:    alu_b = 32'd32 + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
+      INSTR_RETI:    alu_b = 32'd64;     // SP += 32 (ST pop) + 32 (PC pop) = 64
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -534,7 +573,8 @@ module tms34010_core
                         (decoded.iclass == INSTR_EXGF)  ||
                         (decoded.iclass == INSTR_DINT)  ||
                         (decoded.iclass == INSTR_EINT)  ||
-                        (decoded.iclass == INSTR_POPST));
+                        (decoded.iclass == INSTR_POPST) ||
+                        (decoded.iclass == INSTR_RETI));
   always_comb begin
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
@@ -543,6 +583,7 @@ module tms34010_core
       INSTR_DINT:  st_write_data = st_value & ~(32'd1 << ST_IE_BIT);
       INSTR_EINT:  st_write_data = st_value |  (32'd1 << ST_IE_BIT);
       INSTR_POPST: st_write_data = mem_rdata;        // popped 32-bit ST value
+      INSTR_RETI:  st_write_data = popped_st_q;      // ST captured in step 0
       default:     st_write_data = '0;
     endcase
   end
@@ -669,6 +710,13 @@ module tms34010_core
           // or TRAP), so no bottom-nibble mask is needed.
           pc_load_en    = 1'b1;
           pc_load_value = mem_rdata;
+        end
+        INSTR_RETI: begin
+          // Return from interrupt: PC <- popped_pc_q (latched in
+          // step 1 of CORE_MEMORY). The matching popped ST is delivered
+          // via the st_write_en path above.
+          pc_load_en    = 1'b1;
+          pc_load_value = popped_pc_q;
         end
         default: ; // no branch
       endcase
@@ -903,10 +951,27 @@ module tms34010_core
             mem_addr  = rf_rs2_data;       // = current SP
             mem_size  = 6'd32;
           end
+          INSTR_RETI: begin
+            // Two-step pop: step 0 reads ST from mem[SP]; step 1 reads
+            // PC from mem[SP+32]. Both 32-bit reads. The latched
+            // popped_st_q / popped_pc_q values flow to the WRITEBACK
+            // ST-write and PC-load paths below.
+            mem_req   = 1'b1;
+            mem_we    = 1'b0;
+            mem_size  = 6'd32;
+            mem_addr  = (mem_op_step == 2'd0)
+                      ? rf_rs2_data                  // = SP
+                      : (rf_rs2_data + 32'd32);      // = SP + 32
+          end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
         if (mem_ack) begin
-          state_d = CORE_WRITEBACK;
+          // Multi-step instructions stay in CORE_MEMORY until their
+          // final step's ack; everything else transitions on every ack.
+          unique case (decoded.iclass)
+            INSTR_RETI: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
+            default:    state_d = CORE_WRITEBACK;
+          endcase
         end
       end
 

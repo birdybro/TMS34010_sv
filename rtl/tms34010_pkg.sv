@@ -299,8 +299,11 @@ package tms34010_pkg;
     INSTR_CALLA      = 7'd68, // CALLA Address     — SP -= 32; mem[SP] <- PC';
                               //                     PC <- absolute (32-bit) with bottom
                               //                     4 bits forced to 0.
-    INSTR_CALLR      = 7'd69  // CALLR Address     — SP -= 32; mem[SP] <- PC';
+    INSTR_CALLR      = 7'd69, // CALLR Address     — SP -= 32; mem[SP] <- PC';
                               //                     PC <- PC' + sign_ext(disp16)*16.
+    INSTR_RETI       = 7'd70  // RETI              — ST <- mem[SP]; SP += 32;
+                              //                     PC <- mem[SP]; SP += 32.
+                              //                     Two-step pop. Status from popped ST.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

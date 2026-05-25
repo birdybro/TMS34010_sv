@@ -5,6 +5,54 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-05-25
+
+### Added (Task 0052 — RETI + multi-transaction memory FSM)
+- Implemented **RETI** (Return from Interrupt) per SPVU001A page
+  12-230. Single fixed encoding `0x0940`. Pops ST then PC from the
+  stack and resumes execution:
+    `ST <- mem[SP]; SP += 32; PC <- mem[SP]; SP += 32`
+  All four flag bits are restored atomically as part of the full
+  ST pop. RETI is the project's first instruction that issues more
+  than one memory transaction.
+- INSTR_RETI = 7'd70. Single-fixed-encoding decoder arm: rd_idx=15,
+  rs_idx=15, alu_op=ADD (the SP +64 increment), wb_reg_en=1,
+  needs_memory_op=1.
+- Core changes:
+  - alu_a swap group adds INSTR_RETI (alu_a = SP via rs2).
+  - alu_b mux: `INSTR_RETI → 32'd64` (= 32 + 32 for the two pops).
+  - New multi-transaction infrastructure:
+    - `mem_op_step` (2-bit) counter. Increments on every `mem_ack`
+      while CORE_MEMORY is active for multi-step iclasses; stays at
+      0 for all single-transaction iclasses (which keeps PUSHST,
+      POPST, CALL Rs, RETS, CALLA, CALLR identical to before).
+    - `popped_st_q` / `popped_pc_q`: 32-bit latches that capture
+      `mem_rdata` at step 0 and step 1 respectively.
+    - CORE_MEMORY → CORE_WRITEBACK transition now per-iclass: RETI
+      stays in CORE_MEMORY until `mem_op_step == 1`; everything
+      else still transitions on every ack.
+  - CORE_MEMORY arm for INSTR_RETI: 32-bit read at `rf_rs2_data`
+    (step 0) or `rf_rs2_data + 32` (step 1).
+  - st_write_en/st_write_data extended: INSTR_RETI writes
+    `popped_st_q` through the existing full-ST path, restoring all
+    four flag bits atomically.
+  - PC-load mux: INSTR_RETI loads `popped_pc_q` into PC.
+- Added `sim/tb/tb_reti.sv` — hand-builds a stack frame (saved ST
+  at `mem[SP]`, saved PC at `mem[SP+32]`), executes RETI, then
+  verifies ST = saved ST (incl. all flag bits), PC reached the
+  popped-PC target, and SP = SP_INIT + 64.
+  - Crucially, the popped-PC target must be `0xC0FF` (halt) and
+    nothing else. The first version of the test placed an arith
+    instruction there; it ran *after* RETI's WRITEBACK and cleared
+    N/Z, corrupting the popped ST's top nibble before the check.
+    Lesson archived in memory under `tb-flag-side-effects.md`.
+- Regression: all 23 instruction tbs (tb_pushst, tb_popst,
+  tb_call_rs, tb_rets, tb_calla_callr, tb_jacc, tb_jruc_short,
+  tb_jrcc_unsigned, tb_immi_il, tb_movi, tb_movk, tb_add_rr,
+  tb_sub_rr, tb_cmp_rr, tb_addk_subk, tb_addc_subb, tb_logical_rr,
+  tb_shift_rr, tb_shift_k, tb_setf, tb_exgf, tb_dint_eint,
+  tb_smoke) PASS. Verilator `--lint-only -Wall` clean.
+
 ## 2026-05-12
 
 ### Added
