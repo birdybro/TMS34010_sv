@@ -1867,7 +1867,7 @@ Memory: tb-flag-side-effects.md (testbenches that verify ST after a
   `expected=cafebabe actual=0afebabe` because a MOVI at the popped
   PC cleared N and Z before the check).
 Commit:
-- pending
+- aef7603
 
 ---
 
