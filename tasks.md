@@ -58,6 +58,7 @@
 | 0050 | RETS [N] (Return from Subroutine) | complete |
 | 0051 | CALLA / CALLR (absolute + relative call) | complete |
 | 0052 | RETI + multi-transaction memory FSM       | complete |
+| 0053 | TRAP N (3-transaction software interrupt) | complete |
 
 ---
 
@@ -1868,6 +1869,66 @@ Memory: tb-flag-side-effects.md (testbenches that verify ST after a
   PC cleared N and Z before the check).
 Commit:
 - aef7603
+
+---
+
+### Task 0053: TRAP N (3-transaction software interrupt)
+Status: complete
+Dependencies:
+- Task 0047 (memory-write infrastructure / CORE_MEMORY).
+- Task 0052 (multi-transaction memory FSM; mem_op_step counter and
+  popped_*_q latches).
+Spec source: SPVU001A page 12-252. Encoding `0000 1001 000N NNNN`
+  (top11 = `00001001_000`, N at instr[4:0]). Semantics:
+    1) SP -= 32; mem[SP] <- PC'         (push return address)
+    2) SP -= 32; mem[SP] <- ST          (push status register)
+    3) ST <- 0x00000010                  (clear flags + IE; FS0=16)
+    4) PC <- mem[0xFFFFFFE0 - N*32]     (fetch trap vector)
+  TRAP 0 is special-cased in the spec (skips the pushes); we defer
+  TRAP 0 to a follow-up.
+Acceptance Criteria:
+- INSTR_TRAP = 7'd71.
+- Decoder: `top11 == TRAP_TOP11` (=11'b00001001_000) arms TRAP with
+  rd_idx=15, rs_idx=15, k5=instr[4:0], alu_op=SUB, wb_reg_en=1,
+  wb_flags_en=0, needs_memory_op=1.
+- Core: INSTR_TRAP joins the alu_a swap group (alu_a = SP via rs2)
+  and the alu_b = 32'd64 mux (SP - 64 via SUB).
+- CORE_MEMORY arm for INSTR_TRAP cycles through three steps:
+  - Step 0: `mem_we=1, mem_addr=rf_rs2_data - 32, mem_wdata=pc_value`.
+  - Step 1: `mem_we=1, mem_addr=rf_rs2_data - 64, mem_wdata=st_value`.
+  - Step 2: `mem_we=0, mem_addr=0xFFFFFFE0 - (k5<<5)`.
+- mem_op_step counter extended to 3 steps (still 2-bit) for INSTR_TRAP.
+- popped_pc_q latches mem_rdata on step 2 (= trap vector).
+- CORE_MEMORY → CORE_WRITEBACK transition gates on `mem_op_step == 2`
+  for INSTR_TRAP.
+- st_write_en includes INSTR_TRAP; st_write_data mux returns the
+  spec-fixed `32'h00000010` for INSTR_TRAP.
+- PC-load mux: INSTR_TRAP sets `pc_load_en = 1`, `pc_load_value =
+  popped_pc_q`.
+- `sim/tb/tb_trap.sv`: runs TRAP 3 with DEPTH_WORDS=1024 (which
+  causes 0xFFFFFFE0 - N*32 to alias to the top of memory at word
+  indices 1016/1017 for N=3 — same arithmetic the model's
+  word_idx slicing would do in any case, but explicit in the test
+  setup). Pre-TRAP program loads SP, then PUTSTs a distinguishable
+  value (0xCAFEBABE) into ST so we can verify push-then-replace
+  ordering unambiguously. Service routine at the vector target
+  writes A6 = 0x0BADC0DE and halts. Verifications:
+    A6  = 0x0BADC0DE             (routine ran ⇒ PC <- vector worked)
+    SP  = SP_INIT - 64           (two pushes happened)
+    ST  = 0x00000010             (spec-fixed post-TRAP ST)
+    pushed-ST slot  = 0xCAFEBABE (= pre-TRAP ST, distinguishable
+                                    from post-TRAP overwrite)
+    pushed-PC' slot non-zero     (return address captured)
+Tests: tb_trap PASS; full 24-tb regression PASS;
+  Verilator lint clean.
+Docs: instruction_coverage.md (TRAP row), changelog.md, tasks.md.
+Known limitations:
+- TRAP 0 not yet handled. Per spec, TRAP 0 skips pushes (intended
+  for use when SP is corrupt/uninitialised) and only loads ST=0x10
+  + PC=mem[0xFFFFFFE0]. A follow-up task will add an early-exit
+  path in the CORE_MEMORY arm for k5==0.
+Commit:
+- pending
 
 ---
 

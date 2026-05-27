@@ -5,6 +5,53 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-05-26
+
+### Added (Task 0053 — TRAP N, three-transaction software interrupt)
+- Implemented **TRAP N** per SPVU001A page 12-252. Encoding
+  `0000 1001 000N NNNN` (= `0x0900 | N`, N at instr[4:0]). Action:
+    SP -= 32; mem[SP] <- PC'         (push return address)
+    SP -= 32; mem[SP] <- ST          (push status register)
+    ST <- 0x00000010                  (clear flags + IE; FS0=16)
+    PC <- mem[0xFFFFFFE0 - N*32]     (fetch trap vector)
+  First three-transaction instruction (write/write/read).
+- INSTR_TRAP = 7'd71. Decoder arms on `top11 == TRAP_TOP11`
+  (=`11'b00001001_000`); k5 carries the trap number. alu_op=SUB,
+  rs/rd both target SP, wb_reg_en=1, needs_memory_op=1.
+- Core changes:
+  - alu_a swap group adds INSTR_TRAP (alu_a = SP via rs2).
+  - alu_b mux: `INSTR_TRAP → 32'd64` (combined with SUB this gives
+    SP - 64 to the regfile writeback).
+  - mem_op_step counter extended to 3 steps for INSTR_TRAP. The
+    same counter still stays at 0 for all single-transaction
+    instructions (unchanged behavior there).
+  - popped_pc_q latches `mem_rdata` on step 2 (= the trap-vector
+    word fetched from `0xFFFFFFE0 - N*32`).
+  - CORE_MEMORY arm cycles per step: push PC' at SP-32 (step 0),
+    push ST at SP-64 (step 1), read vector (step 2). The vector
+    address comes from a 32-bit subtractor: `0xFFFFFFE0 - (k5<<5)`.
+  - CORE_MEMORY → CORE_WRITEBACK transition gates on
+    `mem_op_step == 2` for INSTR_TRAP.
+  - st_write_en/st_write_data extended: INSTR_TRAP writes the
+    spec-fixed `32'h00000010` through the existing full-ST path.
+  - PC-load mux: INSTR_TRAP loads `popped_pc_q` into PC.
+- Added `sim/tb/tb_trap.sv` — runs TRAP 3. The trap vector at
+  bit-address `0xFFFFFF80` aliases to word 1016/1017 in a
+  DEPTH=1024 memory model (the model's `word_idx` slice ignores
+  high bits, mirroring what real-world top-of-memory aliasing
+  would do for an FPGA build with a small physical address space).
+  Pre-TRAP program runs PUTST A1 with A1=0xCAFEBABE so the pushed
+  ST is distinguishable from TRAP's own `0x10` overwrite —
+  confirms push-then-replace ordering unambiguously. Service
+  routine at the vector target writes A6=0x0BADC0DE and halts.
+  Verifies: A6 sentinel (routine ran), SP=SP_INIT-64, ST=0x10
+  post-TRAP, pushed ST = 0xCAFEBABE, pushed PC' nonzero.
+- Known limitations: TRAP 0 not yet handled. Per spec, TRAP 0
+  skips the pushes (intended for use when SP is uninitialised)
+  and only loads ST=0x10 + PC=mem[0xFFFFFFE0]. Follow-up task.
+- Regression: full 24-tb sweep PASS; Verilator
+  `--lint-only -Wall` clean.
+
 ## 2026-05-25
 
 ### Added (Task 0052 — RETI + multi-transaction memory FSM)

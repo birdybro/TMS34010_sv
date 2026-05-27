@@ -214,10 +214,15 @@ module tms34010_core
         if (mem_op_step == 2'd0) popped_st_q <= mem_rdata;
         if (mem_op_step == 2'd1) popped_pc_q <= mem_rdata;
       end
+      // TRAP step 2 = vector fetch; mem_rdata is the new PC.
+      if (decoded.iclass == INSTR_TRAP) begin
+        if (mem_op_step == 2'd2) popped_pc_q <= mem_rdata;
+      end
       // Step counter: advance unless this is the final step for the
       // iclass, in which case reset to 0 for the next instruction.
       unique case (decoded.iclass)
         INSTR_RETI: mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
+        INSTR_TRAP: mem_op_step <= (mem_op_step == 2'd2) ? 2'd0 : mem_op_step + 2'd1;
         default:    mem_op_step <= 2'd0;
       endcase
     end else if (state_q != CORE_MEMORY) begin
@@ -497,7 +502,8 @@ module tms34010_core
       INSTR_CALLA,
       INSTR_CALLR,
       INSTR_RETS,
-      INSTR_RETI:    alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
+      INSTR_RETI,
+      INSTR_TRAP:    alu_a = rf_rs2_data;   // SP via rs2 (rd_idx=15)
       default:       alu_a = rf_rs1_data;   // Rs (or unused for MOVI/MOVK)
     endcase
   end
@@ -530,6 +536,7 @@ module tms34010_core
       INSTR_CALLR:   alu_b = 32'd32;
       INSTR_RETS:    alu_b = 32'd32 + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
       INSTR_RETI:    alu_b = 32'd64;     // SP += 32 (ST pop) + 32 (PC pop) = 64
+      INSTR_TRAP:    alu_b = 32'd64;     // SP -= 32 (PC push) - 32 (ST push) = -64
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -574,7 +581,8 @@ module tms34010_core
                         (decoded.iclass == INSTR_DINT)  ||
                         (decoded.iclass == INSTR_EINT)  ||
                         (decoded.iclass == INSTR_POPST) ||
-                        (decoded.iclass == INSTR_RETI));
+                        (decoded.iclass == INSTR_RETI)  ||
+                        (decoded.iclass == INSTR_TRAP));
   always_comb begin
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
@@ -584,6 +592,7 @@ module tms34010_core
       INSTR_EINT:  st_write_data = st_value |  (32'd1 << ST_IE_BIT);
       INSTR_POPST: st_write_data = mem_rdata;        // popped 32-bit ST value
       INSTR_RETI:  st_write_data = popped_st_q;      // ST captured in step 0
+      INSTR_TRAP:  st_write_data = 32'h0000_0010;    // Per spec: IE=0, flags=0, FS0=16, FS1=0.
       default:     st_write_data = '0;
     endcase
   end
@@ -715,6 +724,13 @@ module tms34010_core
           // Return from interrupt: PC <- popped_pc_q (latched in
           // step 1 of CORE_MEMORY). The matching popped ST is delivered
           // via the st_write_en path above.
+          pc_load_en    = 1'b1;
+          pc_load_value = popped_pc_q;
+        end
+        INSTR_TRAP: begin
+          // Software interrupt: PC <- trap-vector value (latched into
+          // popped_pc_q on step 2 of CORE_MEMORY). New ST is delivered
+          // via the st_write_en path; SP -64 lands via alu_result/regfile.
           pc_load_en    = 1'b1;
           pc_load_value = popped_pc_q;
         end
@@ -963,6 +979,36 @@ module tms34010_core
                       ? rf_rs2_data                  // = SP
                       : (rf_rs2_data + 32'd32);      // = SP + 32
           end
+          INSTR_TRAP: begin
+            // Three-step sequence — see SPVU001A page 12-252:
+            //   step 0: write PC' at SP-32       (push return address)
+            //   step 1: write ST  at SP-64       (push status reg)
+            //   step 2: read trap vector @ V_N   (= 0xFFFFFFE0 - N*32)
+            // SP itself is updated via alu_result (= SP - 64) at
+            // WRITEBACK; ST is replaced with 0x00000010; PC is loaded
+            // from popped_pc_q (latched on step 2).
+            mem_req   = 1'b1;
+            mem_size  = 6'd32;
+            unique case (mem_op_step)
+              2'd0: begin
+                mem_we    = 1'b1;
+                mem_addr  = rf_rs2_data - 32'd32;
+                mem_wdata = pc_value;             // PC'
+              end
+              2'd1: begin
+                mem_we    = 1'b1;
+                mem_addr  = rf_rs2_data - 32'd64;
+                mem_wdata = st_value;             // ST as it stood
+              end
+              default: begin                       // step 2
+                mem_we    = 1'b0;
+                // Trap-vector address = 0xFFFFFFE0 - N*32.
+                // N is decoded.k5 (5 bits); N*32 = N << 5.
+                mem_addr  = 32'hFFFF_FFE0
+                          - ({{(ADDR_WIDTH-5){1'b0}}, decoded.k5} << 5);
+              end
+            endcase
+          end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
         if (mem_ack) begin
@@ -970,6 +1016,7 @@ module tms34010_core
           // final step's ack; everything else transitions on every ack.
           unique case (decoded.iclass)
             INSTR_RETI: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
+            INSTR_TRAP: if (mem_op_step == 2'd2) state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;
           endcase
         end

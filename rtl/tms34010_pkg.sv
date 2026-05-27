@@ -301,9 +301,15 @@ package tms34010_pkg;
                               //                     4 bits forced to 0.
     INSTR_CALLR      = 7'd69, // CALLR Address     — SP -= 32; mem[SP] <- PC';
                               //                     PC <- PC' + sign_ext(disp16)*16.
-    INSTR_RETI       = 7'd70  // RETI              — ST <- mem[SP]; SP += 32;
+    INSTR_RETI       = 7'd70, // RETI              — ST <- mem[SP]; SP += 32;
                               //                     PC <- mem[SP]; SP += 32.
                               //                     Two-step pop. Status from popped ST.
+    INSTR_TRAP       = 7'd71  // TRAP N            — SP -= 32; mem[SP] <- PC';
+                              //                     SP -= 32; mem[SP] <- ST;
+                              //                     ST <- 0x00000010; PC <- mem[vec].
+                              //                     vec = 0xFFFFFFE0 - N*32. N at instr[4:0]
+                              //                     (range 1..31; TRAP 0 deferred).
+                              //                     Three-step memory: write, write, read.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

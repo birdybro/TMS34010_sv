@@ -132,6 +132,19 @@ module tms34010_decode
   // All four status flag bits + IE come from the popped ST.
   localparam instr_word_t RETI_OPCODE   = 16'h0940;
 
+  // TRAP N — Software Interrupt. Per SPVU001A page 12-252. Encoding
+  // `0000 1001 000N NNNN` = `0x0900 | N`, where N at instr[4:0] is
+  // the trap number (0..31). Action per spec:
+  //   1) Push PC' (32-bit) at SP-32.
+  //   2) Push ST  (32-bit) at SP-64.
+  //   3) ST <- 0x00000010 (clears flags + IE; FS0 = 16, FS1 = 0).
+  //   4) PC <- mem[0xFFFFFFE0 - N*32] (32-bit vector fetch).
+  //   5) SP -= 64.
+  // TRAP 0 is special-cased in the spec (skips the pushes); we defer
+  // that case to a follow-up and accept N=0 as well-defined only for
+  // N>=1 here. The pattern + mask catch the whole 0x0900..0x091F range.
+  localparam logic [10:0] TRAP_TOP11      = 11'b0000_1001_000;
+
   // CALLA Address — Call Subroutine Absolute. Per SPVU001A page 12-48
   // + summary table line 27019. Single fixed opcode `0x0D5F` followed
   // by a 32-bit absolute target address. PC' is pushed; new PC = the
@@ -990,6 +1003,31 @@ module tms34010_decode
       decoded.rd_idx          = REG_SP_IDX;
       decoded.rs_idx          = REG_SP_IDX;
       decoded.alu_op          = ALU_OP_ADD;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;          // ST update via st_write_en
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // TRAP N
+    //
+    // Encoding `0000 1001 000N NNNN` (top11 = 11'b00001001_000); N is
+    // the trap number at instr[4:0] (0..31). Semantics summarized at
+    // the TRAP_TOP11 declaration above. Three-step memory transaction
+    // sequenced by the core's `mem_op_step` counter.
+    //
+    // ALU is set up to compute SP - 64 (SUB SP, 64) so the regfile
+    // writeback lands the post-push SP. alu_b = 64 reuses RETI's
+    // mux entry — the only direction difference is alu_op.
+    // -----------------------------------------------------------------------
+    if (top11 == TRAP_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_TRAP;
+      decoded.rd_file         = REG_FILE_A;
+      decoded.rd_idx          = REG_SP_IDX;
+      decoded.rs_idx          = REG_SP_IDX;
+      decoded.k5              = instr[4:0];       // N (0..31)
+      decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;          // ST update via st_write_en
       decoded.needs_memory_op = 1'b1;
