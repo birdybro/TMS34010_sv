@@ -1928,7 +1928,7 @@ Known limitations:
   + PC=mem[0xFFFFFFE0]. A follow-up task will add an early-exit
   path in the CORE_MEMORY arm for k5==0.
 Commit:
-- pending
+- 337d8bc
 
 ---
 
