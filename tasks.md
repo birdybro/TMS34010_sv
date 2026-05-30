@@ -1969,7 +1969,7 @@ Tests: tb_trap0 PASS; tb_trap (N=3) still PASS; full 25-tb
 Docs: instruction_coverage.md (TRAP N row updated to "all N
   implemented"), changelog.md, tasks.md.
 Commit:
-- pending
+- f991683
 
 ---
 
