@@ -203,6 +203,14 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] popped_st_q;
   logic [DATA_WIDTH-1:0] popped_pc_q;
 
+  // TRAP 0 is special per SPVU001A page 12-253: it does NOT push PC' or
+  // ST onto the stack — it just sets ST <- 0x10 and fetches the vector
+  // at 0xFFFFFFE0. Intended for the SP-corrupt / SP-uninitialised case.
+  // We collapse the three-step TRAP sequence to a single vector-fetch
+  // step when k5 == 0 (and suppress the SP -64 update via the alu_b mux).
+  logic trap_skip_push;
+  assign trap_skip_push = (decoded.iclass == INSTR_TRAP) && (decoded.k5 == 5'd0);
+
   always_ff @(posedge clk) begin
     if (rst) begin
       mem_op_step <= 2'd0;
@@ -214,15 +222,23 @@ module tms34010_core
         if (mem_op_step == 2'd0) popped_st_q <= mem_rdata;
         if (mem_op_step == 2'd1) popped_pc_q <= mem_rdata;
       end
-      // TRAP step 2 = vector fetch; mem_rdata is the new PC.
+      // TRAP vector fetch:
+      //   - N>0: step 2 (after the two pushes).
+      //   - N=0: step 0 (the only step).
       if (decoded.iclass == INSTR_TRAP) begin
-        if (mem_op_step == 2'd2) popped_pc_q <= mem_rdata;
+        if (trap_skip_push) begin
+          if (mem_op_step == 2'd0) popped_pc_q <= mem_rdata;
+        end else begin
+          if (mem_op_step == 2'd2) popped_pc_q <= mem_rdata;
+        end
       end
       // Step counter: advance unless this is the final step for the
       // iclass, in which case reset to 0 for the next instruction.
       unique case (decoded.iclass)
         INSTR_RETI: mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
-        INSTR_TRAP: mem_op_step <= (mem_op_step == 2'd2) ? 2'd0 : mem_op_step + 2'd1;
+        INSTR_TRAP: mem_op_step <= (trap_skip_push || mem_op_step == 2'd2)
+                                 ? 2'd0
+                                 : mem_op_step + 2'd1;
         default:    mem_op_step <= 2'd0;
       endcase
     end else if (state_q != CORE_MEMORY) begin
@@ -536,7 +552,9 @@ module tms34010_core
       INSTR_CALLR:   alu_b = 32'd32;
       INSTR_RETS:    alu_b = 32'd32 + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
       INSTR_RETI:    alu_b = 32'd64;     // SP += 32 (ST pop) + 32 (PC pop) = 64
-      INSTR_TRAP:    alu_b = 32'd64;     // SP -= 32 (PC push) - 32 (ST push) = -64
+      INSTR_TRAP:    alu_b = trap_skip_push ? 32'd0 : 32'd64;
+                                          // N>0: SP -= 64 (PC push + ST push).
+                                          // N=0: SP unchanged (TRAP 0 skips pushes).
       INSTR_SUB_RR,
       INSTR_SUBB_RR,
       INSTR_ANDN_RR,
@@ -980,34 +998,43 @@ module tms34010_core
                       : (rf_rs2_data + 32'd32);      // = SP + 32
           end
           INSTR_TRAP: begin
-            // Three-step sequence — see SPVU001A page 12-252:
+            // Three-step sequence for N>0 — see SPVU001A page 12-252:
             //   step 0: write PC' at SP-32       (push return address)
             //   step 1: write ST  at SP-64       (push status reg)
             //   step 2: read trap vector @ V_N   (= 0xFFFFFFE0 - N*32)
             // SP itself is updated via alu_result (= SP - 64) at
             // WRITEBACK; ST is replaced with 0x00000010; PC is loaded
             // from popped_pc_q (latched on step 2).
+            //
+            // For TRAP 0 (`trap_skip_push`): collapse to a single step
+            // that is the vector fetch — no pushes (per spec note 1
+            // page 12-253). SP stays unchanged (alu_b=0 above).
             mem_req   = 1'b1;
             mem_size  = 6'd32;
-            unique case (mem_op_step)
-              2'd0: begin
-                mem_we    = 1'b1;
-                mem_addr  = rf_rs2_data - 32'd32;
-                mem_wdata = pc_value;             // PC'
-              end
-              2'd1: begin
-                mem_we    = 1'b1;
-                mem_addr  = rf_rs2_data - 32'd64;
-                mem_wdata = st_value;             // ST as it stood
-              end
-              default: begin                       // step 2
-                mem_we    = 1'b0;
-                // Trap-vector address = 0xFFFFFFE0 - N*32.
-                // N is decoded.k5 (5 bits); N*32 = N << 5.
-                mem_addr  = 32'hFFFF_FFE0
-                          - ({{(ADDR_WIDTH-5){1'b0}}, decoded.k5} << 5);
-              end
-            endcase
+            if (trap_skip_push) begin
+              mem_we    = 1'b0;
+              mem_addr  = 32'hFFFF_FFE0;          // N=0 ⇒ vector @ 0xFFFFFFE0
+            end else begin
+              unique case (mem_op_step)
+                2'd0: begin
+                  mem_we    = 1'b1;
+                  mem_addr  = rf_rs2_data - 32'd32;
+                  mem_wdata = pc_value;             // PC'
+                end
+                2'd1: begin
+                  mem_we    = 1'b1;
+                  mem_addr  = rf_rs2_data - 32'd64;
+                  mem_wdata = st_value;             // ST as it stood
+                end
+                default: begin                       // step 2
+                  mem_we    = 1'b0;
+                  // Trap-vector address = 0xFFFFFFE0 - N*32.
+                  // N is decoded.k5 (5 bits); N*32 = N << 5.
+                  mem_addr  = 32'hFFFF_FFE0
+                            - ({{(ADDR_WIDTH-5){1'b0}}, decoded.k5} << 5);
+                end
+              endcase
+            end
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
@@ -1016,7 +1043,8 @@ module tms34010_core
           // final step's ack; everything else transitions on every ack.
           unique case (decoded.iclass)
             INSTR_RETI: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
-            INSTR_TRAP: if (mem_op_step == 2'd2) state_d = CORE_WRITEBACK;
+            INSTR_TRAP: if (trap_skip_push || mem_op_step == 2'd2)
+                          state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;
           endcase
         end

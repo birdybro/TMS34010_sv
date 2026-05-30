@@ -59,6 +59,7 @@
 | 0051 | CALLA / CALLR (absolute + relative call) | complete |
 | 0052 | RETI + multi-transaction memory FSM       | complete |
 | 0053 | TRAP N (3-transaction software interrupt) | complete |
+| 0054 | TRAP 0 (special-cased, no pushes)         | complete |
 
 ---
 
@@ -1929,6 +1930,46 @@ Known limitations:
   path in the CORE_MEMORY arm for k5==0.
 Commit:
 - 337d8bc
+
+---
+
+### Task 0054: TRAP 0 (level-0 trap, no pushes)
+Status: complete
+Dependencies:
+- Task 0053 (TRAP N with N>0).
+Spec source: SPVU001A page 12-253 note 1: "The level 0 trap differs
+  from all other traps; it does not save the old status register
+  or program counter. This may be useful in cases where the stack
+  pointer is corrupted or uninitialised."
+  Semantics for N=0:
+    ST <- 0x00000010
+    PC <- mem[0xFFFFFFE0]
+  SP NOT decremented; nothing pushed.
+Acceptance Criteria:
+- New `trap_skip_push` core wire: `(iclass == INSTR_TRAP) && (k5 == 0)`.
+- alu_b mux for INSTR_TRAP returns 0 when `trap_skip_push` (so the
+  ALU computes SP - 0 = SP and the regfile writeback is a no-op).
+- CORE_MEMORY arm for INSTR_TRAP: when `trap_skip_push`, emit a
+  single 32-bit read at 0xFFFFFFE0 (no PC'/ST writes).
+- mem_op_step counter for INSTR_TRAP collapses to a single step
+  when `trap_skip_push` (popped_pc_q latches on step 0).
+- CORE_MEMORY → CORE_WRITEBACK transition for INSTR_TRAP fires
+  on step 0 when `trap_skip_push`, on step 2 otherwise.
+- ST overwrite (st_write_data = 0x10) and PC load
+  (pc_load_value = popped_pc_q) reuse the existing TRAP wiring
+  unchanged.
+- `sim/tb/tb_trap0.sv`: runs TRAP 0 from a known SP and verifies:
+    A6 = sentinel (service routine ran ⇒ vector fetch worked)
+    SP unchanged (= SP_INIT)
+    ST = 0x10
+    Pre-placed sentinel values at mem[SP-32] and mem[SP-64]
+    UNTOUCHED (proves the pushes were genuinely skipped).
+Tests: tb_trap0 PASS; tb_trap (N=3) still PASS; full 25-tb
+  regression PASS; Verilator lint clean.
+Docs: instruction_coverage.md (TRAP N row updated to "all N
+  implemented"), changelog.md, tasks.md.
+Commit:
+- pending
 
 ---
 

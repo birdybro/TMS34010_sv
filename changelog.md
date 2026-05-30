@@ -5,6 +5,33 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-05-30
+
+### Added (Task 0054 — TRAP 0 special case)
+- Implemented the **TRAP 0** carve-out from SPVU001A page 12-253
+  note 1: the level-0 trap does not push PC'/ST and does not
+  decrement SP — it only fetches the vector at `0xFFFFFFE0` and
+  sets ST to `0x00000010`. Spec intent: usable when SP is corrupt
+  or uninitialised.
+- Added `trap_skip_push` wire = `(iclass == INSTR_TRAP) && (k5 == 0)`.
+- Core changes (all confined to the INSTR_TRAP paths):
+  - alu_b mux returns 0 for TRAP 0 (so the ALU SUB yields SP - 0
+    and the regfile writeback is a no-op).
+  - CORE_MEMORY arm collapses to a single 32-bit read at
+    `0xFFFFFFE0` for TRAP 0; the N>0 three-step write/write/read
+    sequence is unchanged.
+  - mem_op_step / popped_pc_q / state transition logic all
+    branch on `trap_skip_push` so the single-step path latches
+    the vector on step 0 and exits to CORE_WRITEBACK immediately.
+- Added `sim/tb/tb_trap0.sv`. Pre-places sentinel values
+  (DEAD/BEEF/FEED/FACE) at mem[SP-32] and mem[SP-64] and verifies
+  they are UNTOUCHED after TRAP 0 — proves the pushes were
+  genuinely skipped, not just landed somewhere else. Also
+  verifies SP unchanged, ST = 0x10, and that the service routine
+  at the popped-vector target ran.
+- Regression: full 25-tb sweep PASS (including tb_trap N=3,
+  which exercises the unchanged N>0 path); Verilator lint clean.
+
 ## 2026-05-26
 
 ### Added (Task 0053 — TRAP N, three-transaction software interrupt)
