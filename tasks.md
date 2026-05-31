@@ -2383,7 +2383,7 @@ Tests: tb_move_offset PASS; full 56-tb integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (two offset rows), changelog.md, tasks.md.
 Commit:
-- <pending>
+- 5bc51d8
 
 ---
 
