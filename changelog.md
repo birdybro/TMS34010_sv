@@ -7,6 +7,34 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0059 — MOVE register <-> indirect, field-size 32)
+- First increment of the MOVE-indirect family (the opcodes freed by
+  Task 0058):
+  - **MOVE Rs,\*Rd** (`1000 00FS SSSR DDDD`, base 0x8000) — store
+    `mem[*Rd] <- Rs`. Rd is a bit-address pointer (read, not written
+    back); Rs is the data. All status bits Unaffected. SPVU001A p.12-127.
+  - **MOVE \*Rs,Rd** (`1000 01FS SSSR DDDD`, base 0x8400) — load
+    `Rd <- mem[*Rs]`. Rs is the pointer; Rd receives the data. Implicit
+    compare-to-0: N=data[31], Z=(data==0), V=0, C Unaffected.
+    SPVU001A p.12-135.
+- INSTR_MOVE_FIELD_STORE = 7'd74, INSTR_MOVE_FIELD_LOAD = 7'd75. Decoder
+  matches top6 (instr[15:10]) = 100000 / 100001. Both are single 32-bit
+  memory transactions through the existing CORE_MEMORY path:
+  - store: `mem_we=1, mem_addr=rf_rs2_data (Rd), mem_wdata=rf_rs1_data (Rs)`.
+  - load:  `mem_we=0, mem_addr=rf_rs1_data (Rs)`; `mem_rdata` flows to the
+    regfile-write mux and the flag_input mux at WRITEBACK.
+- **Scope limitation (documented):** field size 32 only, word-aligned
+  pointer. The F bit and the runtime FS0/FS1 are ignored, so smaller
+  field sizes, unaligned pointers, FE sign/zero extension, and the
+  inc/dec/offset/absolute addressing modes are NOT yet handled — they
+  remain a deferred follow-up (assumptions.md A0020). At FS=32 the field
+  fills the register, so FE is a no-op and the access is a clean 32-bit
+  aligned transfer.
+- Test: new `sim/tb/tb_move_indirect.sv` — three store->load round-trips
+  (negative/zero/positive) verifying memory contents, the recovered
+  register, pointer-unchanged-by-store, and the load's N/Z flags
+  (captured with GETST snapshots). PASS.
+
 ### Fixed (Task 0058 — register-to-register MOVE opcode + cross-file)
 - **Corrected a real opcode bug**: register-to-register `MOVE Rs,Rd` was
   decoded at `0x9000` (`1001 00FS`), which both TI editions (1986 first

@@ -101,6 +101,19 @@ module tms34010_decode
   // reg-to-reg MOVE at 0x9000 (`1001 00FS`), which is actually
   // MOVE Rs,*Rd+ (postincrement to memory) — see assumptions.md A0020.
   localparam logic [5:0] MOVE_RR_TOP6 = 6'b010011;  // 0100 11MS SSSR DDDD
+
+  // MOVE field, register <-> indirect (no increment/decrement). Per
+  // SPVU001A pages 12-127 (Rs,*Rd) and 12-135 (*Rs,Rd). The pointer
+  // register holds a BIT address; Rs and Rd are in the same file (R bit).
+  //   MOVE Rs,*Rd : 1000 00FS SSSR DDDD  (top6 = 100000) — store
+  //   MOVE *Rs,Rd : 1000 01FS SSSR DDDD  (top6 = 100001) — load
+  // F=instr[9] selects FS0/FE0 vs FS1/FE1 in ST. Task 0059 implements
+  // ONLY the field-size-32, word-aligned case (FS selected = 32, where
+  // sign/zero extension is a no-op and the access maps to the existing
+  // 32-bit aligned memory path). Other field sizes / unaligned pointers
+  // are deferred (assumptions.md A0020 / Phase 6).
+  localparam logic [5:0] MOVE_STORE_TOP6 = 6'b100000;  // MOVE Rs,*Rd
+  localparam logic [5:0] MOVE_LOAD_TOP6  = 6'b100001;  // MOVE *Rs,Rd
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -605,6 +618,46 @@ module tms34010_decode
       // C Unaffected. PASS_A already yields n/z/v correctly (v defaults 0);
       // mask C off so the move doesn't clobber the carry flag.
       decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE Rs, *Rd  — store field from Rs to mem[*Rd]  (SPVU001A 12-127)
+    //
+    // Rd holds the destination BIT address (a pointer, NOT written back);
+    // Rs supplies the data. The transfer is a single memory write. All
+    // status bits Unaffected. Task 0059: field-size-32, word-aligned only.
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_STORE_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_STORE;
+      decoded.rd_file         = reg_file_from_instr;   // R bit (Rs & Rd same file)
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = pointer (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = data    (instr[8:5])
+      decoded.wb_reg_en       = 1'b0;                  // pointer unchanged; no writeback
+      decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE *Rs, Rd  — load field from mem[*Rs] into Rd  (SPVU001A 12-135)
+    //
+    // Rs holds the source BIT address (a pointer); Rd receives the loaded
+    // data. Single memory read. Implicit compare-to-0: N = data[31],
+    // Z = (data==0), V = 0, C Unaffected. Task 0059: field-size-32,
+    // word-aligned only (so sign/zero extension is a no-op).
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_LOAD_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_LOAD;
+      decoded.rd_file         = reg_file_from_instr;   // R bit (Rs & Rd same file)
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = destination (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pointer     (instr[8:5])
+      decoded.wb_reg_en       = 1'b1;                  // Rd <- loaded data
+      decoded.wb_flags_en     = 1'b1;
+      // N/Z/V update, C Unaffected (the loaded data drives the flags via
+      // the flag_input mux in the core, not the ALU).
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+      decoded.needs_memory_op = 1'b1;
     end
 
     // -----------------------------------------------------------------------

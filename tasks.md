@@ -64,6 +64,7 @@
 | 0056 | MMFM Rp, list (multi-register pop)        | complete |
 | 0057 | MMTM N flag (sign of 0 - Rp)              | complete |
 | 0058 | Fix MOVE Rs,Rd opcode (0x4C00) + cross-file | complete |
+| 0059 | MOVE Rs,*Rd / *Rs,Rd (field-32, word-aligned) | complete |
 
 ---
 
@@ -2173,6 +2174,46 @@ Docs: assumptions.md (A0020 corrected), instruction_coverage.md (MOVE
   row), changelog.md, tasks.md.
 Commit:
 - 6478e56
+
+---
+
+### Task 0059: MOVE Rs,*Rd / *Rs,Rd (register <-> indirect, field-size 32)
+Status: complete
+Dependencies:
+- Task 0058 (freed the 0x8000 opcode block; corrected MOVE_RR).
+- Task 0047 (CORE_MEMORY infrastructure).
+Spec source: SPVU001A page 12-127 (MOVE Rs,*Rd store) and page 12-135
+  (MOVE *Rs,Rd load). Encodings 1000 00FS / 1000 01FS SSSR DDDD.
+Scope: field-size-32, word-aligned pointer only — the first increment
+  of the MOVE-indirect family. F bit + runtime FS0/FS1 ignored.
+Acceptance Criteria:
+- INSTR_MOVE_FIELD_STORE = 7'd74, INSTR_MOVE_FIELD_LOAD = 7'd75.
+- Decoder: top6 (instr[15:10]) == 100000 -> store, == 100001 -> load.
+  Rs=instr[8:5], Rd=instr[3:0], R=instr[4] (same file). Store:
+  wb_reg_en=0, wb_flags_en=0 (all Unaffected). Load: wb_reg_en=1,
+  wb_flags_en=1 with N/Z/V mask (C Unaffected).
+- Core CORE_MEMORY (single transaction, default ack -> WRITEBACK):
+    store: mem_we=1, mem_addr=rf_rs2_data (Rd ptr), mem_wdata=rf_rs1_data
+           (Rs data), mem_size=32.
+    load:  mem_we=0, mem_addr=rf_rs1_data (Rs ptr), mem_size=32.
+- Load writeback: rf_wr_data mux returns mem_rdata (valid at WRITEBACK,
+  no new transaction issued there — same pattern POPST uses). flag_input
+  mux: N=mem_rdata[31], Z=(mem_rdata==0), V=0.
+- Pointer register is never written by the store (wb_reg_en=0).
+- sim/tb/tb_move_indirect.sv: three store->load round-trips
+  (0xCAFEBABE -> N=1/Z=0; 0 -> N=0/Z=1; 0x12345678 -> N=0/Z=0) checking
+  memory contents, recovered register, pointer-unchanged, and load N/Z
+  flags via GETST snapshots.
+Known limitations:
+- Field sizes other than 32, unaligned pointers, FE sign/zero extension,
+  and the predecrement/postincrement/offset/absolute addressing modes
+  are NOT implemented (their opcodes still ILLEGAL). Deferred to later
+  MOVE-family tasks; see assumptions.md A0020.
+Tests: tb_move_indirect PASS; full 51-tb integration regression PASS
+  under Verilator (3 module-level tbs need Questa, unchanged); lint clean.
+Docs: instruction_coverage.md (two MOVE rows), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

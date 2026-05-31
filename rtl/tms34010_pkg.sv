@@ -316,12 +316,21 @@ package tms34010_pkg;
                               //                     to 16 32-bit writes per instruction.
                               //                     N flag set to sign of (0 - initial Rp); see
                               //                     SPVU001A page 12-111 for edge cases (deferred).
-    INSTR_MMFM       = 7'd73  // MMFM Rp, list     — For each register Rn in the list
+    INSTR_MMFM       = 7'd73, // MMFM Rp, list     — For each register Rn in the list
                               //                     (highest-order first): Rn <- mem[Rp]; Rp += 32.
                               //                     Pop counterpart of MMTM; reverses its action.
                               //                     Second word = 16-bit mask (bit N = Rn). Up to
                               //                     16 32-bit reads. Final Rp = initial + 32*count.
                               //                     All flags Unaffected (SPVU001A page 12-109).
+    INSTR_MOVE_FIELD_STORE = 7'd74, // MOVE Rs,*Rd  — field in Rs -> mem[*Rd]. Rd is a bit-address
+                              //                     pointer (unchanged). Encoding 1000 00FS SSSR DDDD.
+                              //                     All flags Unaffected. Task 0059 implements the
+                              //                     field-size-32, word-aligned case only.
+    INSTR_MOVE_FIELD_LOAD  = 7'd75  // MOVE *Rs,Rd  — field at mem[*Rs] -> Rd, sign/zero-extended.
+                              //                     Rs is a bit-address pointer. Encoding
+                              //                     1000 01FS SSSR DDDD. Implicit compare-to-0:
+                              //                     N=sign, Z=zero, V=0, C Unaffected. Task 0059
+                              //                     implements field-size-32, word-aligned only.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

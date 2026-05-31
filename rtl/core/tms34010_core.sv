@@ -581,6 +581,9 @@ module tms34010_core
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
       // the WRITEBACK pass writes final Rp (= initial + 32*count).
       INSTR_MMFM:   rf_wr_data = mmfm_pop_wr ? mem_rdata : mm_rp_q;
+      // MOVE *Rs,Rd: Rd <- the 32 bits read from mem[Rs]. mem_rdata still
+      // holds the value at WRITEBACK (no new transaction is issued there).
+      INSTR_MOVE_FIELD_LOAD: rf_wr_data = mem_rdata;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
@@ -953,6 +956,11 @@ module tms34010_core
       // off (Unaffected) via wb_flag_mask, so only the N field matters.
       INSTR_MMTM:   flag_input = '{n: ~rf_rs2_data[DATA_WIDTH-1],
                                     c: 1'b0, z: 1'b0, v: 1'b0};
+      // MOVE *Rs,Rd: implicit compare-to-0 of the loaded field. At field
+      // size 32 the field IS the full 32-bit word (no extension), so N/Z
+      // come straight from mem_rdata; V=0; C masked off by wb_flag_mask.
+      INSTR_MOVE_FIELD_LOAD: flag_input = '{n: mem_rdata[DATA_WIDTH-1],
+                                    c: 1'b0, z: (mem_rdata == '0), v: 1'b0};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
@@ -1181,6 +1189,24 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = mm_rp_q;
+            mem_size  = 6'd32;
+          end
+          INSTR_MOVE_FIELD_STORE: begin
+            // MOVE Rs,*Rd: write Rs (rf_rs1_data) to mem[Rd]. Rd is the
+            // bit-address pointer (rf_rs2_data). 32-bit field, word-aligned.
+            mem_req   = 1'b1;
+            mem_we    = 1'b1;
+            mem_addr  = rf_rs2_data;       // = Rd (pointer)
+            mem_size  = 6'd32;
+            mem_wdata = rf_rs1_data;       // = Rs (data)
+          end
+          INSTR_MOVE_FIELD_LOAD: begin
+            // MOVE *Rs,Rd: read 32 bits from mem[Rs] (rf_rs1_data is the
+            // pointer). The result (mem_rdata) is written to Rd at
+            // WRITEBACK via the rf_wr_data mux; flags from the loaded data.
+            mem_req   = 1'b1;
+            mem_we    = 1'b0;
+            mem_addr  = rf_rs1_data;       // = Rs (pointer)
             mem_size  = 6'd32;
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
