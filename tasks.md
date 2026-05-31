@@ -2497,7 +2497,7 @@ Tests: full 59-tb integration regression PASS under Verilator; lint
   clean. No behavioral change.
 Docs: CLAUDE.md, changelog.md, tasks.md (no instruction_coverage change).
 Commit:
-- <pending>
+- df05687
 
 ---
 
