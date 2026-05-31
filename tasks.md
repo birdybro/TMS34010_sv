@@ -2130,7 +2130,7 @@ Tests: tb_mmtm_nflag PASS; tb_mmtm PASS; full 50-tb integration
 Docs: instruction_coverage.md (MMTM row N flag), changelog.md,
   tasks.md.
 Commit:
-- <pending>
+- 28eec5c
 
 ---
 
