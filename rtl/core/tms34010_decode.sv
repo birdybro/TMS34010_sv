@@ -115,6 +115,12 @@ module tms34010_decode
   localparam logic [5:0] MOVE_STORE_TOP6 = 6'b100000;  // MOVE Rs,*Rd
   localparam logic [5:0] MOVE_LOAD_TOP6  = 6'b100001;  // MOVE *Rs,Rd
   localparam logic [5:0] MOVE_M2M_TOP6   = 6'b100010;  // MOVE *Rs,*Rd (ind->ind)
+  // Auto inc/dec indirect-to-indirect (Task 0062). Both pointers step by
+  // the field size (±32 at FS=32).
+  //   MOVE *Rs+,*Rd+ : 1001 10FS  (top6 = 100110, 0x9800) postincrement
+  //   MOVE -*Rs,-*Rd : 1010 10FS  (top6 = 101010, 0xA800) predecrement
+  localparam logic [5:0] MOVE_M2M_POSTINC_TOP6 = 6'b100110;
+  localparam logic [5:0] MOVE_M2M_PREDEC_TOP6  = 6'b101010;
 
   // Auto inc/dec indirect MOVE (Task 0060). Same field semantics as the
   // plain forms; the pointer register steps by the field size (±32 at
@@ -691,6 +697,28 @@ module tms34010_decode
       decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest pointer (instr[3:0])
       decoded.rs_idx          = rs_idx_from_instr;     // Rs = src  pointer (instr[8:5])
       decoded.wb_reg_en       = 1'b0;                  // pointers unchanged; no writeback
+      decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE *Rs+,*Rd+ / -*Rs,-*Rd  — indirect-to-indirect with auto inc/dec
+    // (Task 0062). Same two-transaction read-then-write as the plain form,
+    // plus BOTH pointers step by ±32. The source pointer (Rs) is updated in
+    // the core during CORE_MEMORY (after the read); the destination pointer
+    // (Rd) is updated at WRITEBACK (hence wb_reg_en=1 here). FS=32,
+    // word-aligned. SPVU001A 12-138 (postinc Rs==Rd: data is written to the
+    // incremented location — handled in the core).
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_M2M_POSTINC_TOP6 || top6 == MOVE_M2M_PREDEC_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_M2M;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = src  pointer
+      decoded.move_mode       = (top6 == MOVE_M2M_PREDEC_TOP6)
+                              ? MV_ADDR_PREDEC : MV_ADDR_POSTINC;
+      decoded.wb_reg_en       = 1'b1;                  // write Rd (pointer) back
       decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
       decoded.needs_memory_op = 1'b1;
     end

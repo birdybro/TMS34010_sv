@@ -7,6 +7,28 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0062 — MOVE indirect-to-indirect with auto inc/dec)
+- The two auto-update indirect-to-indirect MOVE forms (FS=32, word-aligned),
+  completing the indirect-to-indirect family (SPVU001A p.12-138):
+  - **MOVE \*Rs+,\*Rd+** (0x9800) — `mem[Rd]<-mem[Rs]; Rs+=32; Rd+=32`.
+  - **MOVE -\*Rs,-\*Rd** (0xA800) — `Rs-=32; Rd-=32; mem[Rd]<-mem[Rs]`.
+  Both leave all flags Unaffected.
+- Reuse INSTR_MOVE_FIELD_M2M with move_mode. The two pointers update
+  through the single regfile write port at different times: the source
+  pointer (Rs) at the step-0 read ack (new `m2m_src_wr` path), the
+  destination pointer (Rd) at WRITEBACK. Address helpers `m2m_src_addr` /
+  `m2m_dst_addr` fold in the predecrement -32.
+- **Rs==Rd edge case** (spec 12-138, postincrement): the data must be
+  written to the *incremented* location and the register steps once.
+  This falls out for free — the step-1 write address reads `rf_rs2_data`
+  which (when Rs==Rd) already holds the step-0-updated Rs — and the
+  WRITEBACK Rd write is suppressed when Rs==Rd to avoid double-stepping.
+  Verified in tb_move_m2m_incdec Case C.
+- Test: new `sim/tb/tb_move_m2m_incdec.sv` — postinc + predec (Rs!=Rd)
+  round-trips and the Rs==Rd postincrement incremented-location case.
+- The Rs==Rd predecrement corner is undefined by the spec; the
+  implementation single-steps the register (documented in A0020).
+
 ### Added (Task 0061 — MOVE *Rs,*Rd indirect-to-indirect, field-size 32)
 - **MOVE \*Rs,\*Rd** (`1000 10FS SSSR DDDD`, base 0x8800) — copies the
   32-bit field at mem[*Rs] to mem[*Rd]. Both Rs and Rd are bit-address

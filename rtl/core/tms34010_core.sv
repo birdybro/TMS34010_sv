@@ -516,15 +516,37 @@ module tms34010_core
   assign mv_load_ptr_wr = (state_q == CORE_MEMORY) && is_mv_load
                        && mv_incdec && mem_ack;
 
+  // ---- Indirect-to-indirect MOVE auto inc/dec (Task 0062) -----------------
+  // Two pointers (Rs=source, Rd=dest) both step by ±32. The source pointer
+  // (Rs) is written during CORE_MEMORY at the step-0 (read) ack; the
+  // destination pointer (Rd) is written at WRITEBACK. The step-1 (write)
+  // address uses rf_rs2_data, which — when Rs==Rd — already reflects the
+  // step-0 Rs update, so a postincrement Rs==Rd writes to the incremented
+  // location (SPVU001A 12-138). To avoid double-stepping that one register,
+  // the WRITEBACK Rd write is suppressed when Rs==Rd.
+  logic                  is_mv_m2m, m2m_same_reg, m2m_src_wr;
+  logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
+  assign is_mv_m2m    = (decoded.iclass == INSTR_MOVE_FIELD_M2M);
+  assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
+  assign m2m_src_addr = mv_predec ? (rf_rs1_data - 32'd32) : rf_rs1_data;
+  assign m2m_dst_addr = mv_predec ? (rf_rs2_data - 32'd32) : rf_rs2_data;
+  assign m2m_src_new  = mv_predec ? (rf_rs1_data - 32'd32) : (rf_rs1_data + 32'd32);
+  assign m2m_dst_new  = mv_predec ? (rf_rs2_data - 32'd32) : (rf_rs2_data + 32'd32);
+  // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
+  assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
+                     && (mem_op_step == 2'd0) && mem_ack;
+
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
-                       && dsj_precondition)
+                       && dsj_precondition
+                       && !(is_mv_m2m && m2m_same_reg))  // Rs==Rd: Rs write already covered it
                    || mmfm_pop_wr
-                   || mv_load_ptr_wr;
+                   || mv_load_ptr_wr
+                   || m2m_src_wr;
   assign rf_wr_file = decoded.rd_file;
-  assign rf_wr_idx  = mmfm_pop_wr    ? mm_iter_idx
-                    : mv_load_ptr_wr ? decoded.rs_idx   // load inc/dec: update pointer Rs
-                                     : decoded.rd_idx;
+  assign rf_wr_idx  = mmfm_pop_wr                  ? mm_iter_idx
+                    : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
+                                                     : decoded.rd_idx;
   // EXGF (Exchange Field Definition) datapath. Per SPVU001A page 12-77:
   // Rd's low 6 bits swap with the F-selected FE:FS pair (1 + 5 bits)
   // in ST. Rd's upper 26 bits are cleared after the swap.
@@ -626,6 +648,9 @@ module tms34010_core
       // Load: at WRITEBACK -> the loaded data to Rd; during CORE_MEMORY
       // (inc/dec) -> the updated pointer to Rs.
       INSTR_MOVE_FIELD_LOAD: rf_wr_data = mv_load_ptr_wr ? mv_ptr_new : mem_rdata;
+      // Indirect-to-indirect inc/dec: source pointer Rs (step-0 ack) or
+      // destination pointer Rd (WRITEBACK).
+      INSTR_MOVE_FIELD_M2M: rf_wr_data = m2m_src_wr ? m2m_src_new : m2m_dst_new;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
@@ -1255,17 +1280,19 @@ module tms34010_core
             mem_size  = 6'd32;
           end
           INSTR_MOVE_FIELD_M2M: begin
-            // Two-step indirect-to-indirect: step 0 reads mem[Rs], step 1
-            // writes the latched field (move_data_q) to mem[Rd]. 32-bit,
-            // word-aligned. Pointers unchanged (plain form).
+            // Two-step indirect-to-indirect: step 0 reads mem[*Rs], step 1
+            // writes the latched field (move_data_q) to mem[*Rd]. 32-bit,
+            // word-aligned. m2m_src_addr/m2m_dst_addr fold in the predec -32
+            // (plain form: move_mode=NONE -> they equal Rs/Rd). For inc/dec
+            // the pointers are updated via the m2m_src_wr / WRITEBACK paths.
             mem_req   = 1'b1;
             mem_size  = 6'd32;
             if (mem_op_step == 2'd0) begin
               mem_we   = 1'b0;
-              mem_addr = rf_rs1_data;      // = Rs (source pointer)
+              mem_addr = m2m_src_addr;     // = Rs (or Rs-32 predec)
             end else begin
               mem_we   = 1'b1;
-              mem_addr = rf_rs2_data;      // = Rd (destination pointer)
+              mem_addr = m2m_dst_addr;     // = Rd (or Rd-32 predec; updated Rs if Rs==Rd)
               mem_wdata = move_data_q;     // field read in step 0
             end
           end

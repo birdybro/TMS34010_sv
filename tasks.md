@@ -67,6 +67,7 @@
 | 0059 | MOVE Rs,*Rd / *Rs,Rd (field-32, word-aligned) | complete |
 | 0060 | MOVE indirect auto inc/dec (field-32)        | complete |
 | 0061 | MOVE *Rs,*Rd indirect-to-indirect (field-32) | complete |
+| 0062 | MOVE *Rs+,*Rd+ / -*Rs,-*Rd inc/dec (field-32) | complete |
 
 ---
 
@@ -2283,6 +2284,40 @@ Tests: tb_move_m2m PASS; full 53-tb integration regression PASS under
 Docs: instruction_coverage.md (M2M row), changelog.md, tasks.md.
 Commit:
 - e92c939
+
+---
+
+### Task 0062: MOVE *Rs+,*Rd+ / -*Rs,-*Rd (indirect-to-indirect inc/dec)
+Status: complete
+Dependencies:
+- Task 0061 (plain M2M; reused INSTR_MOVE_FIELD_M2M + move_data_q).
+Spec source: SPVU001A page 12-138. Encodings 1001 10FS (0x9800,
+  postinc) and 1010 10FS (0xA800, predec).
+Scope: field-size-32, word-aligned. Both pointers step by ±32.
+Acceptance Criteria:
+- Decoder: top6 100110 (postinc), 101010 (predec) -> INSTR_MOVE_FIELD_M2M
+  with move_mode POSTINC/PREDEC, wb_reg_en=1 (Rd writeback).
+- Core helpers m2m_src_addr/m2m_dst_addr (= pointer, or pointer-32 for
+  predec) and m2m_src_new/m2m_dst_new (pointer±32). Source pointer Rs is
+  written at the step-0 read ack (m2m_src_wr -> rf_wr_idx=rs_idx); dest
+  pointer Rd at WRITEBACK (rf_wr_data=m2m_dst_new). Step-1 write address
+  = m2m_dst_addr (uses rf_rs2_data, which reflects the step-0 Rs update
+  when Rs==Rd).
+- Rs==Rd: WRITEBACK Rd write suppressed (!(is_mv_m2m && m2m_same_reg))
+  so the register single-steps. For postincrement this matches spec
+  12-138 (data to the incremented location). Predecrement Rs==Rd is
+  spec-undefined; documented deviation in A0020.
+- sim/tb/tb_move_m2m_incdec.sv: postinc + predec (Rs!=Rd) round-trips
+  and the Rs==Rd postincrement incremented-location case (Case C).
+Known limitations:
+- Field sizes != 32, unaligned pointers, FE, and the offset/absolute
+  addressing modes still deferred (A0020).
+Tests: tb_move_m2m_incdec PASS; full 54-tb integration regression PASS
+  under Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (two M2M inc/dec rows), assumptions.md
+  (A0020 Rs==Rd note), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 
