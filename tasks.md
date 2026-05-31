@@ -2172,7 +2172,7 @@ Tests: full 50-tb integration regression PASS under Verilator (3
 Docs: assumptions.md (A0020 corrected), instruction_coverage.md (MOVE
   row), changelog.md, tasks.md.
 Commit:
-- <pending>
+- 6478e56
 
 ---
 
