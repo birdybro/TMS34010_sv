@@ -2317,7 +2317,7 @@ Tests: tb_move_m2m_incdec PASS; full 54-tb integration regression PASS
 Docs: instruction_coverage.md (two M2M inc/dec rows), assumptions.md
   (A0020 Rs==Rd note), changelog.md, tasks.md.
 Commit:
-- <pending>
+- 2dcf45d
 
 ---
 
