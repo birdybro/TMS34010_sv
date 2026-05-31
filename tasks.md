@@ -2665,6 +2665,30 @@ Commit:
 
 ---
 
+### Task 0075: MPYS / MPYU variable multiplier width (FS1 != 32)
+Status: complete
+Dependencies: Task 0071 (MPYS/MPYU FS1=32 datapath).
+Spec source: SPVU001A pages 12-164 (MPYS) / 12-166 (MPYU): the Rs
+  multiplier is an FS1-bit field; FS1=0 encodes width 32.
+Acceptance Criteria:
+- Extract the low FS1 bits of Rs (`st_value[ST_FS1_HI:ST_FS1_LO]`) into
+  `mpy_rs_field`: FS1=0 → full rf_rs1_data; MPYS sign-extends the field
+  (high bit = bit FS1-1) to 32 bits; MPYU zero-extends. Rd (the
+  multiplicand, rf_rs2_data) stays full 32-bit.
+- `mpy_sprod`/`mpy_uprod` multiply rf_rs2_data by `mpy_rs_field` (not
+  rf_rs1_data). FS1=32 behavior (tb_mpy) unchanged.
+- sim/tb/tb_mpy_fs1.sv: MPYU at FS1=16/8/4 against TI's MPYU example
+  (Rd=0xFFFF0000, Rs=0x10001010 → 0x0000100F_EFF00000 / 0x0000000F_FFF00000
+  / 0), plus MPYS sign-extend (negative field → negative product) and
+  positive-field cases. SETF (F=1) sets FS1 per case.
+Tests: tb_mpy_fs1 PASS; tb_mpy regression PASS; full integration regression
+  PASS under Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (MPYS/MPYU rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

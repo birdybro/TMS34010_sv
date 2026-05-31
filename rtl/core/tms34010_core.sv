@@ -648,21 +648,38 @@ module tms34010_core
                          v: (cpw_b5 | cpw_b6 | cpw_b7 | cpw_b8)};
 
   // ---- MPYS / MPYU multiply datapath (SPVU001A 12-164/12-166) -------------
-  // 32x32 multiply (Task 0071 scope = FS1 32, i.e. the full Rs). Rd
-  // (rf_rs2) is the 32-bit multiplicand, Rs (rf_rs1) the multiplier. The
-  // 64-bit product is latched in CORE_EXECUTE (mpy_product_q — the
-  // registered output for DSP inference) and written back over 1 cycle
-  // (odd Rd: low 32 to Rd) or 2 cycles (even Rd: hi 32 to Rd, then lo 32
-  // to Rd+1). pair_wb_step (shared with DIVU) selects the second pass.
+  // Rd (rf_rs2) is the 32-bit multiplicand, Rs (rf_rs1) the multiplier — an
+  // FS1-bit field (FS1=0 means 32, the whole Rs). The 64-bit product is
+  // latched in CORE_EXECUTE (mpy_product_q — the registered output for DSP
+  // inference) and written back over 1 cycle (odd Rd: low 32 to Rd) or 2
+  // cycles (even Rd: hi 32 to Rd, then lo 32 to Rd+1). pair_wb_step (shared
+  // with DIVU) selects the second pass.
   logic                  is_mpy, mpy_signed, mpy_rd_even;
   logic signed [63:0]    mpy_sprod;
   logic        [63:0]    mpy_uprod, mpy_product, mpy_product_q;
   assign is_mpy      = (decoded.iclass == INSTR_MPYS) || (decoded.iclass == INSTR_MPYU);
   assign mpy_signed  = (decoded.iclass == INSTR_MPYS);
   assign mpy_rd_even = (decoded.rd_idx[0] == 1'b0);
+  // Variable multiplier width: extract the low FS1 bits of Rs and
+  // sign-extend (MPYS) or zero-extend (MPYU) to 32 bits before the multiply;
+  // Rd (the multiplicand) stays full 32-bit.
+  logic [4:0]            mpy_fs1;
+  logic [DATA_WIDTH-1:0] mpy_fmask;
+  logic [DATA_WIDTH-1:0] mpy_rs_field;
+  assign mpy_fs1   = st_value[ST_FS1_HI:ST_FS1_LO];
+  assign mpy_fmask = (32'd1 << mpy_fs1) - 32'd1;   // FS1 1..31; FS1=0 uses full Rs below
+  always_comb begin
+    if (mpy_fs1 == 5'd0) begin
+      mpy_rs_field = rf_rs1_data;                                    // FS1 = 32
+    end else if (mpy_signed && rf_rs1_data[mpy_fs1 - 5'd1]) begin
+      mpy_rs_field = (rf_rs1_data & mpy_fmask) | ~mpy_fmask;         // MPYS sign-extend
+    end else begin
+      mpy_rs_field = rf_rs1_data & mpy_fmask;                        // zero-extend / positive
+    end
+  end
   // 64-bit-context products: operands sign/zero-extend to 64 then multiply.
-  assign mpy_sprod   = $signed(rf_rs2_data) * $signed(rf_rs1_data);
-  assign mpy_uprod   = rf_rs2_data * rf_rs1_data;
+  assign mpy_sprod   = $signed(rf_rs2_data) * $signed(mpy_rs_field);
+  assign mpy_uprod   = rf_rs2_data * mpy_rs_field;
   assign mpy_product = mpy_signed ? unsigned'(mpy_sprod) : mpy_uprod;
 
   // ---- DIVU divide datapath (SPVU001A 12-69) -----------------------------

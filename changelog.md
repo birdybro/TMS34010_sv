@@ -7,6 +7,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0075 — MPYS / MPYU variable multiplier width)
+- MPYS/MPYU now honor field size 1: the Rs multiplier is an FS1-bit field,
+  not always the full 32-bit register. The core extracts the low FS1 bits of
+  Rs (`st_value[ST_FS1_HI:ST_FS1_LO]`) into `mpy_rs_field`, sign-extending
+  (MPYS) or zero-extending (MPYU) to 32 bits before the multiply; FS1=0 still
+  means width 32. Rd (the multiplicand) stays full 32-bit. SPVU001A
+  pp.12-164/12-166.
+- New `sim/tb/tb_mpy_fs1.sv` validates MPYU at FS1=16/8/4 against TI's MPYU
+  example (Rd=0xFFFF0000, Rs=0x10001010 → 0x0000100F_EFF00000 /
+  0x0000000F_FFF00000 / 0), plus MPYS sign-extension of a negative field and
+  positive-field cases. FS1 set via SETF (F=1).
+- Lifts the FS1=32-only limitation noted on the MPYS/MPYU coverage rows
+  (Task 0071).
+
 ### Added (Task 0074 — DIVS / MODS signed divide & modulo)
 - **DIVS Rs,Rd** (`0101 100S SSSR DDDD`, 0x5800) — signed divide (even Rd =
   64-bit signed dividend). **MODS Rs,Rd** (`0110 110S SSSR DDDD`, 0x6C00) —
