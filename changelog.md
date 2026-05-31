@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0065 — MOVX / MOVY half-register moves)
+- **MOVX Rs,Rd** (`1110 110S SSSR DDDD`, 0xEC00) — `Rd.X <- Rs.X` (low 16
+  bits); Rd's Y half (high 16) unchanged. SPVU001A p.12-162.
+- **MOVY Rs,Rd** (`1110 111S SSSR DDDD`, 0xEE00) — `Rd.Y <- Rs.Y` (high 16
+  bits); Rd's X half unchanged. SPVU001A p.12-163.
+- Both leave all status bits Unaffected. First of the XY-coordinate
+  instruction family (used for packed-16-bit / XY-address handling).
+- INSTR_MOVX = 7'd81, INSTR_MOVY = 7'd82. Pure register ops — the result
+  is composed in the rf_wr_data mux from Rs and the old Rd (async-read
+  regfile delivers the old Rd in the same WRITEBACK cycle). No memory,
+  no ALU, no flags.
+- Also fixed a stale comment block above the MOVE_RR decode arm that
+  still cited the pre-Task-0058 (wrong) 0x9000 encoding.
+- Test: new `sim/tb/tb_movx_movy.sv` — half-replace-with-other-half-
+  preserved checks plus TI's worked examples (MOVX A4,A5 -> 0x00005678;
+  MOVY A6,A7 -> 0x12340000).
+
 ### Added (Task 0064 — MOVE register-indirect with offset, field-size 32)
 - The register-indirect-with-offset MOVE forms (FS=32, word-aligned):
   - **MOVE Rs,\*Rd(off)** (`1011 00FS SSSR DDDD` + off16, base 0xB000) —

@@ -70,6 +70,7 @@
 | 0062 | MOVE *Rs+,*Rd+ / -*Rs,-*Rd inc/dec (field-32) | complete |
 | 0063 | MOVE @SAddr,Rd / Rs,@DAddr absolute (field-32) | complete |
 | 0064 | MOVE Rs,*Rd(off) / *Rs(off),Rd offset (field-32) | complete |
+| 0065 | MOVX / MOVY (half-register moves)             | complete |
 
 ---
 
@@ -2384,6 +2385,33 @@ Tests: tb_move_offset PASS; full 56-tb integration regression PASS under
 Docs: instruction_coverage.md (two offset rows), changelog.md, tasks.md.
 Commit:
 - 5bc51d8
+
+---
+
+### Task 0065: MOVX / MOVY (half-register moves)
+Status: complete
+Dependencies: none (pure register op).
+Spec source: SPVU001A pages 12-162 (MOVX) / 12-163 (MOVY). Encodings
+  1110 110S SSSR DDDD (MOVX, 0xEC00) / 1110 111S SSSR DDDD (MOVY, 0xEE00).
+First of the XY-coordinate instruction family.
+Acceptance Criteria:
+- INSTR_MOVX = 7'd81, INSTR_MOVY = 7'd82.
+- Decoder: top7 MOVX_TOP7=1110_110 / MOVY_TOP7=1110_111. Same-file reg-reg
+  (Rs=instr[8:5], Rd=instr[3:0]). wb_reg_en=1, wb_flags_en=0 (all flags
+  Unaffected).
+- Core rf_wr_data mux: MOVX = {old_Rd[31:16], Rs[15:0]} (replace X, keep
+  Y); MOVY = {Rs[31:16], old_Rd[15:0]} (replace Y, keep X). The
+  async-read regfile supplies the old Rd (rf_rs2_data) in the same
+  WRITEBACK cycle as the write. No memory, no ALU.
+- Also corrected a stale comment block above the MOVE_RR arm (it still
+  cited the pre-0058 wrong 0x9000 encoding).
+- sim/tb/tb_movx_movy.sv: half-preservation checks + TI worked examples
+  (MOVX A4,A5 -> 0x00005678; MOVY A6,A7 -> 0x12340000).
+Tests: tb_movx_movy PASS; full 57-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (MOVX/MOVY rows), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

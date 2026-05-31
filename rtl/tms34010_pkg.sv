@@ -349,10 +349,16 @@ package tms34010_pkg;
                               //                     Rd pointer unchanged; off16 is the 2nd word.
                               //                     Encoding 1011 00FS SSSR DDDD. All flags
                               //                     Unaffected. Task 0064: field-size-32, aligned.
-    INSTR_MOVE_OFF_LOAD    = 7'd80  // MOVE *Rs(off),Rd — field at mem[Rs + sext(off16)] -> Rd.
+    INSTR_MOVE_OFF_LOAD    = 7'd80, // MOVE *Rs(off),Rd — field at mem[Rs + sext(off16)] -> Rd.
                               //                     Rs pointer unchanged. Encoding 1011 01FS SSSR
                               //                     DDDD. Implicit compare-to-0: N=sign, Z=zero,
                               //                     V=0, C Unaffected. Task 0064.
+    INSTR_MOVX             = 7'd81, // MOVX Rs,Rd — RsX -> RdX (low 16 bits). Rd's Y half (high 16)
+                              //                     unaffected. Encoding 1110 110S SSSR DDDD. All
+                              //                     flags Unaffected. Task 0065.
+    INSTR_MOVY             = 7'd82  // MOVY Rs,Rd — RsY -> RdY (high 16 bits). Rd's X half (low 16)
+                              //                     unaffected. Encoding 1110 111S SSSR DDDD. All
+                              //                     flags Unaffected. Task 0065.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

@@ -142,6 +142,12 @@ module tms34010_decode
   localparam logic [5:0] MOVE_LOAD_POSTINC_TOP6  = 6'b100101;
   localparam logic [5:0] MOVE_STORE_PREDEC_TOP6  = 6'b101000;
   localparam logic [5:0] MOVE_LOAD_PREDEC_TOP6   = 6'b101001;
+  // MOVX / MOVY — move the X (low 16) or Y (high 16) half of Rs into the
+  // same half of Rd, leaving the other half untouched. Per SPVU001A pages
+  // 12-162/12-163. Encodings 1110 110S (MOVX) / 1110 111S (MOVY) SSSR DDDD.
+  // Rs and Rd same file; all flags Unaffected. (Task 0065.)
+  localparam logic [6:0] MOVX_TOP7    = 7'b1110_110;
+  localparam logic [6:0] MOVY_TOP7    = 7'b1110_111;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -620,15 +626,12 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // MOVE Rs, Rd  (register-to-register, same file)
+    // MOVE Rs, Rd  (register-to-register; cross-file capable)
     //
-    // Encoding: `1001 00FS SSSR DDDD`. The F bit (position 9) selects
-    // the field-size mode (FE0/FE1 in ST). Phase 4 ignores F and treats
-    // this as a 32-bit register copy (per A0020); revisit when field-
-    // size semantics land in Phase 5.
-    //
-    // Flag effects: N and Z from the source value (per A0009 default
-    // for PASS_A operations). C and V cleared.
+    // Encoding `0100 11MS SSSR DDDD` (base 0x4C00; corrected in Task 0058 —
+    // see the localparam comment and assumptions.md A0020). Full 32-bit
+    // copy (not a field move; no F bit). Status per SPVU001A 12-126:
+    // N = data[31], Z = (data==0), V = 0, C Unaffected.
     // -----------------------------------------------------------------------
     if (top6 == MOVE_RR_TOP6) begin
       decoded.illegal     = 1'b0;
@@ -647,6 +650,32 @@ module tms34010_decode
       // C Unaffected. PASS_A already yields n/z/v correctly (v defaults 0);
       // mask C off so the move doesn't clobber the carry flag.
       decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVX / MOVY — move the X (low 16) or Y (high 16) half of Rs into the
+    // same half of Rd; the other half of Rd is unchanged. Same-file reg-reg
+    // (top7 = 1110_110 / 1110_111). All flags Unaffected. The core composes
+    // the result from Rs and the old Rd in the rf_wr_data mux. (Task 0065.)
+    // -----------------------------------------------------------------------
+    if (top7 == MOVX_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_MOVX;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;     // Rd (instr[3:0])
+      decoded.rs_idx      = rs_idx_from_instr;      // Rs (instr[8:5])
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b0;
+    end
+
+    if (top7 == MOVY_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_MOVY;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b0;
     end
 
     // -----------------------------------------------------------------------

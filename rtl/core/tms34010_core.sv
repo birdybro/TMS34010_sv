@@ -635,6 +635,10 @@ module tms34010_core
   // The default routes the shifter or ALU result per decoded.use_shifter.
   always_comb begin
     unique case (decoded.iclass)
+      // MOVX: Rd.X (low 16) <- Rs.X, Rd.Y (high 16) kept. MOVY: Rd.Y <-
+      // Rs.Y, Rd.X kept. rf_rs1=Rs, rf_rs2=old Rd (async read, same cycle).
+      INSTR_MOVX:   rf_wr_data = {rf_rs2_data[DATA_WIDTH-1:16], rf_rs1_data[15:0]};
+      INSTR_MOVY:   rf_wr_data = {rf_rs1_data[DATA_WIDTH-1:16], rf_rs2_data[15:0]};
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
