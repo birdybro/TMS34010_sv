@@ -2685,7 +2685,7 @@ Tests: tb_mpy_fs1 PASS; tb_mpy regression PASS; full integration regression
   PASS under Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (MPYS/MPYU rows), changelog.md, tasks.md.
 Commit:
-- pending
+- 9ef3701
 
 ---
 
