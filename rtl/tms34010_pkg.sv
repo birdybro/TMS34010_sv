@@ -363,10 +363,14 @@ package tms34010_pkg;
                               //                     carry between halves). Encoding 1110 000S SSSR
                               //                     DDDD. Status (graphics): N=(Xres==0), V=Xres[15],
                               //                     Z=(Yres==0), C=Yres[15]. Task 0066.
-    INSTR_SUBXY            = 7'd84  // SUBXY Rs,Rd — RdX -= RsX, RdY -= RsY (independent 16-bit).
+    INSTR_SUBXY            = 7'd84, // SUBXY Rs,Rd — RdX -= RsX, RdY -= RsY (independent 16-bit).
                               //                     Encoding 1110 001S SSSR DDDD. Status (compare):
                               //                     N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY),
                               //                     C=(RsY>RdY) (unsigned). Task 0066.
+    INSTR_CMPXY            = 7'd85  // CMPXY Rs,Rd — nondestructive XY compare (Rd unchanged). Sets
+                              //                     status as if RdX-RsX / RdY-RsY: N=(Xres==0),
+                              //                     V=Xres[15], Z=(Yres==0), C=Yres[15]. Encoding
+                              //                     1110 010S SSSR DDDD. Task 0067.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

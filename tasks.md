@@ -72,6 +72,7 @@
 | 0064 | MOVE Rs,*Rd(off) / *Rs(off),Rd offset (field-32) | complete |
 | 0065 | MOVX / MOVY (half-register moves)             | complete |
 | 0066 | ADDXY / SUBXY (dual 16-bit XY arithmetic)     | complete |
+| 0067 | CMPXY (nondestructive XY compare)            | complete |
 
 ---
 
@@ -2442,6 +2443,28 @@ Docs: instruction_coverage.md (ADDXY/SUBXY rows), assumptions.md (A0027),
   changelog.md, tasks.md.
 Commit:
 - 7522799
+
+---
+
+### Task 0067: CMPXY (nondestructive XY compare)
+Status: complete
+Dependencies: Task 0066 (XY subtract datapath, reused).
+Spec source: SPVU001A page 12-55. Encoding 1110 010S SSSR DDDD (0xE400).
+Acceptance Criteria:
+- INSTR_CMPXY = 7'd85. Decoder top7 1110_010; same-file reg-reg;
+  wb_reg_en=0 (NONDESTRUCTIVE — Rd unchanged), wb_flags_en=1.
+- Status bits = sign bits of the per-half subtract results (NOT SUBXY's
+  unsigned borrow): N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15]
+  where Xres=RdX-RsX, Yres=RdY-RsY. Unambiguous (no A0027 dependency).
+- Core: new cmpxy_flags assign reusing xy_x_sub/xy_y_sub; flag_input mux
+  routes it. No rf_wr_data entry (no writeback).
+- sim/tb/tb_cmpxy.sv: TI example cases checking NCZV (GETST) and Rd/Rs
+  unchanged.
+Tests: tb_cmpxy PASS; full 59-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (CMPXY row), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

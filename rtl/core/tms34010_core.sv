@@ -601,6 +601,11 @@ module tms34010_core
   // (RsX>RdX) unsigned == borrow out of (RdX - RsX) == (xy_rd_x < xy_rs_x).
   assign subxy_flags = '{n: (xy_x_sub == 16'd0), c: (xy_rd_y < xy_rs_y),
                           z: (xy_y_sub == 16'd0), v: (xy_rd_x < xy_rs_x)};
+  // CMPXY (SPVU001A 12-55): nondestructive; flags use the SIGN bits of the
+  // per-half subtract results (NOT the unsigned borrow SUBXY uses).
+  alu_flags_t cmpxy_flags;
+  assign cmpxy_flags = '{n: (xy_x_sub == 16'd0), c: xy_y_sub[15],
+                          z: (xy_y_sub == 16'd0), v: xy_x_sub[15]};
 
   // SEXT / ZEXT field-extension datapath. Per SPVU001A pages 12-238
   // (SEXT) and 12-256 (ZEXT): take the low `FS` bits of Rd, then
@@ -1070,6 +1075,7 @@ module tms34010_core
                                     c: 1'b0, z: (mem_rdata == '0), v: 1'b0};
       INSTR_ADDXY:  flag_input = addxy_flags;
       INSTR_SUBXY:  flag_input = subxy_flags;
+      INSTR_CMPXY:  flag_input = cmpxy_flags;
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end

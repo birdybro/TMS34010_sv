@@ -156,6 +156,10 @@ module tms34010_decode
   // info (computed in the core's XY datapath). Same-file. (Task 0066.)
   localparam logic [6:0] ADDXY_TOP7   = 7'b1110_000;
   localparam logic [6:0] SUBXY_TOP7   = 7'b1110_001;
+  // CMPXY — nondestructive XY compare (Rd unchanged). Sets status as if
+  // RdX-RsX / RdY-RsY were computed. Per SPVU001A page 12-55. Encoding
+  // 1110 010S SSSR DDDD. (Task 0067.)
+  localparam logic [6:0] CMPXY_TOP7   = 7'b1110_010;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -708,6 +712,17 @@ module tms34010_decode
       decoded.rd_idx      = reg_idx_from_instr;
       decoded.rs_idx      = rs_idx_from_instr;
       decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+
+    // CMPXY: nondestructive — sets flags only, Rd unchanged (wb_reg_en=0).
+    if (top7 == CMPXY_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_CMPXY;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b1;
     end
 

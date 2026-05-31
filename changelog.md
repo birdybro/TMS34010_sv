@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0067 — CMPXY nondestructive XY compare)
+- **CMPXY Rs,Rd** (`1110 010S SSSR DDDD`, 0xE400) — compares the X (low
+  16) and Y (high 16) halves of Rs and Rd, setting status bits as if
+  `RdX-RsX` / `RdY-RsY` were computed, WITHOUT modifying Rd. SPVU001A
+  p.12-55.
+- Status: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15] — i.e. the
+  per-half subtract result sign bits (NOT the unsigned borrow SUBXY
+  uses), so CMPXY is fully unambiguous (no A0027 dependency). Verified
+  against TI's example table.
+- INSTR_CMPXY = 7'd85. Decoder top7 1110_010; wb_reg_en=0 (nondestructive),
+  wb_flags_en=1. Reuses the XY subtract datapath (xy_x_sub/xy_y_sub) with
+  a new cmpxy_flags assign feeding the flag_input mux.
+- Test: new `sim/tb/tb_cmpxy.sv` — TI example cases checking NCZV (GETST
+  snapshots) and that Rd/Rs are unchanged.
+
 ### Added (Task 0066 — ADDXY / SUBXY dual 16-bit XY arithmetic)
 - **ADDXY Rs,Rd** (`1110 000S SSSR DDDD`, 0xE000) — `Rd.X += Rs.X,
   Rd.Y += Rs.Y` on the two 16-bit halves independently, with NO carry
