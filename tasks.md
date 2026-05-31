@@ -2573,7 +2573,7 @@ Tests: tb_mpy PASS; full 61-tb integration regression PASS under
 Docs: instruction_coverage.md (MPYS/MPYU rows), timing_notes.md,
   changelog.md, tasks.md.
 Commit:
-- <pending>
+- 8dd0b47
 
 ---
 
