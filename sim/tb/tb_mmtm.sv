@@ -152,8 +152,8 @@ module tb_mmtm;
     // want SP = sentinel(15). Use a separate MOVI on A14 (overwrite)
     // then MOVE.
     p = place_movi_il(p, 4'd14, reg_sentinel(15));   // A14 = sentinel(15)
-    // MOVE A14, A15: top6=100100, F=0, S=14=1110, R=0, D=15=1111 ⇒ 0x91CF.
-    u_mem.mem[p] = 16'h91CF; p = p + 1;              // MOVE A14, A15 (SP <- A14)
+    // MOVE A14, A15 (SPVU001A p.12-126): top6=010011 (0x4C00), M=0, Rs=14, R=0, Rd=15 ⇒ 0x4DCF.
+    u_mem.mem[p] = 16'h4DCF; p = p + 1;              // MOVE A14, A15 (SP <- A14)
     p = place_movi_il(p, 4'd14, reg_sentinel(14));   // restore A14 sentinel
     // Now load A1 (= Rp).
     p = place_movi_il(p, 4'd1, RP_INIT);

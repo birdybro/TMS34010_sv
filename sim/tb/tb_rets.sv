@@ -138,7 +138,7 @@ module tb_rets;
     // Prelude: SP = 0x0000_0800; A5 = SUB_ADDR = 0x640 (word 100);
     //          A7 = SENTINEL = 0xAAAA_AAAA (pre-return marker).
     p = place_movi_il(p, 4'd0, 32'h0000_0800);
-    u_mem.mem[p] = 16'h900F; p = p + 1;                 // MOVE A0, A15
+    u_mem.mem[p] = 16'h4C0F; p = p + 1;                 // MOVE A0, A15
     p = place_movi_il(p, 4'd5, 32'h0000_0640);          // A5 = bit-addr of word 100
     p = place_movi_il(p, 4'd7, 32'hAAAA_AAAA);          // A7 = pre-return sentinel
 

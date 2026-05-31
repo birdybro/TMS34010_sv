@@ -428,7 +428,12 @@ module tms34010_core
   //
   // TMS34010 reg-reg encoding constrains Rs and Rd to the same file, so
   // a single `decoded.rd_file` drives both reads.
-  assign rf_rs1_file = decoded.rd_file;
+  // Read-port 1 normally reads from the destination file (reg-reg ops
+  // are same-file). MOVE Rs,Rd is the one cross-file exception: Rs may
+  // live in the opposite file from Rd, so it uses decoded.rs_file.
+  assign rf_rs1_file = (decoded.iclass == INSTR_MOVE_RR)
+                     ? decoded.rs_file
+                     : decoded.rd_file;
   // Read-port 1 index is normally decoded.rs_idx. MMTM repurposes it
   // during CORE_MEMORY to scan the register list — rf_rs1_idx then
   // points at the current register being pushed, and rf_rs1_data

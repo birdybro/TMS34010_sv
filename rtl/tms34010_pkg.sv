@@ -350,11 +350,16 @@ package tms34010_pkg;
     logic          illegal;     // 1 if the encoding is not recognized
     instr_class_t  iclass;      // dispatch class for the control FSM
     reg_file_t     rd_file;     // destination register file (A or B); also
-                                // governs Rs file for reg-reg ops because
-                                // TMS34010 reg-reg ops constrain Rs and Rd
-                                // to the same file (single R bit in encoding).
+                                // governs Rs file for MOST reg-reg ops because
+                                // they constrain Rs and Rd to the same file
+                                // (single R bit in encoding).
     reg_idx_t      rd_idx;      // destination register index
     reg_idx_t      rs_idx;      // source register index (reg-reg ops)
+    reg_file_t     rs_file;     // source register file. Equals rd_file for all
+                                // same-file ops; the ONLY exception is
+                                // MOVE Rs,Rd (the M-bit cross-file move), where
+                                // Rs and Rd may be in different files. The core
+                                // reads this for rf_rs1_file only on MOVE_RR.
     logic          needs_imm16; // fetch one extra 16-bit word for immediate
     logic          needs_imm32; // fetch two extra 16-bit words; LO first then HI
     logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits

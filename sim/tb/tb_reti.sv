@@ -140,7 +140,7 @@ module tb_reti;
 
     // ---- Prelude: MOVE A0=SP_INIT into A15 (SP) ------------------------
     p = place_movi_il(p, 4'd0, SP_INIT);
-    u_mem.mem[p] = 16'h900F; p = p + 1;        // MOVE A0, A15
+    u_mem.mem[p] = 16'h4C0F; p = p + 1;        // MOVE A0, A15
 
     // ---- RETI ----------------------------------------------------------
     u_mem.mem[p] = 16'h0940; p = p + 1;

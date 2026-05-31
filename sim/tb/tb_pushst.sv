@@ -146,10 +146,10 @@ module tb_pushst;
 
     // ---- Move A0 into SP (= A15) via a MOVE A0, A15 instruction.
     //   We don't have a "set SP" alias; use MOVE Rs, Rd to copy A0 → A15.
-    //   MOVE A0, A15 encoding: top6 = 6'b100100, S=0 (Rs=A0=0), F bit
-    //   ignored (per A0020), R=0 (file A), D=15.  = 0x9000 | (0<<5)
-    //   | (0<<4) | 15 = 0x900F.
-    u_mem.mem[p] = 16'h900F; p = p + 1;
+    //   MOVE A0, A15 encoding (SPVU001A p.12-126): top6 = 6'b010011
+    //   (base 0x4C00), M=0 (same file), Rs=0, R=0 (file A), Rd=15.
+    //   = 0x4C00 | (0<<5) | (0<<4) | 15 = 0x4C0F.
+    u_mem.mem[p] = 16'h4C0F; p = p + 1;
     //   But MOVE updates ST.{N,Z}.  That's OK — PUTST below overwrites ST.
 
     // ---- Set ST = ST_SEED via PUTST A1 ----------------------------------

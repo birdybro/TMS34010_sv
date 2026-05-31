@@ -63,6 +63,7 @@
 | 0055 | MMTM Rp, list (multi-register push)       | complete |
 | 0056 | MMFM Rp, list (multi-register pop)        | complete |
 | 0057 | MMTM N flag (sign of 0 - Rp)              | complete |
+| 0058 | Fix MOVE Rs,Rd opcode (0x4C00) + cross-file | complete |
 
 ---
 
@@ -2131,6 +2132,47 @@ Docs: instruction_coverage.md (MMTM row N flag), changelog.md,
   tasks.md.
 Commit:
 - 28eec5c
+
+---
+
+### Task 0058: Fix register-to-register MOVE opcode + cross-file support
+Status: complete
+Dependencies:
+- Pre-existing MOVE Rs,Rd (the buggy version); unblocks the future
+  MOVE-indirect family.
+Trigger: while scoping the MOVE-indirect arc, found that reg-to-reg
+  MOVE was decoded at 0x9000 (`1001 00FS`), which both TI editions
+  assign to MOVE Rs,*Rd+ (a memory store). Surfaced to the user, who
+  approved fixing the opcode AND adding cross-file support now.
+Spec source: SPVU001A page 12-126 (MOVE Rs,Rd detail) + Move-Instruction
+  summary table, verified against the 1986 first edition and the 1988
+  User's Guide. Object code Figure 12-3: MOVE A0,B1 = 0x4E01.
+Acceptance Criteria:
+- Encoding `0100 11MS SSSR DDDD` (base 0x4C00). NOT a field move (full
+  32-bit copy; no F bit). M=instr[9]: 0=same file, 1=cross-file.
+  R=instr[4]: file for both (M=0) or source file (M=1, dest = other).
+  Rs=instr[8:5], Rd=instr[3:0].
+- Decoder MOVE_RR_TOP6 = 6'b010011 (was 6'b100100). rs_file = R;
+  rd_file = (M==0)?R:~R. wb_flag_mask = N/Z/V only (C Unaffected, per
+  spec); N/Z/V come from ALU PASS_A (V defaults 0).
+- New `reg_file_t rs_file` field in decoded_instr_t (source file).
+  Defaults to reg_file_from_instr; only MOVE_RR sets it for cross-file.
+- Core: rf_rs1_file = (iclass==INSTR_MOVE_RR) ? decoded.rs_file :
+  decoded.rd_file. (Localized; no other instruction affected.)
+- tb_move_rr rewritten: encoding sanity vs TI object codes (0x4C22,
+  0x4CB7, 0x4E01, 0x4E74), same-file cases (incl. zero/MIN_INT/B-file),
+  and A->B / B->A cross-file cases with source-unchanged checks.
+- All stack/control tbs that set SP via "MOVE A0/A2/A14,A15" updated
+  from the 0x9000 form to 0x4C00: tb_pushst, tb_popst, tb_call_rs,
+  tb_calla_callr, tb_rets, tb_reti, tb_trap, tb_trap0, tb_mmtm.
+- The freed 0x9000/0x8000/0xA000 opcodes are now ILLEGAL until the
+  MOVE-indirect family lands.
+Tests: full 50-tb integration regression PASS under Verilator (3
+  module-level tbs need Questa, unchanged); lint clean.
+Docs: assumptions.md (A0020 corrected), instruction_coverage.md (MOVE
+  row), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

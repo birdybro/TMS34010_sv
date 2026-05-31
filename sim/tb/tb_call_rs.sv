@@ -142,7 +142,7 @@ module tb_call_rs;
 
     // ---- Prelude: set SP = SP_INIT (via MOVE A0,A15) and A5 = SUB_ADDR.
     p = place_movi_il(p, 4'd0, SP_INIT);
-    u_mem.mem[p] = 16'h900F; p = p + 1;       // MOVE A0, A15 (= SP)
+    u_mem.mem[p] = 16'h4C0F; p = p + 1;       // MOVE A0, A15 (= SP)
     p = place_movi_il(p, 4'd5, SUB_ADDR);
 
     // ---- CALL A5 -------------------------------------------------------

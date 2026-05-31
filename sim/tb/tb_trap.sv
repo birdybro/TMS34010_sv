@@ -162,9 +162,9 @@ module tb_trap;
     // MOVI A2, SP_INIT — preparing to load SP.
     p = place_movi_il(p, 4'd2, SP_INIT);
     // MOVE A2, A15 — SP <- A2 (= SP_INIT).
-    // Encoding `1001 00FS SSSR DDDD`: top6=100100, F=0, S=0010 (A2),
-    // R=0 (A file), D=1111 (A15) ⇒ 0x904F.
-    u_mem.mem[p] = 16'h904F; p = p + 1;  // MOVE A2, A15
+    // Encoding (SPVU001A p.12-126) `0100 11MS SSSR DDDD`: top6=010011, M=0, Rs=0010 (A2),
+    // R=0 (A file), Rd=1111 (A15) ⇒ 0x4C4F.
+    u_mem.mem[p] = 16'h4C4F; p = p + 1;  // MOVE A2, A15
     // MOVI A1, 0xCAFEBABE — value we'll force into ST via PUTST. We
     // need a distinguishable ST going into TRAP so the push-then-
     // replace ordering is unambiguous (the reset ST is also 0x10, so

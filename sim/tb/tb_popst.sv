@@ -121,7 +121,7 @@ module tb_popst;
 
     // ---- Set SP = SP_INIT via MOVE A0, A15 ------------------------------
     p = place_movi_il(p, 4'd0, SP_INIT);
-    u_mem.mem[p] = 16'h900F; p = p + 1;     // MOVE A0, A15 (= SP)
+    u_mem.mem[p] = 16'h4C0F; p = p + 1;     // MOVE A0, A15 (= SP)
 
     // ---- Set ST = ST_SEED via PUTST -------------------------------------
     p = place_movi_il(p, 4'd1, ST_SEED);

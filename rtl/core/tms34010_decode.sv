@@ -88,10 +88,19 @@ module tms34010_decode
   localparam logic [10:0] XORI_IL_TOP11 = 11'b0000_1011_110;  // XORI IL
   localparam logic [10:0] SUBI_IL_TOP11 = 11'b0000_1101_000;  // SUBI IL (different base!)
 
-  // MOVE Rs, Rd (register-to-register, same file). The F bit at position
-  // [9] selects the field-size mode (FE0/FE1 in ST). Phase 4 ignores F
-  // and treats it as a full 32-bit register copy (A0020).
-  localparam logic [5:0] MOVE_RR_TOP6 = 6'b100100;  // 1001 00FS SSSR DDDD
+  // MOVE Rs, Rd (register-to-register). Per SPVU001A page 12-126 and the
+  // summary table (verified against BOTH the 1986 first edition and the
+  // 1988 User's Guide), the encoding is `0100 11MS SSSR DDDD` (base
+  // 0x4C00). This is NOT a field move: the full 32 bits are copied and
+  // the field size has no effect, so there is no F bit here.
+  //   - M = instr[9]: 0 = both registers in one file, 1 = cross-file.
+  //   - R = instr[4]: when M=0, the file for BOTH registers; when M=1,
+  //                   the SOURCE file (the destination is the other file).
+  // This is the only MOVE that crosses register files (e.g. MOVE A0,B1 =
+  // 0x4E01, the object code in Figure 12-3). The earlier code decoded
+  // reg-to-reg MOVE at 0x9000 (`1001 00FS`), which is actually
+  // MOVE Rs,*Rd+ (postincrement to memory) — see assumptions.md A0020.
+  localparam logic [5:0] MOVE_RR_TOP6 = 6'b010011;  // 0100 11MS SSSR DDDD
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -354,6 +363,9 @@ module tms34010_decode
     decoded.needs_imm32     = 1'b0;
     decoded.imm_sign_extend = 1'b0;
     decoded.alu_op          = ALU_OP_PASS_A;
+    // rs_file defaults to the same file as rd_file (R bit). Only MOVE Rs,Rd
+    // overrides it for cross-file moves; the core reads it only for MOVE_RR.
+    decoded.rs_file         = reg_file_from_instr;
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -579,12 +591,20 @@ module tms34010_decode
     if (top6 == MOVE_RR_TOP6) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_MOVE_RR;
-      decoded.rd_file     = reg_file_from_instr;
-      decoded.rd_idx      = reg_idx_from_instr;
-      decoded.rs_idx      = rs_idx_from_instr;
+      // M=instr[9], R=instr[4]. Source file is always R; destination file
+      // is R when M=0 (same file) or the opposite file when M=1 (cross).
+      decoded.rs_file     = reg_file_from_instr;                      // = R
+      decoded.rd_file     = instr[9] ? reg_file_t'(~instr[4])         // M=1: ~R
+                                     : reg_file_from_instr;           // M=0:  R
+      decoded.rd_idx      = reg_idx_from_instr;                       // Rd = instr[3:0]
+      decoded.rs_idx      = rs_idx_from_instr;                        // Rs = instr[8:5]
       decoded.alu_op      = ALU_OP_PASS_A;        // alu_a = rf_rs1_data (= Rs)
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      // Per SPVU001A page 12-126: N = data[31], Z = (data==0), V = 0,
+      // C Unaffected. PASS_A already yields n/z/v correctly (v defaults 0);
+      // mask C off so the move doesn't clobber the carry flag.
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
     end
 
     // -----------------------------------------------------------------------

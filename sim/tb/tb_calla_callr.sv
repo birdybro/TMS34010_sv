@@ -121,7 +121,7 @@ module tb_calla_callr;
     // Prelude: SP = 0x0000_0800; A7 sentinel = 0xAAAA_AAAA.
     // ============================================================
     p = place_movi_il(p, 4'd0, 32'h0000_0800);
-    u_mem.mem[p] = 16'h900F; p = p + 1;             // MOVE A0, A15
+    u_mem.mem[p] = 16'h4C0F; p = p + 1;             // MOVE A0, A15
     p = place_movi_il(p, 4'd7, 32'hAAAA_AAAA);
 
     // ============================================================

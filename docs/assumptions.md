@@ -380,13 +380,13 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
-## A0020 — MOVE family: F-bit (field-size selector) ignored in Phase 4
-- **Date**: 2026-05-12
-- **Status**: active, deferred to Phase 5
-- **Source**: SPVU001A A-14 chart rows for MOVE family (`1001 00FS SSSR DDDD` and variants); SPVU001A §12.3 prose on field-size mechanics; bibliography/hdl-reimplementation/04-memory-fields-pixels.md.
-- **Conclusion**: TMS34010 MOVE-family instructions encode an F bit (typically bit[9] in reg-reg encodings, bit[10] in some indirect-addressing variants) that selects between FE0 and FE1 in the status register. FE0/FE1 hold the field size (1..32 bits) and a sign-extension/zero-extension flag that govern how a MOVE behaves at the bit level.
-- **Phase 4 implementation**: Field-size machinery is not yet built. MOVE Rs, Rd is implemented as a full 32-bit register copy, ignoring F. This is correct behavior for code that uses MOVE Rs, Rd with field-size=32 (the most common case), and incorrect for code using smaller field sizes.
-- **How to apply**: When Phase 5 lands the field-size logic (FE0/FE1 in ST + field-extract/insert hardware), revisit the MOVE Rs, Rd decoder arm. Add an `fe_select` field to `decoded_instr_t`, use it together with the F bit to read FE0 or FE1 from ST, and route through the existing shifter/ALU machinery (or a dedicated field-handler module). The MOVE indirect variants (`MOVE *Rs, Rd`, `MOVE Rs, *Rd`, etc.) are blocked on the same dependency and currently fall through to ILLEGAL.
+## A0020 — MOVE family encodings (and a corrected reg-to-reg opcode)
+- **Date**: 2026-05-12; **CORRECTED 2026-05-30 (Task 0058)**.
+- **Status**: reg-to-reg MOVE resolved/implemented at the correct opcode; field-size machinery for the *indirect/field* MOVE variants still deferred.
+- **Source**: SPVU001A page 12-126 (MOVE Rs,Rd detail) + the Move-Instructions summary table, cross-checked against BOTH the 1986 first edition (`1986_SPVU001...`) and the 1988 User's Guide. Object-code example Figure 12-3: `MOVE A0,B1 = 0x4E01`.
+- **CORRECTION**: the original A0020 misread the "A-14" chart. It took the row `1001 00FS SSSR DDDD` to be reg-to-reg MOVE; that row is actually **MOVE Rs,\*Rd+** (postincrement register-to-indirect, a memory *store*). Register-to-register MOVE is **`0100 11MS SSSR DDDD`** (base 0x4C00). The decoder and every stack testbench that set SP via "MOVE A0,A15" used the wrong 0x9000 opcode; they "passed" only because decoder + tests shared the same wrong encoding. Task 0058 relocates reg-to-reg MOVE to 0x4C00, adds the M-bit cross-file support, and fixes all affected testbenches.
+- **Reg-to-reg MOVE (now implemented, Task 0058)**: `0100 11MS SSSR DDDD`. NOT a field move — full 32-bit copy, field size has no effect, so there is **no F bit**. M=bit[9]: 0 ⇒ same file, 1 ⇒ cross-file. R=bit[4]: file for both (M=0) or the *source* file (M=1; destination is the other file). This is the only MOVE that crosses register files. Status: N=data[31], Z=(data==0), V=0, C Unaffected. New struct field `rs_file` carries the (possibly different) source file; the core reads it for `rf_rs1_file` only on `INSTR_MOVE_RR`.
+- **Field-size machinery (still deferred)**: the *field* MOVE variants — `MOVE Rs,*Rd`, `MOVE *Rs,Rd`, the pre/postincrement and offset/absolute forms — DO encode an F bit (bit[9]) selecting FS0/FE0 vs FS1/FE1 in ST, with field sizes 1..32 and sign/zero extension. That hardware is not yet built; those opcodes currently fall through to ILLEGAL. When implemented, add field-extract/insert handling driven by FS0/FS1 + FE0/FE1. See [[a0026-mmtm-mmfm-mask-mapping]] for the related multi-register moves (already done).
 
 ---
 

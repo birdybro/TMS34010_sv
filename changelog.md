@@ -7,6 +7,33 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Fixed (Task 0058 — register-to-register MOVE opcode + cross-file)
+- **Corrected a real opcode bug**: register-to-register `MOVE Rs,Rd` was
+  decoded at `0x9000` (`1001 00FS`), which both TI editions (1986 first
+  edition and 1988 User's Guide) actually assign to `MOVE Rs,*Rd+`
+  (postincrement register-to-indirect, a memory store). The correct
+  reg-to-reg encoding is `0100 11MS SSSR DDDD` (base `0x4C00`),
+  confirmed by the object-code example `MOVE A0,B1 = 0x4E01`
+  (Figure 12-3, SPVU001A p.12-126). The bug had been masked because the
+  decoder and every test shared the same wrong encoding.
+- **Added M-bit cross-file support**: `MOVE Rs,Rd` is the only MOVE that
+  can cross register files. M=bit[9] selects same-file (0) vs cross-file
+  (1); R=bit[4] is the file for both registers (M=0) or the *source*
+  file (M=1, destination is the other file). New `rs_file` field in
+  `decoded_instr_t` carries the (possibly different) source file; the
+  core routes `rf_rs1_file` from it only for `INSTR_MOVE_RR`.
+- **Corrected status-flag behavior**: per SPVU001A p.12-126, MOVE Rs,Rd
+  sets N=data[31], Z=(data==0), V=0, and leaves **C Unaffected**. The
+  prior all-ones flag mask wrongly clobbered C; now masked off.
+- **Fixed all affected testbenches**: every stack/control testbench that
+  set SP via "MOVE A0/A2/A14, A15" used the wrong `0x9000`-form opcode
+  (tb_pushst, tb_popst, tb_call_rs, tb_calla_callr, tb_rets, tb_reti,
+  tb_trap, tb_trap0, tb_mmtm) — all updated to the `0x4C00` form.
+  `tb_move_rr` rewritten with the corrected encoding plus A↔B cross-file
+  cases (verified against TI's `0x4E01` object code).
+- The freed `0x9000` / `0x8000` / `0xA000` opcodes are now correctly
+  ILLEGAL until the MOVE-indirect family is implemented.
+
 ### Added (Task 0057 — MMTM N flag)
 - Closed the one deferred piece of MMTM: the **N status bit**. Per
   SPVU001A page 12-111, MMTM sets N = sign of (0 - original Rp) with

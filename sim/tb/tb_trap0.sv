@@ -161,7 +161,7 @@ module tb_trap0;
     p = 0;
     // MOVI A2, SP_INIT; MOVE A2, A15 — load SP.
     p = place_movi_il(p, 4'd2, SP_INIT);
-    u_mem.mem[p] = 16'h904F; p = p + 1;  // MOVE A2, A15
+    u_mem.mem[p] = 16'h4C4F; p = p + 1;  // MOVE A2, A15
     // MOVI A1, 0xCAFEBABE + PUTST A1 — push a distinguishable ST that
     // we DON'T expect to find at the would-be SP-64 slot (since TRAP 0
     // skips the ST push).
