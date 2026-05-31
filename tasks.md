@@ -2026,7 +2026,7 @@ Tests: tb_mmtm PASS; full 28-tb regression PASS; Verilator lint
 Docs: instruction_coverage.md (MMTM row), assumptions.md (A0026
   on mask bit-to-register mapping), changelog.md, tasks.md.
 Commit:
-- pending
+- 608c7aa
 
 ---
 
