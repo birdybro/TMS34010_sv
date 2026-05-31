@@ -1011,6 +1011,39 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
+    // MOVE with absolute (32-bit) address. Same `0000 01F1` field-op family
+    // as SETF/SEXT/ZEXT, with the sub-op in bits[7:5]:
+    //   100 = MOVE Rs,@DAddr (store)   — SPVU001A 12-134
+    //   101 = MOVE @SAddr,Rd (load)    — SPVU001A 12-153
+    // The 32-bit absolute bit-address is the two words after the opcode
+    // (LSBs first), fetched via the imm32 path. F (bit[9]) selects FS0/FE0
+    // vs FS1/FE1; Task 0063 implements field-size-32, word-aligned only.
+    // The register operand (Rs for store / Rd for load) is at instr[3:0].
+    // -----------------------------------------------------------------------
+    if (instr[15:10] == SETF_TOP6 && instr[8] && (instr[7:5] == 3'b100)) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_ABS_STORE;
+      decoded.rd_file         = reg_file_from_instr;   // R bit
+      decoded.rs_idx          = reg_idx_from_instr;    // Rs = data (instr[3:0])
+      decoded.needs_imm32     = 1'b1;                  // fetch 32-bit DAddress
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;                  // no register writeback
+      decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
+    end
+
+    if (instr[15:10] == SETF_TOP6 && instr[8] && (instr[7:5] == 3'b101)) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_ABS_LOAD;
+      decoded.rd_file         = reg_file_from_instr;   // R bit
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest (instr[3:0])
+      decoded.needs_imm32     = 1'b1;                  // fetch 32-bit SAddress
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b1;                  // Rd <- loaded data
+      decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // -----------------------------------------------------------------------
     // EXGF Rd, F : atomic swap Rd[5:0] ↔ FE<F>:FS<F> in ST. Rd's
     // upper 26 bits are cleared. Status unaffected.
     //

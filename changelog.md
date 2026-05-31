@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0063 — MOVE absolute addressing, field-size 32)
+- The absolute-address MOVE forms (FS=32, word-aligned):
+  - **MOVE Rs,@DAddr** (`0000 01F1 100R SSSS` + 32-bit addr, base 0x0580)
+    — `mem[DAddr] <- Rs`. All flags Unaffected. SPVU001A p.12-134.
+  - **MOVE @SAddr,Rd** (`0000 01F1 101R DDDD` + 32-bit addr, base 0x05A0)
+    — `Rd <- mem[SAddr]`. Implicit compare-to-0: N=data[31], Z=(data==0),
+    V=0, C Unaffected. SPVU001A p.12-153.
+- INSTR_MOVE_ABS_STORE = 7'd77, INSTR_MOVE_ABS_LOAD = 7'd78. These join
+  the existing `0000 01F1` field-op family (SETF/SEXT/ZEXT) with the
+  sub-op in instr[7:5] (100=store, 101=load); the register operand is at
+  instr[3:0]. The 32-bit absolute bit-address is the two words after the
+  opcode (LSBs first), fetched via the imm32 path; CORE_MEMORY drives
+  `mem_addr = imm32` for a single read (load) or write (store).
+- Test: new `sim/tb/tb_move_abs.sv` — three store->load round-trips
+  (negative/zero/positive) verifying memory contents, recovered register,
+  and load N/Z flags (GETST snapshots). PASS.
+- Scope: field-size-32, word-aligned (A0020). MOVE @SAddr,@DAddr (5-word
+  mem-to-mem absolute) and the offset addressing modes remain deferred.
+
 ### Added (Task 0062 — MOVE indirect-to-indirect with auto inc/dec)
 - The two auto-update indirect-to-indirect MOVE forms (FS=32, word-aligned),
   completing the indirect-to-indirect family (SPVU001A p.12-138):

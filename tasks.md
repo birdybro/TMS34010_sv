@@ -68,6 +68,7 @@
 | 0060 | MOVE indirect auto inc/dec (field-32)        | complete |
 | 0061 | MOVE *Rs,*Rd indirect-to-indirect (field-32) | complete |
 | 0062 | MOVE *Rs+,*Rd+ / -*Rs,-*Rd inc/dec (field-32) | complete |
+| 0063 | MOVE @SAddr,Rd / Rs,@DAddr absolute (field-32) | complete |
 
 ---
 
@@ -2318,6 +2319,38 @@ Docs: instruction_coverage.md (two M2M inc/dec rows), assumptions.md
   (A0020 Rs==Rd note), changelog.md, tasks.md.
 Commit:
 - 2dcf45d
+
+---
+
+### Task 0063: MOVE @SAddr,Rd / Rs,@DAddr (absolute addressing, field 32)
+Status: complete
+Dependencies:
+- Task 0013 (imm32 fetch path); Task 0047 (CORE_MEMORY).
+Spec source: SPVU001A page 12-134 (store) and 12-153 (load). Encodings
+  0000 01F1 100R SSSS (store) / 0000 01F1 101R DDDD (load) + 32-bit addr.
+Scope: field-size-32, word-aligned.
+Acceptance Criteria:
+- INSTR_MOVE_ABS_STORE = 7'd77, INSTR_MOVE_ABS_LOAD = 7'd78.
+- Decoder: same `0000 01F1` family as SETF/SEXT/ZEXT —
+  instr[15:10]==SETF_TOP6 && instr[8] && instr[7:5]==100 (store) / 101
+  (load). Register operand at instr[3:0]; R=instr[4]. needs_imm32=1
+  (fetch the 32-bit absolute bit-address, LSBs first). Store: wb_reg_en=0,
+  wb_flags_en=0. Load: wb_reg_en=1, wb_flags_en=1 (N/Z mask).
+- Core: single CORE_MEMORY transaction with mem_addr=imm32. Store
+  mem_wdata=rf_rs1_data (Rs). Load -> rf_wr_data=mem_rdata + flag_input
+  from mem_rdata.
+- No collision with SETF/SEXT/ZEXT (distinct instr[7:5] sub-ops);
+  tb_setf/tb_sext_zext/tb_exgf still PASS.
+- sim/tb/tb_move_abs.sv: three store->load round-trips (neg/zero/pos)
+  checking memory, recovered register, and load N/Z flags.
+Known limitations:
+- MOVE @SAddr,@DAddr (5-word mem-to-mem absolute) and offset addressing
+  modes deferred; arbitrary field sizes / FE deferred (A0020).
+Tests: tb_move_abs PASS; full 55-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (two absolute rows), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 
