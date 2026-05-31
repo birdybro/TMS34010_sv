@@ -2250,7 +2250,7 @@ Tests: tb_move_indirect_incdec PASS; full 52-tb integration regression
   PASS under Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (four MOVE rows), changelog.md, tasks.md.
 Commit:
-- <pending>
+- de8a9d1
 
 ---
 
