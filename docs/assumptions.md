@@ -480,6 +480,30 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Original deviation**: the ALU arm was forced to assign `flags.c = 1'b0` because `wb_flags_en` was all-or-nothing. Now `flags.c` from the ALU is still 0 (defensive default), but the mask blocks the update so C retains its prior value.
 - **How to apply going forward**: any new instruction whose spec lists a flag as "Unaffected" should override `wb_flag_mask` in its decoder arm. The default initialization in the decoder's always_comb sets the mask to all-ones, so arithmetic instructions continue to update all four flags without explicit `wb_flag_mask` lines.
 
+## A0026 — MMTM / MMFM mask bit-to-register mapping
+- **Date**: 2026-05-30 (Task 0055).
+- **Status**: provisional. The graphical figure showing the chart
+  appears on SPVU001A page 12-110 / 12-112 (between "The bit
+  assignments in the mask are:" and the next text block) but did
+  not survive `pdftotext -layout` extraction.
+- **Assumption**: **bit N of the mask = register R(N)**, identical
+  for both MMTM and MMFM. Iteration direction differs by spec:
+  MMTM iterates LSB → MSB (lowest-order register pushed first);
+  MMFM iterates MSB → LSB (highest-order register restored first).
+- **Justification**: this reading is self-consistent — an MMTM
+  followed by an MMFM with the same mask losslessly round-trips
+  the register list. The TMS34010 example on page 12-111
+  (`MMTM A1, A0,A2,A4,A8,A12,A13,A14,SP`) doesn't show the
+  encoded mask word, so it can't directly disprove the
+  alternative mapping (bit N = R(15-N)).
+- **How to apply going forward**: tb_mmtm and any future MMFM
+  testbench should round-trip via MMTM→MMFM (catches internal
+  inconsistency even if the bit-to-register mapping doesn't
+  match TI's actual convention). If we later learn the TI
+  convention differs, the fix is a single line: invert the
+  index used to drive `rf_rs1_idx` in core.sv.
+- **Spec source**: SPVU001A pages 12-109..12-112 (MMFM / MMTM).
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

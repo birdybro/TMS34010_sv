@@ -7,6 +7,55 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0055 — MMTM Rp, register list)
+- Implemented **MMTM** per SPVU001A page 12-111. Encoding
+  `0000 1001 100R DDDD` + 16-bit register-list mask. For each set
+  bit (lowest-order first): `Rp -= 32; mem[Rp] <- Rn`. Final Rp
+  points at the address of the lowest-written register.
+- First instruction in the project where the *number* of memory
+  transactions is data-dependent (1..16 32-bit writes, driven by
+  `popcount(mask)`).
+- INSTR_MMTM = 7'd72. Decoder arm: `top11 == MMTM_TOP11`, rd/rs
+  carry the Rp index and file, needs_imm16=1 (mask fetch),
+  needs_memory_op=1.
+- Core changes:
+  - New state: `mmtm_rp_q` (32-bit working Rp), `mmtm_mask_q`
+    (16-bit residual mask, bits cleared as processed),
+    `mmtm_iter_idx` (4-bit priority-encoded lowest set bit of
+    mask_q).
+  - `rf_rs1_idx` is multiplexed during CORE_MEMORY for MMTM to
+    point at `mmtm_iter_idx`, so the regfile's async read port
+    serves as the per-cycle push data source (no new regfile
+    ports required).
+  - Init: on CORE_EXECUTE → CORE_MEMORY transition for MMTM,
+    capture `mmtm_rp_q <= rf_rs2_data - 32` and
+    `mmtm_mask_q <= imm_lo_q`.
+  - CORE_MEMORY arm issues a 32-bit write at `mmtm_rp_q` with
+    `mem_wdata = rf_rs1_data`. On ack, clears the just-pushed
+    bit and decrements `mmtm_rp_q` by 32 if more pushes remain.
+  - CORE_MEMORY → CORE_WRITEBACK transition gates on
+    `mmtm_mask_will_be_empty` for INSTR_MMTM.
+  - rf_wr_data mux returns `mmtm_rp_q` for INSTR_MMTM (= final
+    Rp value = address of last push).
+- Assumption A0026: bit N of the mask = register R(N) for both
+  MMTM and MMFM. The spec's actual chart is a graphical figure
+  that didn't survive `pdftotext -layout` extraction. The natural
+  reading is self-consistent and matches the spec's "lowest-order
+  register saved first" requirement when scanning LSB-first.
+- Added `sim/tb/tb_mmtm.sv`. Loads A0..A15 with recognisable
+  sentinel values (0xAnAnAnAn-style), sets Rp=A1=0x800, executes
+  `MMTM A1, {A0, A2, A4, A8, A12, A13, A14, SP}` (mask=0xF115).
+  Verifies final A1 = 0x0700 (= 0x0800 - 8*32) and all eight
+  pushed memory slots, lowest-order register at highest address.
+- Known limitations:
+  - N flag computation deferred. Per spec: "N: Set to the sign of
+    the result of 0 - Rp" with two edge cases (Rp=0 → N=1,
+    Rp=0x80000000 → N=0). All four flags currently left
+    unchanged (C, Z, V are "Unaffected" by spec; N is the gap).
+  - MMFM (the pop counterpart) is the planned next task.
+- Regression: full 28-tb sweep PASS; Verilator
+  `--lint-only -Wall` clean.
+
 ### Added (Task 0054 — TRAP 0 special case)
 - Implemented the **TRAP 0** carve-out from SPVU001A page 12-253
   note 1: the level-0 trap does not push PC'/ST and does not

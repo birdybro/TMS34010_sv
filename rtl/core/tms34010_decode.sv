@@ -145,6 +145,19 @@ module tms34010_decode
   // N>=1 here. The pattern + mask catch the whole 0x0900..0x091F range.
   localparam logic [10:0] TRAP_TOP11      = 11'b0000_1001_000;
 
+  // MMTM Rp, register list — Move Multiple to Memory. Per SPVU001A
+  // page 12-111. Encoding `0000 1001 100R DDDD` (top11 =
+  // 11'b00001001_100), where R=instr[4] is the register file and
+  // DDDD=instr[3:0] is Rp's index. The second instruction word is a
+  // 16-bit binary mask indicating which registers are in the list
+  // (assumption A0026: bit N of mask = register R(N) for both MMTM
+  // and MMFM). Iteration order is lowest-order register first per
+  // the spec's "lowest order register is always saved first".
+  // For each set bit, Rp is predecremented by 32 and the matching
+  // register's 32-bit value is written. Final Rp is left pointing
+  // at the lowest written address.
+  localparam logic [10:0] MMTM_TOP11      = 11'b0000_1001_100;
+
   // CALLA Address — Call Subroutine Absolute. Per SPVU001A page 12-48
   // + summary table line 27019. Single fixed opcode `0x0D5F` followed
   // by a 32-bit absolute target address. PC' is pushed; new PC = the
@@ -1030,6 +1043,34 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;          // ST update via st_write_en
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MMTM Rp, register list
+    //
+    // Top11 match on 11'b00001001_100. Rd carries the Rp index; the
+    // second instruction word (fetched via the existing imm16 path) is
+    // the 16-bit register-list mask. CORE_MEMORY iterates set bits in
+    // mmtm_mask_q (lowest-order first per spec) and pushes each
+    // matching register's 32-bit value, predecrementing the working
+    // Rp by 32 per push. Final Rp is written back to the regfile slot
+    // for the original Rp index.
+    //
+    // wb_flags_en = 0 here — the N flag computation (sign of -Rp) and
+    // its two edge cases (Rp=0, Rp=0x80000000) are TBD in a follow-up
+    // task; the other three flags are "Unaffected" per the spec.
+    // -----------------------------------------------------------------------
+    if (top11 == MMTM_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MMTM;
+      decoded.rd_file         = reg_file_from_instr;   // R bit at instr[4]
+      decoded.rd_idx          = reg_idx_from_instr;    // DDDD = Rp index
+      decoded.rs_idx          = reg_idx_from_instr;    // also Rp (for rs2 path)
+      decoded.alu_op          = ALU_OP_SUB;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;            // N flag deferred
+      decoded.needs_imm16     = 1'b1;            // fetch the mask word
       decoded.needs_memory_op = 1'b1;
     end
 

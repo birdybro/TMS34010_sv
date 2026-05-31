@@ -60,6 +60,7 @@
 | 0052 | RETI + multi-transaction memory FSM       | complete |
 | 0053 | TRAP N (3-transaction software interrupt) | complete |
 | 0054 | TRAP 0 (special-cased, no pushes)         | complete |
+| 0055 | MMTM Rp, list (multi-register push)       | complete (N flag deferred) |
 
 ---
 
@@ -1970,6 +1971,62 @@ Docs: instruction_coverage.md (TRAP N row updated to "all N
   implemented"), changelog.md, tasks.md.
 Commit:
 - f991683
+
+---
+
+### Task 0055: MMTM Rp, register list (multi-register push)
+Status: complete (N flag deferred)
+Dependencies:
+- Task 0047 (memory-write infrastructure / CORE_MEMORY).
+- Task 0053 (multi-transaction memory FSM).
+Spec source: SPVU001A page 12-111. Encoding `0000 1001 100R DDDD`
+  + 16-bit register-list mask. For each set bit (lowest-order
+  register first): Rp -= 32; mem[Rp] <- Rn. Final Rp points at the
+  address of the lowest-written register.
+Acceptance Criteria:
+- INSTR_MMTM = 7'd72.
+- Decoder: `top11 == MMTM_TOP11` (=11'b00001001_100) arms MMTM with
+  rd_idx/rs_idx = instr[3:0] (Rp), rd_file/rs_file from R bit,
+  needs_imm16=1 (mask fetch), wb_reg_en=1 (write final Rp),
+  wb_flags_en=0 (N flag deferred), needs_memory_op=1.
+- Core: new `mmtm_rp_q` (32-bit working Rp), `mmtm_mask_q` (16-bit
+  residual mask), `mmtm_iter_idx` (4-bit priority-encoded lowest
+  set bit of mask_q).
+- `rf_rs1_idx` is multiplexed during CORE_MEMORY for MMTM to point
+  at `mmtm_iter_idx`, so `rf_rs1_data` serves as the per-cycle
+  push data source (regfile is async-read).
+- Init: on CORE_EXECUTE → CORE_MEMORY transition for MMTM, capture
+  `mmtm_rp_q <= rf_rs2_data - 32` (address of first push) and
+  `mmtm_mask_q <= imm_lo_q` (the fetched mask word).
+- CORE_MEMORY arm: drive `mem_req=1, mem_we=1, mem_addr=mmtm_rp_q,
+  mem_size=32, mem_wdata=rf_rs1_data`. On ack, clear the just-pushed
+  bit and (if more pushes remain) decrement `mmtm_rp_q` by 32.
+- CORE_MEMORY → CORE_WRITEBACK transition gates on
+  `mmtm_mask_will_be_empty` (i.e., the residual mask becomes 0
+  after the current bit clear) for INSTR_MMTM.
+- rf_wr_data mux: INSTR_MMTM returns `mmtm_rp_q` (final Rp = address
+  of the last push).
+- Bit-to-register mapping per assumption A0026: bit N = R(N) for
+  both MMTM and MMFM. Graphical figure didn't survive pdftotext.
+- `sim/tb/tb_mmtm.sv`: loads A0..A15 with recognisable sentinel
+  values, sets Rp=A1=0x800, executes MMTM A1, {A0, A2, A4, A8,
+  A12, A13, A14, A15(=SP)} (mask=0xF115). Verifies:
+    Final A1 = 0x0800 - 8*32 = 0x0700
+    mem[Rp-32]=A0, mem[Rp-64]=A2, …, mem[Rp-256]=SP
+  (i.e., 8 32-bit writes at descending bit-addresses, lowest-order
+  register at highest address).
+Known limitations:
+- N flag computation deferred. Per SPVU001A page 12-111:
+  "N: Set to the sign of the result of 0 - Rp" with two edge cases
+  (Rp=0 → N=1, Rp=0x80000000 → N=0). All four other flags
+  ("C/Z/V Unaffected") — current implementation leaves all four
+  unchanged.
+Tests: tb_mmtm PASS; full 28-tb regression PASS; Verilator lint
+  clean.
+Docs: instruction_coverage.md (MMTM row), assumptions.md (A0026
+  on mask bit-to-register mapping), changelog.md, tasks.md.
+Commit:
+- pending
 
 ---
 

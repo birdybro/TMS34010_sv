@@ -304,12 +304,18 @@ package tms34010_pkg;
     INSTR_RETI       = 7'd70, // RETI              — ST <- mem[SP]; SP += 32;
                               //                     PC <- mem[SP]; SP += 32.
                               //                     Two-step pop. Status from popped ST.
-    INSTR_TRAP       = 7'd71  // TRAP N            — SP -= 32; mem[SP] <- PC';
+    INSTR_TRAP       = 7'd71, // TRAP N            — SP -= 32; mem[SP] <- PC';
                               //                     SP -= 32; mem[SP] <- ST;
                               //                     ST <- 0x00000010; PC <- mem[vec].
                               //                     vec = 0xFFFFFFE0 - N*32. N at instr[4:0]
                               //                     (range 1..31; TRAP 0 deferred).
                               //                     Three-step memory: write, write, read.
+    INSTR_MMTM       = 7'd72  // MMTM Rp, list     — For each register Rn in the list
+                              //                     (lowest-order first): Rp -= 32; mem[Rp] <- Rn.
+                              //                     Second word = 16-bit mask (bit N = Rn). Up
+                              //                     to 16 32-bit writes per instruction.
+                              //                     N flag set to sign of (0 - initial Rp); see
+                              //                     SPVU001A page 12-111 for edge cases (deferred).
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

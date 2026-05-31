@@ -248,6 +248,65 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
+  // MMTM iterator
+  //
+  // mmtm_mask_q (16-bit) shadows the original register-list mask and
+  // has the just-pushed bit cleared after each mem_ack. mmtm_rp_q
+  // (32-bit) tracks the address of the most recent push — pre-loaded
+  // to (initial Rp - 32) on entry to CORE_MEMORY so the very first
+  // push lands at the right place, and decremented by 32 after each
+  // ack. mmtm_iter_idx is a priority-encoded "lowest set bit of
+  // mmtm_mask_q" — combinational, used both as the index into the
+  // register file (rf_rs1_idx override above) and as the bit position
+  // to clear after the ack.
+  //
+  // Assumption A0026: bit N of the mask = register R(N). The spec's
+  // chart was unrecoverable from pdftotext (a graphical figure on
+  // page 12-110/12-112); this is the natural reading and is consistent
+  // with MMTM's "lowest-order register saved first" requirement when
+  // we scan LSB-first.
+  // ---------------------------------------------------------------------------
+  logic [DATA_WIDTH-1:0] mmtm_rp_q;
+  logic [15:0]           mmtm_mask_q;
+  logic [3:0]            mmtm_iter_idx;
+  logic                  mmtm_mask_will_be_empty;
+
+  always_comb begin
+    // Find lowest set bit. By iterating high→low and overwriting,
+    // the loop terminates with the smallest i where mmtm_mask_q[i]=1.
+    mmtm_iter_idx = 4'd0;
+    for (int i = 15; i >= 0; i--) begin
+      if (mmtm_mask_q[i]) mmtm_iter_idx = 4'(i);
+    end
+  end
+  // After we clear the bit at mmtm_iter_idx, will the mask be empty?
+  // Used both to gate the FSM transition (last push → WRITEBACK) and
+  // to suppress further Rp-decrement on the final ack.
+  assign mmtm_mask_will_be_empty = ((mmtm_mask_q & ~(16'd1 << mmtm_iter_idx)) == 16'd0);
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      mmtm_rp_q   <= '0;
+      mmtm_mask_q <= '0;
+    end else if (state_q == CORE_EXECUTE
+              && state_d == CORE_MEMORY
+              && decoded.iclass == INSTR_MMTM) begin
+      // First entry to CORE_MEMORY for MMTM: pre-decrement Rp by 32
+      // (= address of first push) and capture the mask from the
+      // fetched second instruction word.
+      mmtm_rp_q   <= rf_rs2_data - 32'd32;
+      mmtm_mask_q <= imm_lo_q;
+    end else if (state_q == CORE_MEMORY
+              && decoded.iclass == INSTR_MMTM
+              && mem_ack) begin
+      mmtm_mask_q[mmtm_iter_idx] <= 1'b0;
+      if (!mmtm_mask_will_be_empty) begin
+        mmtm_rp_q <= mmtm_rp_q - 32'd32;
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // Immediate latch
   //
   // Long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, ...) fetch
@@ -337,7 +396,13 @@ module tms34010_core
   // TMS34010 reg-reg encoding constrains Rs and Rd to the same file, so
   // a single `decoded.rd_file` drives both reads.
   assign rf_rs1_file = decoded.rd_file;
-  assign rf_rs1_idx  = decoded.rs_idx;
+  // Read-port 1 index is normally decoded.rs_idx. MMTM repurposes it
+  // during CORE_MEMORY to scan the register list — rf_rs1_idx then
+  // points at the current register being pushed, and rf_rs1_data
+  // becomes the 32-bit value driven onto mem_wdata.
+  assign rf_rs1_idx  = (state_q == CORE_MEMORY && decoded.iclass == INSTR_MMTM)
+                     ? mmtm_iter_idx
+                     : decoded.rs_idx;
   assign rf_rs2_file = decoded.rd_file;
   assign rf_rs2_idx  = decoded.rd_idx;
 
@@ -464,6 +529,7 @@ module tms34010_core
   always_comb begin
     unique case (decoded.iclass)
       INSTR_GETST:  rf_wr_data = st_value;
+      INSTR_MMTM:   rf_wr_data = mmtm_rp_q;     // final Rp = address of last push
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
@@ -1036,6 +1102,17 @@ module tms34010_core
               endcase
             end
           end
+          INSTR_MMTM: begin
+            // Push the register currently selected by mmtm_iter_idx to
+            // mem[mmtm_rp_q]. Each iteration of CORE_MEMORY is one
+            // 32-bit write; mmtm_mask_q and mmtm_rp_q advance on the
+            // ack. We stay in CORE_MEMORY until the mask is empty.
+            mem_req   = 1'b1;
+            mem_we    = 1'b1;
+            mem_addr  = mmtm_rp_q;
+            mem_size  = 6'd32;
+            mem_wdata = rf_rs1_data;       // = value of register R(mmtm_iter_idx)
+          end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
         if (mem_ack) begin
@@ -1045,6 +1122,7 @@ module tms34010_core
             INSTR_RETI: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
             INSTR_TRAP: if (trap_skip_push || mem_op_step == 2'd2)
                           state_d = CORE_WRITEBACK;
+            INSTR_MMTM: if (mmtm_mask_will_be_empty) state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;
           endcase
         end
