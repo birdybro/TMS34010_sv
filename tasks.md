@@ -2661,7 +2661,7 @@ Tests: tb_divs_mods PASS; full 64-tb integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (DIVS/MODS rows), changelog.md, tasks.md.
 Commit:
-- <pending>
+- e8ef4ea
 
 ---
 
