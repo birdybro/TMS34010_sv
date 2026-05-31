@@ -122,6 +122,14 @@ module tms34010_decode
   localparam logic [5:0] MOVE_M2M_POSTINC_TOP6 = 6'b100110;
   localparam logic [5:0] MOVE_M2M_PREDEC_TOP6  = 6'b101010;
 
+  // Register-indirect with 16-bit signed offset (Task 0064). The effective
+  // bit-address is pointer + sign_extend(offset16); the offset is the 2nd
+  // instruction word. The pointer register is unchanged.
+  //   MOVE Rs,*Rd(off) : 1011 00FS  (top6 = 101100, 0xB000) store
+  //   MOVE *Rs(off),Rd : 1011 01FS  (top6 = 101101, 0xB400) load
+  localparam logic [5:0] MOVE_OFF_STORE_TOP6 = 6'b101100;
+  localparam logic [5:0] MOVE_OFF_LOAD_TOP6  = 6'b101101;
+
   // Auto inc/dec indirect MOVE (Task 0060). Same field semantics as the
   // plain forms; the pointer register steps by the field size (±32 at
   // FS=32). Postincrement uses the pointer then adds; predecrement
@@ -679,6 +687,41 @@ module tms34010_decode
       // the flag_input mux in the core, not the ALU).
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
       decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE Rs,*Rd(off) / *Rs(off),Rd  — register-indirect with signed 16-bit
+    // offset (Task 0064). 2-word: opcode + offset. Effective bit-address =
+    // pointer + sign_extend(offset16); the pointer register is unchanged.
+    // SPVU001A 12-132 (store) / 12-147 (load). Rs=instr[8:5], Rd=instr[3:0].
+    // Store: data=Rs, pointer=Rd, all flags Unaffected. Load: pointer=Rs,
+    // dest=Rd, implicit compare-to-0 (N/Z). Field-size-32, word-aligned.
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_OFF_STORE_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_OFF_STORE;
+      decoded.rd_file         = reg_file_from_instr;   // Rs & Rd same file
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = pointer (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = data    (instr[8:5])
+      decoded.needs_imm16     = 1'b1;                  // fetch the 16-bit offset
+      decoded.imm_sign_extend = 1'b1;                  // signed offset
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;                  // pointer unchanged; no writeback
+      decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
+    end
+
+    if (top6 == MOVE_OFF_LOAD_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_OFF_LOAD;
+      decoded.rd_file         = reg_file_from_instr;   // Rs & Rd same file
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = destination (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pointer     (instr[8:5])
+      decoded.needs_imm16     = 1'b1;                  // fetch the 16-bit offset
+      decoded.imm_sign_extend = 1'b1;                  // signed offset
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b1;                  // Rd <- loaded data
+      decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
     end
 
     // -----------------------------------------------------------------------

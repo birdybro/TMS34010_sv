@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0064 — MOVE register-indirect with offset, field-size 32)
+- The register-indirect-with-offset MOVE forms (FS=32, word-aligned):
+  - **MOVE Rs,\*Rd(off)** (`1011 00FS SSSR DDDD` + off16, base 0xB000) —
+    `mem[Rd + sext(off16)] <- Rs`. Rd pointer unchanged. Flags Unaffected.
+    SPVU001A p.12-132.
+  - **MOVE \*Rs(off),Rd** (`1011 01FS SSSR DDDD` + off16, base 0xB400) —
+    `Rd <- mem[Rs + sext(off16)]`. Rs pointer unchanged. Implicit
+    compare-to-0: N=data[31], Z=(data==0), V=0, C Unaffected. SPVU001A
+    p.12-147.
+- INSTR_MOVE_OFF_STORE = 7'd79, INSTR_MOVE_OFF_LOAD = 7'd80. Decoder
+  matches top6 101100/101101; the signed 16-bit offset is the 2nd word,
+  fetched via the imm16 path (needs_imm16=1, imm_sign_extend=1). The
+  effective address is `pointer + imm32` (imm32 = sext(off16)) — a single
+  combinational add in CORE_MEMORY. Rs=instr[8:5], Rd=instr[3:0].
+- Test: new `sim/tb/tb_move_offset.sv` — store->load round-trips with
+  positive (+0x20), negative (-0x20), and zero offsets, checking memory,
+  recovered register, pointer-unchanged, and load N/Z flags. PASS.
+- Scope: field-size-32, word-aligned (A0020). The indirect-with-offset to
+  indirect-with-offset form (3-word) remains deferred.
+
 ### Added (Task 0063 — MOVE absolute addressing, field-size 32)
 - The absolute-address MOVE forms (FS=32, word-aligned):
   - **MOVE Rs,@DAddr** (`0000 01F1 100R SSSS` + 32-bit addr, base 0x0580)

@@ -69,6 +69,7 @@
 | 0061 | MOVE *Rs,*Rd indirect-to-indirect (field-32) | complete |
 | 0062 | MOVE *Rs+,*Rd+ / -*Rs,-*Rd inc/dec (field-32) | complete |
 | 0063 | MOVE @SAddr,Rd / Rs,@DAddr absolute (field-32) | complete |
+| 0064 | MOVE Rs,*Rd(off) / *Rs(off),Rd offset (field-32) | complete |
 
 ---
 
@@ -2351,6 +2352,38 @@ Tests: tb_move_abs PASS; full 55-tb integration regression PASS under
 Docs: instruction_coverage.md (two absolute rows), changelog.md, tasks.md.
 Commit:
 - 3284c88
+
+---
+
+### Task 0064: MOVE Rs,*Rd(off) / *Rs(off),Rd (indirect with offset, field 32)
+Status: complete
+Dependencies:
+- Task 0059 (register-indirect MOVE datapath); imm16 fetch path.
+Spec source: SPVU001A page 12-132 (store) and 12-147 (load). Encodings
+  1011 00FS (0xB000, store) / 1011 01FS (0xB400, load) + 16-bit offset.
+Scope: field-size-32, word-aligned. Effective addr = pointer +
+  sign_extend(offset16); pointer unchanged.
+Acceptance Criteria:
+- INSTR_MOVE_OFF_STORE = 7'd79, INSTR_MOVE_OFF_LOAD = 7'd80.
+- Decoder: top6 101100 (store) / 101101 (load). needs_imm16=1,
+  imm_sign_extend=1 (fetch the signed offset). Rs=instr[8:5],
+  Rd=instr[3:0]. Store: data=Rs, pointer=Rd, wb_reg_en=0, wb_flags_en=0.
+  Load: pointer=Rs, dest=Rd, wb_reg_en=1, wb_flags_en=1 (N/Z mask).
+- Core: single CORE_MEMORY transaction. Store mem_addr=rf_rs2_data+imm32,
+  mem_wdata=rf_rs1_data. Load mem_addr=rf_rs1_data+imm32 -> rf_wr_data=
+  mem_rdata + flag_input from mem_rdata. (imm32 = sext(offset16).)
+- sim/tb/tb_move_offset.sv: store->load round-trips with +0x20, -0x20
+  (0xFFE0), and zero offsets; memory, recovered register,
+  pointer-unchanged, and load N/Z flags.
+Known limitations:
+- The offset<->offset (3-word, *Rs(SOff),*Rd(DOff)) form, arbitrary
+  field sizes, unaligned/non-16-aligned effective addresses, and FE
+  deferred (A0020).
+Tests: tb_move_offset PASS; full 56-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (two offset rows), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

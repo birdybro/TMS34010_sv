@@ -653,6 +653,8 @@ module tms34010_core
       INSTR_MOVE_FIELD_M2M: rf_wr_data = m2m_src_wr ? m2m_src_new : m2m_dst_new;
       // MOVE @SAddr,Rd: Rd <- the field read from the absolute address.
       INSTR_MOVE_ABS_LOAD:  rf_wr_data = mem_rdata;
+      // MOVE *Rs(off),Rd: Rd <- the field read from the offset address.
+      INSTR_MOVE_OFF_LOAD:  rf_wr_data = mem_rdata;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
@@ -1029,7 +1031,8 @@ module tms34010_core
       // size 32 the field IS the full 32-bit word (no extension), so N/Z
       // come straight from mem_rdata; V=0; C masked off by wb_flag_mask.
       INSTR_MOVE_FIELD_LOAD,
-      INSTR_MOVE_ABS_LOAD:  flag_input = '{n: mem_rdata[DATA_WIDTH-1],
+      INSTR_MOVE_ABS_LOAD,
+      INSTR_MOVE_OFF_LOAD:  flag_input = '{n: mem_rdata[DATA_WIDTH-1],
                                     c: 1'b0, z: (mem_rdata == '0), v: 1'b0};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
@@ -1280,6 +1283,23 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = mv_addr;           // = Rs or Rs-32 (predec)
+            mem_size  = 6'd32;
+          end
+          INSTR_MOVE_OFF_STORE: begin
+            // MOVE Rs,*Rd(off): write Rs (rf_rs1_data) to mem[Rd + off].
+            // imm32 = sign-extended 16-bit offset; Rd = rf_rs2_data.
+            mem_req   = 1'b1;
+            mem_we    = 1'b1;
+            mem_addr  = rf_rs2_data + imm32;
+            mem_size  = 6'd32;
+            mem_wdata = rf_rs1_data;       // = Rs (data)
+          end
+          INSTR_MOVE_OFF_LOAD: begin
+            // MOVE *Rs(off),Rd: read mem[Rs + off]; result -> Rd at
+            // WRITEBACK. Rs = rf_rs1_data (pointer); imm32 = sext(off16).
+            mem_req   = 1'b1;
+            mem_we    = 1'b0;
+            mem_addr  = rf_rs1_data + imm32;
             mem_size  = 6'd32;
           end
           INSTR_MOVE_ABS_STORE: begin

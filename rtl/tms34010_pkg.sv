@@ -341,10 +341,18 @@ package tms34010_pkg;
                               //                     32-bit absolute bit-address (2 words follow the
                               //                     opcode). Encoding 0000 01F1 100R SSSS. All flags
                               //                     Unaffected. Task 0063: field-size-32, word-aligned.
-    INSTR_MOVE_ABS_LOAD    = 7'd78  // MOVE @SAddr,Rd — field at mem[SAddr] -> Rd, sign/zero-ext.
+    INSTR_MOVE_ABS_LOAD    = 7'd78, // MOVE @SAddr,Rd — field at mem[SAddr] -> Rd, sign/zero-ext.
                               //                     SAddr is a 32-bit absolute bit-address. Encoding
                               //                     0000 01F1 101R DDDD. Implicit compare-to-0:
                               //                     N=sign, Z=zero, V=0, C Unaffected. Task 0063.
+    INSTR_MOVE_OFF_STORE   = 7'd79, // MOVE Rs,*Rd(off) — field in Rs -> mem[Rd + sext(off16)].
+                              //                     Rd pointer unchanged; off16 is the 2nd word.
+                              //                     Encoding 1011 00FS SSSR DDDD. All flags
+                              //                     Unaffected. Task 0064: field-size-32, aligned.
+    INSTR_MOVE_OFF_LOAD    = 7'd80  // MOVE *Rs(off),Rd — field at mem[Rs + sext(off16)] -> Rd.
+                              //                     Rs pointer unchanged. Encoding 1011 01FS SSSR
+                              //                     DDDD. Implicit compare-to-0: N=sign, Z=zero,
+                              //                     V=0, C Unaffected. Task 0064.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
