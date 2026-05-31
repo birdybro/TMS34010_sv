@@ -2464,7 +2464,7 @@ Tests: tb_cmpxy PASS; full 59-tb integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (CMPXY row), changelog.md, tasks.md.
 Commit:
-- <pending>
+- 8fd5324
 
 ---
 
