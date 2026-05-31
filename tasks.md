@@ -2084,7 +2084,7 @@ Tests: tb_mmfm PASS; full 49-tb integration regression PASS under
 Docs: instruction_coverage.md (MMFM row + MMTM row mm_* rename),
   changelog.md, tasks.md.
 Commit:
-- <pending>
+- 287ccce
 
 ---
 
