@@ -7,6 +7,34 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0060 — MOVE indirect with auto inc/dec, field-size 32)
+- Four auto-update addressing variants of the indirect MOVE, reusing the
+  Task 0059 datapath (SPVU001A pages 12-129/12-130/12-139/12-143):
+  - **MOVE Rs,\*Rd+** (0x9000) — `mem[Rd] <- Rs; Rd += 32`. Flags Unaffected.
+  - **MOVE Rs,-\*Rd** (0xA000) — `Rd -= 32; mem[Rd] <- Rs`. Flags Unaffected.
+  - **MOVE \*Rs+,Rd** (0x9400) — `Rd <- mem[Rs]; Rs += 32`. N/Z flags.
+  - **MOVE -\*Rs,Rd** (0xA400) — `Rs -= 32; Rd <- mem[Rs]`. N/Z flags.
+- New `move_addr_mode_t move_mode` field on `decoded_instr_t`
+  (NONE/POSTINC/PREDEC); the two existing MOVE iclasses now carry it.
+  Decoder matches top6 100100/101000 (store post/pre) and 100101/101001
+  (load post/pre).
+- Core: `mv_ptr` / `mv_addr` / `mv_ptr_new` combinational helpers compute
+  the transaction address (pointer, or pointer-32 for predecrement) and
+  the post-update pointer (±32). Stores write the updated pointer (Rd)
+  back at WRITEBACK; loads write the updated pointer (Rs) during
+  CORE_MEMORY via a new `mv_load_ptr_wr` regfile-write path (a second
+  user of the write port, like `mmfm_pop_wr`), with the data write to Rd
+  at WRITEBACK.
+- **Rs==Rd edge case** (load, spec 12-143: "pointer information is
+  overwritten by the data fetched"): handled for free — the pointer is
+  written in CORE_MEMORY and the data at WRITEBACK, so the data wins.
+- Test: new `sim/tb/tb_move_indirect_incdec.sv` — post/pre store+load
+  round-trips, pointer ±32 checks, load N/Z flags, and the Rs==Rd
+  data-wins case. PASS.
+- Scope unchanged from Task 0059: field-size-32, word-aligned only. The
+  offset/absolute addressing modes, arbitrary field sizes, and FE
+  sign/zero extension remain deferred (A0020).
+
 ### Added (Task 0059 — MOVE register <-> indirect, field-size 32)
 - First increment of the MOVE-indirect family (the opcodes freed by
   Task 0058):

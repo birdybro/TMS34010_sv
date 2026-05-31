@@ -65,6 +65,7 @@
 | 0057 | MMTM N flag (sign of 0 - Rp)              | complete |
 | 0058 | Fix MOVE Rs,Rd opcode (0x4C00) + cross-file | complete |
 | 0059 | MOVE Rs,*Rd / *Rs,Rd (field-32, word-aligned) | complete |
+| 0060 | MOVE indirect auto inc/dec (field-32)        | complete |
 
 ---
 
@@ -2214,6 +2215,42 @@ Tests: tb_move_indirect PASS; full 51-tb integration regression PASS
 Docs: instruction_coverage.md (two MOVE rows), changelog.md, tasks.md.
 Commit:
 - a20ae35
+
+---
+
+### Task 0060: MOVE indirect with auto inc/dec (field-size 32)
+Status: complete
+Dependencies:
+- Task 0059 (plain indirect MOVE datapath; reused here).
+Spec source: SPVU001A pages 12-129 (Rs,*Rd+), 12-130 (Rs,-*Rd),
+  12-139 (*Rs+,Rd), 12-143 (-*Rs,Rd). Encodings 1001/1010 00FS/01FS.
+Scope: field-size-32, word-aligned (same as Task 0059). Step = ±32.
+Acceptance Criteria:
+- Reuse INSTR_MOVE_FIELD_STORE/_LOAD; new move_addr_mode_t move_mode
+  field (NONE/POSTINC/PREDEC) on decoded_instr_t.
+- Decoder: top6 100100 (store postinc, 0x9000), 101000 (store predec,
+  0xA000), 100101 (load postinc, 0x9400), 101001 (load predec, 0xA400).
+  Store inc/dec: wb_reg_en=1 (write pointer Rd back). Load inc/dec:
+  wb_reg_en=1 (data to Rd) + pointer Rs updated in the core.
+- Core helpers: mv_ptr (Rd for store / Rs for load), mv_addr (= mv_ptr,
+  or mv_ptr-32 for predec), mv_ptr_new (mv_ptr±32). CORE_MEMORY uses
+  mv_addr. Store pointer writeback at WRITEBACK (rf_wr_data=mv_ptr_new
+  for INSTR_MOVE_FIELD_STORE). Load pointer writeback during CORE_MEMORY
+  via mv_load_ptr_wr (rf_wr_idx=rs_idx, rf_wr_data=mv_ptr_new); data to
+  Rd at WRITEBACK.
+- Rs==Rd on a load: data wins (pointer written in CORE_MEMORY, data
+  overwrites at WRITEBACK) — matches SPVU001A 12-143.
+- sim/tb/tb_move_indirect_incdec.sv: post/pre store+load round-trips,
+  pointer ±32, load N/Z flags, Rs==Rd data-wins case.
+Known limitations:
+- Field sizes != 32, unaligned pointers, FE extension, and the
+  offset/absolute addressing modes still deferred (A0020). The
+  indirect-to-indirect (*Rs,*Rd) forms are also not implemented.
+Tests: tb_move_indirect_incdec PASS; full 52-tb integration regression
+  PASS under Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (four MOVE rows), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

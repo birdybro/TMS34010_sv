@@ -351,6 +351,16 @@ package tms34010_pkg;
   parameter logic [3:0] CC_EQ = 4'b1010;  // equal            (Z = 1; alias "JRZ")
   parameter logic [3:0] CC_NE = 4'b1011;  // not-equal        (Z = 0; alias "JRNZ")
 
+  // Auto-update addressing mode for the indirect MOVE family. The pointer
+  // register steps by the field size (32 bits for the implemented FS=32
+  // case): POSTINC uses the pointer then adds; PREDEC subtracts first and
+  // uses the new value. NONE leaves the pointer unchanged.
+  typedef enum logic [1:0] {
+    MV_ADDR_NONE    = 2'b00,
+    MV_ADDR_POSTINC = 2'b01,
+    MV_ADDR_PREDEC  = 2'b10
+  } move_addr_mode_t;
+
   // What the control FSM needs from decode in order to execute. Fields are
   // populated only when the instruction class uses them; the rest hold safe
   // defaults (REG_FILE_A, idx 0, ALU_OP_PASS_A, etc.) so an undriven path
@@ -389,6 +399,9 @@ package tms34010_pkg;
     // is the first user; later: POPST, CALL, RETS, MMTM, MMFM, MOVE
     // indirect, MOVB, TRAP.
     logic          needs_memory_op;
+    // Pointer auto-update mode for the indirect MOVE family (INSTR_MOVE_
+    // FIELD_STORE / _LOAD). MV_ADDR_NONE for every other instruction.
+    move_addr_mode_t move_mode;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg

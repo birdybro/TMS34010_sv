@@ -482,12 +482,37 @@ module tms34010_core
   logic mmfm_pop_wr;
   assign mmfm_pop_wr = (state_q == CORE_MEMORY) && is_mmfm && mem_ack;
 
+  // ---- Indirect MOVE addressing + auto inc/dec (Task 0059/0060) -----------
+  // Pointer register: Rd for stores (rf_rs2), Rs for loads (rf_rs1). The
+  // memory address is the pointer (postinc/none) or pointer-32 (predec);
+  // the post-update pointer value is pointer±32 (FS=32). For LOAD inc/dec
+  // the updated pointer is written to Rs during CORE_MEMORY (a second
+  // regfile-write user, like mmfm_pop_wr); the data write to Rd happens at
+  // WRITEBACK, so when Rs==Rd the data wins (SPVU001A 12-143).
+  logic                  is_mv_store, is_mv_load;
+  logic                  mv_postinc, mv_predec, mv_incdec;
+  logic [DATA_WIDTH-1:0] mv_ptr, mv_addr, mv_ptr_new;
+  logic                  mv_load_ptr_wr;
+  assign is_mv_store = (decoded.iclass == INSTR_MOVE_FIELD_STORE);
+  assign is_mv_load  = (decoded.iclass == INSTR_MOVE_FIELD_LOAD);
+  assign mv_postinc  = (decoded.move_mode == MV_ADDR_POSTINC);
+  assign mv_predec   = (decoded.move_mode == MV_ADDR_PREDEC);
+  assign mv_incdec   = mv_postinc || mv_predec;
+  assign mv_ptr      = is_mv_store ? rf_rs2_data : rf_rs1_data;
+  assign mv_addr     = mv_predec ? (mv_ptr - 32'd32) : mv_ptr;
+  assign mv_ptr_new  = mv_predec ? (mv_ptr - 32'd32) : (mv_ptr + 32'd32);
+  assign mv_load_ptr_wr = (state_q == CORE_MEMORY) && is_mv_load
+                       && mv_incdec && mem_ack;
+
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
                        && dsj_precondition)
-                   || mmfm_pop_wr;
+                   || mmfm_pop_wr
+                   || mv_load_ptr_wr;
   assign rf_wr_file = decoded.rd_file;
-  assign rf_wr_idx  = mmfm_pop_wr ? mm_iter_idx : decoded.rd_idx;
+  assign rf_wr_idx  = mmfm_pop_wr    ? mm_iter_idx
+                    : mv_load_ptr_wr ? decoded.rs_idx   // load inc/dec: update pointer Rs
+                                     : decoded.rd_idx;
   // EXGF (Exchange Field Definition) datapath. Per SPVU001A page 12-77:
   // Rd's low 6 bits swap with the F-selected FE:FS pair (1 + 5 bits)
   // in ST. Rd's upper 26 bits are cleared after the swap.
@@ -583,7 +608,12 @@ module tms34010_core
       INSTR_MMFM:   rf_wr_data = mmfm_pop_wr ? mem_rdata : mm_rp_q;
       // MOVE *Rs,Rd: Rd <- the 32 bits read from mem[Rs]. mem_rdata still
       // holds the value at WRITEBACK (no new transaction is issued there).
-      INSTR_MOVE_FIELD_LOAD: rf_wr_data = mem_rdata;
+      // Store inc/dec writes the auto-updated pointer back to Rd at
+      // WRITEBACK (plain store has wb_reg_en=0, so this is unused there).
+      INSTR_MOVE_FIELD_STORE: rf_wr_data = mv_ptr_new;
+      // Load: at WRITEBACK -> the loaded data to Rd; during CORE_MEMORY
+      // (inc/dec) -> the updated pointer to Rs.
+      INSTR_MOVE_FIELD_LOAD: rf_wr_data = mv_load_ptr_wr ? mv_ptr_new : mem_rdata;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
@@ -1192,21 +1222,24 @@ module tms34010_core
             mem_size  = 6'd32;
           end
           INSTR_MOVE_FIELD_STORE: begin
-            // MOVE Rs,*Rd: write Rs (rf_rs1_data) to mem[Rd]. Rd is the
-            // bit-address pointer (rf_rs2_data). 32-bit field, word-aligned.
+            // MOVE Rs,*Rd[+|-]: write Rs (rf_rs1_data) to mem[mv_addr].
+            // mv_addr = pointer Rd (postinc/none) or Rd-32 (predec). The
+            // pointer auto-update (Rd±32) is written back at WRITEBACK for
+            // the inc/dec forms. 32-bit field, word-aligned.
             mem_req   = 1'b1;
             mem_we    = 1'b1;
-            mem_addr  = rf_rs2_data;       // = Rd (pointer)
+            mem_addr  = mv_addr;           // = Rd or Rd-32 (predec)
             mem_size  = 6'd32;
             mem_wdata = rf_rs1_data;       // = Rs (data)
           end
           INSTR_MOVE_FIELD_LOAD: begin
-            // MOVE *Rs,Rd: read 32 bits from mem[Rs] (rf_rs1_data is the
-            // pointer). The result (mem_rdata) is written to Rd at
-            // WRITEBACK via the rf_wr_data mux; flags from the loaded data.
+            // MOVE [-]*Rs[+],Rd: read 32 bits from mem[mv_addr]. mv_addr =
+            // pointer Rs (postinc/none) or Rs-32 (predec). The loaded data
+            // goes to Rd at WRITEBACK; for inc/dec the updated pointer Rs±32
+            // is written via the mv_load_ptr_wr path on this ack.
             mem_req   = 1'b1;
             mem_we    = 1'b0;
-            mem_addr  = rf_rs1_data;       // = Rs (pointer)
+            mem_addr  = mv_addr;           // = Rs or Rs-32 (predec)
             mem_size  = 6'd32;
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)

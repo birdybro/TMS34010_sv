@@ -114,6 +114,19 @@ module tms34010_decode
   // are deferred (assumptions.md A0020 / Phase 6).
   localparam logic [5:0] MOVE_STORE_TOP6 = 6'b100000;  // MOVE Rs,*Rd
   localparam logic [5:0] MOVE_LOAD_TOP6  = 6'b100001;  // MOVE *Rs,Rd
+
+  // Auto inc/dec indirect MOVE (Task 0060). Same field semantics as the
+  // plain forms; the pointer register steps by the field size (±32 at
+  // FS=32). Postincrement uses the pointer then adds; predecrement
+  // subtracts first and uses the new value.
+  //   MOVE Rs,*Rd+ : 1001 00FS  (top6 = 100100) store, postincrement
+  //   MOVE *Rs+,Rd : 1001 01FS  (top6 = 100101) load,  postincrement
+  //   MOVE Rs,-*Rd : 1010 00FS  (top6 = 101000) store, predecrement
+  //   MOVE -*Rs,Rd : 1010 01FS  (top6 = 101001) load,  predecrement
+  localparam logic [5:0] MOVE_STORE_POSTINC_TOP6 = 6'b100100;
+  localparam logic [5:0] MOVE_LOAD_POSTINC_TOP6  = 6'b100101;
+  localparam logic [5:0] MOVE_STORE_PREDEC_TOP6  = 6'b101000;
+  localparam logic [5:0] MOVE_LOAD_PREDEC_TOP6   = 6'b101001;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -379,6 +392,7 @@ module tms34010_decode
     // rs_file defaults to the same file as rd_file (R bit). Only MOVE Rs,Rd
     // overrides it for cross-file moves; the core reads it only for MOVE_RR.
     decoded.rs_file         = reg_file_from_instr;
+    decoded.move_mode       = MV_ADDR_NONE;   // only the indirect MOVE family sets this
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -656,6 +670,42 @@ module tms34010_decode
       decoded.wb_flags_en     = 1'b1;
       // N/Z/V update, C Unaffected (the loaded data drives the flags via
       // the flag_input mux in the core, not the ALU).
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE indirect with auto inc/dec (Task 0060). Same field semantics as
+    // the plain forms above; the pointer register also steps by the field
+    // size (±32 at FS=32). For STORES the pointer (Rd) is written back at
+    // WRITEBACK (so wb_reg_en=1 here, unlike the plain store). For LOADS
+    // the data still goes to Rd and the pointer (Rs) is updated via a
+    // separate CORE_MEMORY-time write in the core. Task 0060 scope is
+    // field-size-32, word-aligned (same limitation as Task 0059).
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_STORE_POSTINC_TOP6 || top6 == MOVE_STORE_PREDEC_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_STORE;
+      decoded.rd_file         = reg_file_from_instr;   // Rs & Rd same file
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = pointer (written back)
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = data
+      decoded.move_mode       = (top6 == MOVE_STORE_PREDEC_TOP6)
+                              ? MV_ADDR_PREDEC : MV_ADDR_POSTINC;
+      decoded.wb_reg_en       = 1'b1;                  // write updated pointer to Rd
+      decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top6 == MOVE_LOAD_POSTINC_TOP6 || top6 == MOVE_LOAD_PREDEC_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_LOAD;
+      decoded.rd_file         = reg_file_from_instr;   // Rs & Rd same file
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = destination (data)
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pointer (updated)
+      decoded.move_mode       = (top6 == MOVE_LOAD_PREDEC_TOP6)
+                              ? MV_ADDR_PREDEC : MV_ADDR_POSTINC;
+      decoded.wb_reg_en       = 1'b1;                  // Rd <- loaded data at WRITEBACK
+      decoded.wb_flags_en     = 1'b1;
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
       decoded.needs_memory_op = 1'b1;
     end
