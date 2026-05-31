@@ -2441,7 +2441,7 @@ Tests: tb_addxy_subxy PASS; full 58-tb integration regression PASS under
 Docs: instruction_coverage.md (ADDXY/SUBXY rows), assumptions.md (A0027),
   changelog.md, tasks.md.
 Commit:
-- <pending>
+- 7522799
 
 ---
 
