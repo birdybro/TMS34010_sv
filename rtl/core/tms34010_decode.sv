@@ -174,6 +174,9 @@ module tms34010_decode
   // DIVU — unsigned divide. Per SPVU001A page 12-69. Encoding
   // 0101 101S SSSR DDDD. Multi-cycle (the core runs tms34010_divider).
   localparam logic [6:0] DIVU_TOP7    = 7'b0101_101;
+  // MODU — unsigned modulo (Rd mod Rs -> Rd). Per SPVU001A page 12-113.
+  // Encoding 0110 111S SSSR DDDD. Reuses the divider (remainder result).
+  localparam logic [6:0] MODU_TOP7    = 7'b0110_111;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -772,6 +775,20 @@ module tms34010_decode
     if (top7 == DIVU_TOP7) begin
       decoded.illegal      = 1'b0;
       decoded.iclass       = INSTR_DIVU;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b1};  // Z, V
+    end
+
+    // MODU — unsigned modulo (multi-cycle, reuses the divider). The
+    // remainder is written to Rd. Z + V; the core masks Z off when Rs=0
+    // (overflow) so it is "Unaffected" per SPVU001A page 12-113.
+    if (top7 == MODU_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_MODU;
       decoded.rd_file      = reg_file_from_instr;
       decoded.rd_idx       = reg_idx_from_instr;
       decoded.rs_idx       = rs_idx_from_instr;

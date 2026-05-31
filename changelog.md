@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0073 — MODU unsigned modulo)
+- **MODU Rs,Rd** (`0110 111S SSSR DDDD`, 0x6E00) — unsigned 32-bit modulo:
+  `Rd mod Rs -> Rd` (the remainder). SPVU001A p.12-113. Reuses the
+  `tms34010_divider` (dividend = {0, Rd}); single writeback of the
+  remainder to Rd.
+- Status: N/C Unaffected; Z = (remainder==0); V = 1 if Rs=0, in which case
+  Rd is unchanged and **Z is left Unaffected**. The "Z unaffected only when
+  Rs=0" rule is a runtime condition the static decode flag-mask can't
+  express, so the core now computes an `effective_flag_mask` that clears
+  the Z mask bit for MODU on overflow.
+- INSTR_MODU = 7'd90. The divide-family helper `is_div` now covers DIVU and
+  MODU; only DIVU-even uses the 64-bit {Rd,Rd+1} dividend and the
+  pair-writeback (MODU is always {0,Rd} + single writeback).
+- Test: new `sim/tb/tb_modu.sv` — normal (Z=0), exact division (Z=1), and
+  Rs=0 (V=1, Rd unchanged, Z unaffected — verified by leaving Z=0 before
+  the op and confirming it stays 0).
+- Deferred: signed DIVS/MODS reuse the divider with operand abs +
+  result sign-conditioning (follow-up).
+
 ### Added (Task 0072 — DIVU unsigned divide + multi-cycle divider)
 - **DIVU Rs,Rd** (`0101 101S SSSR DDDD`, 0x5A00) — unsigned divide.
   SPVU001A p.12-69.

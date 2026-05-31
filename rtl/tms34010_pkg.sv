@@ -409,11 +409,15 @@ package tms34010_pkg;
     INSTR_MPYU             = 7'd88, // MPYU Rs,Rd — unsigned 32x32 -> 64-bit (same writeback as
                               //                     MPYS). Z=result==0 (N Unaffected). Encoding
                               //                     0101 111S SSSR DDDD. Task 0071 (FS1=32).
-    INSTR_DIVU             = 7'd89  // DIVU Rs,Rd — unsigned divide. Even Rd: {Rd:Rd+1}/Rs ->
+    INSTR_DIVU             = 7'd89, // DIVU Rs,Rd — unsigned divide. Even Rd: {Rd:Rd+1}/Rs ->
                               //                     quotient in Rd, remainder in Rd+1. Odd Rd:
                               //                     Rd/Rs -> quotient in Rd. V=overflow (Rs=0 or
                               //                     quotient>32b; result unchanged), Z=quotient==0,
                               //                     N Unaffected. Encoding 0101 101S SSSR DDDD.
+    INSTR_MODU             = 7'd90  // MODU Rs,Rd — unsigned 32-bit modulo: Rd mod Rs -> Rd
+                              //                     (remainder). V=(Rs==0; Rd unchanged), Z=remainder
+                              //                     ==0 (unaffected if Rs==0), N Unaffected. Encoding
+                              //                     0110 111S SSSR DDDD. Reuses the divider.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

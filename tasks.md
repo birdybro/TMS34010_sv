@@ -78,6 +78,7 @@
 | 0070 | CPW (compare point to window) + 3rd regfile read port | complete |
 | 0071 | MPYS / MPYU multiply (FS1=32)                | complete |
 | 0072 | DIVU unsigned divide + multi-cycle divider   | complete |
+| 0073 | MODU unsigned modulo (reuses divider)        | complete |
 
 ---
 
@@ -2605,6 +2606,33 @@ Docs: instruction_coverage.md (DIVU row), timing_notes.md, changelog.md,
   tasks.md.
 Commit:
 - 79384f3
+
+---
+
+### Task 0073: MODU unsigned modulo (reuses divider)
+Status: complete
+Dependencies: Task 0072 (the divider + CORE_DIVIDE).
+Spec source: SPVU001A page 12-113. Encoding 0110 111S SSSR DDDD (0x6E00).
+Acceptance Criteria:
+- INSTR_MODU = 7'd90. Decoder top7 0110_111; wb_flag_mask {z, v}.
+- Reuses tms34010_divider via the generalized is_div (now DIVU || MODU).
+  dividend = {0, Rd} (32-bit); the divider's remainder -> Rd (single
+  writeback; MODU never uses the pair-writeback).
+- Flags: Z = (remainder==0), V = (Rs==0). On Rs=0: regfile write
+  suppressed (Rd unchanged), and Z left Unaffected via a new runtime
+  effective_flag_mask (clears the Z mask for MODU when div_overflow) —
+  the static decode mask can't express the "Z unaffected only if Rs=0"
+  rule. N/C Unaffected.
+- sim/tb/tb_modu.sv: normal (Z=0), exact (Z=1), Rs=0 (V=1, Rd unchanged,
+  Z unaffected — verified by entering the op with Z=0).
+Known limitations:
+- Signed DIVS/MODS reuse the divider with operand abs + result
+  sign-conditioning — follow-up.
+Tests: tb_modu PASS; full 63-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (MODU row), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

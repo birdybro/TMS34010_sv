@@ -671,14 +671,21 @@ module tms34010_core
   // (divisor 0 or quotient > 32 bits) the result is NOT written; only V is
   // set. The product/quotient pair-writeback to {Rd, Rd+1} is shared with
   // MPY via pair_wb_step.
-  logic                  is_div, div_rd_even;
+  // is_div = the whole divide family (DIVU, MODU, ... ) — anything that
+  // runs the multi-cycle divider via CORE_DIVIDE.
+  logic                  is_div, is_divu, is_modu, div_rd_even, div_use_pair;
   logic [2*DATA_WIDTH-1:0] div_dividend;
   logic [DATA_WIDTH-1:0]   div_quotient, div_remainder;
   logic                    div_start, div_busy, div_done, div_overflow;
-  assign is_div      = (decoded.iclass == INSTR_DIVU);
+  assign is_divu     = (decoded.iclass == INSTR_DIVU);
+  assign is_modu     = (decoded.iclass == INSTR_MODU);
+  assign is_div      = is_divu || is_modu;
   assign div_rd_even = (decoded.rd_idx[0] == 1'b0);
-  assign div_dividend = div_rd_even ? {rf_rs2_data, rf_rs3_data}      // {Rd, Rd+1}
-                                    : {{DATA_WIDTH{1'b0}}, rf_rs2_data}; // {0, Rd}
+  // Only DIVU with an even Rd uses the 64-bit {Rd, Rd+1} dividend; MODU and
+  // odd-Rd DIVU use the 32-bit {0, Rd} dividend.
+  assign div_use_pair = is_divu && div_rd_even;
+  assign div_dividend = div_use_pair ? {rf_rs2_data, rf_rs3_data}        // {Rd, Rd+1}
+                                     : {{DATA_WIDTH{1'b0}}, rf_rs2_data}; // {0, Rd}
   // One-cycle start pulse as we leave CORE_EXECUTE for CORE_DIVIDE; the
   // divider latches the operands on that edge.
   assign div_start = (state_q == CORE_EXECUTE) && is_div;
@@ -702,7 +709,7 @@ module tms34010_core
   // nothing, so it is not a pair-writeback op then.
   logic is_pair_wb, pair_second_pass, pair_wb_step;
   assign is_pair_wb = (is_mpy && mpy_rd_even)
-                   || (is_div && div_rd_even && !div_overflow);
+                   || (div_use_pair && !div_overflow);   // DIVU even only (not MODU)
   assign pair_second_pass = is_pair_wb && (pair_wb_step == 1'b0);
 
   always_ff @(posedge clk) begin
@@ -799,6 +806,8 @@ module tms34010_core
       // odd Rd -> quotient. (Skipped entirely on overflow via rf_wr_en.)
       INSTR_DIVU:   rf_wr_data = (div_rd_even && pair_wb_step) ? div_remainder
                                                               : div_quotient;
+      // MODU: the remainder of Rd mod Rs -> Rd (single writeback).
+      INSTR_MODU:   rf_wr_data = div_remainder;
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
@@ -1214,8 +1223,22 @@ module tms34010_core
       INSTR_DIVU:   flag_input = '{n: 1'b0, c: 1'b0,
                                     z: (!div_overflow && (div_quotient == '0)),
                                     v: div_overflow};
+      // MODU: Z = remainder==0 (the result), V = overflow (Rs=0). The Z
+      // write is masked off on overflow (see effective_flag_mask), so Z is
+      // Unaffected when Rs=0 per the spec.
+      INSTR_MODU:   flag_input = '{n: 1'b0, c: 1'b0,
+                                    z: (div_remainder == '0), v: div_overflow};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
+  end
+
+  // Effective per-flag update mask. Normally the decoded mask, but MODU
+  // (and the future MODS) leave Z "Unaffected" when Rs=0 (overflow), which
+  // is a runtime condition the static decode mask can't express.
+  alu_flags_t effective_flag_mask;
+  always_comb begin
+    effective_flag_mask = decoded.wb_flag_mask;
+    if (is_modu && div_overflow) effective_flag_mask.z = 1'b0;
   end
 
   tms34010_status_reg u_status_reg (
@@ -1223,7 +1246,7 @@ module tms34010_core
     .rst             (rst),
     .flag_update_en  (st_flag_update_en),
     .flags_in        (flag_input),
-    .flag_update_mask(decoded.wb_flag_mask),
+    .flag_update_mask(effective_flag_mask),
     .st_write_en     (st_write_en),
     .st_write_data   (st_write_data),
     .st_o            (st_value),
