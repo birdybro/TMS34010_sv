@@ -356,9 +356,17 @@ package tms34010_pkg;
     INSTR_MOVX             = 7'd81, // MOVX Rs,Rd — RsX -> RdX (low 16 bits). Rd's Y half (high 16)
                               //                     unaffected. Encoding 1110 110S SSSR DDDD. All
                               //                     flags Unaffected. Task 0065.
-    INSTR_MOVY             = 7'd82  // MOVY Rs,Rd — RsY -> RdY (high 16 bits). Rd's X half (low 16)
+    INSTR_MOVY             = 7'd82, // MOVY Rs,Rd — RsY -> RdY (high 16 bits). Rd's X half (low 16)
                               //                     unaffected. Encoding 1110 111S SSSR DDDD. All
                               //                     flags Unaffected. Task 0065.
+    INSTR_ADDXY            = 7'd83, // ADDXY Rs,Rd — RdX += RsX, RdY += RsY (independent 16-bit, no
+                              //                     carry between halves). Encoding 1110 000S SSSR
+                              //                     DDDD. Status (graphics): N=(Xres==0), V=Xres[15],
+                              //                     Z=(Yres==0), C=Yres[15]. Task 0066.
+    INSTR_SUBXY            = 7'd84  // SUBXY Rs,Rd — RdX -= RsX, RdY -= RsY (independent 16-bit).
+                              //                     Encoding 1110 001S SSSR DDDD. Status (compare):
+                              //                     N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY),
+                              //                     C=(RsY>RdY) (unsigned). Task 0066.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

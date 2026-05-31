@@ -71,6 +71,7 @@
 | 0063 | MOVE @SAddr,Rd / Rs,@DAddr absolute (field-32) | complete |
 | 0064 | MOVE Rs,*Rd(off) / *Rs(off),Rd offset (field-32) | complete |
 | 0065 | MOVX / MOVY (half-register moves)             | complete |
+| 0066 | ADDXY / SUBXY (dual 16-bit XY arithmetic)     | complete |
 
 ---
 
@@ -2412,6 +2413,35 @@ Tests: tb_movx_movy PASS; full 57-tb integration regression PASS under
 Docs: instruction_coverage.md (MOVX/MOVY rows), changelog.md, tasks.md.
 Commit:
 - f238ea6
+
+---
+
+### Task 0066: ADDXY / SUBXY (dual 16-bit XY arithmetic)
+Status: complete
+Dependencies: none (pure register op).
+Spec source: SPVU001A pages 12-41 (ADDXY) / 12-252 (SUBXY). Encodings
+  1110 000S (ADDXY, 0xE000) / 1110 001S (SUBXY, 0xE200) SSSR DDDD.
+Acceptance Criteria:
+- INSTR_ADDXY = 7'd83, INSTR_SUBXY = 7'd84. Decoder top7 1110_000 /
+  1110_001; same-file reg-reg; wb_reg_en=1, wb_flags_en=1 (full mask).
+- Core XY datapath: X = low 16, Y = high 16. ADDXY Rd.X+=Rs.X, Rd.Y+=Rs.Y;
+  SUBXY Rd.X-=Rs.X, Rd.Y-=Rs.Y — separate 16-bit adders/subtractors, NO
+  carry/borrow between halves. Rd is source+dest (rf_rs2), Rs (rf_rs1).
+- Status bits (verified vs TI tables):
+    ADDXY: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
+    SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY); the `>`
+      comparisons are UNSIGNED (= per-half subtract borrow) — assumption
+      A0027, pending MAME cross-check.
+- rf_wr_data and flag_input muxes route addxy_result/subxy_result and
+  addxy_flags/subxy_flags.
+- sim/tb/tb_addxy_subxy.sv: ADDXY/SUBXY cases from TI's example tables
+  checking the result AND the NCZV pattern (GETST snapshots).
+Tests: tb_addxy_subxy PASS; full 58-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (ADDXY/SUBXY rows), assumptions.md (A0027),
+  changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

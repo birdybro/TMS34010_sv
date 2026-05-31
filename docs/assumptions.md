@@ -512,6 +512,24 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   index used to drive `rf_rs1_idx` in core.sv.
 - **Spec source**: SPVU001A pages 12-109..12-112 (MMFM / MMTM).
 
+## A0027 — SUBXY / CMPXY greater-than comparison is unsigned
+- **Date**: 2026-05-31 (Task 0066).
+- **Status**: provisional (pending MAME cross-check).
+- **Source**: SPVU001A page 12-252 (SUBXY) Status Bits: "C: 1 if source
+  Y field > destination Y field", "V: 1 if source X field > destination
+  X field" — plus the worked example table on the same page.
+- **Assumption**: the `>` comparisons are UNSIGNED. SUBXY computes
+  Rd - Rs per 16-bit half; the spec's "(Rs > Rd)" for C/V is then exactly
+  the unsigned borrow out of (Rd - Rs), i.e. `Rd < Rs` unsigned — which is
+  how the core computes them (`xy_rd_x < xy_rs_x`, `xy_rd_y < xy_rs_y`).
+  N/Z are equality (Xres==0 / Yres==0), which is signedness-independent.
+- **Why uncertain**: TI's example table uses only small positive values
+  (0..0x10) that don't distinguish signed vs unsigned `>`. XY screen
+  coordinates are sometimes treated as signed for clipping.
+- **How to apply**: if a MAME/silicon cross-check shows signed comparison,
+  change the two `<` comparisons in the `subxy_flags` assign (core.sv) to
+  signed (`$signed(...) <`). CMPXY (future task) shares this convention.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

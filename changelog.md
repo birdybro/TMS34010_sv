@@ -5,7 +5,28 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
-## 2026-05-30
+## 2026-05-31
+
+### Added (Task 0066 — ADDXY / SUBXY dual 16-bit XY arithmetic)
+- **ADDXY Rs,Rd** (`1110 000S SSSR DDDD`, 0xE000) — `Rd.X += Rs.X,
+  Rd.Y += Rs.Y` on the two 16-bit halves independently, with NO carry
+  between halves (X=low 16, Y=high 16). SPVU001A p.12-41.
+- **SUBXY Rs,Rd** (`1110 001S SSSR DDDD`, 0xE200) — `Rd.X -= Rs.X,
+  Rd.Y -= Rs.Y` per half. SPVU001A p.12-252.
+- Status bits encode graphics-clipping info (NOT ordinary arithmetic
+  flags):
+  - ADDXY: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
+  - SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY); the
+    `>` comparisons are unsigned (= the per-half subtract borrow). All
+    verified against TI's worked example tables.
+- INSTR_ADDXY = 7'd83, INSTR_SUBXY = 7'd84. New XY datapath in the core:
+  separate 16-bit adders/subtractors for the X and Y halves (blocking
+  inter-half carry), feeding the rf_wr_data and flag_input muxes. Pure
+  register op — no memory.
+- New assumption A0027: the SUBXY/CMPXY `>` comparison is taken as
+  unsigned (TI's examples don't distinguish; pending MAME cross-check).
+- Test: new `sim/tb/tb_addxy_subxy.sv` — ADDXY/SUBXY cases from TI's
+  tables checking both the result and the NCZV pattern (GETST snapshots).
 
 ### Added (Task 0065 — MOVX / MOVY half-register moves)
 - **MOVX Rs,Rd** (`1110 110S SSSR DDDD`, 0xEC00) — `Rd.X <- Rs.X` (low 16

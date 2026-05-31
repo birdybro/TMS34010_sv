@@ -574,6 +574,34 @@ module tms34010_core
     end
   end
 
+  // ---- ADDXY / SUBXY datapath (XY-coordinate arithmetic) ------------------
+  // Treat each register as two 16-bit halves: X = low 16, Y = high 16.
+  // ADDXY/SUBXY operate on the halves independently, with NO carry/borrow
+  // propagating between them. Rd is both a source and the destination;
+  // rf_rs2_data delivers the old Rd, rf_rs1_data the Rs operand.
+  //   ADDXY (SPVU001A 12-41):  N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
+  //   SUBXY (SPVU001A 12-252): compare-style flags — N=(RsX==RdX),
+  //     V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY) (unsigned, = subtract borrow).
+  logic [15:0] xy_rs_x, xy_rs_y, xy_rd_x, xy_rd_y;
+  logic [15:0] xy_x_add, xy_y_add, xy_x_sub, xy_y_sub;
+  logic [DATA_WIDTH-1:0] addxy_result, subxy_result;
+  alu_flags_t            addxy_flags, subxy_flags;
+  assign xy_rs_x = rf_rs1_data[15:0];
+  assign xy_rs_y = rf_rs1_data[DATA_WIDTH-1:16];
+  assign xy_rd_x = rf_rs2_data[15:0];
+  assign xy_rd_y = rf_rs2_data[DATA_WIDTH-1:16];
+  assign xy_x_add = xy_rd_x + xy_rs_x;     // 16-bit, carry dropped
+  assign xy_y_add = xy_rd_y + xy_rs_y;
+  assign xy_x_sub = xy_rd_x - xy_rs_x;     // Rd - Rs per spec
+  assign xy_y_sub = xy_rd_y - xy_rs_y;
+  assign addxy_result = {xy_y_add, xy_x_add};
+  assign subxy_result = {xy_y_sub, xy_x_sub};
+  assign addxy_flags = '{n: (xy_x_add == 16'd0), c: xy_y_add[15],
+                          z: (xy_y_add == 16'd0), v: xy_x_add[15]};
+  // (RsX>RdX) unsigned == borrow out of (RdX - RsX) == (xy_rd_x < xy_rs_x).
+  assign subxy_flags = '{n: (xy_x_sub == 16'd0), c: (xy_rd_y < xy_rs_y),
+                          z: (xy_y_sub == 16'd0), v: (xy_rd_x < xy_rs_x)};
+
   // SEXT / ZEXT field-extension datapath. Per SPVU001A pages 12-238
   // (SEXT) and 12-256 (ZEXT): take the low `FS` bits of Rd, then
   // either sign-extend (copy the field MSB into bits[31:FS]) or
@@ -639,6 +667,8 @@ module tms34010_core
       // Rs.Y, Rd.X kept. rf_rs1=Rs, rf_rs2=old Rd (async read, same cycle).
       INSTR_MOVX:   rf_wr_data = {rf_rs2_data[DATA_WIDTH-1:16], rf_rs1_data[15:0]};
       INSTR_MOVY:   rf_wr_data = {rf_rs1_data[DATA_WIDTH-1:16], rf_rs2_data[15:0]};
+      INSTR_ADDXY:  rf_wr_data = addxy_result;
+      INSTR_SUBXY:  rf_wr_data = subxy_result;
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
@@ -1038,6 +1068,8 @@ module tms34010_core
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  flag_input = '{n: mem_rdata[DATA_WIDTH-1],
                                     c: 1'b0, z: (mem_rdata == '0), v: 1'b0};
+      INSTR_ADDXY:  flag_input = addxy_flags;
+      INSTR_SUBXY:  flag_input = subxy_flags;
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end

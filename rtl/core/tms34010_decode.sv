@@ -148,6 +148,14 @@ module tms34010_decode
   // Rs and Rd same file; all flags Unaffected. (Task 0065.)
   localparam logic [6:0] MOVX_TOP7    = 7'b1110_110;
   localparam logic [6:0] MOVY_TOP7    = 7'b1110_111;
+
+  // ADDXY / SUBXY — add/subtract the X (low 16) and Y (high 16) halves of
+  // Rs and Rd independently (no carry between halves). Per SPVU001A pages
+  // 12-41 (ADDXY) / 12-252 (SUBXY). Encodings 1110 000S (ADDXY) /
+  // 1110 001S (SUBXY) SSSR DDDD. Status bits encode graphics-clipping
+  // info (computed in the core's XY datapath). Same-file. (Task 0066.)
+  localparam logic [6:0] ADDXY_TOP7   = 7'b1110_000;
+  localparam logic [6:0] SUBXY_TOP7   = 7'b1110_001;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -676,6 +684,31 @@ module tms34010_decode
       decoded.rs_idx      = rs_idx_from_instr;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b0;
+    end
+
+    // -----------------------------------------------------------------------
+    // ADDXY / SUBXY — dual independent 16-bit add/sub on the X and Y halves.
+    // Same-file reg-reg; all four status bits set per the XY datapath in the
+    // core (full update, default wb_flag_mask). (Task 0066.)
+    // -----------------------------------------------------------------------
+    if (top7 == ADDXY_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_ADDXY;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;     // Rd (dest + source)
+      decoded.rs_idx      = rs_idx_from_instr;      // Rs
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
+    end
+
+    if (top7 == SUBXY_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_SUBXY;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;
+      decoded.rs_idx      = rs_idx_from_instr;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b1;
     end
 
     // -----------------------------------------------------------------------
