@@ -53,6 +53,14 @@ module tms34010_regfile
   input  reg_idx_t              rs2_idx,
   output logic [DATA_WIDTH-1:0] rs2_data,
 
+  // Read port 3. Added for instructions that need a third simultaneous
+  // source — currently CPW (reads the point plus WSTART and WEND). Async
+  // read like the others; a third read mux on this flop-based file is
+  // cheap (no extra memory blocks).
+  input  reg_file_t             rs3_file,
+  input  reg_idx_t              rs3_idx,
+  output logic [DATA_WIDTH-1:0] rs3_data,
+
   // Write port.
   input  logic                  wr_en,
   input  reg_file_t             wr_file,
@@ -95,6 +103,16 @@ module tms34010_regfile
       rs2_data = b_regs[rs2_idx];
     end else begin
       rs2_data = a_regs[rs2_idx];
+    end
+  end
+
+  always_comb begin
+    if (rs3_idx == REG_SP_IDX) begin
+      rs3_data = sp_q;
+    end else if (rs3_file == REG_FILE_B) begin
+      rs3_data = b_regs[rs3_idx];
+    end else begin
+      rs3_data = a_regs[rs3_idx];
     end
   end
 

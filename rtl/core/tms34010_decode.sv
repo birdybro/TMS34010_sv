@@ -161,6 +161,10 @@ module tms34010_decode
   // RdX-RsX / RdY-RsY were computed. Per SPVU001A page 12-55. Encoding
   // 1110 010S SSSR DDDD. (Task 0067.)
   localparam logic [6:0] CMPXY_TOP7   = 7'b1110_010;
+  // CPW — compare point (Rs) to window (WSTART=B5, WEND=B6); the 4-bit
+  // out-of-window code lands in Rd. Per SPVU001A page 12-57. Encoding
+  // 1110 011S SSSR DDDD. (Task 0070.)
+  localparam logic [6:0] CPW_TOP7     = 7'b1110_011;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -725,6 +729,19 @@ module tms34010_decode
       decoded.rs_idx      = rs_idx_from_instr;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b1;
+    end
+
+    // CPW: write the out-of-window code to Rd; set only V (point outside
+    // window). The core reads WSTART (B5) / WEND (B6) via read ports 2/3.
+    if (top7 == CPW_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_CPW;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};  // V only
     end
 
     // -----------------------------------------------------------------------

@@ -392,6 +392,9 @@ module tms34010_core
   reg_file_t              rf_rs2_file;
   reg_idx_t               rf_rs2_idx;
   logic [DATA_WIDTH-1:0]  rf_rs2_data;
+  reg_file_t              rf_rs3_file;
+  reg_idx_t               rf_rs3_idx;
+  logic [DATA_WIDTH-1:0]  rf_rs3_data;
   logic                   rf_wr_en;
   reg_file_t              rf_wr_file;
   reg_idx_t               rf_wr_idx;
@@ -454,8 +457,14 @@ module tms34010_core
   assign rf_rs1_idx  = (state_q == CORE_MEMORY && is_mmtm)
                      ? mm_iter_idx
                      : decoded.rs_idx;
-  assign rf_rs2_file = decoded.rd_file;
-  assign rf_rs2_idx  = decoded.rd_idx;
+  // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
+  // for CPW) to read the window-start register WSTART = B5; read port 3
+  // reads the window-end register WEND = B6. Both are fixed B-file
+  // registers per SPVU001A page 12-57.
+  assign rf_rs2_file = (decoded.iclass == INSTR_CPW) ? REG_FILE_B : decoded.rd_file;
+  assign rf_rs2_idx  = (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
+  assign rf_rs3_file = REG_FILE_B;          // only CPW consumes rf_rs3_data
+  assign rf_rs3_idx  = CPW_WEND_IDX;        // WEND = B6
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
   // subsequent jump) happens only if the Z bit pre-condition holds:
@@ -608,6 +617,30 @@ module tms34010_core
   assign cmpxy_flags = '{n: (xy_x_sub == 16'd0), c: xy_y_sub[15],
                           z: (xy_y_sub == 16'd0), v: xy_x_sub[15]};
 
+  // ---- CPW (Compare Point to Window) datapath (SPVU001A 12-57) ------------
+  // Compare the XY point in Rs (rf_rs1) against the window corners
+  // WSTART = B5 (rf_rs2, overridden above) and WEND = B6 (rf_rs3). X = low
+  // 16 signed, Y = high 16 signed. The 4-bit out-of-window code lands in
+  // Rd[8:5]; all other bits 0. V = 1 iff the point is outside the window
+  // (any code bit set); N/C/Z Unaffected (masked off by wb_flag_mask).
+  logic [15:0] cpw_pt_x, cpw_pt_y, cpw_ws_x, cpw_ws_y, cpw_we_x, cpw_we_y;
+  logic        cpw_b5, cpw_b6, cpw_b7, cpw_b8;
+  logic [DATA_WIDTH-1:0] cpw_result;
+  alu_flags_t  cpw_flags;
+  assign cpw_pt_x = rf_rs1_data[15:0];
+  assign cpw_pt_y = rf_rs1_data[DATA_WIDTH-1:16];
+  assign cpw_ws_x = rf_rs2_data[15:0];        // WSTART.X (B5)
+  assign cpw_ws_y = rf_rs2_data[DATA_WIDTH-1:16];
+  assign cpw_we_x = rf_rs3_data[15:0];        // WEND.X   (B6)
+  assign cpw_we_y = rf_rs3_data[DATA_WIDTH-1:16];
+  assign cpw_b5 = ($signed(cpw_ws_x) > $signed(cpw_pt_x));  // WSTART.X > Rs.X
+  assign cpw_b6 = ($signed(cpw_pt_x) > $signed(cpw_we_x));  // Rs.X > WEND.X
+  assign cpw_b7 = ($signed(cpw_ws_y) > $signed(cpw_pt_y));  // WSTART.Y > Rs.Y
+  assign cpw_b8 = ($signed(cpw_pt_y) > $signed(cpw_we_y));  // Rs.Y > WEND.Y
+  assign cpw_result = {{(DATA_WIDTH-9){1'b0}}, cpw_b8, cpw_b7, cpw_b6, cpw_b5, 5'b0};
+  assign cpw_flags  = '{n: 1'b0, c: 1'b0, z: 1'b0,
+                         v: (cpw_b5 | cpw_b6 | cpw_b7 | cpw_b8)};
+
   // SEXT / ZEXT field-extension datapath. Per SPVU001A pages 12-238
   // (SEXT) and 12-256 (ZEXT): take the low `FS` bits of Rd, then
   // either sign-extend (copy the field MSB into bits[31:FS]) or
@@ -675,6 +708,7 @@ module tms34010_core
       INSTR_MOVY:   rf_wr_data = {rf_rs1_data[DATA_WIDTH-1:16], rf_rs2_data[15:0]};
       INSTR_ADDXY:  rf_wr_data = addxy_result;
       INSTR_SUBXY:  rf_wr_data = subxy_result;
+      INSTR_CPW:    rf_wr_data = cpw_result;
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
@@ -997,6 +1031,9 @@ module tms34010_core
     .rs2_file (rf_rs2_file),
     .rs2_idx  (rf_rs2_idx),
     .rs2_data (rf_rs2_data),
+    .rs3_file (rf_rs3_file),
+    .rs3_idx  (rf_rs3_idx),
+    .rs3_data (rf_rs3_data),
     .wr_en    (rf_wr_en),
     .wr_file  (rf_wr_file),
     .wr_idx   (rf_wr_idx),
@@ -1077,6 +1114,7 @@ module tms34010_core
       INSTR_ADDXY:  flag_input = addxy_flags;
       INSTR_SUBXY:  flag_input = subxy_flags;
       INSTR_CMPXY:  flag_input = cmpxy_flags;
+      INSTR_CPW:    flag_input = cpw_flags;
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end

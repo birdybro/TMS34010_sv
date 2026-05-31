@@ -75,6 +75,7 @@
 | 0067 | CMPXY (nondestructive XY compare)            | complete |
 | 0068 | HDL coding-guidelines audit + compliance fixes | complete |
 | 0069 | word-step / mem-size literals → DATA_WIDTH constants | complete |
+| 0070 | CPW (compare point to window) + 3rd regfile read port | complete |
 
 ---
 
@@ -2518,6 +2519,30 @@ Tests: full 59-tb integration regression PASS under Verilator; lint
 Docs: changelog.md, tasks.md.
 Commit:
 - 8612743
+
+---
+
+### Task 0070: CPW (Compare Point to Window) + 3rd regfile read port
+Status: complete
+Dependencies: none new (reuses reg-op writeback/flag paths).
+Spec source: SPVU001A page 12-57. Encoding 1110 011S SSSR DDDD (0xE600).
+Acceptance Criteria:
+- INSTR_CPW = 7'd86. Decoder top7 1110_011; rd/rs from instr; wb_reg_en=1,
+  wb_flags_en=1 with V-only flag mask.
+- Reads 3 sources: Rs (point) on port 1, WSTART=B5 on port 2 (overridden;
+  Rd is not a source for CPW), WEND=B6 on a NEW port 3 added to
+  tms34010_regfile.sv. New pkg CPW_WSTART_IDX=5 / CPW_WEND_IDX=6.
+- Datapath: X=low16 signed, Y=high16 signed. Rd[8:5] = {Rs.Y>WEND.Y,
+  WSTART.Y>Rs.Y, Rs.X>WEND.X, WSTART.X>Rs.X}, all else 0. V = (any code
+  bit set). N/C/Z Unaffected ($signed comparisons).
+- sim/tb/tb_cpw.sv: TI example window (5,5)-(A,A) across points checking
+  the code in Rd and V, plus a negative-X point locking the signed
+  comparison. tb_regfile.sv updated for the new port.
+Tests: tb_cpw PASS; full 60-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (CPW row), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

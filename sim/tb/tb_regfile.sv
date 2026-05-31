@@ -38,6 +38,10 @@ module tb_regfile;
   reg_idx_t               rs2_idx;
   logic [DATA_WIDTH-1:0]  rs2_data;
 
+  reg_file_t              rs3_file;
+  reg_idx_t               rs3_idx;
+  logic [DATA_WIDTH-1:0]  rs3_data;
+
   logic                   wr_en;
   reg_file_t              wr_file;
   reg_idx_t               wr_idx;
@@ -54,6 +58,9 @@ module tb_regfile;
     .rs2_file (rs2_file),
     .rs2_idx  (rs2_idx),
     .rs2_data (rs2_data),
+    .rs3_file (rs3_file),
+    .rs3_idx  (rs3_idx),
+    .rs3_data (rs3_data),
     .wr_en    (wr_en),
     .wr_file  (wr_file),
     .wr_idx   (wr_idx),
@@ -119,6 +126,8 @@ module tb_regfile;
     rs1_idx  = 4'd0;
     rs2_file = REG_FILE_A;
     rs2_idx  = 4'd0;
+    rs3_file = REG_FILE_A;       // read port 3 (CPW) unused by this unit test
+    rs3_idx  = 4'd0;
     wr_en    = 1'b0;
     wr_file  = REG_FILE_A;
     wr_idx   = 4'd0;

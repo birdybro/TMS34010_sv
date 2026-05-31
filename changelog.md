@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0070 — CPW Compare Point to Window)
+- **CPW Rs,Rd** (`1110 011S SSSR DDDD`, 0xE600) — compares the signed XY
+  point in Rs against the window corners WSTART = B5 and WEND = B6
+  (implied B-file operands), loading a 4-bit out-of-window code into
+  `Rd[8:5]`: bit5=WSTART.X>Rs.X, bit6=Rs.X>WEND.X, bit7=WSTART.Y>Rs.Y,
+  bit8=Rs.Y>WEND.Y (all else 0). SPVU001A p.12-57. Used for trivial-reject
+  line clipping. Status: N/C/Z Unaffected; V=1 iff the point is outside
+  the window.
+- INSTR_CPW = 7'd86. Completes the XY-coordinate instruction family.
+- **Added a 3rd read port to `tms34010_regfile.sv`** — CPW needs three
+  simultaneous sources (the point + WSTART + WEND). On the flop-based
+  register file a 3rd async read mux is cheap (no memory blocks). The
+  core reads Rs on port 1, overrides port 2 to WSTART (B5), and drives the
+  new port 3 to WEND (B6). New pkg constants CPW_WSTART_IDX / CPW_WEND_IDX.
+- Comparisons are signed (the spec states signed; A0027 does not apply).
+  CPW stays a single-cycle register op.
+- Test: new `sim/tb/tb_cpw.sv` — TI's example window (5,5)-(A,A) across
+  several points checking the code in Rd and the V flag, plus a
+  negative-X point that distinguishes signed from unsigned comparison.
+  tb_regfile updated to wire the new port.
+
 ### Changed (Task 0069 — word-step / mem-size magic numbers → DATA_WIDTH constants)
 - Completed the magic-number cleanup deferred from Task 0068. The
   pervasive `32'd32` / `32'd64` / `6'd32` literals in `tms34010_core.sv`

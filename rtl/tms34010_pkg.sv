@@ -90,6 +90,11 @@ package tms34010_pkg;
 
   parameter reg_idx_t REG_SP_IDX = 4'hF;
 
+  // CPW's implied window operands are fixed B-file registers (SPVU001A
+  // page 12-57): WSTART = B5 (inclusive lesser corner), WEND = B6.
+  parameter reg_idx_t CPW_WSTART_IDX = 4'd5;
+  parameter reg_idx_t CPW_WEND_IDX   = 4'd6;
+
   // ---------------------------------------------------------------------------
   // ALU operation enum
   //
@@ -388,10 +393,14 @@ package tms34010_pkg;
                               //                     Encoding 1110 001S SSSR DDDD. Status (compare):
                               //                     N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY),
                               //                     C=(RsY>RdY) (unsigned). Task 0066.
-    INSTR_CMPXY            = 7'd85  // CMPXY Rs,Rd — nondestructive XY compare (Rd unchanged). Sets
+    INSTR_CMPXY            = 7'd85, // CMPXY Rs,Rd — nondestructive XY compare (Rd unchanged). Sets
                               //                     status as if RdX-RsX / RdY-RsY: N=(Xres==0),
                               //                     V=Xres[15], Z=(Yres==0), C=Yres[15]. Encoding
                               //                     1110 010S SSSR DDDD. Task 0067.
+    INSTR_CPW              = 7'd86  // CPW Rs,Rd — compare the XY point in Rs against the window
+                              //                     corners WSTART (B5) / WEND (B6); load the 4-bit
+                              //                     out-of-window code into Rd[8:5]. V=outside-window.
+                              //                     Encoding 1110 011S SSSR DDDD. Task 0070.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
