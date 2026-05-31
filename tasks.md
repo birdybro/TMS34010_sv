@@ -2604,7 +2604,7 @@ Tests: tb_divu PASS; full 62-tb integration regression PASS under
 Docs: instruction_coverage.md (DIVU row), timing_notes.md, changelog.md,
   tasks.md.
 Commit:
-- <pending>
+- 79384f3
 
 ---
 
