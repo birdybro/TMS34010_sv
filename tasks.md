@@ -77,6 +77,7 @@
 | 0069 | word-step / mem-size literals → DATA_WIDTH constants | complete |
 | 0070 | CPW (compare point to window) + 3rd regfile read port | complete |
 | 0071 | MPYS / MPYU multiply (FS1=32)                | complete |
+| 0072 | DIVU unsigned divide + multi-cycle divider   | complete |
 
 ---
 
@@ -2574,6 +2575,36 @@ Docs: instruction_coverage.md (MPYS/MPYU rows), timing_notes.md,
   changelog.md, tasks.md.
 Commit:
 - 8dd0b47
+
+---
+
+### Task 0072: DIVU unsigned divide + multi-cycle divider
+Status: complete
+Dependencies: Task 0070 (3rd regfile read port — used for Rd+1);
+  Task 0071 (pair-writeback step, generalized here).
+Spec source: SPVU001A page 12-69. Encoding 0101 101S SSSR DDDD (0x5A00).
+Acceptance Criteria:
+- New module rtl/core/tms34010_divider.sv: restoring 64÷32 → 32-bit
+  quotient + 32-bit remainder + overflow; start/busy/done; ~32+2 cycles.
+- INSTR_DIVU = 7'd89. Decoder top7 0101_101; wb_flag_mask {z, v}.
+- core_state_t widened to 4 bits; new CORE_DIVIDE state. EXECUTE routes
+  div to CORE_DIVIDE (div_start pulses on that edge; divider latches
+  operands); CORE_DIVIDE holds until div_done -> WRITEBACK.
+- Operands: rf_rs1=Rs (divisor), rf_rs2=Rd, rf_rs3=Rd+1 (port-3 override).
+  dividend = even ? {Rd, Rd+1} : {0, Rd}.
+- Even Rd: quotient -> Rd (pass 0), remainder -> Rd+1 (pass 1) via the
+  shared pair_wb_step (renamed from mpy_wb_step). Odd Rd: quotient -> Rd.
+  Overflow -> rf_wr_en suppressed (regs unchanged), V set, Z=0.
+- sim/tb/tb_divu.sv: TI even example (exact quotient/remainder), odd-Rd,
+  divide-by-zero, quotient-overflow, zero-quotient; Z/V flags.
+Known limitations:
+- MODU and signed DIVS/MODS reuse this divider — follow-ups.
+Tests: tb_divu PASS; full 62-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (DIVU row), timing_notes.md, changelog.md,
+  tasks.md.
+Commit:
+- <pending>
 
 ---
 

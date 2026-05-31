@@ -61,15 +61,16 @@ package tms34010_pkg;
   //   CORE_FETCH_IMM_LO/HI — fetch the 16- or 32-bit immediate that follows
   //   long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, CMPI, etc.).
   // ---------------------------------------------------------------------------
-  typedef enum logic [2:0] {
-    CORE_RESET        = 3'd0,
-    CORE_FETCH        = 3'd1,
-    CORE_DECODE       = 3'd2,
-    CORE_FETCH_IMM_LO = 3'd3,
-    CORE_FETCH_IMM_HI = 3'd4,
-    CORE_EXECUTE      = 3'd5,
-    CORE_MEMORY       = 3'd6,
-    CORE_WRITEBACK    = 3'd7
+  typedef enum logic [3:0] {
+    CORE_RESET        = 4'd0,
+    CORE_FETCH        = 4'd1,
+    CORE_DECODE       = 4'd2,
+    CORE_FETCH_IMM_LO = 4'd3,
+    CORE_FETCH_IMM_HI = 4'd4,
+    CORE_EXECUTE      = 4'd5,
+    CORE_MEMORY       = 4'd6,
+    CORE_WRITEBACK    = 4'd7,
+    CORE_DIVIDE       = 4'd8   // multi-cycle wait for the divider (DIVU/MODU/...)
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -405,9 +406,14 @@ package tms34010_pkg;
                               //                     Rd+1=lo32}; odd Rd: lo32 in Rd. N=result<0,
                               //                     Z=result==0. Encoding 0101 110S SSSR DDDD.
                               //                     Task 0071 implements FS1=32 (full 32-bit Rs).
-    INSTR_MPYU             = 7'd88  // MPYU Rs,Rd — unsigned 32x32 -> 64-bit (same writeback as
+    INSTR_MPYU             = 7'd88, // MPYU Rs,Rd — unsigned 32x32 -> 64-bit (same writeback as
                               //                     MPYS). Z=result==0 (N Unaffected). Encoding
                               //                     0101 111S SSSR DDDD. Task 0071 (FS1=32).
+    INSTR_DIVU             = 7'd89  // DIVU Rs,Rd — unsigned divide. Even Rd: {Rd:Rd+1}/Rs ->
+                              //                     quotient in Rd, remainder in Rd+1. Odd Rd:
+                              //                     Rd/Rs -> quotient in Rd. V=overflow (Rs=0 or
+                              //                     quotient>32b; result unchanged), Z=quotient==0,
+                              //                     N Unaffected. Encoding 0101 101S SSSR DDDD.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

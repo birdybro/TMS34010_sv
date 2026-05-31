@@ -171,6 +171,9 @@ module tms34010_decode
   // Task 0071 implements FS1=32 (full 32-bit Rs); field-size-n deferred.
   localparam logic [6:0] MPYS_TOP7    = 7'b0101_110;
   localparam logic [6:0] MPYU_TOP7    = 7'b0101_111;
+  // DIVU — unsigned divide. Per SPVU001A page 12-69. Encoding
+  // 0101 101S SSSR DDDD. Multi-cycle (the core runs tms34010_divider).
+  localparam logic [6:0] DIVU_TOP7    = 7'b0101_101;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -761,6 +764,20 @@ module tms34010_decode
       decoded.wb_reg_en    = 1'b1;
       decoded.wb_flags_en  = 1'b1;
       decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};  // Z only
+    end
+
+    // DIVU — unsigned divide (multi-cycle). Z + V (N Unaffected). The core
+    // runs the divider in CORE_DIVIDE, then writes the quotient (and, for
+    // even Rd, the remainder to Rd+1) at WRITEBACK.
+    if (top7 == DIVU_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_DIVU;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b1};  // Z, V
     end
 
     // CPW: write the out-of-window code to Rd; set only V (point outside

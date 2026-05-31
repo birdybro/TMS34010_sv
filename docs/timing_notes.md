@@ -15,6 +15,16 @@
 
 ## Multi-cycle operations
 
+- **DIVU (and future DIVS/MODU/MODS)** — `tms34010_divider` (restoring
+  long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
+  `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on
+  overflow it short-circuits to done in 2 cycles. No memory transactions.
+  Done: level-high `done` in the result cycle; the core leaves CORE_DIVIDE
+  for WRITEBACK on it. Not interruptible (no interrupt model yet). The
+  restoring step (33-bit compare/subtract) is the per-iteration critical
+  path — short, but pipeline the compare if a wider divisor path ever
+  appears.
+
 To be filled in as instructions/operations land. For each, document:
 
 - Start condition (which FSM state issues the start).

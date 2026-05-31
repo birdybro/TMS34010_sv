@@ -7,6 +7,29 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0072 — DIVU unsigned divide + multi-cycle divider)
+- **DIVU Rs,Rd** (`0101 101S SSSR DDDD`, 0x5A00) — unsigned divide.
+  SPVU001A p.12-69.
+  - Even Rd: 64-bit dividend {Rd, Rd+1} ÷ Rs → quotient in Rd, remainder
+    in Rd+1.
+  - Odd  Rd: 32-bit dividend Rd ÷ Rs → quotient in Rd.
+  - Status: N Unaffected; Z = quotient==0; V = overflow (Rs=0 or quotient
+    doesn't fit 32 bits), in which case the result registers are unchanged.
+- New module **`rtl/core/tms34010_divider.sv`** — a restoring long-division
+  unit (64÷32 → 32-bit quotient + 32-bit remainder + overflow), ~32+1+1
+  cycles; start/busy/done handshake; results persist until the next start.
+- Core integration: new **`CORE_DIVIDE`** FSM state (the state enum widened
+  from 3 to 4 bits) holds the core while the divider runs, then proceeds to
+  WRITEBACK. The even-Rd quotient/remainder pair-writeback reuses MPY's
+  pair-writeback step (renamed `mpy_wb_step` → `pair_wb_step`). Read port 3
+  carries Rd+1 (the dividend low half). On overflow the regfile write is
+  suppressed.
+- INSTR_DIVU = 7'd89.
+- Test: new `sim/tb/tb_divu.sv` — TI's even-Rd example (quotient/remainder
+  checked exactly), an odd-Rd divide, divide-by-zero, a quotient-overflow,
+  and a zero-quotient; results and the Z/V flags verified.
+- Deferred: MODU and the signed DIVS/MODS reuse this divider (follow-ups).
+
 ### Added (Task 0071 — MPYS / MPYU multiply, FS1=32)
 - **MPYS Rs,Rd** (`0101 110S SSSR DDDD`, 0x5C00) — signed 32×32 → 64-bit.
   **MPYU Rs,Rd** (`0101 111S SSSR DDDD`, 0x5E00) — unsigned. SPVU001A

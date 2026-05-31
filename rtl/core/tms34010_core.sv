@@ -463,8 +463,11 @@ module tms34010_core
   // registers per SPVU001A page 12-57.
   assign rf_rs2_file = (decoded.iclass == INSTR_CPW) ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
-  assign rf_rs3_file = REG_FILE_B;          // only CPW consumes rf_rs3_data
-  assign rf_rs3_idx  = CPW_WEND_IDX;        // WEND = B6
+  // Read port 3: CPW reads WEND (B6); DIVU (even Rd) reads the low half of
+  // the 64-bit dividend, Rd+1. Otherwise it is unused.
+  assign rf_rs3_file = (decoded.iclass == INSTR_DIVU) ? decoded.rd_file : REG_FILE_B;
+  assign rf_rs3_idx  = (decoded.iclass == INSTR_DIVU) ? (decoded.rd_idx + 4'd1)
+                                                      : CPW_WEND_IDX;
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
   // subsequent jump) happens only if the Z bit pre-condition holds:
@@ -549,14 +552,15 @@ module tms34010_core
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
                        && dsj_precondition
-                       && !(is_mv_m2m && m2m_same_reg))  // Rs==Rd: Rs write already covered it
+                       && !(is_mv_m2m && m2m_same_reg)   // Rs==Rd: Rs write already covered it
+                       && !(is_div && div_overflow))     // divide overflow: leave Rd unchanged
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
                    || m2m_src_wr;
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = mmfm_pop_wr                  ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
-                    : (is_mpy && mpy_wb_step)        ? (decoded.rd_idx + 4'd1)  // MPY low half -> Rd+1
+                    : ((is_mpy || is_div) && pair_wb_step) ? (decoded.rd_idx + 4'd1)  // pair low/rem -> Rd+1
                                                      : decoded.rd_idx;
   // EXGF (Exchange Field Definition) datapath. Per SPVU001A page 12-77:
   // Rd's low 6 bits swap with the F-selected FE:FS pair (1 + 5 bits)
@@ -648,11 +652,10 @@ module tms34010_core
   // 64-bit product is latched in CORE_EXECUTE (mpy_product_q — the
   // registered output for DSP inference) and written back over 1 cycle
   // (odd Rd: low 32 to Rd) or 2 cycles (even Rd: hi 32 to Rd, then lo 32
-  // to Rd+1). mpy_wb_step selects the second-pass write.
-  logic                  is_mpy, mpy_signed, mpy_rd_even, mpy_second_pass;
+  // to Rd+1). pair_wb_step (shared with DIVU) selects the second pass.
+  logic                  is_mpy, mpy_signed, mpy_rd_even;
   logic signed [63:0]    mpy_sprod;
   logic        [63:0]    mpy_uprod, mpy_product, mpy_product_q;
-  logic                  mpy_wb_step;
   assign is_mpy      = (decoded.iclass == INSTR_MPYS) || (decoded.iclass == INSTR_MPYU);
   assign mpy_signed  = (decoded.iclass == INSTR_MPYS);
   assign mpy_rd_even = (decoded.rd_idx[0] == 1'b0);
@@ -660,23 +663,61 @@ module tms34010_core
   assign mpy_sprod   = $signed(rf_rs2_data) * $signed(rf_rs1_data);
   assign mpy_uprod   = rf_rs2_data * rf_rs1_data;
   assign mpy_product = mpy_signed ? unsigned'(mpy_sprod) : mpy_uprod;
-  // Second writeback pass needed for an even Rd (writes Rd+1) once Rd's
-  // high half has been written (mpy_wb_step still 0).
-  assign mpy_second_pass = is_mpy && mpy_rd_even && (mpy_wb_step == 1'b0);
+
+  // ---- DIVU divide datapath (SPVU001A 12-69) -----------------------------
+  // Multi-cycle restoring divider runs in CORE_DIVIDE. Even Rd: 64-bit
+  // dividend {Rd, Rd+1} (Rd+1 read via port 3) -> quotient in Rd, remainder
+  // in Rd+1. Odd Rd: 32-bit dividend Rd -> quotient in Rd. On overflow
+  // (divisor 0 or quotient > 32 bits) the result is NOT written; only V is
+  // set. The product/quotient pair-writeback to {Rd, Rd+1} is shared with
+  // MPY via pair_wb_step.
+  logic                  is_div, div_rd_even;
+  logic [2*DATA_WIDTH-1:0] div_dividend;
+  logic [DATA_WIDTH-1:0]   div_quotient, div_remainder;
+  logic                    div_start, div_busy, div_done, div_overflow;
+  assign is_div      = (decoded.iclass == INSTR_DIVU);
+  assign div_rd_even = (decoded.rd_idx[0] == 1'b0);
+  assign div_dividend = div_rd_even ? {rf_rs2_data, rf_rs3_data}      // {Rd, Rd+1}
+                                    : {{DATA_WIDTH{1'b0}}, rf_rs2_data}; // {0, Rd}
+  // One-cycle start pulse as we leave CORE_EXECUTE for CORE_DIVIDE; the
+  // divider latches the operands on that edge.
+  assign div_start = (state_q == CORE_EXECUTE) && is_div;
+
+  tms34010_divider u_divider (
+    .clk       (clk),
+    .rst       (rst),
+    .start     (div_start),
+    .dividend  (div_dividend),
+    .divisor   (rf_rs1_data),       // Rs
+    .busy      (div_busy),
+    .done      (div_done),
+    .quotient  (div_quotient),
+    .remainder (div_remainder),
+    .overflow  (div_overflow)
+  );
+
+  // ---- Pair writeback step (shared MPY-even / DIVU-even) ------------------
+  // Ops that write the {Rd, Rd+1} register pair over two WRITEBACK cycles.
+  // pair_wb_step selects the second pass (Rd+1). DIVU on overflow writes
+  // nothing, so it is not a pair-writeback op then.
+  logic is_pair_wb, pair_second_pass, pair_wb_step;
+  assign is_pair_wb = (is_mpy && mpy_rd_even)
+                   || (is_div && div_rd_even && !div_overflow);
+  assign pair_second_pass = is_pair_wb && (pair_wb_step == 1'b0);
 
   always_ff @(posedge clk) begin
     if (rst) begin
       mpy_product_q <= '0;
-      mpy_wb_step   <= 1'b0;
+      pair_wb_step  <= 1'b0;
     end else begin
       if (state_q == CORE_EXECUTE && is_mpy) begin
         mpy_product_q <= mpy_product;
       end
       // Step 0 -> 1 only while we hold in WRITEBACK for the second pass.
       if (state_q == CORE_WRITEBACK) begin
-        mpy_wb_step <= mpy_second_pass ? 1'b1 : 1'b0;
+        pair_wb_step <= pair_second_pass ? 1'b1 : 1'b0;
       end else begin
-        mpy_wb_step <= 1'b0;
+        pair_wb_step <= 1'b0;
       end
     end
   end
@@ -752,8 +793,12 @@ module tms34010_core
       // MPYS/MPYU: even Rd -> hi32 then (Rd+1) lo32; odd Rd -> lo32.
       INSTR_MPYS,
       INSTR_MPYU:   rf_wr_data = mpy_rd_even
-                               ? (mpy_wb_step ? mpy_product_q[31:0] : mpy_product_q[63:32])
+                               ? (pair_wb_step ? mpy_product_q[31:0] : mpy_product_q[63:32])
                                : mpy_product_q[31:0];
+      // DIVU: even Rd -> quotient (pass 0), remainder -> Rd+1 (pass 1);
+      // odd Rd -> quotient. (Skipped entirely on overflow via rf_wr_en.)
+      INSTR_DIVU:   rf_wr_data = (div_rd_even && pair_wb_step) ? div_remainder
+                                                              : div_quotient;
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
@@ -1164,6 +1209,11 @@ module tms34010_core
       INSTR_MPYS,
       INSTR_MPYU:   flag_input = '{n: mpy_product_q[63], c: 1'b0,
                                     z: (mpy_product_q == 64'd0), v: 1'b0};
+      // DIVU: V = overflow (Rs=0 or quotient>32b); Z = quotient==0 (and 0
+      // when overflow). N Unaffected (masked off).
+      INSTR_DIVU:   flag_input = '{n: 1'b0, c: 1'b0,
+                                    z: (!div_overflow && (div_quotient == '0)),
+                                    v: div_overflow};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
@@ -1269,7 +1319,18 @@ module tms34010_core
         // transaction (PUSHST and the rest of the stack/CALL family),
         // route through CORE_MEMORY first; otherwise go straight to
         // CORE_WRITEBACK.
-        state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
+        // Divide instructions hand off to the multi-cycle divider; others
+        // go to memory (if any) then writeback.
+        if (is_div)
+          state_d = CORE_DIVIDE;
+        else
+          state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
+      end
+
+      CORE_DIVIDE: begin
+        // Hold while the divider runs; proceed to writeback when it signals
+        // done (results, incl. the overflow flag, are then stable).
+        state_d = div_done ? CORE_WRITEBACK : CORE_DIVIDE;
       end
 
       CORE_MEMORY: begin
@@ -1485,9 +1546,9 @@ module tms34010_core
       end
 
       CORE_WRITEBACK: begin
-        // An even-Rd multiply needs a second writeback cycle to store the
-        // low 32 bits of the 64-bit product into Rd+1.
-        state_d = mpy_second_pass ? CORE_WRITEBACK : CORE_FETCH;
+        // An even-Rd multiply/divide needs a second writeback cycle to
+        // store the low half (product LSBs / divide remainder) into Rd+1.
+        state_d = pair_second_pass ? CORE_WRITEBACK : CORE_FETCH;
       end
 
       default: begin
