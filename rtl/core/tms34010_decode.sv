@@ -39,6 +39,7 @@
 //   - No `/`, no `%`, no loops, no `initial`.
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_decode
   import tms34010_pkg::*;
 (
@@ -997,6 +998,11 @@ module tms34010_decode
           decoded.wb_reg_en       = 1'b1;
           decoded.wb_flags_en     = 1'b1;
         end
+        // The 2-bit selector is fully enumerated above; the default keeps
+        // the per-instruction defaults (set at the top of this always_comb)
+        // and satisfies the "every case has a default" rule
+        // (hdl-coding-guidelines 90 AP4/AP13, 14 §3.5).
+        default: ;
       endcase
     end
 
@@ -1964,3 +1970,4 @@ module tms34010_decode
   end
 
 endmodule : tms34010_decode
+`default_nettype wire

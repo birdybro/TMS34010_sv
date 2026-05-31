@@ -36,6 +36,7 @@
 //   third_party/TMS34010_Info/bibliography/hdl-reimplementation/03-registers.md
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_regfile
   import tms34010_pkg::*;
 (
@@ -124,3 +125,4 @@ module tms34010_regfile
   assign sp_o = sp_q;
 
 endmodule : tms34010_regfile
+`default_nettype wire

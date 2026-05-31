@@ -35,6 +35,7 @@
 //   - No latches, no `/`, no `%`, no `initial`, no loops.
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_status_reg
   import tms34010_pkg::*;
 (
@@ -83,3 +84,4 @@ module tms34010_status_reg
   assign v_o  = st_q[ST_V_BIT];
 
 endmodule : tms34010_status_reg
+`default_nettype wire

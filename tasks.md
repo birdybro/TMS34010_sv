@@ -73,6 +73,7 @@
 | 0065 | MOVX / MOVY (half-register moves)             | complete |
 | 0066 | ADDXY / SUBXY (dual 16-bit XY arithmetic)     | complete |
 | 0067 | CMPXY (nondestructive XY compare)            | complete |
+| 0068 | HDL coding-guidelines audit + compliance fixes | complete |
 
 ---
 
@@ -2465,6 +2466,38 @@ Tests: tb_cmpxy PASS; full 59-tb integration regression PASS under
 Docs: instruction_coverage.md (CMPXY row), changelog.md, tasks.md.
 Commit:
 - 8fd5324
+
+---
+
+### Task 0068: HDL coding-guidelines audit + compliance fixes
+Status: complete
+Trigger: user added the Cyclone V HDL coding-guidelines bundle at
+  `docs/hdl-coding-guidelines/` (23 docs, target 5CSEBA6U23I7/DE10-Nano)
+  and asked to audit + bring the RTL into compliance.
+What was done:
+- Extracted the load-bearing [C] rules from the bundle (12/13/14 subset,
+  16 economy, 32 operator cost, 90 anti-patterns, 91 bring-up checklist)
+  and scanned all of rtl/ against them. The RTL was already compliant on
+  every hard [C] rule (always_ff/comb split, single-driver, safe comb
+  defaults, no unsynth constructs, no /%* , complete sync resets).
+- Fixes: (1) added `default: ;` to the UNARY `case(instr[6:5])` in
+  tms34010_decode.sv; (2) added `default_nettype none`/`wire` to all 8
+  RTL files; (3) removed magic-number duplicates — TRAP entry-ST uses
+  pkg ST_RESET_VALUE; new pkg REV_VALUE / TRAP_VECTOR_BASE replace inline
+  literals in core.sv.
+- Docs: CLAUDE.md now points to the bundle as the authoritative RTL style
+  reference and records two intentional [C]-compliant deviations
+  (sync active-high reset A0003; default_nettype placement). Memory:
+  hdl_coding_guidelines.md added.
+Deferred follow-up (own task): replace the pervasive 32'd32 / 32'd64 /
+  6'd32 literals with DATA_WIDTH / 2*DATA_WIDTH / the 32-bit-transfer
+  size — semantically these ARE DATA_WIDTH (one 32-bit word). Skipped
+  here to keep the change focused and low-risk (~36 sites).
+Tests: full 59-tb integration regression PASS under Verilator; lint
+  clean. No behavioral change.
+Docs: CLAUDE.md, changelog.md, tasks.md (no instruction_coverage change).
+Commit:
+- <pending>
 
 ---
 

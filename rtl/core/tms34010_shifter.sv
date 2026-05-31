@@ -31,6 +31,7 @@
 //   - No `/`, no `%`, no `initial`, no runtime loops.
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_shifter
   import tms34010_pkg::*;
 (
@@ -109,3 +110,4 @@ module tms34010_shifter
   end
 
 endmodule : tms34010_shifter
+`default_nettype wire

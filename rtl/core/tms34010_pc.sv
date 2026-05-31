@@ -34,6 +34,7 @@
 //     11-interrupts-reset.md, §"Reset"
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_pc
   import tms34010_pkg::*;
 #(
@@ -84,3 +85,4 @@ module tms34010_pc
   assign pc_o = pc_q;
 
 endmodule : tms34010_pc
+`default_nettype wire

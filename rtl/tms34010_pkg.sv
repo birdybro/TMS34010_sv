@@ -16,6 +16,7 @@
 // layout, register file indices, instruction word fields) land in Phase 1+.
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 package tms34010_pkg;
 
   // ---------------------------------------------------------------------------
@@ -192,6 +193,16 @@ package tms34010_pkg;
   parameter int unsigned ST_C_BIT   = 30;
   parameter int unsigned ST_N_BIT   = 31;
   parameter logic [DATA_WIDTH-1:0] ST_RESET_VALUE = 32'h0000_0010;
+
+  // ---------------------------------------------------------------------------
+  // Misc architectural constants (kept here so RTL has no magic numbers).
+  // ---------------------------------------------------------------------------
+  // REV Rd result — chip-revision constant. The spec calls the value
+  // "undefined", but the worked example shows REV → 0x00000008 (A0025).
+  parameter logic [DATA_WIDTH-1:0] REV_VALUE = 32'h0000_0008;
+  // Trap-vector table top. Vector for TRAP N is TRAP_VECTOR_BASE - N*32.
+  // Per SPVU001A page 12-252; TRAP 0's vector lives at the base itself.
+  parameter logic [DATA_WIDTH-1:0] TRAP_VECTOR_BASE = 32'hFFFF_FFE0;
 
   // ---------------------------------------------------------------------------
   // Instruction word + decoded-instruction skeleton
@@ -445,3 +456,4 @@ package tms34010_pkg;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg
+`default_nettype wire

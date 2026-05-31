@@ -43,6 +43,7 @@
 //   - No `/`, no `%`, no loops, no `initial`.
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_alu
   import tms34010_pkg::*;
 (
@@ -203,3 +204,4 @@ module tms34010_alu
   end
 
 endmodule : tms34010_alu
+`default_nettype wire

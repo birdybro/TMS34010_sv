@@ -41,6 +41,7 @@
 //              1988_TI_TMS34010_Users_Guide.pdf
 // -----------------------------------------------------------------------------
 
+`default_nettype none
 module tms34010_core
   import tms34010_pkg::*;
 (
@@ -696,7 +697,7 @@ module tms34010_core
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mem_rdata;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
-      INSTR_REV:    rf_wr_data = 32'h0000_0008;
+      INSTR_REV:    rf_wr_data = REV_VALUE;
       INSTR_LMO_RR: rf_wr_data = lmo_result;
       INSTR_SEXT:   rf_wr_data = sext_result;
       INSTR_ZEXT:   rf_wr_data = zext_result;
@@ -840,7 +841,7 @@ module tms34010_core
       INSTR_EINT:  st_write_data = st_value |  (32'd1 << ST_IE_BIT);
       INSTR_POPST: st_write_data = mem_rdata;        // popped 32-bit ST value
       INSTR_RETI:  st_write_data = popped_st_q;      // ST captured in step 0
-      INSTR_TRAP:  st_write_data = 32'h0000_0010;    // Per spec: IE=0, flags=0, FS0=16, FS1=0.
+      INSTR_TRAP:  st_write_data = ST_RESET_VALUE;   // 0x10: IE=0, flags=0, FS0=16, FS1=0 (= reset ST).
       default:     st_write_data = '0;
     endcase
   end
@@ -1261,7 +1262,7 @@ module tms34010_core
             mem_size  = 6'd32;
             if (trap_skip_push) begin
               mem_we    = 1'b0;
-              mem_addr  = 32'hFFFF_FFE0;          // N=0 ⇒ vector @ 0xFFFFFFE0
+              mem_addr  = TRAP_VECTOR_BASE;        // N=0 ⇒ vector @ 0xFFFFFFE0
             end else begin
               unique case (mem_op_step)
                 2'd0: begin
@@ -1276,9 +1277,9 @@ module tms34010_core
                 end
                 default: begin                       // step 2
                   mem_we    = 1'b0;
-                  // Trap-vector address = 0xFFFFFFE0 - N*32.
+                  // Trap-vector address = TRAP_VECTOR_BASE - N*32.
                   // N is decoded.k5 (5 bits); N*32 = N << 5.
-                  mem_addr  = 32'hFFFF_FFE0
+                  mem_addr  = TRAP_VECTOR_BASE
                             - ({{(ADDR_WIDTH-5){1'b0}}, decoded.k5} << 5);
                 end
               endcase
@@ -1413,3 +1414,4 @@ module tms34010_core
   assign illegal_opcode_o = illegal_q;
 
 endmodule : tms34010_core
+`default_nettype wire

@@ -60,9 +60,17 @@ One task → one commit. Before each commit:
 
 If push fails (auth/network), commit locally and report the block explicitly. Do not claim success.
 
+## HDL coding guidelines (authoritative for RTL style)
+
+`docs/hdl-coding-guidelines/` is a pinned Cyclone V HDL bundle (23 docs; target part `5CSEBA6U23I7` / DE10-Nano). It is the **authoritative style reference** for all RTL. Every sentence is labelled **[C]** Contract (non-negotiable), **[V]** Convention, **[O]** Observed, or **[I]** Inference — weight accordingly. Start at `00-INDEX.md`; for a code review load `90-anti-patterns.md` (Symptom→Fix) and `91-core-bringup-checklist.md`; for new RTL load 12 (subset), 13 (registers/comb), 14 (FSMs), 16 (economy), 17 (era-faithful). The rules below summarize the load-bearing [C] subset; the bundle governs anything not stated here.
+
+Two **documented intentional deviations** from the bundle's [V] conventions (both compliant with the [C] rules):
+- **Reset**: this project uses **synchronous active-high `rst`** (assumption A0003). The bundle's [C] rule permits "sync clear" as a valid reset style, so this is compliant; it differs only from the [V] active-low `rst_n` convention. Do not rewrite resets to active-low.
+- **`` `default_nettype none ``**: present at the top (and `wire` restored at the bottom) of every `rtl/` file per the bundle.
+
 ## SystemVerilog rules (synthesizable RTL)
 
-**Use**: `logic`, `always_ff` + nonblocking for sequential state, `always_comb` + blocking with safe defaults for combinational, `typedef enum logic [N:0]` for FSM states, `typedef struct packed`, `package`, explicit parameters, explicit widths, named constants from `rtl/tms34010_pkg.sv`, small composable modules.
+**Use**: `logic`, `always_ff` + nonblocking for sequential state, `always_comb` + blocking with safe defaults for combinational, `typedef enum logic [N:0]` for FSM states, `typedef struct packed`, `package`, explicit parameters, explicit widths, named constants from `rtl/tms34010_pkg.sv`, small composable modules. Every `case` (including FSM next-state) has a `default:` arm; `unique`/`priority` does not substitute for it.
 
 **Forbid in RTL**: `#delay`, `force`/`release`, `fork/join`, classes, dynamic arrays, queues, DPI, file I/O, randomization, simulation system tasks, unbounded `while`, runtime-variable loops, `initial` blocks (except documented FPGA ROM/RAM init), unsynthesizable assertions inside RTL.
 
@@ -80,7 +88,7 @@ If push fails (auth/network), commit locally and report the block explicitly. Do
 
 State in plain text first: purpose, ports, internal registers, combinational paths, FSM states, expected FPGA resources, RAM/ROM inference, latency, throughput, reset behavior, the User's Guide section it implements, and the tests that will cover it. Then write the smallest useful synthesizable implementation.
 
-After writing, review as an FPGA synthesis engineer: latches, combinational loops, long paths, `/`/`%`, runtime loops, missing resets, blocking/nonblocking misuse, poor RAM inference, magic numbers, missing spec cite, missing tests. Fix or document.
+After writing, review as an FPGA synthesis engineer: latches, combinational loops, long paths, `/`/`%`, runtime loops, missing resets, blocking/nonblocking misuse, poor RAM inference, magic numbers, missing spec cite, missing tests. Fix or document. Cross-check against `docs/hdl-coding-guidelines/90-anti-patterns.md` (Symptom→Fix) and `91-core-bringup-checklist.md`.
 
 ## Reporting after each task
 

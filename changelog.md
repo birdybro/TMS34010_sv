@@ -7,6 +7,36 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Changed (Task 0068 — HDL coding-guidelines audit + compliance fixes)
+- The user added a Cyclone V HDL coding-guidelines bundle at
+  `docs/hdl-coding-guidelines/` (23 docs; target part 5CSEBA6U23I7 /
+  DE10-Nano). Audited the existing RTL against it (rule extraction +
+  full RTL scan). **The code was already compliant on every hard [C]
+  rule** — consistent always_ff/always_comb split, safe combinational
+  defaults, single-driver, `unique case`+default almost everywhere, no
+  unsynthesizable constructs, no `/`%`*`, complete synchronous resets.
+- Fixes applied for the few gaps found:
+  - `tms34010_decode.sv`: added a `default: ;` to the UNARY
+    `case(instr[6:5])` (was latch-safe via full 2-bit enumeration but
+    lacked the required `default:` — guidelines 90 AP4/AP13, 14 §3.5).
+  - Added `` `default_nettype none `` (and `` `default_nettype wire ``
+    restore) to all 8 RTL files (guidelines 12 §2 / 91 G3). No implicit
+    nets were exposed — lint stays clean.
+  - Removed magic-number duplicates: TRAP entry-ST literal `0x10` now
+    references the existing pkg `ST_RESET_VALUE`; new pkg constants
+    `REV_VALUE` (0x08) and `TRAP_VECTOR_BASE` (0xFFFFFFE0) replace the
+    inline literals in `tms34010_core.sv`.
+- CLAUDE.md updated to make the guidelines bundle the authoritative RTL
+  style reference and to record two intentional, [C]-compliant deviations
+  from its [V] conventions: synchronous active-high `rst` (A0003, the
+  "sync clear" option) and the `default_nettype` placement.
+- Deferred (tracked): the pervasive `32'd32`/`32'd64`/`6'd32` literals are
+  really `DATA_WIDTH` / `2*DATA_WIDTH` / the 32-bit transfer size; a
+  DATA_WIDTH-based sweep is a separate follow-up to keep this change
+  focused and low-risk.
+- Tests: full 59-tb integration regression PASS under Verilator; lint
+  clean. No behavioral change.
+
 ### Added (Task 0067 — CMPXY nondestructive XY compare)
 - **CMPXY Rs,Rd** (`1110 010S SSSR DDDD`, 0xE400) — compares the X (low
   16) and Y (high 16) halves of Rs and Rd, setting status bits as if
