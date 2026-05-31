@@ -177,6 +177,11 @@ module tms34010_decode
   // MODU — unsigned modulo (Rd mod Rs -> Rd). Per SPVU001A page 12-113.
   // Encoding 0110 111S SSSR DDDD. Reuses the divider (remainder result).
   localparam logic [6:0] MODU_TOP7    = 7'b0110_111;
+  // DIVS / MODS — signed divide / modulo (SPVU001A 12-63 / 12-112). The
+  // divider stays unsigned; the core feeds |operands| and sign-conditions
+  // the results. Encodings 0101 100S (DIVS) / 0110 110S (MODS) SSSR DDDD.
+  localparam logic [6:0] DIVS_TOP7    = 7'b0101_100;
+  localparam logic [6:0] MODS_TOP7    = 7'b0110_110;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -795,6 +800,30 @@ module tms34010_decode
       decoded.wb_reg_en    = 1'b1;
       decoded.wb_flags_en  = 1'b1;
       decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b1};  // Z, V
+    end
+
+    // DIVS — signed divide. Like DIVU but N is also set (= quotient sign).
+    if (top7 == DIVS_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_DIVS;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};  // N, Z, V
+    end
+
+    // MODS — signed modulo. N = remainder sign; Z off on Rs=0 (like MODU).
+    if (top7 == MODS_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_MODS;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};  // N, Z, V
     end
 
     // CPW: write the out-of-window code to Rd; set only V (point outside

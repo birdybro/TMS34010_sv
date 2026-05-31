@@ -79,6 +79,7 @@
 | 0071 | MPYS / MPYU multiply (FS1=32)                | complete |
 | 0072 | DIVU unsigned divide + multi-cycle divider   | complete |
 | 0073 | MODU unsigned modulo (reuses divider)        | complete |
+| 0074 | DIVS / MODS signed divide & modulo           | complete |
 
 ---
 
@@ -2633,6 +2634,34 @@ Tests: tb_modu PASS; full 63-tb integration regression PASS under
 Docs: instruction_coverage.md (MODU row), changelog.md, tasks.md.
 Commit:
 - 0d87bfd
+
+---
+
+### Task 0074: DIVS / MODS signed divide & modulo
+Status: complete
+Dependencies: Tasks 0072/0073 (divider + DIVU/MODU datapath).
+Spec source: SPVU001A pages 12-63 (DIVS) / 12-112 (MODS). Encodings
+  0101 100S (DIVS) / 0110 110S (MODS) SSSR DDDD.
+Acceptance Criteria:
+- INSTR_DIVS = 7'd91, INSTR_MODS = 7'd92. wb_flag_mask {n, z, v}.
+- The divider stays unsigned; the core abs-conditions the inputs (|Rd|,
+  |{Rd,Rd+1}|, |Rs|) and sign-conditions the outputs: quotient sign =
+  Rd.sign ^ Rs.sign, remainder sign = Rd.sign. The signs are LATCHED at
+  divide-start (div_dvd_sign_q/div_dvs_sign_q) — the even-Rd pass-0 write
+  overwrites Rd before the remainder pass.
+- Signed overflow div_signed_ovf: |quotient| won't fit signed-32 (positive:
+  |q|>=2^31; negative: |q|>2^31, so -2^31 is valid), OR the unsigned
+  div_overflow (Rs=0, |q|>=2^32). div_v selects signed vs unsigned ovf.
+- Unified div-family rf_wr_data / flag_input (DIVU/DIVS/MODU/MODS).
+  N = is_signed && !ovf && result[31]. MODS reuses effective_flag_mask
+  (Z off on Rs=0).
+- sim/tb/tb_divs_mods.sv: DIVS even (both signs, exact TI quotient/
+  remainder), DIVS odd, Rs=0, MODS negative, MODS Rs=0 (Z unaffected).
+Tests: tb_divs_mods PASS; full 64-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (DIVS/MODS rows), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

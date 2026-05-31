@@ -7,6 +7,29 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0074 — DIVS / MODS signed divide & modulo)
+- **DIVS Rs,Rd** (`0101 100S SSSR DDDD`, 0x5800) — signed divide (even Rd =
+  64-bit signed dividend). **MODS Rs,Rd** (`0110 110S SSSR DDDD`, 0x6C00) —
+  signed 32-bit modulo (remainder takes the dividend's sign). SPVU001A
+  pp.12-63/12-112. Completes the divide family.
+- The `tms34010_divider` stays unsigned; the core feeds |dividend| /
+  |divisor| and sign-conditions the outputs: quotient sign = Rd.sign ^
+  Rs.sign, remainder sign = Rd.sign. Signed overflow (V) = the magnitude
+  quotient won't fit a signed 32-bit value (the -2^31 result is valid),
+  plus the unsigned divider's Rs=0 / |quotient|≥2^32. N = result sign.
+- **Bug caught & fixed during bring-up:** the operand signs were initially
+  recomputed each cycle from the live Rd, but an even-Rd DIVS's pass-0
+  write overwrites Rd with the quotient before the pass-1 remainder write —
+  so the remainder (and N) got the quotient's sign. Fixed by latching the
+  signs at divide-start (`div_dvd_sign_q` / `div_dvs_sign_q`).
+- The four divide-family ops (DIVU/DIVS/MODU/MODS) now share unified
+  rf_wr_data / flag_input muxes; MODS reuses MODU's runtime
+  `effective_flag_mask` ("Z unaffected if Rs=0"). INSTR_DIVS = 7'd91,
+  INSTR_MODS = 7'd92.
+- Test: new `sim/tb/tb_divs_mods.sv` — DIVS even (both result signs, exact
+  TI quotient/remainder), DIVS odd, Rs=0, MODS negative remainder, and
+  MODS Rs=0 (Z unaffected); N/Z/V verified against TI's tables.
+
 ### Added (Task 0073 — MODU unsigned modulo)
 - **MODU Rs,Rd** (`0110 111S SSSR DDDD`, 0x6E00) — unsigned 32-bit modulo:
   `Rd mod Rs -> Rd` (the remainder). SPVU001A p.12-113. Reuses the

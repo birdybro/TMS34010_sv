@@ -465,9 +465,10 @@ module tms34010_core
   assign rf_rs2_idx  = (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU (even Rd) reads the low half of
   // the 64-bit dividend, Rd+1. Otherwise it is unused.
-  assign rf_rs3_file = (decoded.iclass == INSTR_DIVU) ? decoded.rd_file : REG_FILE_B;
-  assign rf_rs3_idx  = (decoded.iclass == INSTR_DIVU) ? (decoded.rd_idx + 4'd1)
-                                                      : CPW_WEND_IDX;
+  assign rf_rs3_file = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
+                     ? decoded.rd_file : REG_FILE_B;
+  assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
+                     ? (decoded.rd_idx + 4'd1) : CPW_WEND_IDX;
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
   // subsequent jump) happens only if the Z bit pre-condition holds:
@@ -553,7 +554,7 @@ module tms34010_core
                        && decoded.wb_reg_en
                        && dsj_precondition
                        && !(is_mv_m2m && m2m_same_reg)   // Rs==Rd: Rs write already covered it
-                       && !(is_div && div_overflow))     // divide overflow: leave Rd unchanged
+                       && !(is_div && div_v))            // divide overflow: leave Rd unchanged
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
                    || m2m_src_wr;
@@ -671,21 +672,63 @@ module tms34010_core
   // (divisor 0 or quotient > 32 bits) the result is NOT written; only V is
   // set. The product/quotient pair-writeback to {Rd, Rd+1} is shared with
   // MPY via pair_wb_step.
-  // is_div = the whole divide family (DIVU, MODU, ... ) — anything that
-  // runs the multi-cycle divider via CORE_DIVIDE.
-  logic                  is_div, is_divu, is_modu, div_rd_even, div_use_pair;
+  // is_div = the whole divide family (DIVU/MODU/DIVS/MODS) — anything that
+  // runs the multi-cycle divider via CORE_DIVIDE. The divider itself is
+  // unsigned; for the signed variants the core feeds |operands| and
+  // sign-conditions the results.
+  logic                  is_div, is_divu, is_modu, is_divs, is_mods;
+  logic                  is_signed_div, is_div_mod, div_rd_even, div_use_pair;
   logic [2*DATA_WIDTH-1:0] div_dividend;
-  logic [DATA_WIDTH-1:0]   div_quotient, div_remainder;
+  logic [DATA_WIDTH-1:0]   div_divisor, div_quotient, div_remainder;
   logic                    div_start, div_busy, div_done, div_overflow;
-  assign is_divu     = (decoded.iclass == INSTR_DIVU);
-  assign is_modu     = (decoded.iclass == INSTR_MODU);
-  assign is_div      = is_divu || is_modu;
-  assign div_rd_even = (decoded.rd_idx[0] == 1'b0);
-  // Only DIVU with an even Rd uses the 64-bit {Rd, Rd+1} dividend; MODU and
-  // odd-Rd DIVU use the 32-bit {0, Rd} dividend.
-  assign div_use_pair = is_divu && div_rd_even;
-  assign div_dividend = div_use_pair ? {rf_rs2_data, rf_rs3_data}        // {Rd, Rd+1}
-                                     : {{DATA_WIDTH{1'b0}}, rf_rs2_data}; // {0, Rd}
+  assign is_divu       = (decoded.iclass == INSTR_DIVU);
+  assign is_modu       = (decoded.iclass == INSTR_MODU);
+  assign is_divs       = (decoded.iclass == INSTR_DIVS);
+  assign is_mods       = (decoded.iclass == INSTR_MODS);
+  assign is_div        = is_divu || is_modu || is_divs || is_mods;
+  assign is_signed_div = is_divs || is_mods;
+  assign is_div_mod    = is_modu || is_mods;        // remainder result (vs quotient)
+  assign div_rd_even   = (decoded.rd_idx[0] == 1'b0);
+  // Only DIVU/DIVS with an even Rd use the 64-bit {Rd, Rd+1} dividend; the
+  // MOD ops and odd-Rd divides use the 32-bit {0/sext, Rd} dividend.
+  assign div_use_pair  = (is_divu || is_divs) && div_rd_even;
+
+  // Operand signs (signed variants only) and magnitudes fed to the divider.
+  // The combinational signs drive the divider-input abs at CORE_EXECUTE;
+  // the LATCHED signs (_q, captured at the divide start) drive the result
+  // sign-conditioning at WRITEBACK — by then Rd may already hold the
+  // quotient (even-Rd pass 0), so its live MSB is no longer the dividend's.
+  logic div_dvd_sign, div_dvs_sign, div_result_neg;
+  logic div_dvd_sign_q, div_dvs_sign_q;
+  assign div_dvd_sign = is_signed_div && rf_rs2_data[DATA_WIDTH-1];   // Rd MSB
+  assign div_dvs_sign = is_signed_div && rf_rs1_data[DATA_WIDTH-1];   // Rs MSB
+  assign div_result_neg = div_dvd_sign_q ^ div_dvs_sign_q;            // quotient sign
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      div_dvd_sign_q <= 1'b0;
+      div_dvs_sign_q <= 1'b0;
+    end else if (state_q == CORE_EXECUTE && is_div) begin
+      div_dvd_sign_q <= div_dvd_sign;
+      div_dvs_sign_q <= div_dvs_sign;
+    end
+  end
+
+  logic [DATA_WIDTH-1:0]   rd_abs;
+  logic [2*DATA_WIDTH-1:0] raw64, abs64;
+  assign rd_abs = rf_rs2_data[DATA_WIDTH-1] ? (~rf_rs2_data + 1'b1) : rf_rs2_data;
+  assign raw64  = {rf_rs2_data, rf_rs3_data};
+  assign abs64  = rf_rs2_data[DATA_WIDTH-1] ? (~raw64 + 1'b1) : raw64;
+  always_comb begin
+    if (!is_signed_div)
+      div_dividend = div_use_pair ? raw64 : {{DATA_WIDTH{1'b0}}, rf_rs2_data};
+    else if (div_use_pair)
+      div_dividend = abs64;                                // |{Rd, Rd+1}|
+    else
+      div_dividend = {{DATA_WIDTH{1'b0}}, rd_abs};         // {0, |Rd|}
+  end
+  assign div_divisor = div_dvs_sign ? (~rf_rs1_data + 1'b1) : rf_rs1_data;
+
   // One-cycle start pulse as we leave CORE_EXECUTE for CORE_DIVIDE; the
   // divider latches the operands on that edge.
   assign div_start = (state_q == CORE_EXECUTE) && is_div;
@@ -695,7 +738,7 @@ module tms34010_core
     .rst       (rst),
     .start     (div_start),
     .dividend  (div_dividend),
-    .divisor   (rf_rs1_data),       // Rs
+    .divisor   (div_divisor),
     .busy      (div_busy),
     .done      (div_done),
     .quotient  (div_quotient),
@@ -703,13 +746,31 @@ module tms34010_core
     .overflow  (div_overflow)
   );
 
+  // Sign-condition the magnitude results, and compute the divide-family
+  // result/flags. div_quot_out/div_rem_out are the (possibly negated)
+  // values; div_result_main is what the flags/Z reflect.
+  logic [DATA_WIDTH-1:0] div_quot_out, div_rem_out, div_result_main;
+  assign div_quot_out = div_result_neg  ? (~div_quotient  + 1'b1) : div_quotient;
+  assign div_rem_out  = div_dvd_sign_q  ? (~div_remainder + 1'b1) : div_remainder;
+  assign div_result_main = is_div_mod ? div_rem_out : div_quot_out;
+  // Signed overflow: the magnitude quotient must fit a signed 32-bit value.
+  //   positive result: |q| >= 2^31  -> overflow
+  //   negative result: |q| >  2^31  -> overflow (|q|==2^31 is -2^31, valid)
+  // (div_overflow already covers Rs=0 and |q| >= 2^32.)
+  logic div_signed_ovf, div_v;
+  assign div_signed_ovf = div_overflow
+    || (is_signed_div &&
+        (div_result_neg ? (div_quotient[DATA_WIDTH-1] && (div_quotient[DATA_WIDTH-2:0] != '0))
+                        :  div_quotient[DATA_WIDTH-1]));
+  assign div_v = is_signed_div ? div_signed_ovf : div_overflow;
+
   // ---- Pair writeback step (shared MPY-even / DIVU-even) ------------------
   // Ops that write the {Rd, Rd+1} register pair over two WRITEBACK cycles.
   // pair_wb_step selects the second pass (Rd+1). DIVU on overflow writes
   // nothing, so it is not a pair-writeback op then.
   logic is_pair_wb, pair_second_pass, pair_wb_step;
   assign is_pair_wb = (is_mpy && mpy_rd_even)
-                   || (div_use_pair && !div_overflow);   // DIVU even only (not MODU)
+                   || (div_use_pair && !div_v);   // DIVU/DIVS even (not MOD; not on overflow)
   assign pair_second_pass = is_pair_wb && (pair_wb_step == 1'b0);
 
   always_ff @(posedge clk) begin
@@ -804,10 +865,15 @@ module tms34010_core
                                : mpy_product_q[31:0];
       // DIVU: even Rd -> quotient (pass 0), remainder -> Rd+1 (pass 1);
       // odd Rd -> quotient. (Skipped entirely on overflow via rf_wr_en.)
-      INSTR_DIVU:   rf_wr_data = (div_rd_even && pair_wb_step) ? div_remainder
-                                                              : div_quotient;
-      // MODU: the remainder of Rd mod Rs -> Rd (single writeback).
-      INSTR_MODU:   rf_wr_data = div_remainder;
+      // DIVU/DIVS: even Rd -> quotient (pass 0), remainder -> Rd+1 (pass 1);
+      // odd Rd -> quotient. div_quot_out/div_rem_out are sign-conditioned
+      // (identity for the unsigned variants).
+      INSTR_DIVU,
+      INSTR_DIVS:   rf_wr_data = (div_rd_even && pair_wb_step) ? div_rem_out
+                                                              : div_quot_out;
+      // MODU/MODS: the remainder of Rd mod Rs -> Rd (single writeback).
+      INSTR_MODU,
+      INSTR_MODS:   rf_wr_data = div_rem_out;
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
@@ -1218,16 +1284,19 @@ module tms34010_core
       INSTR_MPYS,
       INSTR_MPYU:   flag_input = '{n: mpy_product_q[63], c: 1'b0,
                                     z: (mpy_product_q == 64'd0), v: 1'b0};
-      // DIVU: V = overflow (Rs=0 or quotient>32b); Z = quotient==0 (and 0
-      // when overflow). N Unaffected (masked off).
-      INSTR_DIVU:   flag_input = '{n: 1'b0, c: 1'b0,
-                                    z: (!div_overflow && (div_quotient == '0)),
-                                    v: div_overflow};
-      // MODU: Z = remainder==0 (the result), V = overflow (Rs=0). The Z
-      // write is masked off on overflow (see effective_flag_mask), so Z is
-      // Unaffected when Rs=0 per the spec.
-      INSTR_MODU:   flag_input = '{n: 1'b0, c: 1'b0,
-                                    z: (div_remainder == '0), v: div_overflow};
+      // Divide family (DIVU/DIVS/MODU/MODS): V = overflow; Z = (result==0);
+      // N = result sign (signed variants only — masked off for unsigned by
+      // wb_flag_mask). The result is the quotient (DIV) or remainder (MOD),
+      // already sign-conditioned. On overflow N/Z read 0; for the MOD ops
+      // the Z mask is cleared on overflow (effective_flag_mask) so Z stays
+      // Unaffected when Rs=0.
+      INSTR_DIVU,
+      INSTR_DIVS,
+      INSTR_MODU,
+      INSTR_MODS:   flag_input = '{n: (is_signed_div && !div_v && div_result_main[DATA_WIDTH-1]),
+                                    c: 1'b0,
+                                    z: (!div_v && (div_result_main == '0)),
+                                    v: div_v};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
@@ -1238,7 +1307,7 @@ module tms34010_core
   alu_flags_t effective_flag_mask;
   always_comb begin
     effective_flag_mask = decoded.wb_flag_mask;
-    if (is_modu && div_overflow) effective_flag_mask.z = 1'b0;
+    if (is_div_mod && div_v) effective_flag_mask.z = 1'b0;  // MODU/MODS: Z unaffected on Rs=0
   end
 
   tms34010_status_reg u_status_reg (

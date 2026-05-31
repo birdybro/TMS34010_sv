@@ -414,10 +414,18 @@ package tms34010_pkg;
                               //                     Rd/Rs -> quotient in Rd. V=overflow (Rs=0 or
                               //                     quotient>32b; result unchanged), Z=quotient==0,
                               //                     N Unaffected. Encoding 0101 101S SSSR DDDD.
-    INSTR_MODU             = 7'd90  // MODU Rs,Rd — unsigned 32-bit modulo: Rd mod Rs -> Rd
+    INSTR_MODU             = 7'd90, // MODU Rs,Rd — unsigned 32-bit modulo: Rd mod Rs -> Rd
                               //                     (remainder). V=(Rs==0; Rd unchanged), Z=remainder
                               //                     ==0 (unaffected if Rs==0), N Unaffected. Encoding
                               //                     0110 111S SSSR DDDD. Reuses the divider.
+    INSTR_DIVS             = 7'd91, // DIVS Rs,Rd — signed divide (even Rd: 64-bit {Rd:Rd+1}).
+                              //                     Quotient->Rd (+remainder->Rd+1 even); sign-
+                              //                     conditioned. N=result sign, Z=quotient==0,
+                              //                     V=overflow. Encoding 0101 100S SSSR DDDD.
+    INSTR_MODS             = 7'd92  // MODS Rs,Rd — signed 32-bit modulo: Rd mod Rs -> Rd
+                              //                     (remainder has dividend's sign). N=remainder
+                              //                     sign, Z=remainder==0 (unaffected if Rs=0),
+                              //                     V=overflow. Encoding 0110 110S SSSR DDDD.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
