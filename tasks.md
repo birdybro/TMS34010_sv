@@ -2282,7 +2282,7 @@ Tests: tb_move_m2m PASS; full 53-tb integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (M2M row), changelog.md, tasks.md.
 Commit:
-- <pending>
+- e92c939
 
 ---
 
