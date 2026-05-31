@@ -7,6 +7,42 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0056 — MMFM Rp, register list)
+- Implemented **MMFM** per SPVU001A page 12-109 — the pop
+  counterpart of MMTM. Encoding `0000 1001 101R DDDD` + the same
+  16-bit register-list mask. For each set bit (highest-order
+  register first): `Rn <- mem[Rp]; Rp += 32`. The post-increment
+  fires after **every** read including the last, so final
+  `Rp = initial Rp + 32·count` (points one word past the restored
+  block). All four status bits are Unaffected.
+- INSTR_MMFM = 7'd73. Decoder arm: `top11 == MMFM_TOP11`
+  (`11'b00001001_101`), rd/rs carry the Rp index and file,
+  needs_imm16=1 (mask fetch), wb_reg_en=1 (final Rp), wb_flags_en=0,
+  needs_memory_op=1.
+- Core changes:
+  - Generalised the MMTM iterator into a **shared MMTM/MMFM
+    iterator**: renamed `mmtm_rp_q`/`mmtm_mask_q`/`mmtm_iter_idx`/
+    `mmtm_mask_will_be_empty` → `mm_*`, added `is_mmtm`/`is_mmfm`/
+    `is_mm` selectors. `mm_iter_idx` now picks the **lowest** set
+    bit for MMTM and the **highest** set bit for MMFM.
+  - Seed/step asymmetry: MMTM pre-decrements (`mm_rp_q <= Rp-32`
+    on entry, `-32` after each ack except the last); MMFM starts
+    at `Rp` and `+32` after every ack including the last.
+  - MMFM restores each register through the existing single
+    regfile write port during CORE_MEMORY (new `mmfm_pop_wr`
+    path: `rf_wr_en` pulses on each ack, `rf_wr_idx = mm_iter_idx`,
+    `rf_wr_data = mem_rdata`). The final-Rp write still happens at
+    CORE_WRITEBACK; Rp is never in the list so the two write users
+    never collide.
+  - CORE_MEMORY arm and the `mm_mask_will_be_empty` →
+    CORE_WRITEBACK transition extended to cover INSTR_MMFM.
+- Test: new `sim/tb/tb_mmfm.sv` with two subtests — (1) TI's worked
+  example on page 12-110 reproduced verbatim in the B file
+  (absolute-correctness check, pins down assumption A0026 against
+  TI's published register results), and (2) an A-file
+  MMTM → corrupt → MMFM round-trip (internal-consistency check +
+  MMTM regression after the `mm_*` rename). Both PASS.
+
 ### Added (Task 0055 — MMTM Rp, register list)
 - Implemented **MMTM** per SPVU001A page 12-111. Encoding
   `0000 1001 100R DDDD` + 16-bit register-list mask. For each set

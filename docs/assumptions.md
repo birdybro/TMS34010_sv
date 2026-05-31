@@ -482,10 +482,17 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0026 — MMTM / MMFM mask bit-to-register mapping
 - **Date**: 2026-05-30 (Task 0055).
-- **Status**: provisional. The graphical figure showing the chart
-  appears on SPVU001A page 12-110 / 12-112 (between "The bit
-  assignments in the mask are:" and the next text block) but did
-  not survive `pdftotext -layout` extraction.
+- **Status**: **confirmed** as of Task 0056 (2026-05-30). The
+  graphical mask chart on SPVU001A page 12-110 / 12-112 still does
+  not survive `pdftotext -layout` extraction, but the worked MMFM
+  example on page 12-110 (text + published register results, which
+  *did* extract) pins the mapping down absolutely: `MMFM B0, {B1,
+  B2,B4,B8,B12,B13,B14,SP}` with mask 0xF116 produces exactly TI's
+  listed results (SP=FFFFBFBF restored from the lowest address,
+  B1=1111B1B1 from the highest), which is only consistent with
+  **bit N = R(N)**, not the bit N = R(15-N) alternative. tb_mmfm
+  subtest (1) checks this bit-for-bit, so the assumption is now
+  test-locked, not just self-consistent.
 - **Assumption**: **bit N of the mask = register R(N)**, identical
   for both MMTM and MMFM. Iteration direction differs by spec:
   MMTM iterates LSB → MSB (lowest-order register pushed first);

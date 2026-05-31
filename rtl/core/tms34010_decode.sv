@@ -158,6 +158,20 @@ module tms34010_decode
   // at the lowest written address.
   localparam logic [10:0] MMTM_TOP11      = 11'b0000_1001_100;
 
+  // MMFM Rp, register list — Move Multiple from Memory (the pop
+  // counterpart of MMTM). Per SPVU001A page 12-109. Encoding
+  // `0000 1001 101R DDDD` (top11 = 11'b00001001_101), with R=instr[4]
+  // the register file and DDDD=instr[3:0] the Rp index. The second
+  // instruction word is the same 16-bit register-list mask used by
+  // MMTM (A0026: bit N = register R(N)). Iteration order is
+  // HIGHEST-order register first per the spec ("the highest order
+  // register is always restored first"). For each set bit, a 32-bit
+  // value is read from mem[Rp] into the register and Rp is then
+  // post-incremented by 32 — including after the last register, so
+  // final Rp = initial Rp + 32*count (points one word past the data).
+  // All four status bits are Unaffected (simpler than MMTM).
+  localparam logic [10:0] MMFM_TOP11      = 11'b0000_1001_101;
+
   // CALLA Address — Call Subroutine Absolute. Per SPVU001A page 12-48
   // + summary table line 27019. Single fixed opcode `0x0D5F` followed
   // by a 32-bit absolute target address. PC' is pushed; new PC = the
@@ -1052,7 +1066,7 @@ module tms34010_decode
     // Top11 match on 11'b00001001_100. Rd carries the Rp index; the
     // second instruction word (fetched via the existing imm16 path) is
     // the 16-bit register-list mask. CORE_MEMORY iterates set bits in
-    // mmtm_mask_q (lowest-order first per spec) and pushes each
+    // mm_mask_q (lowest-order first per spec) and pushes each
     // matching register's 32-bit value, predecrementing the working
     // Rp by 32 per push. Final Rp is written back to the regfile slot
     // for the original Rp index.
@@ -1070,6 +1084,33 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;            // N flag deferred
+      decoded.needs_imm16     = 1'b1;            // fetch the mask word
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MMFM Rp, register list  (Move Multiple registers From Memory — pop)
+    //
+    // Top11 match on 11'b00001001_101. Rd/Rs carry the Rp index; the
+    // second instruction word (fetched via the imm16 path) is the same
+    // 16-bit register-list mask MMTM uses. CORE_MEMORY iterates set bits
+    // in the residual mask HIGHEST-order first, reads each register's
+    // 32-bit value from mem[Rp] back into the regfile, and post-increments
+    // the working Rp by 32 per read. Final Rp (= initial + 32*count) is
+    // written back to the Rp slot at WRITEBACK.
+    //
+    // wb_flags_en = 0: MMFM leaves N/C/Z/V Unaffected per SPVU001A
+    // page 12-109. rs2 path reads the initial Rp (= rf_rs2_data) used to
+    // seed the iterator on entry to CORE_MEMORY.
+    // -----------------------------------------------------------------------
+    if (top11 == MMFM_TOP11) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MMFM;
+      decoded.rd_file         = reg_file_from_instr;   // R bit at instr[4]
+      decoded.rd_idx          = reg_idx_from_instr;    // DDDD = Rp index
+      decoded.rs_idx          = reg_idx_from_instr;    // also Rp (for rs2 path)
+      decoded.wb_reg_en       = 1'b1;            // write final Rp
+      decoded.wb_flags_en     = 1'b0;            // all flags Unaffected
       decoded.needs_imm16     = 1'b1;            // fetch the mask word
       decoded.needs_memory_op = 1'b1;
     end

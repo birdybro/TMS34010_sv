@@ -61,6 +61,7 @@
 | 0053 | TRAP N (3-transaction software interrupt) | complete |
 | 0054 | TRAP 0 (special-cased, no pushes)         | complete |
 | 0055 | MMTM Rp, list (multi-register push)       | complete (N flag deferred) |
+| 0056 | MMFM Rp, list (multi-register pop)        | complete |
 
 ---
 
@@ -2027,6 +2028,63 @@ Docs: instruction_coverage.md (MMTM row), assumptions.md (A0026
   on mask bit-to-register mapping), changelog.md, tasks.md.
 Commit:
 - 608c7aa
+
+---
+
+### Task 0056: MMFM Rp, register list (multi-register pop)
+Status: complete
+Dependencies:
+- Task 0047 (memory infrastructure / CORE_MEMORY).
+- Task 0055 (MMTM — shares the iterator generalised here).
+Spec source: SPVU001A page 12-109 (description) / 12-110 (worked
+  example). Encoding `0000 1001 101R DDDD` + 16-bit register-list
+  mask. For each register in the list, highest-order first:
+  `Rn <- mem[Rp]; Rp += 32`. The post-increment fires after every
+  read including the last, so final Rp = initial Rp + 32*count
+  (points one word past the restored block). All flags Unaffected.
+Acceptance Criteria:
+- INSTR_MMFM = 7'd73.
+- Decoder: `top11 == MMFM_TOP11` (=11'b00001001_101) arms MMFM with
+  rd_idx/rs_idx = instr[3:0] (Rp), rd_file/rs_file from R bit,
+  needs_imm16=1 (mask fetch), wb_reg_en=1 (write final Rp),
+  wb_flags_en=0 (all flags Unaffected), needs_memory_op=1.
+- Core: the MMTM iterator generalised to a shared MMTM/MMFM iterator.
+  `mmtm_*` renamed to `mm_*` (`mm_rp_q`, `mm_mask_q`, `mm_iter_idx`,
+  `mm_mask_will_be_empty`); new `is_mmtm`/`is_mmfm`/`is_mm` selectors.
+  `mm_iter_idx` = lowest set bit for MMTM, highest set bit for MMFM.
+- Seed/step asymmetry: on CORE_EXECUTE → CORE_MEMORY, MMTM seeds
+  `mm_rp_q <= Rp - 32`, MMFM seeds `mm_rp_q <= Rp`. On each ack MMFM
+  does `mm_rp_q <= mm_rp_q + 32` (every read, incl. last); MMTM does
+  `-32` on every ack except the last.
+- CORE_MEMORY arm for MMFM: `mem_req=1, mem_we=0, mem_addr=mm_rp_q,
+  mem_size=32` (32-bit read). Restored value written to the regfile
+  via the new `mmfm_pop_wr` path: `rf_wr_en` pulses on each ack,
+  `rf_wr_idx = mm_iter_idx`, `rf_wr_data = mem_rdata`. The final-Rp
+  write still happens at CORE_WRITEBACK (`rf_wr_data = mm_rp_q`).
+  Rp is never in the list (spec: "unpredictable results"), so the
+  two write users never target the same index.
+- CORE_MEMORY → CORE_WRITEBACK gates on `mm_mask_will_be_empty` for
+  both MMTM and MMFM.
+- Bit-to-register mapping per assumption A0026 (bit N = R(N)). The
+  TI worked example (page 12-110) now confirms this **absolutely**
+  for MMFM, not just by internal consistency.
+- `sim/tb/tb_mmfm.sv`: two subtests.
+    (1) TI page-12-110 example in the B file: B0=0x10000 (stack
+        pointer), memory pre-seeded with TI's exact stack image,
+        mask {B1,B2,B4,B8,B12,B13,B14,SP}=0xF116. Checks the eight
+        published register results bit-for-bit and B0=0x10100.
+    (2) A-file MMTM → corrupt → MMFM round-trip, mask
+        {A0,A2,A4,A8,A12,A13,A14}=0x7115 (SP omitted so it doesn't
+        fight the B-file subtest's SP). Verifies all registers are
+        restored to their pre-push sentinels and Rp returns to its
+        initial value. Doubles as the MMTM regression after the
+        `mm_*` rename.
+Tests: tb_mmfm PASS; full 49-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa, unchanged); lint clean.
+Docs: instruction_coverage.md (MMFM row + MMTM row mm_* rename),
+  changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

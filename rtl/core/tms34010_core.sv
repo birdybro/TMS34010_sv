@@ -248,60 +248,93 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
-  // MMTM iterator
+  // MMTM / MMFM iterator (shared)
   //
-  // mmtm_mask_q (16-bit) shadows the original register-list mask and
-  // has the just-pushed bit cleared after each mem_ack. mmtm_rp_q
-  // (32-bit) tracks the address of the most recent push — pre-loaded
-  // to (initial Rp - 32) on entry to CORE_MEMORY so the very first
-  // push lands at the right place, and decremented by 32 after each
-  // ack. mmtm_iter_idx is a priority-encoded "lowest set bit of
-  // mmtm_mask_q" — combinational, used both as the index into the
-  // register file (rf_rs1_idx override above) and as the bit position
-  // to clear after the ack.
+  // MMTM (push, INSTR_MMTM) and MMFM (pop, INSTR_MMFM) walk the same
+  // 16-bit register-list mask one set bit at a time, one 32-bit memory
+  // transaction per bit. They share this iterator state and differ only
+  // in scan direction, the +/-32 address step, and read-vs-write:
   //
-  // Assumption A0026: bit N of the mask = register R(N). The spec's
-  // chart was unrecoverable from pdftotext (a graphical figure on
-  // page 12-110/12-112); this is the natural reading and is consistent
-  // with MMTM's "lowest-order register saved first" requirement when
-  // we scan LSB-first.
+  //   mm_mask_q (16-bit) shadows the original mask; the just-handled bit
+  //   is cleared after each mem_ack.
+  //   mm_rp_q (32-bit) is the working stack pointer / current transaction
+  //   address.
+  //   mm_iter_idx is the priority-encoded current bit:
+  //     - MMTM: LOWEST set bit  (lowest-order register saved first).
+  //     - MMFM: HIGHEST set bit (highest-order register restored first).
+  //   It indexes both the register file and the bit to clear after ack.
+  //
+  // Address sequencing (predecrement vs postincrement, per SPVU001A
+  // pages 12-111 / 12-109):
+  //   - MMTM: mm_rp_q seeds to (initial Rp - 32) so the first push lands
+  //     at Rp-32; it decrements by 32 after each ack EXCEPT the last, so
+  //     the final value (= initial - 32*count) is the lowest written
+  //     address, written back as the new Rp.
+  //   - MMFM: mm_rp_q seeds to (initial Rp) so the first read is at Rp;
+  //     it increments by 32 after EVERY ack including the last, so the
+  //     final value (= initial + 32*count) points one word past the data,
+  //     written back as the new Rp.
+  //
+  // Assumption A0026: bit N of the mask = register R(N) for both
+  // instructions. The spec's chart was a graphical figure unrecoverable
+  // from pdftotext; the MMTM→MMFM round-trip test is the real check, and
+  // it only depends on MMTM/MMFM agreeing on the mapping, not its
+  // absolute value.
   // ---------------------------------------------------------------------------
-  logic [DATA_WIDTH-1:0] mmtm_rp_q;
-  logic [15:0]           mmtm_mask_q;
-  logic [3:0]            mmtm_iter_idx;
-  logic                  mmtm_mask_will_be_empty;
+  logic [DATA_WIDTH-1:0] mm_rp_q;
+  logic [15:0]           mm_mask_q;
+  logic [3:0]            mm_iter_idx;
+  logic                  mm_mask_will_be_empty;
+  logic                  is_mmtm, is_mmfm, is_mm;
+
+  assign is_mmtm = (decoded.iclass == INSTR_MMTM);
+  assign is_mmfm = (decoded.iclass == INSTR_MMFM);
+  assign is_mm   = is_mmtm || is_mmfm;
 
   always_comb begin
-    // Find lowest set bit. By iterating high→low and overwriting,
-    // the loop terminates with the smallest i where mmtm_mask_q[i]=1.
-    mmtm_iter_idx = 4'd0;
-    for (int i = 15; i >= 0; i--) begin
-      if (mmtm_mask_q[i]) mmtm_iter_idx = 4'(i);
+    mm_iter_idx = 4'd0;
+    if (is_mmfm) begin
+      // MMFM: highest set bit. Iterate low→high so the LAST overwrite
+      // (the largest i with mm_mask_q[i]=1) wins.
+      for (int i = 0; i < 16; i++) begin
+        if (mm_mask_q[i]) mm_iter_idx = 4'(i);
+      end
+    end else begin
+      // MMTM: lowest set bit. Iterate high→low so the loop terminates
+      // on the smallest i with mm_mask_q[i]=1.
+      for (int i = 15; i >= 0; i--) begin
+        if (mm_mask_q[i]) mm_iter_idx = 4'(i);
+      end
     end
   end
-  // After we clear the bit at mmtm_iter_idx, will the mask be empty?
-  // Used both to gate the FSM transition (last push → WRITEBACK) and
-  // to suppress further Rp-decrement on the final ack.
-  assign mmtm_mask_will_be_empty = ((mmtm_mask_q & ~(16'd1 << mmtm_iter_idx)) == 16'd0);
+  // After we clear the bit at mm_iter_idx, will the mask be empty? Gates
+  // the FSM transition (last transaction → WRITEBACK) and, for MMTM,
+  // suppresses the final Rp-decrement.
+  assign mm_mask_will_be_empty = ((mm_mask_q & ~(16'd1 << mm_iter_idx)) == 16'd0);
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      mmtm_rp_q   <= '0;
-      mmtm_mask_q <= '0;
+      mm_rp_q   <= '0;
+      mm_mask_q <= '0;
     end else if (state_q == CORE_EXECUTE
               && state_d == CORE_MEMORY
-              && decoded.iclass == INSTR_MMTM) begin
-      // First entry to CORE_MEMORY for MMTM: pre-decrement Rp by 32
-      // (= address of first push) and capture the mask from the
-      // fetched second instruction word.
-      mmtm_rp_q   <= rf_rs2_data - 32'd32;
-      mmtm_mask_q <= imm_lo_q;
+              && is_mm) begin
+      // First entry to CORE_MEMORY: capture the mask and seed the
+      // working Rp. MMTM predecrements (first push at Rp-32); MMFM
+      // starts at Rp (first read at Rp).
+      mm_rp_q   <= is_mmtm ? (rf_rs2_data - 32'd32) : rf_rs2_data;
+      mm_mask_q <= imm_lo_q;
     end else if (state_q == CORE_MEMORY
-              && decoded.iclass == INSTR_MMTM
+              && is_mm
               && mem_ack) begin
-      mmtm_mask_q[mmtm_iter_idx] <= 1'b0;
-      if (!mmtm_mask_will_be_empty) begin
-        mmtm_rp_q <= mmtm_rp_q - 32'd32;
+      mm_mask_q[mm_iter_idx] <= 1'b0;
+      if (is_mmfm) begin
+        // Post-increment after every read, including the last.
+        mm_rp_q <= mm_rp_q + 32'd32;
+      end else if (!mm_mask_will_be_empty) begin
+        // Pre-decrement model: skip the step after the final push so the
+        // last write address remains as the new Rp.
+        mm_rp_q <= mm_rp_q - 32'd32;
       end
     end
   end
@@ -400,8 +433,8 @@ module tms34010_core
   // during CORE_MEMORY to scan the register list — rf_rs1_idx then
   // points at the current register being pushed, and rf_rs1_data
   // becomes the 32-bit value driven onto mem_wdata.
-  assign rf_rs1_idx  = (state_q == CORE_MEMORY && decoded.iclass == INSTR_MMTM)
-                     ? mmtm_iter_idx
+  assign rf_rs1_idx  = (state_q == CORE_MEMORY && is_mmtm)
+                     ? mm_iter_idx
                      : decoded.rs_idx;
   assign rf_rs2_file = decoded.rd_file;
   assign rf_rs2_idx  = decoded.rd_idx;
@@ -435,11 +468,21 @@ module tms34010_core
   // shifter depending on `decoded.use_shifter`. For DSJEQ/DSJNE the
   // dsj_precondition further gates the write: if Z doesn't match the
   // pre-condition the spec mandates Rd is left unchanged.
-  assign rf_wr_en   = (state_q == CORE_WRITEBACK)
-                   && decoded.wb_reg_en
-                   && dsj_precondition;
+  // MMFM writes a popped register on every CORE_MEMORY ack (mem_rdata is
+  // valid in the same cycle mem_ack asserts). This is a second user of
+  // the single regfile write port, active in CORE_MEMORY rather than
+  // CORE_WRITEBACK; the final-Rp write still happens at WRITEBACK below.
+  // Rp is never in the list (spec: "unpredictable results"), so the two
+  // writes never target the same index.
+  logic mmfm_pop_wr;
+  assign mmfm_pop_wr = (state_q == CORE_MEMORY) && is_mmfm && mem_ack;
+
+  assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
+                       && decoded.wb_reg_en
+                       && dsj_precondition)
+                   || mmfm_pop_wr;
   assign rf_wr_file = decoded.rd_file;
-  assign rf_wr_idx  = decoded.rd_idx;
+  assign rf_wr_idx  = mmfm_pop_wr ? mm_iter_idx : decoded.rd_idx;
   // EXGF (Exchange Field Definition) datapath. Per SPVU001A page 12-77:
   // Rd's low 6 bits swap with the F-selected FE:FS pair (1 + 5 bits)
   // in ST. Rd's upper 26 bits are cleared after the swap.
@@ -529,7 +572,10 @@ module tms34010_core
   always_comb begin
     unique case (decoded.iclass)
       INSTR_GETST:  rf_wr_data = st_value;
-      INSTR_MMTM:   rf_wr_data = mmtm_rp_q;     // final Rp = address of last push
+      INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
+      // MMFM: per-iteration pop writes mem_rdata to the popped register;
+      // the WRITEBACK pass writes final Rp (= initial + 32*count).
+      INSTR_MMFM:   rf_wr_data = mmfm_pop_wr ? mem_rdata : mm_rp_q;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = 32'h0000_0008;
@@ -1103,15 +1149,26 @@ module tms34010_core
             end
           end
           INSTR_MMTM: begin
-            // Push the register currently selected by mmtm_iter_idx to
-            // mem[mmtm_rp_q]. Each iteration of CORE_MEMORY is one
-            // 32-bit write; mmtm_mask_q and mmtm_rp_q advance on the
-            // ack. We stay in CORE_MEMORY until the mask is empty.
+            // Push the register currently selected by mm_iter_idx to
+            // mem[mm_rp_q]. Each iteration of CORE_MEMORY is one 32-bit
+            // write; mm_mask_q and mm_rp_q advance on the ack. We stay
+            // in CORE_MEMORY until the mask is empty.
             mem_req   = 1'b1;
             mem_we    = 1'b1;
-            mem_addr  = mmtm_rp_q;
+            mem_addr  = mm_rp_q;
             mem_size  = 6'd32;
-            mem_wdata = rf_rs1_data;       // = value of register R(mmtm_iter_idx)
+            mem_wdata = rf_rs1_data;       // = value of register R(mm_iter_idx)
+          end
+          INSTR_MMFM: begin
+            // Pop: read 32 bits from mem[mm_rp_q] into the register
+            // selected by mm_iter_idx (highest-order first). The regfile
+            // write happens via the mmfm_pop_wr path; here we just drive
+            // the read. mm_mask_q clears the bit and mm_rp_q advances
+            // (+32) on the ack. Stay in CORE_MEMORY until mask empty.
+            mem_req   = 1'b1;
+            mem_we    = 1'b0;
+            mem_addr  = mm_rp_q;
+            mem_size  = 6'd32;
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
@@ -1122,7 +1179,8 @@ module tms34010_core
             INSTR_RETI: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
             INSTR_TRAP: if (trap_skip_push || mem_op_step == 2'd2)
                           state_d = CORE_WRITEBACK;
-            INSTR_MMTM: if (mmtm_mask_will_be_empty) state_d = CORE_WRITEBACK;
+            INSTR_MMTM,
+            INSTR_MMFM: if (mm_mask_will_be_empty) state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;
           endcase
         end
