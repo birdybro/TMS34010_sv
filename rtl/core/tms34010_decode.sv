@@ -1071,9 +1071,12 @@ module tms34010_decode
     // Rp by 32 per push. Final Rp is written back to the regfile slot
     // for the original Rp index.
     //
-    // wb_flags_en = 0 here — the N flag computation (sign of -Rp) and
-    // its two edge cases (Rp=0, Rp=0x80000000) are TBD in a follow-up
-    // task; the other three flags are "Unaffected" per the spec.
+    // Per SPVU001A page 12-111, MMTM updates only N: "N is set to the
+    // sign of the result of 0 - Rp" (the ORIGINAL Rp), with two stated
+    // exceptions (Rp=0 -> N=1, Rp=0x80000000 -> N=0). That closed form
+    // is exactly N = ~Rp[31]; the core computes it from the original Rp
+    // in the flag_input mux. C/Z/V are "Unaffected", so the flag mask is
+    // N-only (Task 0057).
     // -----------------------------------------------------------------------
     if (top11 == MMTM_TOP11) begin
       decoded.illegal         = 1'b0;
@@ -1083,7 +1086,8 @@ module tms34010_decode
       decoded.rs_idx          = reg_idx_from_instr;    // also Rp (for rs2 path)
       decoded.alu_op          = ALU_OP_SUB;
       decoded.wb_reg_en       = 1'b1;
-      decoded.wb_flags_en     = 1'b0;            // N flag deferred
+      decoded.wb_flags_en     = 1'b1;            // N flag (sign of 0 - Rp)
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b0, v: 1'b0};
       decoded.needs_imm16     = 1'b1;            // fetch the mask word
       decoded.needs_memory_op = 1'b1;
     end

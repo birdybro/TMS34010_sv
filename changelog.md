@@ -7,6 +7,28 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0057 — MMTM N flag)
+- Closed the one deferred piece of MMTM: the **N status bit**. Per
+  SPVU001A page 12-111, MMTM sets N = sign of (0 - original Rp) with
+  two stated exceptions (Rp=0 → N=1, Rp=0x80000000 → N=0); C, Z, V
+  remain Unaffected.
+- That definition reduces to the closed form **N = ~Rp[31]** (inverted
+  sign bit of the original Rp), which covers the typical case and both
+  edge cases uniformly — the ALU's raw `0 - Rp` sign bit would be wrong
+  at exactly those two points.
+- Implementation:
+  - decode: MMTM arm now sets `wb_flags_en=1` with an N-only
+    `wb_flag_mask` (`{n:1, c:0, z:0, v:0}`).
+  - core: new `INSTR_MMTM` case in the `flag_input` mux sets
+    `n = ~rf_rs2_data[31]`. `rf_rs2_data` still reads the original Rp
+    during WRITEBACK (the final-Rp regfile write is in flight on the
+    same edge and async read returns the pre-write value), so no extra
+    latch is needed.
+- Tests: new `sim/tb/tb_mmtm_nflag.sv` checks all four cases
+  (positive→1, negative→0, and both spec edge cases) by snapshotting ST
+  with GETST after each MMTM. `tb_mmtm` gains an N=1 assertion for its
+  positive-Rp 8-register push. Both PASS.
+
 ### Added (Task 0056 — MMFM Rp, register list)
 - Implemented **MMFM** per SPVU001A page 12-109 — the pop
   counterpart of MMTM. Encoding `0000 1001 101R DDDD` + the same

@@ -204,6 +204,16 @@ module tb_mmtm;
     check_mem32("MMTM: mem[Rp-224] = A14", 114, reg_sentinel(14));
     check_mem32("MMTM: mem[Rp-256] = SP",  112, reg_sentinel(15));
 
+    // N flag (SPVU001A page 12-111) = sign of (0 - Rp) = ~Rp[31]. The
+    // initial Rp (0x0800) is positive, so N must be 1. C/Z/V Unaffected.
+    // The trailing 0xC0FF (JRUC -1) halt doesn't touch flags, so the
+    // MMTM-set N persists to here.
+    if (u_core.st_n !== 1'b1) begin
+      $display("TEST_RESULT: FAIL: MMTM N flag: expected 1 (Rp positive), actual %0b",
+               u_core.st_n);
+      failures++;
+    end
+
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
       failures++;

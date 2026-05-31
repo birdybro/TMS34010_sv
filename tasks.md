@@ -60,8 +60,9 @@
 | 0052 | RETI + multi-transaction memory FSM       | complete |
 | 0053 | TRAP N (3-transaction software interrupt) | complete |
 | 0054 | TRAP 0 (special-cased, no pushes)         | complete |
-| 0055 | MMTM Rp, list (multi-register push)       | complete (N flag deferred) |
+| 0055 | MMTM Rp, list (multi-register push)       | complete |
 | 0056 | MMFM Rp, list (multi-register pop)        | complete |
+| 0057 | MMTM N flag (sign of 0 - Rp)              | complete |
 
 ---
 
@@ -1976,7 +1977,7 @@ Commit:
 ---
 
 ### Task 0055: MMTM Rp, register list (multi-register push)
-Status: complete (N flag deferred)
+Status: complete (N flag added later in Task 0057)
 Dependencies:
 - Task 0047 (memory-write infrastructure / CORE_MEMORY).
 - Task 0053 (multi-transaction memory FSM).
@@ -2085,6 +2086,51 @@ Docs: instruction_coverage.md (MMFM row + MMTM row mm_* rename),
   changelog.md, tasks.md.
 Commit:
 - 287ccce
+
+---
+
+### Task 0057: MMTM N flag (sign of 0 - Rp)
+Status: complete
+Dependencies:
+- Task 0055 (MMTM — this fills its one deferred gap).
+Spec source: SPVU001A page 12-111, Status Bits: "N: Set to the sign
+  of the result of 0 - Rp. (This value is typically 1 if the original
+  contents of Rp are positive; otherwise, it is 0. The only exceptions
+  to this are when Rp=80000000h, N is set to 0, and when Rp=0, N is
+  set to 1.)" C, Z, V Unaffected.
+Key insight: the spec definition + its two exceptions reduce to the
+  single closed form **N = ~Rp[31]** (inverted sign bit of the ORIGINAL
+  Rp). The ALU's raw `0 - Rp` sign bit would disagree at exactly the
+  two edge cases (Rp=0 gives ALU N=0 but spec N=1; Rp=0x80000000 gives
+  ALU N=1 but spec N=0), so N is computed directly from Rp[31], not
+  taken from the ALU flags.
+Acceptance Criteria:
+- Decoder MMTM arm: `wb_flags_en = 1`, `wb_flag_mask =
+  '{n:1, c:0, z:0, v:0}` (N-only; C/Z/V Unaffected).
+- Core `flag_input` mux: new `INSTR_MMTM` case sets
+  `n = ~rf_rs2_data[DATA_WIDTH-1]`. `rf_rs2_data` (= Rp index) still
+  reads the ORIGINAL Rp during WRITEBACK because the final-Rp regfile
+  write is in flight on the same edge and the async read returns the
+  pre-write value — no extra latch needed. MMTM never writes the Rp
+  slot before WRITEBACK, so the original Rp is stable throughout.
+- MMFM is unaffected (all flags Unaffected — already correct).
+- `sim/tb/tb_mmtm_nflag.sv`: four MMTM ops with Rp =
+  0x00001000 (positive → N=1), 0xFFFFF000 (negative → N=0),
+  0x00000000 (zero edge → N=1), 0x80000000 (min-neg edge → N=0).
+  N is captured immediately after each MMTM with a GETST snapshot
+  (GETST has wb_flags_en=0, so it doesn't disturb flags) into A2..A5;
+  each snapshot's bit[31] is checked. Memory writes land at wrapped
+  (Rp-32) addresses above the program region.
+- `tb_mmtm` gains an N=1 assertion for its positive-Rp 8-register push
+  (the trailing 0xC0FF JRUC halt doesn't touch flags, so MMTM's N
+  persists to the check).
+Tests: tb_mmtm_nflag PASS; tb_mmtm PASS; full 50-tb integration
+  regression PASS under Verilator (3 module-level tbs need Questa,
+  unchanged); lint clean.
+Docs: instruction_coverage.md (MMTM row N flag), changelog.md,
+  tasks.md.
+Commit:
+- <pending>
 
 ---
 

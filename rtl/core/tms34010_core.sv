@@ -940,6 +940,14 @@ module tms34010_core
                                     z: (sext_result == '0), v: 1'b0};
       INSTR_ZEXT:   flag_input = '{n: 1'b0, c: 1'b0,
                                     z: (zext_result == '0), v: 1'b0};
+      // MMTM (SPVU001A page 12-111): N = sign of (0 - original Rp) with
+      // exceptions Rp=0 -> 1 and Rp=0x80000000 -> 0; the closed form is
+      // N = ~Rp[31]. rf_rs2_data still reads the ORIGINAL Rp during
+      // WRITEBACK (the final-Rp write is in flight on the same edge, and
+      // the regfile read returns the pre-write value). C/Z/V are masked
+      // off (Unaffected) via wb_flag_mask, so only the N field matters.
+      INSTR_MMTM:   flag_input = '{n: ~rf_rs2_data[DATA_WIDTH-1],
+                                    c: 1'b0, z: 1'b0, v: 1'b0};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
