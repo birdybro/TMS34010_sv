@@ -2411,7 +2411,7 @@ Tests: tb_movx_movy PASS; full 57-tb integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (MOVX/MOVY rows), changelog.md, tasks.md.
 Commit:
-- <pending>
+- f238ea6
 
 ---
 
