@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Changed (Task 0069 — word-step / mem-size magic numbers → DATA_WIDTH constants)
+- Completed the magic-number cleanup deferred from Task 0068. The
+  pervasive `32'd32` / `32'd64` / `6'd32` literals in `tms34010_core.sv`
+  are semantically `DATA_WIDTH` (one 32-bit word in bit-addresses), two
+  words, and the 32-bit memory-transfer size. Added three pkg constants
+  derived from `DATA_WIDTH`:
+  - `WORD_BIT_SIZE = DATA_WIDTH` (32) — stack/pointer step per 32-bit word.
+  - `WORD_BIT_SIZE_2 = 2*DATA_WIDTH` (64) — two-word step (TRAP/RETI).
+  - `MEM_SIZE_32 = DATA_WIDTH` (6'd32) — the `mem_size` value for a
+    full-word transfer.
+  Replaced all 33 occurrences in core.sv. `32'd0`/`32'd1` and the
+  shifter's internal `6'd32` (rotate modulus) were intentionally left.
+- Pure refactor; no behavioral change. The project now has no remaining
+  word-step/transfer-size magic numbers in the core datapath.
+- Tests: full 59-tb integration regression PASS under Verilator; lint clean.
+
 ### Changed (Task 0068 — HDL coding-guidelines audit + compliance fixes)
 - The user added a Cyclone V HDL coding-guidelines bundle at
   `docs/hdl-coding-guidelines/` (23 docs; target part 5CSEBA6U23I7 /

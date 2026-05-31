@@ -74,6 +74,7 @@
 | 0066 | ADDXY / SUBXY (dual 16-bit XY arithmetic)     | complete |
 | 0067 | CMPXY (nondestructive XY compare)            | complete |
 | 0068 | HDL coding-guidelines audit + compliance fixes | complete |
+| 0069 | word-step / mem-size literals → DATA_WIDTH constants | complete |
 
 ---
 
@@ -2498,6 +2499,25 @@ Tests: full 59-tb integration regression PASS under Verilator; lint
 Docs: CLAUDE.md, changelog.md, tasks.md (no instruction_coverage change).
 Commit:
 - df05687
+
+---
+
+### Task 0069: word-step / mem-size literals → DATA_WIDTH constants
+Status: complete
+Trigger: deferred follow-up from Task 0068 (finish the "no magic numbers"
+  compliance for the core datapath).
+What was done:
+- Added pkg constants WORD_BIT_SIZE (=DATA_WIDTH=32), WORD_BIT_SIZE_2
+  (=2*DATA_WIDTH=64), MEM_SIZE_32 (=FIELD_SIZE_WIDTH'(DATA_WIDTH)=6'd32).
+- Replaced all 33 occurrences of 32'd32 / 32'd64 / 6'd32 in
+  tms34010_core.sv (stack/pointer steps + mem_size) with the constants.
+  Left 32'd0 / 32'd1 and the shifter's local 6'd32 (rotate modulus, a
+  module-internal datapath width, not a stack/mem constant).
+Tests: full 59-tb integration regression PASS under Verilator; lint
+  clean. Pure refactor, no behavioral change.
+Docs: changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

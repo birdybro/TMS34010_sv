@@ -335,7 +335,7 @@ module tms34010_core
       // First entry to CORE_MEMORY: capture the mask and seed the
       // working Rp. MMTM predecrements (first push at Rp-32); MMFM
       // starts at Rp (first read at Rp).
-      mm_rp_q   <= is_mmtm ? (rf_rs2_data - 32'd32) : rf_rs2_data;
+      mm_rp_q   <= is_mmtm ? (rf_rs2_data - WORD_BIT_SIZE) : rf_rs2_data;
       mm_mask_q <= imm_lo_q;
     end else if (state_q == CORE_MEMORY
               && is_mm
@@ -343,11 +343,11 @@ module tms34010_core
       mm_mask_q[mm_iter_idx] <= 1'b0;
       if (is_mmfm) begin
         // Post-increment after every read, including the last.
-        mm_rp_q <= mm_rp_q + 32'd32;
+        mm_rp_q <= mm_rp_q + WORD_BIT_SIZE;
       end else if (!mm_mask_will_be_empty) begin
         // Pre-decrement model: skip the step after the final push so the
         // last write address remains as the new Rp.
-        mm_rp_q <= mm_rp_q - 32'd32;
+        mm_rp_q <= mm_rp_q - WORD_BIT_SIZE;
       end
     end
   end
@@ -512,8 +512,8 @@ module tms34010_core
   assign mv_predec   = (decoded.move_mode == MV_ADDR_PREDEC);
   assign mv_incdec   = mv_postinc || mv_predec;
   assign mv_ptr      = is_mv_store ? rf_rs2_data : rf_rs1_data;
-  assign mv_addr     = mv_predec ? (mv_ptr - 32'd32) : mv_ptr;
-  assign mv_ptr_new  = mv_predec ? (mv_ptr - 32'd32) : (mv_ptr + 32'd32);
+  assign mv_addr     = mv_predec ? (mv_ptr - WORD_BIT_SIZE) : mv_ptr;
+  assign mv_ptr_new  = mv_predec ? (mv_ptr - WORD_BIT_SIZE) : (mv_ptr + WORD_BIT_SIZE);
   assign mv_load_ptr_wr = (state_q == CORE_MEMORY) && is_mv_load
                        && mv_incdec && mem_ack;
 
@@ -529,10 +529,10 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
   assign is_mv_m2m    = (decoded.iclass == INSTR_MOVE_FIELD_M2M);
   assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
-  assign m2m_src_addr = mv_predec ? (rf_rs1_data - 32'd32) : rf_rs1_data;
-  assign m2m_dst_addr = mv_predec ? (rf_rs2_data - 32'd32) : rf_rs2_data;
-  assign m2m_src_new  = mv_predec ? (rf_rs1_data - 32'd32) : (rf_rs1_data + 32'd32);
-  assign m2m_dst_new  = mv_predec ? (rf_rs2_data - 32'd32) : (rf_rs2_data + 32'd32);
+  assign m2m_src_addr = mv_predec ? (rf_rs1_data - WORD_BIT_SIZE) : rf_rs1_data;
+  assign m2m_dst_addr = mv_predec ? (rf_rs2_data - WORD_BIT_SIZE) : rf_rs2_data;
+  assign m2m_src_new  = mv_predec ? (rf_rs1_data - WORD_BIT_SIZE) : (rf_rs1_data + WORD_BIT_SIZE);
+  assign m2m_dst_new  = mv_predec ? (rf_rs2_data - WORD_BIT_SIZE) : (rf_rs2_data + WORD_BIT_SIZE);
   // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
                      && (mem_op_step == 2'd0) && mem_ack;
@@ -780,10 +780,10 @@ module tms34010_core
       INSTR_POPST,
       INSTR_CALL_RS,
       INSTR_CALLA,
-      INSTR_CALLR:   alu_b = 32'd32;
-      INSTR_RETS:    alu_b = 32'd32 + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
-      INSTR_RETI:    alu_b = 32'd64;     // SP += 32 (ST pop) + 32 (PC pop) = 64
-      INSTR_TRAP:    alu_b = trap_skip_push ? 32'd0 : 32'd64;
+      INSTR_CALLR:   alu_b = WORD_BIT_SIZE;
+      INSTR_RETS:    alu_b = WORD_BIT_SIZE + ({{(DATA_WIDTH-5){1'b0}}, decoded.k5} << 4);
+      INSTR_RETI:    alu_b = WORD_BIT_SIZE_2;     // SP += 32 (ST pop) + 32 (PC pop) = 64
+      INSTR_TRAP:    alu_b = trap_skip_push ? 32'd0 : WORD_BIT_SIZE_2;
                                           // N>0: SP -= 64 (PC push + ST push).
                                           // N=0: SP unchanged (TRAP 0 skips pushes).
       INSTR_SUB_RR,
@@ -1195,7 +1195,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = alu_result;        // = SP - 32
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_wdata = st_value;          // ST
           end
           INSTR_POPST: begin
@@ -1206,7 +1206,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = rf_rs2_data;       // = current SP
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
           end
           INSTR_CALL_RS,
           INSTR_CALLA,
@@ -1223,7 +1223,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = alu_result;        // = SP - 32
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_wdata = pc_value;          // PC' (return address)
           end
           INSTR_RETS: begin
@@ -1232,7 +1232,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = rf_rs2_data;       // = current SP
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
           end
           INSTR_RETI: begin
             // Two-step pop: step 0 reads ST from mem[SP]; step 1 reads
@@ -1241,10 +1241,10 @@ module tms34010_core
             // ST-write and PC-load paths below.
             mem_req   = 1'b1;
             mem_we    = 1'b0;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_addr  = (mem_op_step == 2'd0)
                       ? rf_rs2_data                  // = SP
-                      : (rf_rs2_data + 32'd32);      // = SP + 32
+                      : (rf_rs2_data + WORD_BIT_SIZE);      // = SP + 32
           end
           INSTR_TRAP: begin
             // Three-step sequence for N>0 — see SPVU001A page 12-252:
@@ -1259,7 +1259,7 @@ module tms34010_core
             // that is the vector fetch — no pushes (per spec note 1
             // page 12-253). SP stays unchanged (alu_b=0 above).
             mem_req   = 1'b1;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             if (trap_skip_push) begin
               mem_we    = 1'b0;
               mem_addr  = TRAP_VECTOR_BASE;        // N=0 ⇒ vector @ 0xFFFFFFE0
@@ -1267,12 +1267,12 @@ module tms34010_core
               unique case (mem_op_step)
                 2'd0: begin
                   mem_we    = 1'b1;
-                  mem_addr  = rf_rs2_data - 32'd32;
+                  mem_addr  = rf_rs2_data - WORD_BIT_SIZE;
                   mem_wdata = pc_value;             // PC'
                 end
                 2'd1: begin
                   mem_we    = 1'b1;
-                  mem_addr  = rf_rs2_data - 32'd64;
+                  mem_addr  = rf_rs2_data - WORD_BIT_SIZE_2;
                   mem_wdata = st_value;             // ST as it stood
                 end
                 default: begin                       // step 2
@@ -1293,7 +1293,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = mm_rp_q;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_wdata = rf_rs1_data;       // = value of register R(mm_iter_idx)
           end
           INSTR_MMFM: begin
@@ -1305,7 +1305,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = mm_rp_q;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
           end
           INSTR_MOVE_FIELD_STORE: begin
             // MOVE Rs,*Rd[+|-]: write Rs (rf_rs1_data) to mem[mv_addr].
@@ -1315,7 +1315,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = mv_addr;           // = Rd or Rd-32 (predec)
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_wdata = rf_rs1_data;       // = Rs (data)
           end
           INSTR_MOVE_FIELD_LOAD: begin
@@ -1326,7 +1326,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = mv_addr;           // = Rs or Rs-32 (predec)
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
           end
           INSTR_MOVE_OFF_STORE: begin
             // MOVE Rs,*Rd(off): write Rs (rf_rs1_data) to mem[Rd + off].
@@ -1334,7 +1334,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = rf_rs2_data + imm32;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_wdata = rf_rs1_data;       // = Rs (data)
           end
           INSTR_MOVE_OFF_LOAD: begin
@@ -1343,7 +1343,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = rf_rs1_data + imm32;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
           end
           INSTR_MOVE_ABS_STORE: begin
             // MOVE Rs,@DAddr: write Rs (rf_rs1_data) to the 32-bit absolute
@@ -1351,7 +1351,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = imm32;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             mem_wdata = rf_rs1_data;       // = Rs (data)
           end
           INSTR_MOVE_ABS_LOAD: begin
@@ -1361,7 +1361,7 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = imm32;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
           end
           INSTR_MOVE_FIELD_M2M: begin
             // Two-step indirect-to-indirect: step 0 reads mem[*Rs], step 1
@@ -1370,7 +1370,7 @@ module tms34010_core
             // (plain form: move_mode=NONE -> they equal Rs/Rd). For inc/dec
             // the pointers are updated via the m2m_src_wr / WRITEBACK paths.
             mem_req   = 1'b1;
-            mem_size  = 6'd32;
+            mem_size  = MEM_SIZE_32;
             if (mem_op_step == 2'd0) begin
               mem_we   = 1'b0;
               mem_addr = m2m_src_addr;     // = Rs (or Rs-32 predec)

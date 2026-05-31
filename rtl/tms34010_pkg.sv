@@ -204,6 +204,16 @@ package tms34010_pkg;
   // Per SPVU001A page 12-252; TRAP 0's vector lives at the base itself.
   parameter logic [DATA_WIDTH-1:0] TRAP_VECTOR_BASE = 32'hFFFF_FFE0;
 
+  // One architectural word is DATA_WIDTH bits. Stack push/pop and the
+  // field-move pointers (at field-size 32) step the bit-address SP /
+  // pointer by one word per 32-bit transfer; the multi-push sequences
+  // (TRAP, RETI) step by two words.
+  parameter logic [ADDR_WIDTH-1:0] WORD_BIT_SIZE   = ADDR_WIDTH'(DATA_WIDTH);     // 32
+  parameter logic [ADDR_WIDTH-1:0] WORD_BIT_SIZE_2 = ADDR_WIDTH'(2 * DATA_WIDTH); // 64
+  // Memory-transfer size (in bits) of a full 32-bit word access, as it
+  // appears on the mem_size port (FIELD_SIZE_WIDTH bits wide).
+  parameter logic [FIELD_SIZE_WIDTH-1:0] MEM_SIZE_32 = FIELD_SIZE_WIDTH'(DATA_WIDTH); // 6'd32
+
   // ---------------------------------------------------------------------------
   // Instruction word + decoded-instruction skeleton
   //
