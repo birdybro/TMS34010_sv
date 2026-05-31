@@ -2517,7 +2517,7 @@ Tests: full 59-tb integration regression PASS under Verilator; lint
   clean. Pure refactor, no behavioral change.
 Docs: changelog.md, tasks.md.
 Commit:
-- <pending>
+- 8612743
 
 ---
 
