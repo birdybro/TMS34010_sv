@@ -326,11 +326,17 @@ package tms34010_pkg;
                               //                     pointer (unchanged). Encoding 1000 00FS SSSR DDDD.
                               //                     All flags Unaffected. Task 0059 implements the
                               //                     field-size-32, word-aligned case only.
-    INSTR_MOVE_FIELD_LOAD  = 7'd75  // MOVE *Rs,Rd  — field at mem[*Rs] -> Rd, sign/zero-extended.
+    INSTR_MOVE_FIELD_LOAD  = 7'd75, // MOVE *Rs,Rd  — field at mem[*Rs] -> Rd, sign/zero-extended.
                               //                     Rs is a bit-address pointer. Encoding
                               //                     1000 01FS SSSR DDDD. Implicit compare-to-0:
                               //                     N=sign, Z=zero, V=0, C Unaffected. Task 0059
                               //                     implements field-size-32, word-aligned only.
+    INSTR_MOVE_FIELD_M2M   = 7'd76  // MOVE *Rs,*Rd — field at mem[*Rs] -> mem[*Rd]. Both Rs and
+                              //                     Rd are bit-address pointers (unchanged for the
+                              //                     plain form). Encoding 1000 10FS SSSR DDDD.
+                              //                     Two memory transactions (read then write). All
+                              //                     flags Unaffected. Task 0061: plain form only,
+                              //                     field-size-32, word-aligned.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

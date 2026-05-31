@@ -66,6 +66,7 @@
 | 0058 | Fix MOVE Rs,Rd opcode (0x4C00) + cross-file | complete |
 | 0059 | MOVE Rs,*Rd / *Rs,Rd (field-32, word-aligned) | complete |
 | 0060 | MOVE indirect auto inc/dec (field-32)        | complete |
+| 0061 | MOVE *Rs,*Rd indirect-to-indirect (field-32) | complete |
 
 ---
 
@@ -2251,6 +2252,37 @@ Tests: tb_move_indirect_incdec PASS; full 52-tb integration regression
 Docs: instruction_coverage.md (four MOVE rows), changelog.md, tasks.md.
 Commit:
 - de8a9d1
+
+---
+
+### Task 0061: MOVE *Rs,*Rd (indirect-to-indirect, field-size 32)
+Status: complete
+Dependencies:
+- Task 0059/0060 (indirect MOVE datapath).
+- Task 0052 (mem_op_step multi-transaction FSM).
+Spec source: SPVU001A page 12-137. Encoding 1000 10FS SSSR DDDD (0x8800).
+Scope: plain form only (no inc/dec), field-size-32, word-aligned.
+Acceptance Criteria:
+- INSTR_MOVE_FIELD_M2M = 7'd76. Decoder: top6 == 100010. Rs=instr[8:5]
+  (src ptr), Rd=instr[3:0] (dst ptr), same file. wb_reg_en=0,
+  wb_flags_en=0 (all Unaffected), needs_memory_op=1.
+- First memory-to-memory op: two-step CORE_MEMORY via mem_op_step.
+  Step 0: read mem[Rs] (mem_we=0, addr=rf_rs1_data), latch into new
+  move_data_q. Step 1: write move_data_q to mem[Rd] (mem_we=1,
+  addr=rf_rs2_data). FSM -> WRITEBACK after step 1 ack.
+- Pointers unchanged (plain form).
+- sim/tb/tb_move_m2m.sv: two mem->mem copies; verify destination data,
+  source unchanged, pointer registers unchanged.
+Known limitations:
+- The inc/dec indirect-to-indirect forms (*Rs+,*Rd+ 0x9800 /
+  -*Rs,-*Rd 0xA800) auto-update BOTH pointers (two regfile writes) and
+  have an Rs==Rd corner the spec only partly defines; deferred (still
+  ILLEGAL). Offset/absolute modes, arbitrary field sizes, FE: A0020.
+Tests: tb_move_m2m PASS; full 53-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (M2M row), changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 

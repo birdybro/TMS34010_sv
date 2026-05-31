@@ -202,6 +202,10 @@ module tms34010_core
   logic [1:0]            mem_op_step;
   logic [DATA_WIDTH-1:0] popped_st_q;
   logic [DATA_WIDTH-1:0] popped_pc_q;
+  // MOVE *Rs,*Rd (indirect-to-indirect): holds the field read at *Rs in
+  // step 0 so it can be written to *Rd in step 1 (mem_rdata is overwritten
+  // by the next transaction).
+  logic [DATA_WIDTH-1:0] move_data_q;
 
   // TRAP 0 is special per SPVU001A page 12-253: it does NOT push PC' or
   // ST onto the stack — it just sets ST <- 0x10 and fetches the vector
@@ -216,7 +220,13 @@ module tms34010_core
       mem_op_step <= 2'd0;
       popped_st_q <= '0;
       popped_pc_q <= '0;
+      move_data_q <= '0;
     end else if (state_q == CORE_MEMORY && mem_ack) begin
+      // MOVE *Rs,*Rd: step 0 reads the source field; latch it so step 1
+      // can write it to the destination.
+      if (decoded.iclass == INSTR_MOVE_FIELD_M2M && mem_op_step == 2'd0) begin
+        move_data_q <= mem_rdata;
+      end
       // Latch popped values per-iclass per-step before moving on.
       if (decoded.iclass == INSTR_RETI) begin
         if (mem_op_step == 2'd0) popped_st_q <= mem_rdata;
@@ -239,6 +249,8 @@ module tms34010_core
         INSTR_TRAP: mem_op_step <= (trap_skip_push || mem_op_step == 2'd2)
                                  ? 2'd0
                                  : mem_op_step + 2'd1;
+        INSTR_MOVE_FIELD_M2M:
+                    mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
         default:    mem_op_step <= 2'd0;
       endcase
     end else if (state_q != CORE_MEMORY) begin
@@ -1242,6 +1254,21 @@ module tms34010_core
             mem_addr  = mv_addr;           // = Rs or Rs-32 (predec)
             mem_size  = 6'd32;
           end
+          INSTR_MOVE_FIELD_M2M: begin
+            // Two-step indirect-to-indirect: step 0 reads mem[Rs], step 1
+            // writes the latched field (move_data_q) to mem[Rd]. 32-bit,
+            // word-aligned. Pointers unchanged (plain form).
+            mem_req   = 1'b1;
+            mem_size  = 6'd32;
+            if (mem_op_step == 2'd0) begin
+              mem_we   = 1'b0;
+              mem_addr = rf_rs1_data;      // = Rs (source pointer)
+            end else begin
+              mem_we   = 1'b1;
+              mem_addr = rf_rs2_data;      // = Rd (destination pointer)
+              mem_wdata = move_data_q;     // field read in step 0
+            end
+          end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
         if (mem_ack) begin
@@ -1253,6 +1280,7 @@ module tms34010_core
                           state_d = CORE_WRITEBACK;
             INSTR_MMTM,
             INSTR_MMFM: if (mm_mask_will_be_empty) state_d = CORE_WRITEBACK;
+            INSTR_MOVE_FIELD_M2M: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;
           endcase
         end

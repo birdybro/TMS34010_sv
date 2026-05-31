@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-30
 
+### Added (Task 0061 — MOVE *Rs,*Rd indirect-to-indirect, field-size 32)
+- **MOVE \*Rs,\*Rd** (`1000 10FS SSSR DDDD`, base 0x8800) — copies the
+  32-bit field at mem[*Rs] to mem[*Rd]. Both Rs and Rd are bit-address
+  pointers (unchanged for this plain form). All status bits Unaffected.
+  SPVU001A p.12-137.
+- First memory-to-memory instruction: a two-step CORE_MEMORY sequence
+  (INSTR_MOVE_FIELD_M2M = 7'd76) reusing the `mem_op_step` counter.
+  Step 0 reads mem[Rs] into a new `move_data_q` latch; step 1 writes it
+  to mem[Rd]; the FSM exits to WRITEBACK after step 1.
+- Test: new `sim/tb/tb_move_m2m.sv` — two memory-to-memory copies
+  verifying the destination receives the data, the source is unchanged,
+  and the pointer registers are unchanged. PASS.
+- Scope: plain form only, field-size-32, word-aligned. The inc/dec
+  indirect-to-indirect forms (`*Rs+,*Rd+` 0x9800, `-*Rs,-*Rd` 0xA800)
+  auto-update BOTH pointers and have an Rs==Rd corner case the spec only
+  partly defines; deferred to a follow-up (still ILLEGAL). A0020.
+
 ### Added (Task 0060 — MOVE indirect with auto inc/dec, field-size 32)
 - Four auto-update addressing variants of the indirect MOVE, reusing the
   Task 0059 datapath (SPVU001A pages 12-129/12-130/12-139/12-143):

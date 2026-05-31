@@ -114,6 +114,7 @@ module tms34010_decode
   // are deferred (assumptions.md A0020 / Phase 6).
   localparam logic [5:0] MOVE_STORE_TOP6 = 6'b100000;  // MOVE Rs,*Rd
   localparam logic [5:0] MOVE_LOAD_TOP6  = 6'b100001;  // MOVE *Rs,Rd
+  localparam logic [5:0] MOVE_M2M_TOP6   = 6'b100010;  // MOVE *Rs,*Rd (ind->ind)
 
   // Auto inc/dec indirect MOVE (Task 0060). Same field semantics as the
   // plain forms; the pointer register steps by the field size (±32 at
@@ -671,6 +672,26 @@ module tms34010_decode
       // N/Z/V update, C Unaffected (the loaded data drives the flags via
       // the flag_input mux in the core, not the ALU).
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE *Rs, *Rd  — indirect-to-indirect field move  (SPVU001A 12-137)
+    //
+    // Read the field at mem[*Rs], write it to mem[*Rd]. Both Rs and Rd are
+    // bit-address pointers (unchanged for the plain form). Two memory
+    // transactions: read then write. All status bits Unaffected. Task 0061
+    // implements the plain form only (no inc/dec), field-size-32,
+    // word-aligned. The inc/dec forms (*Rs+,*Rd+ / -*Rs,-*Rd) are deferred.
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_M2M_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_M2M;
+      decoded.rd_file         = reg_file_from_instr;   // Rs & Rd same file
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest pointer (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = src  pointer (instr[8:5])
+      decoded.wb_reg_en       = 1'b0;                  // pointers unchanged; no writeback
+      decoded.wb_flags_en     = 1'b0;                  // all flags Unaffected
       decoded.needs_memory_op = 1'b1;
     end
 
