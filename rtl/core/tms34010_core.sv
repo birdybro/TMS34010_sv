@@ -556,6 +556,7 @@ module tms34010_core
   assign rf_wr_file = decoded.rd_file;
   assign rf_wr_idx  = mmfm_pop_wr                  ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
+                    : (is_mpy && mpy_wb_step)        ? (decoded.rd_idx + 4'd1)  // MPY low half -> Rd+1
                                                      : decoded.rd_idx;
   // EXGF (Exchange Field Definition) datapath. Per SPVU001A page 12-77:
   // Rd's low 6 bits swap with the F-selected FE:FS pair (1 + 5 bits)
@@ -641,6 +642,45 @@ module tms34010_core
   assign cpw_flags  = '{n: 1'b0, c: 1'b0, z: 1'b0,
                          v: (cpw_b5 | cpw_b6 | cpw_b7 | cpw_b8)};
 
+  // ---- MPYS / MPYU multiply datapath (SPVU001A 12-164/12-166) -------------
+  // 32x32 multiply (Task 0071 scope = FS1 32, i.e. the full Rs). Rd
+  // (rf_rs2) is the 32-bit multiplicand, Rs (rf_rs1) the multiplier. The
+  // 64-bit product is latched in CORE_EXECUTE (mpy_product_q — the
+  // registered output for DSP inference) and written back over 1 cycle
+  // (odd Rd: low 32 to Rd) or 2 cycles (even Rd: hi 32 to Rd, then lo 32
+  // to Rd+1). mpy_wb_step selects the second-pass write.
+  logic                  is_mpy, mpy_signed, mpy_rd_even, mpy_second_pass;
+  logic signed [63:0]    mpy_sprod;
+  logic        [63:0]    mpy_uprod, mpy_product, mpy_product_q;
+  logic                  mpy_wb_step;
+  assign is_mpy      = (decoded.iclass == INSTR_MPYS) || (decoded.iclass == INSTR_MPYU);
+  assign mpy_signed  = (decoded.iclass == INSTR_MPYS);
+  assign mpy_rd_even = (decoded.rd_idx[0] == 1'b0);
+  // 64-bit-context products: operands sign/zero-extend to 64 then multiply.
+  assign mpy_sprod   = $signed(rf_rs2_data) * $signed(rf_rs1_data);
+  assign mpy_uprod   = rf_rs2_data * rf_rs1_data;
+  assign mpy_product = mpy_signed ? unsigned'(mpy_sprod) : mpy_uprod;
+  // Second writeback pass needed for an even Rd (writes Rd+1) once Rd's
+  // high half has been written (mpy_wb_step still 0).
+  assign mpy_second_pass = is_mpy && mpy_rd_even && (mpy_wb_step == 1'b0);
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      mpy_product_q <= '0;
+      mpy_wb_step   <= 1'b0;
+    end else begin
+      if (state_q == CORE_EXECUTE && is_mpy) begin
+        mpy_product_q <= mpy_product;
+      end
+      // Step 0 -> 1 only while we hold in WRITEBACK for the second pass.
+      if (state_q == CORE_WRITEBACK) begin
+        mpy_wb_step <= mpy_second_pass ? 1'b1 : 1'b0;
+      end else begin
+        mpy_wb_step <= 1'b0;
+      end
+    end
+  end
+
   // SEXT / ZEXT field-extension datapath. Per SPVU001A pages 12-238
   // (SEXT) and 12-256 (ZEXT): take the low `FS` bits of Rd, then
   // either sign-extend (copy the field MSB into bits[31:FS]) or
@@ -709,6 +749,11 @@ module tms34010_core
       INSTR_ADDXY:  rf_wr_data = addxy_result;
       INSTR_SUBXY:  rf_wr_data = subxy_result;
       INSTR_CPW:    rf_wr_data = cpw_result;
+      // MPYS/MPYU: even Rd -> hi32 then (Rd+1) lo32; odd Rd -> lo32.
+      INSTR_MPYS,
+      INSTR_MPYU:   rf_wr_data = mpy_rd_even
+                               ? (mpy_wb_step ? mpy_product_q[31:0] : mpy_product_q[63:32])
+                               : mpy_product_q[31:0];
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata to the popped register;
@@ -1115,6 +1160,10 @@ module tms34010_core
       INSTR_SUBXY:  flag_input = subxy_flags;
       INSTR_CMPXY:  flag_input = cmpxy_flags;
       INSTR_CPW:    flag_input = cpw_flags;
+      // MPYS: N/Z from the 64-bit product. MPYU: Z only (N masked off).
+      INSTR_MPYS,
+      INSTR_MPYU:   flag_input = '{n: mpy_product_q[63], c: 1'b0,
+                                    z: (mpy_product_q == 64'd0), v: 1'b0};
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
@@ -1436,7 +1485,9 @@ module tms34010_core
       end
 
       CORE_WRITEBACK: begin
-        state_d = CORE_FETCH;
+        // An even-Rd multiply needs a second writeback cycle to store the
+        // low 32 bits of the 64-bit product into Rd+1.
+        state_d = mpy_second_pass ? CORE_WRITEBACK : CORE_FETCH;
       end
 
       default: begin

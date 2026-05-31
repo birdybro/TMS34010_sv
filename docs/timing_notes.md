@@ -11,6 +11,7 @@
 | Bit-addressed memory IF alignment   | 1 / 6            | planned  | register alignment shifter output if combinational shift is too wide |
 | PIXBLT memory pipeline              | 7                | planned  | natively multi-cycle; register every memory hand-off |
 | Wide barrel shifter (field extract) | 2                | planned  | DSP block or staged shifter on Cyclone V |
+| MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
 ## Multi-cycle operations
 

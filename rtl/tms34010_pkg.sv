@@ -397,10 +397,17 @@ package tms34010_pkg;
                               //                     status as if RdX-RsX / RdY-RsY: N=(Xres==0),
                               //                     V=Xres[15], Z=(Yres==0), C=Yres[15]. Encoding
                               //                     1110 010S SSSR DDDD. Task 0067.
-    INSTR_CPW              = 7'd86  // CPW Rs,Rd — compare the XY point in Rs against the window
+    INSTR_CPW              = 7'd86, // CPW Rs,Rd — compare the XY point in Rs against the window
                               //                     corners WSTART (B5) / WEND (B6); load the 4-bit
                               //                     out-of-window code into Rd[8:5]. V=outside-window.
                               //                     Encoding 1110 011S SSSR DDDD. Task 0070.
+    INSTR_MPYS             = 7'd87, // MPYS Rs,Rd — signed 32x32 -> 64-bit. Even Rd: {Rd=hi32,
+                              //                     Rd+1=lo32}; odd Rd: lo32 in Rd. N=result<0,
+                              //                     Z=result==0. Encoding 0101 110S SSSR DDDD.
+                              //                     Task 0071 implements FS1=32 (full 32-bit Rs).
+    INSTR_MPYU             = 7'd88  // MPYU Rs,Rd — unsigned 32x32 -> 64-bit (same writeback as
+                              //                     MPYS). Z=result==0 (N Unaffected). Encoding
+                              //                     0101 111S SSSR DDDD. Task 0071 (FS1=32).
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

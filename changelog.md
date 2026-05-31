@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0071 — MPYS / MPYU multiply, FS1=32)
+- **MPYS Rs,Rd** (`0101 110S SSSR DDDD`, 0x5C00) — signed 32×32 → 64-bit.
+  **MPYU Rs,Rd** (`0101 111S SSSR DDDD`, 0x5E00) — unsigned. SPVU001A
+  pp.12-164/12-166. Rd is the 32-bit multiplicand and destination; Rs is
+  the multiplier.
+  - Even Rd: 64-bit result → {Rd = hi32, Rd+1 = lo32}.
+  - Odd  Rd: low 32 bits → Rd.
+  - MPYS: N=result[63], Z=(result==0). MPYU: Z only.
+- INSTR_MPYS = 7'd87, INSTR_MPYU = 7'd88. The 64-bit product is computed
+  combinationally and latched in CORE_EXECUTE (`mpy_product_q` — the
+  registered output, regfile-registered inputs, so DSP-inference-friendly).
+  An even-Rd multiply writes back over two WRITEBACK cycles (a new
+  `mpy_wb_step` loops the WRITEBACK state once: hi32→Rd, then lo32→Rd+1).
+- **Scope: FS1 = 32** (the reset-default field size, = the full 32-bit
+  Rs). The variable Rs field size (FS1 = 2..30) is deferred — it needs the
+  field-size machinery (A0020). At FS1=32 the multiplier is the whole Rs,
+  so no field extraction is required.
+- Test: new `sim/tb/tb_mpy.sv` — TI's MPYU example (even), MPYU odd-Rd,
+  signed-negative MPYS (even), zero MPYS, and signed-negative MPYS odd-Rd,
+  checking the register-pair result and the N/Z flags (GETST snapshots).
+
 ### Added (Task 0070 — CPW Compare Point to Window)
 - **CPW Rs,Rd** (`1110 011S SSSR DDDD`, 0xE600) — compares the signed XY
   point in Rs against the window corners WSTART = B5 and WEND = B6

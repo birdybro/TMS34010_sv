@@ -165,6 +165,12 @@ module tms34010_decode
   // out-of-window code lands in Rd. Per SPVU001A page 12-57. Encoding
   // 1110 011S SSSR DDDD. (Task 0070.)
   localparam logic [6:0] CPW_TOP7     = 7'b1110_011;
+  // MPYS / MPYU — multiply Rs (field, FS1 bits) by the 32 bits in Rd,
+  // producing a 32..64-bit result. Per SPVU001A pages 12-164 (MPYS) /
+  // 12-166 (MPYU). Encodings 0101 110S (MPYS) / 0101 111S (MPYU) SSSR DDDD.
+  // Task 0071 implements FS1=32 (full 32-bit Rs); field-size-n deferred.
+  localparam logic [6:0] MPYS_TOP7    = 7'b0101_110;
+  localparam logic [6:0] MPYU_TOP7    = 7'b0101_111;
   localparam logic [6:0] ADD_RR_TOP7  = 7'b0100_000;  // chart: 0100 000S SSSR DDDD
   localparam logic [6:0] ADDC_RR_TOP7 = 7'b0100_001;  // chart: 0100 001S SSSR DDDD
   localparam logic [6:0] SUB_RR_TOP7  = 7'b0100_010;  // chart: 0100 010S SSSR DDDD
@@ -729,6 +735,32 @@ module tms34010_decode
       decoded.rs_idx      = rs_idx_from_instr;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b1;
+    end
+
+    // MPYS / MPYU — 32x32 multiply (FS1=32 scope). Rd is multiplicand and
+    // destination; for even Rd the 64-bit result also lands in Rd+1. The
+    // core latches the product and writes it back over 1 (odd Rd) or 2
+    // (even Rd) cycles. MPYS sets N+Z; MPYU sets Z only.
+    if (top7 == MPYS_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_MPYS;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;     // Rd (multiplicand + dest)
+      decoded.rs_idx       = rs_idx_from_instr;      // Rs (multiplier)
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b0};
+    end
+
+    if (top7 == MPYU_TOP7) begin
+      decoded.illegal      = 1'b0;
+      decoded.iclass       = INSTR_MPYU;
+      decoded.rd_file      = reg_file_from_instr;
+      decoded.rd_idx       = reg_idx_from_instr;
+      decoded.rs_idx       = rs_idx_from_instr;
+      decoded.wb_reg_en    = 1'b1;
+      decoded.wb_flags_en  = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};  // Z only
     end
 
     // CPW: write the out-of-window code to Rd; set only V (point outside

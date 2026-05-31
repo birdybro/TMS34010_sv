@@ -76,6 +76,7 @@
 | 0068 | HDL coding-guidelines audit + compliance fixes | complete |
 | 0069 | word-step / mem-size literals → DATA_WIDTH constants | complete |
 | 0070 | CPW (compare point to window) + 3rd regfile read port | complete |
+| 0071 | MPYS / MPYU multiply (FS1=32)                | complete |
 
 ---
 
@@ -2543,6 +2544,36 @@ Tests: tb_cpw PASS; full 60-tb integration regression PASS under
 Docs: instruction_coverage.md (CPW row), changelog.md, tasks.md.
 Commit:
 - 74ad4c1
+
+---
+
+### Task 0071: MPYS / MPYU multiply (FS1=32)
+Status: complete
+Dependencies: none new (reg-op writeback + a new 2-pass WRITEBACK).
+Spec source: SPVU001A pages 12-164 (MPYS) / 12-166 (MPYU). Encodings
+  0101 110S (MPYS, 0x5C00) / 0101 111S (MPYU, 0x5E00) SSSR DDDD.
+Scope: FS1=32 (reset default = full 32-bit Rs); variable FS1 deferred.
+Acceptance Criteria:
+- INSTR_MPYS=7'd87, INSTR_MPYU=7'd88. Decoder top7 0101_110 / 0101_111.
+  MPYS wb_flag_mask {n,z}; MPYU {z} only.
+- Core: 64-bit product (mpy_sprod/$signed, mpy_uprod) latched in
+  CORE_EXECUTE into mpy_product_q (registered DSP output). Even Rd (rd_idx
+  [0]==0): WRITEBACK loops once via mpy_wb_step — pass 0 writes
+  product[63:32] to Rd, pass 1 writes product[31:0] to Rd+1
+  (rf_wr_idx = rd_idx+1). Odd Rd: single pass, product[31:0] to Rd.
+  Flags from the full 64-bit product (N=bit63, Z=all-zero).
+- sim/tb/tb_mpy.sv: TI MPYU example (even), MPYU odd, MPYS even negative,
+  MPYS zero, MPYS odd negative; register-pair results + N/Z via GETST.
+Known limitations:
+- FS1 != 32 (variable Rs field size) not implemented — needs the
+  field-size machinery (A0020). The 32×32 multiply is combinational +
+  one register stage; if it fails Fmax, pipeline it (timing_notes.md).
+Tests: tb_mpy PASS; full 61-tb integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (MPYS/MPYU rows), timing_notes.md,
+  changelog.md, tasks.md.
+Commit:
+- <pending>
 
 ---
 
