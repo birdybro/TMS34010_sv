@@ -2999,7 +2999,7 @@ Tests: tb_fill_xy PASS; tb_fill_l regress PASS; full integration regression
 Docs: instruction_coverage.md (FILL XY row), assumptions.md (A0029),
   changelog.md, tasks.md.
 Commit:
-- pending
+- 77272bb
 
 ---
 
