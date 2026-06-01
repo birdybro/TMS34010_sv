@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0080 — MOVB move byte)
+- MOVB (move byte) implemented: a special MOVE form with the field size fixed
+  at 8 bits. New `decoded.force_byte` flag makes the core force `mv_fs = 8`
+  and, for loads, sign-extension (`mv_fe = 1`) regardless of ST — MOVB loads
+  are always right-justified and sign-extended to 32 bits with implicit
+  compare-to-0; stores leave flags Unaffected. SPVU001A pp.12-118ff.
+- 7 of MOVB's 9 forms reuse the MOVE field/offset/absolute datapaths: Rs,*Rd
+  (0x8C00), *Rs,Rd (0x8E00), *Rs,*Rd (0x9C00), Rs,*Rd(off) (0xAC00),
+  *Rs(off),Rd (0xAE00), Rs,@DAddr (0x05E0), @SAddr,Rd (0x07E0). The store/load
+  indirect forms decode on top7 (they differ in bit9); the absolute forms are
+  in the 0000-01.. family at sub-op instr[7:5]=111 (store bit9=0 / load bit9=1).
+- New `sim/tb/tb_movb.sv` covers all 7 forms incl. sign-extend vs positive
+  byte, M2M, offset, absolute, and an unaligned (boff=4) byte. The test
+  deliberately does not SETF — proving force_byte overrides the reset FS0=16.
+- Deferred: MOVB *Rs(SOff),*Rd(DOff) (0xBC00) and MOVB @SAddr,@DAddr (0x0340)
+  need new multi-word datapaths (also deferred for MOVE); they trap as illegal.
+
 ### Added (Task 0079 — field-size-aware MOVE indirect-to-indirect; MOVE field machinery complete)
 - The M2M (indirect↔indirect) MOVE forms (MOVE *Rs,*Rd / *Rs+,*Rd+ /
   -*Rs,-*Rd) now honor the field size: both steps of the 2-step CORE_MEMORY

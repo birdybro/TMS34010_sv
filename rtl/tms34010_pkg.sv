@@ -497,6 +497,10 @@ package tms34010_pkg;
     // Pointer auto-update mode for the indirect MOVE family (INSTR_MOVE_
     // FIELD_STORE / _LOAD). MV_ADDR_NONE for every other instruction.
     move_addr_mode_t move_mode;
+    // 1 ⇒ MOVB (move byte): force the field size to 8 regardless of ST.FS,
+    // and sign-extend on load (MOVB loads are always sign-extended). Reuses
+    // the INSTR_MOVE_FIELD/OFF/ABS datapaths with FS forced to 8.
+    logic          force_byte;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg

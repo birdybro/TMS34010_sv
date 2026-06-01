@@ -143,6 +143,31 @@ module tms34010_decode
   localparam logic [5:0] MOVE_LOAD_POSTINC_TOP6  = 6'b100101;
   localparam logic [5:0] MOVE_STORE_PREDEC_TOP6  = 6'b101000;
   localparam logic [5:0] MOVE_LOAD_PREDEC_TOP6   = 6'b101001;
+
+  // MOVB (move byte) — a special form of MOVE with the field size fixed at 8
+  // (SPVU001A 12-118ff). No FS field in the encoding; loads always
+  // sign-extend the byte to 32 bits. MOVB has no auto inc/dec forms. These
+  // 7 forms map directly onto the existing MOVE field datapaths with FS
+  // forced to 8 (decoded.force_byte). The store/load indirect forms differ
+  // in bit[9], so they are matched on top7 (bits[15:9]).
+  //   MOVB Rs,*Rd          : 1000 110S  (top7 = 1000110, 0x8C00) store
+  //   MOVB *Rs,Rd          : 1000 111S  (top7 = 1000111, 0x8E00) load
+  //   MOVB *Rs,*Rd         : 1001 110S  (top7 = 1001110, 0x9C00) ind->ind
+  //   MOVB Rs,*Rd(off)     : 1010 110S  (top7 = 1010110, 0xAC00) off store
+  //   MOVB *Rs(off),Rd     : 1010 111S  (top7 = 1010111, 0xAE00) off load
+  // The two absolute forms live in the 0000 01.. field-op family (sub-op
+  // instr[7:5]=111), distinguished from each other by bit[9]:
+  //   MOVB Rs,@DAddr       : 0000 0101 111R SSSS (0x05E0) abs store (bit9=0)
+  //   MOVB @SAddr,Rd       : 0000 0111 111R DDDD (0x07E0) abs load  (bit9=1)
+  // Deferred (need new multi-word datapaths, like the niche MOVE forms):
+  //   MOVB *Rs(SOff),*Rd(DOff)  : 1011 110S (0xBC00) offset-to-offset
+  //   MOVB @SAddr,@DAddr        : 0000 0011 0100 0000 (0x0340) abs-to-abs
+  localparam logic [6:0] MOVB_STORE_TOP7    = 7'b1000_110;
+  localparam logic [6:0] MOVB_LOAD_TOP7     = 7'b1000_111;
+  localparam logic [6:0] MOVB_M2M_TOP7      = 7'b1001_110;
+  localparam logic [6:0] MOVB_OFF_STORE_TOP7 = 7'b1010_110;
+  localparam logic [6:0] MOVB_OFF_LOAD_TOP7  = 7'b1010_111;
+
   // MOVX / MOVY — move the X (low 16) or Y (high 16) half of Rs into the
   // same half of Rd, leaving the other half untouched. Per SPVU001A pages
   // 12-162/12-163. Encodings 1110 110S (MOVX) / 1110 111S (MOVY) SSSR DDDD.
@@ -448,6 +473,7 @@ module tms34010_decode
     // overrides it for cross-file moves; the core reads it only for MOVE_RR.
     decoded.rs_file         = reg_file_from_instr;
     decoded.move_mode       = MV_ADDR_NONE;   // only the indirect MOVE family sets this
+    decoded.force_byte      = 1'b0;            // only MOVB sets this (force FS=8)
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -1277,6 +1303,106 @@ module tms34010_decode
       decoded.needs_imm32     = 1'b1;                  // fetch 32-bit SAddress
       decoded.needs_memory_op = 1'b1;
       decoded.wb_reg_en       = 1'b1;                  // Rd <- loaded data
+      decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVB (move byte, FS forced to 8) — Task 0080. Seven forms reuse the
+    // MOVE field/offset/absolute datapaths with decoded.force_byte = 1, which
+    // makes the core drive mem_size = 8 and (for loads) sign-extend the byte.
+    // MOVB has no auto inc/dec, so move_mode stays MV_ADDR_NONE. Loads set
+    // N/Z from the sign-extended byte; stores leave all flags Unaffected.
+    // -----------------------------------------------------------------------
+    if (top7 == MOVB_STORE_TOP7) begin            // MOVB Rs,*Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_STORE;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = pointer (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = data    (instr[8:5])
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == MOVB_LOAD_TOP7) begin             // MOVB *Rs,Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_LOAD;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest    (instr[3:0])
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pointer (instr[8:5])
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == MOVB_M2M_TOP7) begin              // MOVB *Rs,*Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_M2M;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = src  pointer
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == MOVB_OFF_STORE_TOP7) begin        // MOVB Rs,*Rd(off)
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_OFF_STORE;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = data
+      decoded.needs_imm16     = 1'b1;
+      decoded.imm_sign_extend = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+    end
+
+    if (top7 == MOVB_OFF_LOAD_TOP7) begin         // MOVB *Rs(off),Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_OFF_LOAD;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pointer
+      decoded.needs_imm16     = 1'b1;
+      decoded.imm_sign_extend = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // MOVB absolute forms: 0000 01.. family, sub-op instr[7:5]=111,
+    // store (bit9=0) / load (bit9=1).
+    if (instr[15:10] == SETF_TOP6 && !instr[9] && instr[8] && (instr[7:5] == 3'b111)) begin
+      decoded.illegal         = 1'b0;             // MOVB Rs,@DAddr (0x05E0)
+      decoded.iclass          = INSTR_MOVE_ABS_STORE;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rs_idx          = reg_idx_from_instr;    // Rs = data (instr[3:0])
+      decoded.needs_imm32     = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+    end
+
+    if (instr[15:10] == SETF_TOP6 && instr[9] && instr[8] && (instr[7:5] == 3'b111)) begin
+      decoded.illegal         = 1'b0;             // MOVB @SAddr,Rd (0x07E0)
+      decoded.iclass          = INSTR_MOVE_ABS_LOAD;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest (instr[3:0])
+      decoded.needs_imm32     = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
     end

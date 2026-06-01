@@ -542,9 +542,13 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] mv_load_data;      // field-extended load result
   assign mv_fs_raw = instr_word_q[9] ? st_value[ST_FS1_HI:ST_FS1_LO]
                                      : st_value[ST_FS0_HI:ST_FS0_LO];
-  assign mv_fs     = (mv_fs_raw == 5'd0) ? FIELD_SIZE_WIDTH'(DATA_WIDTH)
-                                         : {1'b0, mv_fs_raw};
-  assign mv_fe     = instr_word_q[9] ? st_value[ST_FE1_BIT] : st_value[ST_FE0_BIT];
+  // MOVB (decoded.force_byte) forces an 8-bit field and sign-extension on
+  // load, independent of ST.FS/FE.
+  assign mv_fs     = decoded.force_byte   ? FIELD_SIZE_WIDTH'(8)
+                   : (mv_fs_raw == 5'd0)  ? FIELD_SIZE_WIDTH'(DATA_WIDTH)
+                                          : {1'b0, mv_fs_raw};
+  assign mv_fe     = decoded.force_byte   ? 1'b1
+                   : (instr_word_q[9] ? st_value[ST_FE1_BIT] : st_value[ST_FE0_BIT]);
   assign mv_fs_ext = DATA_WIDTH'(mv_fs);
   assign mv_fmask  = (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH))
                    ? '1 : ((32'd1 << mv_fs) - 32'd1);

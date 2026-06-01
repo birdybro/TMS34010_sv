@@ -2790,6 +2790,32 @@ Commit:
 
 ---
 
+### Task 0080: MOVB (move byte) — FS forced to 8
+Status: complete
+Dependencies: Tasks 0077–0079 (MOVE field machinery: mv_fs/mv_fe/mv_load_data).
+Spec source: SPVU001A pages 12-118..12-125 (MOVB forms); loads sign-extend
+  the byte to 32 bits with implicit compare-to-0 (12-120).
+Acceptance Criteria:
+- New `decoded.force_byte` field (pkg struct, decode default 0). When set:
+  core forces `mv_fs = 8` and `mv_fe = 1` (sign-extend) regardless of ST.
+- Decode 7 MOVB forms onto existing iclasses: Rs,*Rd (0x8C00, top7 1000110),
+  *Rs,Rd (0x8E00, 1000111), *Rs,*Rd (0x9C00, 1001110), Rs,*Rd(off) (0xAC00,
+  1010110), *Rs(off),Rd (0xAE00, 1010111), Rs,@DAddr (0x05E0: SETF_TOP6,
+  !bit9, bit8, [7:5]=111), @SAddr,Rd (0x07E0: bit9, bit8, [7:5]=111).
+  move_mode=NONE (MOVB has no inc/dec).
+- Deferred (trap illegal): MOVB *Rs(SOff),*Rd(DOff) (0xBC00) and
+  MOVB @SAddr,@DAddr (0x0340) — need new multi-word datapaths.
+- sim/tb/tb_movb.sv: all 7 forms, sign-extend vs positive byte, M2M, offset,
+  absolute, unaligned byte. No SETF (force_byte overrides reset FS0=16).
+Tests: tb_movb PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (9 MOVB rows incl. 2 deferred), assumptions.md
+  (A0020 note), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
