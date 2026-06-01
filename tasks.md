@@ -3080,7 +3080,7 @@ Tests: tb_pixt_ppop_arith PASS; full integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (PIXT store row), changelog.md, tasks.md.
 Commit:
-- pending
+- a7ef356
 
 ---
 
