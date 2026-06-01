@@ -7,6 +7,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0086 — XY-to-XY PIXT M2M; PIXT family complete)
+- PIXT *Rs.XY,*Rd.XY (0xF400): both pointers hold XY values. The 2-step M2M
+  converts the source (Rs) via CONVSP and the destination (Rd) via CONVDP,
+  both + OFFSET(B4) (new `pix_xy_dst_linear` for the destination; the existing
+  `pix_xy_linear` already converts the source). Reuses the field M2M datapath
+  with force_pixel + xy_addr.
+- This completes all six PIXT forms (linear store/load/M2M and XY
+  store/load/M2M), replace mode.
+- `sim/tb/tb_pixt_xy.sv` extended with the XY-to-XY M2M case (copy a pixel from
+  one XY location through CONVSP to another through CONVDP).
+
 ### Added (Task 0085 — XY-addressed PIXT store/load)
 - PIXT Rs,*Rd.XY (0xF000 store) and PIXT *Rs.XY,Rd (0xF200 load): the pointer
   register holds an XY value that the core converts to a linear bit address

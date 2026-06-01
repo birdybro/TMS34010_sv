@@ -2939,6 +2939,26 @@ Commit:
 
 ---
 
+### Task 0086: XY-to-XY PIXT M2M (0xF400) — completes the PIXT family
+Status: complete
+Dependencies: Task 0085 (xy_addr conversion path).
+Spec source: SPVU001A §"PIXT" (Indirect XY to Indirect XY).
+Acceptance Criteria:
+- Decode 0xF400 (top7 1111010) -> FIELD_M2M + force_pixel + xy_addr.
+- New pix_xy_dst_linear converts the destination (rf_rs2) via CONVDP; the
+  M2M src/dst address muxes use pix_xy_linear (src, CONVSP) and
+  pix_xy_dst_linear (dst, CONVDP) when xy_addr.
+- All 6 PIXT forms now implemented (replace mode).
+- sim/tb/tb_pixt_xy.sv extended: XY-to-XY M2M copy (src via CONVSP, dst via
+  CONVDP).
+Tests: tb_pixt_xy PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (XY M2M row), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

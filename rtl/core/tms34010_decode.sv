@@ -183,6 +183,7 @@ module tms34010_decode
   // 0xF400) needs dual conversion and is deferred.
   localparam logic [6:0] PIXT_XY_STORE_TOP7 = 7'b1111_000;
   localparam logic [6:0] PIXT_XY_LOAD_TOP7  = 7'b1111_001;
+  localparam logic [6:0] PIXT_XY_M2M_TOP7   = 7'b1111_010;  // *Rs.XY,*Rd.XY (0xF400)
 
   // MOVX / MOVY — move the X (low 16) or Y (high 16) half of Rs into the
   // same half of Rd, leaving the other half untouched. Per SPVU001A pages
@@ -1518,6 +1519,19 @@ module tms34010_decode
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
       decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == PIXT_XY_M2M_TOP7) begin          // PIXT *Rs.XY,*Rd.XY
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_M2M;
+      decoded.force_pixel     = 1'b1;
+      decoded.xy_addr         = 1'b1;               // src via CONVSP, dst via CONVDP
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = XY dest pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = XY source pointer
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
       decoded.needs_memory_op = 1'b1;
     end
 

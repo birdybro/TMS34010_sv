@@ -72,6 +72,9 @@ module tb_pixt_xy;
   function automatic instr_word_t pixt_xy_load_enc(input reg_idx_t rs, input reg_idx_t rd);
     pixt_xy_load_enc = 16'hF200 | (instr_word_t'(rs) << 5) | instr_word_t'(rd);   // *Rs.XY,Rd
   endfunction
+  function automatic instr_word_t pixt_xy_m2m_enc(input reg_idx_t rs, input reg_idx_t rd);
+    pixt_xy_m2m_enc = 16'hF400 | (instr_word_t'(rs) << 5) | instr_word_t'(rd);    // *Rs.XY,*Rd.XY
+  endfunction
 
   function automatic int unsigned place_movi_il(input int unsigned p,
                                                 input reg_idx_t i,
@@ -156,6 +159,18 @@ module tb_pixt_xy;
     // 4) XY load now uses CONVSP=0x1C -> reads word 137 -> A7 = 0x0000005A.
     p = place_word(p, pixt_xy_load_enc(4'd0, 4'd7));
 
+    // 5) XY-to-XY M2M: copy pixel from src.XY (CONVSP) to dst.XY (CONVDP).
+    //    Reset both conv factors to 0x1B. src XY = (X=0x20,Y=0x05) -> 0x950
+    //    (word 149); dst XY = (X=0x20,Y=0x06) -> 0x960 (word 150).
+    p = place_movi_il  (p, 4'd2, 32'h0000_001B);
+    p = place_store_abs(p, 4'd2, A_CONVSP);              // CONVSP = 0x1B
+    p = place_movi_il  (p, 4'd8,  32'h0005_0020);        // src XY
+    p = place_movi_il  (p, 4'd9,  32'h0006_0020);        // dst XY
+    p = place_movi_il  (p, 4'd10, 32'h0000_0077);        // pixel
+    p = place_movi_il  (p, 4'd11, 32'h0000_0950);        // src linear addr (word 149)
+    p = place_word(p, pixt_store_enc(4'd10, 4'd11));     // pre-store mem[0x950] <- 0x77
+    p = place_word(p, pixt_xy_m2m_enc(4'd8, 4'd9));      // mem[dst.XY] <- mem[src.XY]
+
     p = place_word(p, 16'hC0FF);
 
     repeat (3) @(posedge clk);
@@ -175,6 +190,9 @@ module tb_pixt_xy;
     check_word("3: mem[137] = 0x005A",          137, 16'h005A);
     // 4) XY load with CONVSP=0x1C reads word 137 (proves CONVSP, not CONVDP).
     check_reg ("4: A7 = 0x0000005A (CONVSP)",    u_core.u_regfile.a_regs[7], 32'h0000_005A);
+    // 5) XY-to-XY M2M: src 0x950 (word149) pre-stored 0x77 -> dst 0x960 (word150).
+    check_word("5: mem[149] = 0x0077 (src)",    149, 16'h0077);
+    check_word("5: mem[150] = 0x0077 (dst M2M)",150, 16'h0077);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
@@ -182,7 +200,7 @@ module tb_pixt_xy;
     end
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (PIXT XY: store via CONVDP, load via CONVSP, OFFSET=B4)");
+      $display("TEST_RESULT: PASS (PIXT XY: store CONVDP, load CONVSP, XY-to-XY M2M, OFFSET=B4)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

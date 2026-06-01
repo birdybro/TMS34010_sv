@@ -594,6 +594,17 @@ module tms34010_core
                      : mv_predec       ? (mv_ptr - mv_fs_ext) : mv_ptr;
   assign mv_ptr_new  = mv_predec ? (mv_ptr - mv_fs_ext) : (mv_ptr + mv_fs_ext);
 
+  // Destination-pointer XY conversion (for the XY-to-XY PIXT M2M, Task 0086).
+  // pix_xy_linear above converts the SOURCE pointer (mv_ptr = rf_rs1 for the
+  // M2M) with CONVSP; the M2M destination (rf_rs2) converts with CONVDP.
+  logic [4:0]            pix_xy_dst_yshift;
+  logic [DATA_WIDTH-1:0] pix_xy_dst_linear;
+  assign pix_xy_dst_yshift = 5'd31 - io_convdp[4:0];
+  assign pix_xy_dst_linear =
+      (({{16{rf_rs2_data[DATA_WIDTH-1]}}, rf_rs2_data[DATA_WIDTH-1:16]} << pix_xy_dst_yshift)
+       | ({16'b0, rf_rs2_data[15:0]} << pix_xy_xsh))
+      + rf_rs3_data;   // + OFFSET (B4)
+
   // ---- Indirect-to-indirect MOVE auto inc/dec (Task 0062) -----------------
   // Two pointers (Rs=source, Rd=dest) both step by ±32. The source pointer
   // (Rs) is written during CORE_MEMORY at the step-0 (read) ack; the
@@ -606,9 +617,13 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
   assign is_mv_m2m    = (decoded.iclass == INSTR_MOVE_FIELD_M2M);
   assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
-  // Field-size aware (Task 0079): both pointers step by ±FS, not ±32.
-  assign m2m_src_addr = mv_predec ? (rf_rs1_data - mv_fs_ext) : rf_rs1_data;
-  assign m2m_dst_addr = mv_predec ? (rf_rs2_data - mv_fs_ext) : rf_rs2_data;
+  // Field-size aware (Task 0079): both pointers step by ±FS, not ±32. XY PIXT
+  // M2M (Task 0086): the pointers hold XY values — convert the source with
+  // CONVSP (pix_xy_linear) and the destination with CONVDP (pix_xy_dst_linear).
+  assign m2m_src_addr = decoded.xy_addr ? pix_xy_linear
+                      : mv_predec       ? (rf_rs1_data - mv_fs_ext) : rf_rs1_data;
+  assign m2m_dst_addr = decoded.xy_addr ? pix_xy_dst_linear
+                      : mv_predec       ? (rf_rs2_data - mv_fs_ext) : rf_rs2_data;
   assign m2m_src_new  = mv_predec ? (rf_rs1_data - mv_fs_ext) : (rf_rs1_data + mv_fs_ext);
   assign m2m_dst_new  = mv_predec ? (rf_rs2_data - mv_fs_ext) : (rf_rs2_data + mv_fs_ext);
   // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
