@@ -2739,7 +2739,7 @@ Tests: tb_move_field PASS; tb_move_indirect / tb_move_indirect_incdec updated
 Docs: instruction_coverage.md (6 register↔indirect rows), assumptions.md
   (A0020 note), changelog.md, tasks.md.
 Commit:
-- pending
+- 5ea49ad
 
 ---
 
