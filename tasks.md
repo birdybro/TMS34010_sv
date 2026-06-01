@@ -2916,6 +2916,29 @@ Commit:
 
 ---
 
+### Task 0085: XY-addressed PIXT (store 0xF000 / load 0xF200)
+Status: complete
+Dependencies: Task 0083 (PIXT/force_pixel), Task 0084 (CVXYL conversion + B4
+  OFFSET on read port 3).
+Spec source: SPVU001A §"PIXT" (XY addressing); conversion per 12-59.
+Acceptance Criteria:
+- New `decoded.xy_addr` flag. When set, the field machinery converts the
+  pointer (mv_ptr) XY -> linear: ((Y<<(31-CONV)) | (X<<log2 PSIZE)) + OFFSET,
+  CONV = CONVDP (store/dest) or CONVSP (load/source). io_regs gains convsp_o;
+  rf_rs3 reads OFFSET (B4) for xy_addr.
+- Decode 0xF000 -> FIELD_STORE+force_pixel+xy_addr; 0xF200 ->
+  FIELD_LOAD+force_pixel+xy_addr (V=pixel!=0, N/C/Z masked).
+- XY-to-XY M2M (0xF400) deferred (dual conversion) -> illegal.
+- sim/tb/tb_pixt_xy.sv: XY store (CONVDP) + XY load (CONVSP), with a
+  CONVSP!=CONVDP case proving the load uses the source pitch.
+Tests: tb_pixt_xy PASS; tb_pixt/tb_cvxyl regress PASS; full integration
+  regression PASS under Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (3 XY-PIXT rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

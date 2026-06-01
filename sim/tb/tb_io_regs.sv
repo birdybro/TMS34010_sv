@@ -24,11 +24,13 @@ module tb_io_regs;
   logic                  is_io;
   logic [15:0]           psize_w;
   logic [15:0]           convdp_w;
+  logic [15:0]           convsp_w;
 
   tms34010_io_regs u_io (
     .clk(clk), .rst(rst),
     .req(req), .we(we), .addr(addr), .wdata(wdata),
-    .rdata(rdata), .is_io(is_io), .psize_o(psize_w), .convdp_o(convdp_w)
+    .rdata(rdata), .is_io(is_io),
+    .psize_o(psize_w), .convdp_o(convdp_w), .convsp_o(convsp_w)
   );
 
   int unsigned failures;

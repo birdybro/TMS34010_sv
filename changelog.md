@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0085 — XY-addressed PIXT store/load)
+- PIXT Rs,*Rd.XY (0xF000 store) and PIXT *Rs.XY,Rd (0xF200 load): the pointer
+  register holds an XY value that the core converts to a linear bit address
+  before the pixel field access (new `decoded.xy_addr` path, same shift form as
+  CVXYL). The store's destination pointer uses CONVDP; the load's source pointer
+  uses CONVSP (SPVU001A: source vs destination pitch); OFFSET = B-file B4 (read
+  port 3), PSIZE from the tap.
+- io_regs gains a `convsp_o` tap. The pixel field machinery (force_pixel) is
+  reused, so zero-extend on load and V=(pixel!=0) carry over.
+- New `sim/tb/tb_pixt_xy.sv`: stores a pixel via an XY pointer (CONVDP) and
+  reads it back via an XY pointer (CONVSP), then changes CONVSP and shows the
+  load now targets the source-pitch address — proving the source/destination
+  conversion factors are selected correctly.
+- The XY-to-XY PIXT M2M (0xF400) needs dual conversion across the 2-step M2M
+  and remains deferred (traps as illegal).
+
 ### Added (Task 0084 — CVXYL convert XY address to linear)
 - CVXYL Rs,Rd (0xE800) implemented: `Rd = [(Y << (31-CONVDP[4:0])) | (X <<
   log2(PSIZE))] + OFFSET`, where X=Rs[15:0], Y=Rs[31:16] (signed). The screen

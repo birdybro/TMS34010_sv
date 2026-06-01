@@ -558,6 +558,11 @@ package tms34010_pkg;
     // I/O register value and ZERO-extend on load. Reuses the INSTR_MOVE_
     // FIELD_STORE/LOAD/M2M datapaths. PIXT load also reports V = (pixel != 0).
     logic          force_pixel;
+    // 1 ⇒ the pointer register holds an XY address (not a linear one): the
+    // core converts it to a linear address (via CONVDP for a destination /
+    // CONVSP for a source, OFFSET=B4, PSIZE) before the field access. Used by
+    // the XY-addressed PIXT forms (always with force_pixel).
+    logic          xy_addr;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg

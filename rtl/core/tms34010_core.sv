@@ -469,7 +469,7 @@ module tms34010_core
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
-                     : (decoded.iclass == INSTR_CVXYL) ? B_OFFSET_IDX
+                     : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
@@ -567,7 +567,31 @@ module tms34010_core
     end
   end
 
-  assign mv_addr     = mv_predec ? (mv_ptr - mv_fs_ext) : mv_ptr;
+  // XY-addressed PIXT: the pointer holds an XY value; convert it to a linear
+  // bit address (same shift form as CVXYL). CONVDP for a destination pointer
+  // (store), CONVSP for a source pointer (load). OFFSET = B4 (read port 3).
+  logic [15:0]           pix_xy_conv;
+  logic [4:0]            pix_xy_yshift;
+  logic [4:0]            pix_xy_xsh;
+  logic [DATA_WIDTH-1:0] pix_xy_linear;
+  assign pix_xy_conv   = is_mv_store ? io_convdp : io_convsp;
+  assign pix_xy_yshift = 5'd31 - pix_xy_conv[4:0];
+  always_comb begin
+    unique case (io_psize[4:0])
+      5'd1:    pix_xy_xsh = 5'd0;
+      5'd2:    pix_xy_xsh = 5'd1;
+      5'd4:    pix_xy_xsh = 5'd2;
+      5'd8:    pix_xy_xsh = 5'd3;
+      5'd16:   pix_xy_xsh = 5'd4;
+      default: pix_xy_xsh = 5'd0;
+    endcase
+  end
+  assign pix_xy_linear = (({{16{mv_ptr[DATA_WIDTH-1]}}, mv_ptr[DATA_WIDTH-1:16]} << pix_xy_yshift)
+                          | ({16'b0, mv_ptr[15:0]} << pix_xy_xsh))
+                         + rf_rs3_data;   // + OFFSET (B4)
+
+  assign mv_addr     = decoded.xy_addr ? pix_xy_linear
+                     : mv_predec       ? (mv_ptr - mv_fs_ext) : mv_ptr;
   assign mv_ptr_new  = mv_predec ? (mv_ptr - mv_fs_ext) : (mv_ptr + mv_fs_ext);
 
   // ---- Indirect-to-indirect MOVE auto inc/dec (Task 0062) -----------------
@@ -1306,6 +1330,7 @@ module tms34010_core
   logic [15:0]           io_rdata16;
   logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT/CVXYL)
   logic [15:0]           io_convdp;    // CONVDP register (XY->linear dest pitch)
+  logic [15:0]           io_convsp;    // CONVSP register (XY->linear source pitch)
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
@@ -1318,7 +1343,8 @@ module tms34010_core
     .rdata   (io_rdata16),
     .is_io   (io_is_io),
     .psize_o (io_psize),
-    .convdp_o(io_convdp)
+    .convdp_o(io_convdp),
+    .convsp_o(io_convsp)
   );
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would

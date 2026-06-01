@@ -177,6 +177,12 @@ module tms34010_decode
   localparam logic [6:0] PIXT_STORE_TOP7 = 7'b1111_100;
   localparam logic [6:0] PIXT_LOAD_TOP7  = 7'b1111_101;
   localparam logic [6:0] PIXT_M2M_TOP7   = 7'b1111_110;
+  // XY-addressed PIXT: the pointer holds an XY value (converted to linear by
+  // the core's xy_addr path). PIXT Rs,*Rd.XY (1111 000S, 0xF000) store /
+  // PIXT *Rs.XY,Rd (1111 001S, 0xF200) load. The XY-to-XY M2M (1111 010S,
+  // 0xF400) needs dual conversion and is deferred.
+  localparam logic [6:0] PIXT_XY_STORE_TOP7 = 7'b1111_000;
+  localparam logic [6:0] PIXT_XY_LOAD_TOP7  = 7'b1111_001;
 
   // MOVX / MOVY — move the X (low 16) or Y (high 16) half of Rs into the
   // same half of Rd, leaving the other half untouched. Per SPVU001A pages
@@ -488,6 +494,7 @@ module tms34010_decode
     decoded.move_mode       = MV_ADDR_NONE;   // only the indirect MOVE family sets this
     decoded.force_byte      = 1'b0;            // only MOVB sets this (force FS=8)
     decoded.force_pixel     = 1'b0;            // only PIXT sets this (force FS=PSIZE)
+    decoded.xy_addr         = 1'b0;            // only XY-addressed PIXT sets this
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -1480,6 +1487,37 @@ module tms34010_decode
       decoded.rs_idx          = rs_idx_from_instr;     // Rs = src  pointer
       decoded.wb_reg_en       = 1'b0;
       decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // XY-addressed PIXT (Task 0085): the pointer register holds an XY value;
+    // the core's xy_addr path converts it to linear (CONVDP for the store's
+    // dest pointer, CONVSP for the load's source pointer) before the pixel
+    // field access. force_pixel ⇒ FS = PSIZE; same flag rules as linear PIXT.
+    if (top7 == PIXT_XY_STORE_TOP7) begin        // PIXT Rs,*Rd.XY
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_STORE;
+      decoded.force_pixel     = 1'b1;
+      decoded.xy_addr         = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = XY dest pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pixel data
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == PIXT_XY_LOAD_TOP7) begin         // PIXT *Rs.XY,Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_LOAD;
+      decoded.force_pixel     = 1'b1;
+      decoded.xy_addr         = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = destination
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = XY source pointer
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};
       decoded.needs_memory_op = 1'b1;
     end
 
