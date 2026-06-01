@@ -2812,7 +2812,7 @@ Tests: tb_movb PASS; full integration regression PASS under Verilator (3
 Docs: instruction_coverage.md (9 MOVB rows incl. 2 deferred), assumptions.md
   (A0020 note), changelog.md, tasks.md.
 Commit:
-- pending
+- 2e3f9a5
 
 ---
 
