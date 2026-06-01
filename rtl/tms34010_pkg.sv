@@ -70,7 +70,11 @@ package tms34010_pkg;
     CORE_EXECUTE      = 4'd5,
     CORE_MEMORY       = 4'd6,
     CORE_WRITEBACK    = 4'd7,
-    CORE_DIVIDE       = 4'd8   // multi-cycle wait for the divider (DIVU/MODU/...)
+    CORE_DIVIDE       = 4'd8,  // multi-cycle wait for the divider (DIVU/MODU/...)
+    CORE_FILL_SETUP   = 4'd9,  // FILL: latch COLOR1 + init counters (operands B2/B3/B7
+                               //       latched at EXECUTE); the pixel loop follows
+    CORE_FILL         = 4'd10, // FILL: one pixel write per ack until the array is done
+    CORE_FILL_WB      = 4'd11  // FILL: write the final DADDR back to B2
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -97,10 +101,14 @@ package tms34010_pkg;
   parameter reg_idx_t CPW_WEND_IDX   = 4'd6;
 
   // Graphics B-file registers with fixed implied roles (SPVU001A §"Implied
-  // Operands"). Used by the graphics instructions: B3 = DPTCH (destination
-  // pitch), B4 = OFFSET (linear address of XY origin 0,0).
+  // Operands"). B2 = DADDR (destination address), B3 = DPTCH (destination
+  // pitch), B4 = OFFSET (linear address of XY origin 0,0), B7 = DYDX (array
+  // dimensions rows:cols), B9 = COLOR1 (fill / source color).
+  parameter reg_idx_t B_DADDR_IDX  = 4'd2;
   parameter reg_idx_t B_DPTCH_IDX  = 4'd3;
   parameter reg_idx_t B_OFFSET_IDX = 4'd4;
+  parameter reg_idx_t B_DYDX_IDX   = 4'd7;
+  parameter reg_idx_t B_COLOR1_IDX = 4'd9;
 
   // ---------------------------------------------------------------------------
   // ALU operation enum
@@ -475,10 +483,13 @@ package tms34010_pkg;
                               //                     (remainder has dividend's sign). N=remainder
                               //                     sign, Z=remainder==0 (unaffected if Rs=0),
                               //                     V=overflow. Encoding 0110 110S SSSR DDDD.
-    INSTR_CVXYL            = 7'd93  // CVXYL Rs,Rd — convert the XY address in Rs to a linear
+    INSTR_CVXYL            = 7'd93, // CVXYL Rs,Rd — convert the XY address in Rs to a linear
                               //                     address in Rd: ((Y<<(31-CONVDP)) | (X<<log2
                               //                     PSIZE)) + OFFSET(B4). Flags Unaffected.
                               //                     Encoding 1110 100S SSSR DDDD.
+    INSTR_FILL_L           = 7'd94  // FILL L — fill a DY×DX pixel array with COLOR1 (B9).
+                              //                     Implied B-regs DADDR(B2)/DPTCH(B3)/DYDX(B7);
+                              //                     multi-cycle. DADDR updated. Encoding 0x0FC0.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

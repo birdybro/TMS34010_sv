@@ -261,6 +261,70 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
+  // FILL L engine (Task 0087)
+  //
+  // FILL fills a DY×DX pixel array (DYDX=B7) with COLOR1 (B9), starting at
+  // DADDR (B2), rows DPTCH (B3) bits apart. Each pixel is a PSIZE-bit field
+  // write. Operands are latched at EXECUTE (DADDR/DPTCH/DYDX, read on the 3
+  // ports) and CORE_FILL_SETUP (COLOR1); the pixel loop runs in CORE_FILL,
+  // one write per ack. Replace mode only (window checking is never used for
+  // FILL; PMASK/transparency/PPOP default to no-op at reset and are not yet
+  // applied). DADDR is updated to the address following the last pixel.
+  // ---------------------------------------------------------------------------
+  logic [DATA_WIDTH-1:0] fill_dptch_q, fill_color_q;
+  logic [15:0]           fill_dx_q, fill_dy_q;
+  logic [DATA_WIDTH-1:0] fill_addr_q, fill_row_base_q;
+  logic [15:0]           fill_x_q, fill_y_q;
+  logic [DATA_WIDTH-1:0] fill_psize_ext;
+  logic                  fill_row_end, fill_done;
+  assign fill_psize_ext = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
+  assign fill_row_end   = (fill_x_q == fill_dx_q - 16'd1);
+  assign fill_done      = fill_row_end && (fill_y_q == fill_dy_q - 16'd1);
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      fill_dptch_q    <= '0;
+      fill_color_q    <= '0;
+      fill_dx_q       <= '0;
+      fill_dy_q       <= '0;
+      fill_addr_q     <= '0;
+      fill_row_base_q <= '0;
+      fill_x_q        <= '0;
+      fill_y_q        <= '0;
+    end else begin
+      // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL.
+      if (state_q == CORE_EXECUTE && is_fill) begin
+        fill_addr_q     <= rf_rs1_data;       // DADDR
+        fill_row_base_q <= rf_rs1_data;
+        fill_dptch_q    <= rf_rs2_data;       // DPTCH
+        fill_dx_q       <= rf_rs3_data[15:0]; // DX
+        fill_dy_q       <= rf_rs3_data[DATA_WIDTH-1:16]; // DY
+        fill_x_q        <= 16'd0;
+        fill_y_q        <= 16'd0;
+      end
+      // CORE_FILL_SETUP: latch COLOR1 (port1).
+      if (state_q == CORE_FILL_SETUP) begin
+        fill_color_q <= rf_rs1_data;          // COLOR1
+      end
+      // CORE_FILL: advance after each pixel write ack.
+      if (state_q == CORE_FILL && mem_ack) begin
+        fill_addr_q <= fill_addr_q + fill_psize_ext;   // next pixel (or final DADDR)
+        if (fill_row_end && !fill_done) begin
+          // Row complete (not the last): jump to the next row's base.
+          fill_y_q        <= fill_y_q + 16'd1;
+          fill_row_base_q <= fill_row_base_q + fill_dptch_q;
+          fill_addr_q     <= fill_row_base_q + fill_dptch_q;
+          fill_x_q        <= 16'd0;
+        end else if (!fill_done) begin
+          fill_x_q <= fill_x_q + 16'd1;
+        end
+        // On fill_done, fill_addr_q advances by PSIZE to the pixel following
+        // the last (the final DADDR), and the FSM moves to CORE_FILL_WB.
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // MMTM / MMFM iterator (shared)
   //
   // MMTM (push, INSTR_MMTM) and MMFM (pop, INSTR_MMFM) walk the same
@@ -447,28 +511,37 @@ module tms34010_core
   // Read-port 1 normally reads from the destination file (reg-reg ops
   // are same-file). MOVE Rs,Rd is the one cross-file exception: Rs may
   // live in the opposite file from Rd, so it uses decoded.rs_file.
-  assign rf_rs1_file = (decoded.iclass == INSTR_MOVE_RR)
-                     ? decoded.rs_file
+  // FILL reads its implied B-file operands across two cycles via the three
+  // read ports: at EXECUTE — DADDR(B2) on port1, DPTCH(B3) on port2,
+  // DYDX(B7) on port3; at CORE_FILL_SETUP — COLOR1(B9) on port1.
+  logic is_fill;
+  assign is_fill = (decoded.iclass == INSTR_FILL_L);
+
+  assign rf_rs1_file = is_fill ? REG_FILE_B
+                     : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
                      : decoded.rd_file;
   // Read-port 1 index is normally decoded.rs_idx. MMTM repurposes it
   // during CORE_MEMORY to scan the register list — rf_rs1_idx then
   // points at the current register being pushed, and rf_rs1_data
   // becomes the 32-bit value driven onto mem_wdata.
-  assign rf_rs1_idx  = (state_q == CORE_MEMORY && is_mmtm)
-                     ? mm_iter_idx
+  assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
+                     : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
   // for CPW) to read the window-start register WSTART = B5; read port 3
   // reads the window-end register WEND = B6. Both are fixed B-file
-  // registers per SPVU001A page 12-57.
-  assign rf_rs2_file = (decoded.iclass == INSTR_CPW) ? REG_FILE_B : decoded.rd_file;
-  assign rf_rs2_idx  = (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
+  // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
+  assign rf_rs2_file = (is_fill || (decoded.iclass == INSTR_CPW)) ? REG_FILE_B : decoded.rd_file;
+  assign rf_rs2_idx  = is_fill ? B_DPTCH_IDX
+                     : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
-  // of the 64-bit dividend, Rd+1; CVXYL reads OFFSET (B4). Otherwise unused.
+  // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL reads
+  // DYDX (B7). Otherwise unused.
   assign rf_rs3_file = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
+                     : is_fill ? B_DYDX_IDX
                      : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 
@@ -630,6 +703,9 @@ module tms34010_core
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
                      && (mem_op_step == 2'd0) && mem_ack;
 
+  // FILL writes the final DADDR back to B2 in CORE_FILL_WB.
+  logic fill_wb;
+  assign fill_wb = (state_q == CORE_FILL_WB);
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
                        && dsj_precondition
@@ -637,9 +713,11 @@ module tms34010_core
                        && !(is_div && div_v))            // divide overflow: leave Rd unchanged
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
-                   || m2m_src_wr;
-  assign rf_wr_file = decoded.rd_file;
-  assign rf_wr_idx  = mmfm_pop_wr                  ? mm_iter_idx
+                   || m2m_src_wr
+                   || fill_wb;
+  assign rf_wr_file = fill_wb ? REG_FILE_B : decoded.rd_file;
+  assign rf_wr_idx  = fill_wb                       ? B_DADDR_IDX
+                    : mmfm_pop_wr                   ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
                     : ((is_mpy || is_div) && pair_wb_step) ? (decoded.rd_idx + 4'd1)  // pair low/rem -> Rd+1
                                                      : decoded.rd_idx;
@@ -1019,6 +1097,7 @@ module tms34010_core
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
       INSTR_CVXYL:  rf_wr_data = cvxyl_result;
+      INSTR_FILL_L: rf_wr_data = fill_addr_q;   // final DADDR -> B2 (CORE_FILL_WB)
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = REV_VALUE;
@@ -1604,6 +1683,8 @@ module tms34010_core
         // go to memory (if any) then writeback.
         if (is_div)
           state_d = CORE_DIVIDE;
+        else if (is_fill)
+          state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
@@ -1612,6 +1693,30 @@ module tms34010_core
         // Hold while the divider runs; proceed to writeback when it signals
         // done (results, incl. the overflow flag, are then stable).
         state_d = div_done ? CORE_WRITEBACK : CORE_DIVIDE;
+      end
+
+      CORE_FILL_SETUP: begin
+        // One cycle to latch COLOR1 (and the counters were seeded at EXECUTE).
+        state_d = CORE_FILL;
+      end
+
+      CORE_FILL: begin
+        // Write one PSIZE-bit pixel of COLOR1 per cycle. The memory model RMW
+        // handles sub-word / straddling pixels. Stay until the array is done.
+        mem_req   = 1'b1;
+        mem_we_int = 1'b1;
+        mem_addr  = fill_addr_q;
+        mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
+        mem_wdata = fill_color_q;
+        if (mem_ack && fill_done)
+          state_d = CORE_FILL_WB;
+        else
+          state_d = CORE_FILL;
+      end
+
+      CORE_FILL_WB: begin
+        // Write the final DADDR back to B2, then fetch the next instruction.
+        state_d = CORE_FETCH;
       end
 
       CORE_MEMORY: begin

@@ -2050,6 +2050,18 @@ module tms34010_decode
       decoded.wb_flags_en = 1'b0;
     end
 
+    // FILL L — fill a DY×DX pixel array with COLOR1. Fixed opcode 0x0FC0; the
+    // operands are the implied B-file registers DADDR(B2)/DPTCH(B3)/DYDX(B7)/
+    // COLOR1(B9), read and looped over by the core's FILL engine. All flags
+    // Unaffected; DADDR is updated by the engine (not the normal writeback).
+    if (instr == 16'h0FC0) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_FILL_L;
+      decoded.wb_reg_en       = 1'b0;   // DADDR write handled by the FILL engine
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;   // EXECUTE routes to the FILL states
+    end
+
     // -----------------------------------------------------------------------
     // JUMP Rs (register-indirect jump)
     //

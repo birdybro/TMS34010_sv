@@ -2959,6 +2959,29 @@ Commit:
 
 ---
 
+### Task 0087: FILL L — first multi-cycle graphics engine
+Status: complete
+Dependencies: Task 0081/0082 (I/O regs + PSIZE), field machinery, B-file
+  graphics register reads.
+Spec source: SPVU001A page 12-80. Fixed opcode 0x0FC0.
+Acceptance Criteria:
+- INSTR_FILL_L = 7'd94. New core states CORE_FILL_SETUP/CORE_FILL/CORE_FILL_WB.
+  EXECUTE latches DADDR(B2)/DPTCH(B3)/DYDX(B7) via the 3 read ports;
+  CORE_FILL_SETUP latches COLOR1(B9). CORE_FILL writes one PSIZE-bit COLOR1
+  pixel per ack; column counter to DX, row base += DPTCH per row, DY rows.
+  DADDR updated to the pixel following the last; written to B2 in CORE_FILL_WB.
+- All flags Unaffected. Replace mode only (no window/PMASK/transparency/PPOP).
+- pkg: B_DADDR_IDX/B_DYDX_IDX/B_COLOR1_IDX constants.
+- sim/tb/tb_fill_l.sv: 2×4 fill (PSIZE=8, COLOR1=0xAA); checks filled words,
+  untouched inter-row gap, updated DADDR (0x8A0).
+Tests: tb_fill_l PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (FILL L row), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

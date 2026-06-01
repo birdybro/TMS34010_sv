@@ -5,6 +5,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-01
+
+### Added (Task 0087 — FILL L; first multi-cycle graphics engine)
+- FILL L (0x0FC0) implemented: fill a DY×DX pixel array with COLOR1 (B9),
+  starting at DADDR (B2), rows DPTCH (B3) bits apart, each pixel a PSIZE-bit
+  field write. SPVU001A 12-80. All flags Unaffected.
+- This is the first multi-cycle graphics engine. New core states
+  CORE_FILL_SETUP / CORE_FILL / CORE_FILL_WB. The implied B-file operands are
+  read across the 3 ports at EXECUTE (DADDR/DPTCH/DYDX) and at CORE_FILL_SETUP
+  (COLOR1); the CORE_FILL loop writes one pixel per ack, advancing a column
+  counter within each row and stepping the row base by DPTCH; on completion
+  DADDR is updated to the address following the last pixel and written back to
+  B2 in CORE_FILL_WB.
+- New pkg constants INSTR_FILL_L, B_DADDR_IDX (B2), B_DYDX_IDX (B7),
+  B_COLOR1_IDX (B9). Replace mode only — window checking never applies to FILL;
+  PMASK/transparency/PPOP default to no-op at reset and are not yet applied.
+- New `sim/tb/tb_fill_l.sv`: fills a 2×4 array (PSIZE=8, COLOR1=0xAA), checks
+  the filled words, the untouched inter-row gap, and the updated DADDR.
+
 ## 2026-05-31
 
 ### Added (Task 0086 — XY-to-XY PIXT M2M; PIXT family complete)
