@@ -3063,7 +3063,7 @@ Tests: tb_pixt_ppop PASS; existing PIXT tests (transp/pmask) PASS; full
   lint clean.
 Docs: instruction_coverage.md (PIXT store rows), changelog.md, tasks.md.
 Commit:
-- pending
+- 991c6cf
 
 ---
 
