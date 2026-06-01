@@ -573,10 +573,11 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
   assign is_mv_m2m    = (decoded.iclass == INSTR_MOVE_FIELD_M2M);
   assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
-  assign m2m_src_addr = mv_predec ? (rf_rs1_data - WORD_BIT_SIZE) : rf_rs1_data;
-  assign m2m_dst_addr = mv_predec ? (rf_rs2_data - WORD_BIT_SIZE) : rf_rs2_data;
-  assign m2m_src_new  = mv_predec ? (rf_rs1_data - WORD_BIT_SIZE) : (rf_rs1_data + WORD_BIT_SIZE);
-  assign m2m_dst_new  = mv_predec ? (rf_rs2_data - WORD_BIT_SIZE) : (rf_rs2_data + WORD_BIT_SIZE);
+  // Field-size aware (Task 0079): both pointers step by ±FS, not ±32.
+  assign m2m_src_addr = mv_predec ? (rf_rs1_data - mv_fs_ext) : rf_rs1_data;
+  assign m2m_dst_addr = mv_predec ? (rf_rs2_data - mv_fs_ext) : rf_rs2_data;
+  assign m2m_src_new  = mv_predec ? (rf_rs1_data - mv_fs_ext) : (rf_rs1_data + mv_fs_ext);
+  assign m2m_dst_new  = mv_predec ? (rf_rs2_data - mv_fs_ext) : (rf_rs2_data + mv_fs_ext);
   // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
                      && (mem_op_step == 2'd0) && mem_ack;
@@ -1656,20 +1657,22 @@ module tms34010_core
             mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_FIELD_M2M: begin
-            // Two-step indirect-to-indirect: step 0 reads mem[*Rs], step 1
-            // writes the latched field (move_data_q) to mem[*Rd]. 32-bit,
-            // word-aligned. m2m_src_addr/m2m_dst_addr fold in the predec -32
-            // (plain form: move_mode=NONE -> they equal Rs/Rd). For inc/dec
-            // the pointers are updated via the m2m_src_wr / WRITEBACK paths.
+            // Two-step indirect-to-indirect: step 0 reads an FS-bit field at
+            // mem[*Rs] into move_data_q, step 1 writes its low FS bits to
+            // mem[*Rd]. Field-size aware (Task 0079): both transactions use
+            // mem_size = mv_fs and the pointers step by ±FS (m2m_*_addr fold
+            // in the predec -FS). No FE extension — this is mem->mem, no
+            // register destination. For inc/dec the pointers are updated via
+            // the m2m_src_wr / WRITEBACK paths.
             mem_req   = 1'b1;
-            mem_size  = MEM_SIZE_32;
+            mem_size  = mv_fs;             // field size (1..32)
             if (mem_op_step == 2'd0) begin
               mem_we   = 1'b0;
-              mem_addr = m2m_src_addr;     // = Rs (or Rs-32 predec)
+              mem_addr = m2m_src_addr;     // = Rs (or Rs-FS predec)
             end else begin
               mem_we   = 1'b1;
-              mem_addr = m2m_dst_addr;     // = Rd (or Rd-32 predec; updated Rs if Rs==Rd)
-              mem_wdata = move_data_q;     // field read in step 0
+              mem_addr = m2m_dst_addr;     // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
+              mem_wdata = move_data_q;     // field (low FS bits) read in step 0
             end
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)

@@ -2767,6 +2767,29 @@ Commit:
 
 ---
 
+### Task 0079: field-size-aware MOVE indirect-to-indirect (M2M); MOVE field machinery complete
+Status: complete
+Dependencies: Task 0077/0078 (mv_fs machinery), Task 0062 (M2M datapath).
+Spec source: SPVU001A pages 12-137 (MOVE *Rs,*Rd) / 12-138 (inc/dec).
+Acceptance Criteria:
+- The M2M arm drives `mem_size = mv_fs` on both steps (read into move_data_q,
+  write low FS bits). m2m_src_addr/m2m_dst_addr/m2m_src_new/m2m_dst_new use
+  ±mv_fs_ext instead of ±WORD_BIT_SIZE. No FE extension (mem→mem).
+- Existing tb_move_m2m / tb_move_m2m_incdec issue SETF FS0=0 up front.
+- sim/tb/tb_move_m2m_field.sv: FS=8 plain copy, FS=8 postinc (both pointers
+  +8), FS=12 copy with src and dst both straddling word boundaries.
+- After this task ALL MOVE addressing forms honor arbitrary FS 1..31 + FE,
+  unaligned + word-straddling fields. (MOVB still pending.)
+Tests: tb_move_m2m_field PASS; tb_move_m2m / tb_move_m2m_incdec updated and
+  PASS; full integration regression PASS under Verilator (3 module-level tbs
+  need Questa); lint clean.
+Docs: instruction_coverage.md (3 M2M rows), assumptions.md (A0020 note),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

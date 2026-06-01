@@ -104,6 +104,10 @@ module tb_move_m2m_incdec;
     seed_mem32(32'hE00 >> 4, 32'h5555_6666);
 
     p = 0;
+    // MOVE M2M now honors the field size: set FS0 = 0 (encodes a 32-bit
+    // field) so copies move 32 bits and the pointers auto-step by ±32 (0x20),
+    // matching this test's expectations. Reset ST has FS0=16.
+    p = place_word(p, 16'h0540);   // SETF FS=0, FE=0, F=0
     // Case A: postinc, Rs!=Rd. src A1=0x800, dst A2=0xA00.
     p = place_movi_il(p, 4'd1, 32'h0000_0800);
     p = place_movi_il(p, 4'd2, 32'h0000_0A00);

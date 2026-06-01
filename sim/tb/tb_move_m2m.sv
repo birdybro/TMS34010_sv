@@ -107,6 +107,9 @@ module tb_move_m2m;
     seed_mem32(SRC2 >> 4, 32'h0123_4567);
 
     p = 0;
+    // MOVE M2M now honors the field size: set FS0 = 0 (encodes a 32-bit
+    // field) so these full-word copies move 32 bits. Reset ST has FS0=16.
+    p = place_word(p, 16'h0540);   // SETF FS=0, FE=0, F=0
     // Copy mem[SRC1] -> mem[DST1] via MOVE *A1,*A2.
     p = place_movi_il(p, 4'd1, SRC1);
     p = place_movi_il(p, 4'd2, DST1);

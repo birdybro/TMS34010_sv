@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0079 — field-size-aware MOVE indirect-to-indirect; MOVE field machinery complete)
+- The M2M (indirect↔indirect) MOVE forms (MOVE *Rs,*Rd / *Rs+,*Rd+ /
+  -*Rs,-*Rd) now honor the field size: both steps of the 2-step CORE_MEMORY
+  sequence use `mem_size = mv_fs` (step 0 reads the FS-bit field into
+  move_data_q, step 1 writes its low FS bits), and both pointers step by ±FS.
+  No FE extension — mem→mem has no register destination. SPVU001A
+  pp.12-137/12-138.
+- New `sim/tb/tb_move_m2m_field.sv`: FS=8 plain copy, FS=8 postincrement
+  (both pointers +8), and an FS=12 copy where source and destination fields
+  both straddle 16-bit word boundaries.
+- tb_move_m2m / tb_move_m2m_incdec now SETF FS0=0 up front (reset FS0=16).
+- **All MOVE addressing forms now honor arbitrary FS 1..31 + FE, unaligned and
+  word-straddling fields.** The remaining field-related item is MOVB (byte
+  move, FS fixed at 8 over this machinery).
+
 ### Added (Task 0078 — field-size-aware MOVE offset & absolute forms)
 - The OFFSET (MOVE Rs,*Rd(off) / *Rs(off),Rd) and ABSOLUTE (MOVE Rs,@DAddr /
   @SAddr,Rd) MOVE forms now honor the field size, reusing the Task 0077
