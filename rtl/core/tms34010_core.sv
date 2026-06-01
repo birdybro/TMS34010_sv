@@ -457,6 +457,17 @@ module tms34010_core
                           ? pblt_dst_pix_q
                           : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
 
+  // PIXBLT XY variants: convert the XY SADDR/DADDR (latched raw at EXECUTE) to a
+  // linear address at SETUP (source via CONVSP, dest via CONVDP, + OFFSET on
+  // read port 3, + log2 PSIZE = pix_xy_xsh). Same shift form as CVXYL/FILL XY.
+  logic [DATA_WIDTH-1:0] pblt_src_conv, pblt_dst_conv;
+  assign pblt_src_conv =
+      (({{16{pblt_src_addr_q[DATA_WIDTH-1]}}, pblt_src_addr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convsp[4:0]))
+       | ({16'b0, pblt_src_addr_q[15:0]} << pix_xy_xsh)) + rf_rs3_data;
+  assign pblt_dst_conv =
+      (({{16{pblt_dst_addr_q[DATA_WIDTH-1]}}, pblt_dst_addr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convdp[4:0]))
+       | ({16'b0, pblt_dst_addr_q[15:0]} << pix_xy_xsh)) + rf_rs3_data;
+
   always_ff @(posedge clk) begin
     if (rst) begin
       pblt_sptch_q    <= '0;
@@ -485,10 +496,19 @@ module tms34010_core
         pblt_y_q        <= 16'd0;
         pblt_substep_q  <= 2'd0;
       end
-      // CORE_PBLT_SETUP: latch SPTCH(port1) / DPTCH(port2).
+      // CORE_PBLT_SETUP: latch SPTCH(port1) / DPTCH(port2); for the XY variants
+      // convert the XY SADDR/DADDR to linear (port3 = OFFSET here).
       if (state_q == CORE_PBLT_SETUP) begin
         pblt_sptch_q <= rf_rs1_data;
         pblt_dptch_q <= rf_rs2_data;
+        if (decoded.blt_src_xy) begin
+          pblt_src_addr_q <= pblt_src_conv;
+          pblt_src_row_q  <= pblt_src_conv;
+        end
+        if (decoded.blt_dst_xy) begin
+          pblt_dst_addr_q <= pblt_dst_conv;
+          pblt_dst_row_q  <= pblt_dst_conv;
+        end
       end
       // CORE_PBLT: per pixel, read src (0) / read dst (1) / write (2).
       if (state_q == CORE_PBLT && mem_ack) begin
@@ -745,7 +765,7 @@ module tms34010_core
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
                      : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
-                     : is_pblt ? B_DYDX_IDX
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
                      : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 

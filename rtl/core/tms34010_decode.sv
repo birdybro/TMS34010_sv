@@ -496,6 +496,8 @@ module tms34010_decode
     decoded.force_byte      = 1'b0;            // only MOVB sets this (force FS=8)
     decoded.force_pixel     = 1'b0;            // only PIXT sets this (force FS=PSIZE)
     decoded.xy_addr         = 1'b0;            // only XY-addressed PIXT sets this
+    decoded.blt_src_xy      = 1'b0;            // PIXBLT source XY (XY,L / XY,XY)
+    decoded.blt_dst_xy      = 1'b0;            // PIXBLT dest XY   (L,XY / XY,XY)
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -2083,6 +2085,37 @@ module tms34010_decode
       decoded.wb_reg_en       = 1'b0;   // SADDR/DADDR writes handled by the engine
       decoded.wb_flags_en     = 1'b0;
       decoded.needs_memory_op = 1'b0;   // EXECUTE routes to the PIXBLT states
+    end
+
+    // PIXBLT XY variants — same engine as L,L but the SADDR / DADDR implied
+    // register holds an XY value converted to linear at PBLT_SETUP (source via
+    // CONVSP, destination via CONVDP, + OFFSET(B4) + PSIZE).
+    //   L,XY  (0x0F20): destination XY.   XY,L  (0x0F40): source XY.
+    //   XY,XY (0x0F60): both.
+    if (instr == 16'h0F20) begin          // PIXBLT L,XY
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PIXBLT_LL;
+      decoded.blt_dst_xy      = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;
+    end
+    if (instr == 16'h0F40) begin          // PIXBLT XY,L
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PIXBLT_LL;
+      decoded.blt_src_xy      = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;
+    end
+    if (instr == 16'h0F60) begin          // PIXBLT XY,XY
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PIXBLT_LL;
+      decoded.blt_src_xy      = 1'b1;
+      decoded.blt_dst_xy      = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;
     end
 
     // -----------------------------------------------------------------------

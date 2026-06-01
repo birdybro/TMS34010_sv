@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0095 — PIXBLT XY variants)
+- PIXBLT L,XY (0x0F20), XY,L (0x0F40), and XY,XY (0x0F60): the SADDR / DADDR
+  implied register holds an XY value that the PIXBLT engine converts to a
+  linear address at CORE_PBLT_SETUP — source via CONVSP, destination via CONVDP,
+  + OFFSET(B4) + PSIZE (same shift form as CVXYL / FILL XY). Read port 3 reads
+  OFFSET at SETUP. The rest of the engine is shared with PIXBLT L,L; the updated
+  SADDR/DADDR are written back as linear addresses. SPVU001A.
+- New decoded struct flags `blt_src_xy` / `blt_dst_xy` (all variants reuse the
+  INSTR_PIXBLT_LL iclass). New `sim/tb/tb_pixblt_xy.sv` tests PIXBLT XY,XY with
+  both addresses XY-converted.
+- The B (1-bit source color-expand) PIXBLT forms (0x0F80/0x0FA0) remain
+  unimplemented (trap as illegal).
+
 ### Added (Task 0094 — PIXBLT L,L; source-array graphics engine)
 - PIXBLT L,L (0x0F00) implemented: transfer a DY×DX source pixel array
   (SADDR=B0/SPTCH=B1) to a destination array (DADDR=B2/DPTCH=B3), processing

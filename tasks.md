@@ -3129,6 +3129,25 @@ Commit:
 
 ---
 
+### Task 0095: PIXBLT XY variants (L,XY / XY,L / XY,XY)
+Status: complete
+Dependencies: Task 0094 (PIXBLT L,L engine), XY conversion.
+Spec source: SPVU001A PIXBLT XY variants (0x0F20/0x0F40/0x0F60).
+Acceptance Criteria:
+- New struct flags blt_src_xy/blt_dst_xy; decode 0x0F20 (dst), 0x0F40 (src),
+  0x0F60 (both) -> INSTR_PIXBLT_LL + flags. rf_rs3 reads OFFSET(B4) at
+  PBLT_SETUP. Convert XY SADDR/DADDR to linear at SETUP (pblt_src_conv via
+  CONVSP, pblt_dst_conv via CONVDP, +OFFSET+log2 PSIZE).
+- Updated SADDR/DADDR written back linear. Rest shared with L,L.
+- sim/tb/tb_pixblt_xy.sv: PIXBLT XY,XY both converted; check transfer + addrs.
+Tests: tb_pixblt_xy PASS; tb_pixblt_ll regress PASS; full integration
+  regression PASS under Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (PIXBLT XY rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

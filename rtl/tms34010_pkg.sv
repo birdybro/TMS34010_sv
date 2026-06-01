@@ -596,6 +596,10 @@ package tms34010_pkg;
     // CONVSP for a source, OFFSET=B4, PSIZE) before the field access. Used by
     // the XY-addressed PIXT forms (always with force_pixel).
     logic          xy_addr;
+    // PIXBLT source/destination XY: the SADDR / DADDR implied register holds an
+    // XY value (converted to linear at PBLT_SETUP via CONVSP / CONVDP).
+    logic          blt_src_xy;
+    logic          blt_dst_xy;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg
