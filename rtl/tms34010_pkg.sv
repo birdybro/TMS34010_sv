@@ -96,6 +96,12 @@ package tms34010_pkg;
   parameter reg_idx_t CPW_WSTART_IDX = 4'd5;
   parameter reg_idx_t CPW_WEND_IDX   = 4'd6;
 
+  // Graphics B-file registers with fixed implied roles (SPVU001A §"Implied
+  // Operands"). Used by the graphics instructions: B3 = DPTCH (destination
+  // pitch), B4 = OFFSET (linear address of XY origin 0,0).
+  parameter reg_idx_t B_DPTCH_IDX  = 4'd3;
+  parameter reg_idx_t B_OFFSET_IDX = 4'd4;
+
   // ---------------------------------------------------------------------------
   // ALU operation enum
   //
@@ -465,10 +471,14 @@ package tms34010_pkg;
                               //                     Quotient->Rd (+remainder->Rd+1 even); sign-
                               //                     conditioned. N=result sign, Z=quotient==0,
                               //                     V=overflow. Encoding 0101 100S SSSR DDDD.
-    INSTR_MODS             = 7'd92  // MODS Rs,Rd — signed 32-bit modulo: Rd mod Rs -> Rd
+    INSTR_MODS             = 7'd92, // MODS Rs,Rd — signed 32-bit modulo: Rd mod Rs -> Rd
                               //                     (remainder has dividend's sign). N=remainder
                               //                     sign, Z=remainder==0 (unaffected if Rs=0),
                               //                     V=overflow. Encoding 0110 110S SSSR DDDD.
+    INSTR_CVXYL            = 7'd93  // CVXYL Rs,Rd — convert the XY address in Rs to a linear
+                              //                     address in Rd: ((Y<<(31-CONVDP)) | (X<<log2
+                              //                     PSIZE)) + OFFSET(B4). Flags Unaffected.
+                              //                     Encoding 1110 100S SSSR DDDD.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

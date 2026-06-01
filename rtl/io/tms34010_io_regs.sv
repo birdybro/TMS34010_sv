@@ -56,9 +56,10 @@ module tms34010_io_regs
   output logic                  is_io,    // addr decodes to I/O space
 
   // Dedicated taps for the graphics datapath (combinational views of the
-  // stored registers). More can be added (PMASK/CONVSP/CONVDP/CONTROL) as
-  // the graphics ops that need them land.
-  output logic [15:0]           psize_o   // PSIZE: pixel size in bits (1..16)
+  // stored registers). More can be added (PMASK/CONVSP/CONTROL) as the
+  // graphics ops that need them land.
+  output logic [15:0]           psize_o,  // PSIZE: pixel size in bits (1..16)
+  output logic [15:0]           convdp_o  // CONVDP: XY->linear dest pitch shift
 );
 
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
@@ -76,7 +77,8 @@ module tms34010_io_regs
   assign rdata = is_io ? io_reg[idx] : 16'h0;
 
   // Dedicated graphics taps.
-  assign psize_o = io_reg[IO_IDX_PSIZE];
+  assign psize_o  = io_reg[IO_IDX_PSIZE];
+  assign convdp_o = io_reg[IO_IDX_CONVDP];
 
   // Synchronous write + reset. The reset loop is bounded (32 iterations) and
   // fully unrollable, so synthesis treats it as parallel resets.

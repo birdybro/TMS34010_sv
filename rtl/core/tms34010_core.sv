@@ -463,12 +463,14 @@ module tms34010_core
   // registers per SPVU001A page 12-57.
   assign rf_rs2_file = (decoded.iclass == INSTR_CPW) ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
-  // Read port 3: CPW reads WEND (B6); DIVU (even Rd) reads the low half of
-  // the 64-bit dividend, Rd+1. Otherwise it is unused.
+  // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
+  // of the 64-bit dividend, Rd+1; CVXYL reads OFFSET (B4). Otherwise unused.
   assign rf_rs3_file = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
-                     ? (decoded.rd_idx + 4'd1) : CPW_WEND_IDX;
+                     ? (decoded.rd_idx + 4'd1)
+                     : (decoded.iclass == INSTR_CVXYL) ? B_OFFSET_IDX
+                     : CPW_WEND_IDX;
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
   // subsequent jump) happens only if the Z bit pre-condition holds:
@@ -685,6 +687,33 @@ module tms34010_core
   assign cpw_result = {{(DATA_WIDTH-9){1'b0}}, cpw_b8, cpw_b7, cpw_b6, cpw_b5, 5'b0};
   assign cpw_flags  = '{n: 1'b0, c: 1'b0, z: 1'b0,
                          v: (cpw_b5 | cpw_b6 | cpw_b7 | cpw_b8)};
+
+  // ---- CVXYL (convert XY address to linear) datapath -----------------------
+  // SPVU001A page 12-59: linear = [(Y << ydp_shift) OR (X << xsh)] + OFFSET.
+  // X = Rs[15:0] (positive), Y = Rs[31:16] (signed). The screen pitch and
+  // pixel size are powers of two, so the multiplies are shifts: the Y shift
+  // is 31 - CONVDP[4:0] (CONVDP encodes the destination pitch as a shift; e.g.
+  // CONVDP=0x14 -> shift 11 -> pitch 2^11), and the X shift is log2(PSIZE).
+  // OFFSET (B-file B4, on read port 3) is the linear address of XY origin.
+  logic [4:0]            cvxyl_ydp_shift;
+  logic [4:0]            cvxyl_xsh;
+  logic [DATA_WIDTH-1:0] cvxyl_ypart, cvxyl_xpart, cvxyl_result;
+  assign cvxyl_ydp_shift = 5'd31 - io_convdp[4:0];
+  always_comb begin
+    unique case (io_psize[4:0])
+      5'd1:    cvxyl_xsh = 5'd0;
+      5'd2:    cvxyl_xsh = 5'd1;
+      5'd4:    cvxyl_xsh = 5'd2;
+      5'd8:    cvxyl_xsh = 5'd3;
+      5'd16:   cvxyl_xsh = 5'd4;
+      default: cvxyl_xsh = 5'd0;   // PSIZE not a power of two in 1..16: undefined
+    endcase
+  end
+  // Sign-extend Y (signed) to 32 bits before the shift; X is positive.
+  assign cvxyl_ypart  = {{16{rf_rs1_data[DATA_WIDTH-1]}}, rf_rs1_data[DATA_WIDTH-1:16]}
+                        << cvxyl_ydp_shift;
+  assign cvxyl_xpart  = {16'b0, rf_rs1_data[15:0]} << cvxyl_xsh;
+  assign cvxyl_result = (cvxyl_ypart | cvxyl_xpart) + rf_rs3_data;   // + OFFSET (B4)
 
   // ---- MPYS / MPYU multiply datapath (SPVU001A 12-164/12-166) -------------
   // Rd (rf_rs2) is the 32-bit multiplicand, Rs (rf_rs1) the multiplier — an
@@ -950,6 +979,7 @@ module tms34010_core
       // absolute address. MOVE *Rs(off),Rd: same, from the offset address.
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
+      INSTR_CVXYL:  rf_wr_data = cvxyl_result;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = REV_VALUE;
@@ -1274,19 +1304,21 @@ module tms34010_core
   // 16-bit; the core accesses them with 16-bit fields (set FS=16).
   logic                  io_is_io;
   logic [15:0]           io_rdata16;
-  logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT)
+  logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT/CVXYL)
+  logic [15:0]           io_convdp;    // CONVDP register (XY->linear dest pitch)
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
-    .clk    (clk),
-    .rst    (rst),
-    .req    (mem_req),
-    .we     (mem_we_int),      // the access's write intent
-    .addr   (mem_addr),
-    .wdata  (mem_wdata[15:0]),
-    .rdata  (io_rdata16),
-    .is_io  (io_is_io),
-    .psize_o(io_psize)
+    .clk     (clk),
+    .rst     (rst),
+    .req     (mem_req),
+    .we      (mem_we_int),     // the access's write intent
+    .addr    (mem_addr),
+    .wdata   (mem_wdata[15:0]),
+    .rdata   (io_rdata16),
+    .is_io   (io_is_io),
+    .psize_o (io_psize),
+    .convdp_o(io_convdp)
   );
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would

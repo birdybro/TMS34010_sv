@@ -184,6 +184,9 @@ module tms34010_decode
   // Rs and Rd same file; all flags Unaffected. (Task 0065.)
   localparam logic [6:0] MOVX_TOP7    = 7'b1110_110;
   localparam logic [6:0] MOVY_TOP7    = 7'b1110_111;
+  // CVXYL — convert the XY address in Rs to a linear address in Rd (SPVU001A
+  // 12-59). Encoding 1110 100S SSSR DDDD. Same file; all flags Unaffected.
+  localparam logic [6:0] CVXYL_TOP7   = 7'b1110_100;
 
   // ADDXY / SUBXY — add/subtract the X (low 16) and Y (high 16) halves of
   // Rs and Rd independently (no carry between halves). Per SPVU001A pages
@@ -745,6 +748,19 @@ module tms34010_decode
       decoded.rd_file     = reg_file_from_instr;
       decoded.rd_idx      = reg_idx_from_instr;
       decoded.rs_idx      = rs_idx_from_instr;
+      decoded.wb_reg_en   = 1'b1;
+      decoded.wb_flags_en = 1'b0;
+    end
+
+    // CVXYL — convert XY address (Rs) to linear address (Rd). The core's
+    // CVXYL datapath reads OFFSET (B4) on read port 3 and CONVDP/PSIZE from
+    // the I/O registers; result -> Rd. All status bits Unaffected.
+    if (top7 == CVXYL_TOP7) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_CVXYL;
+      decoded.rd_file     = reg_file_from_instr;
+      decoded.rd_idx      = reg_idx_from_instr;     // Rd (instr[3:0])
+      decoded.rs_idx      = rs_idx_from_instr;      // Rs (instr[8:5]) = XY value
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b0;
     end

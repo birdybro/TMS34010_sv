@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0084 — CVXYL convert XY address to linear)
+- CVXYL Rs,Rd (0xE800) implemented: `Rd = [(Y << (31-CONVDP[4:0])) | (X <<
+  log2(PSIZE))] + OFFSET`, where X=Rs[15:0], Y=Rs[31:16] (signed). The screen
+  pitch and pixel size are powers of two, so the multiplies are shifts. SPVU001A
+  page 12-59. All status bits Unaffected.
+- OFFSET is the B-file register B4, read on regfile port 3 (the spare 3rd read
+  port also used by CPW/DIV). CONVDP and PSIZE come from new/existing I/O
+  register taps (io_regs gains a `convdp_o` tap; `psize_o` already existed).
+- New pkg constants: INSTR_CVXYL, B_DPTCH_IDX (B3), B_OFFSET_IDX (B4).
+- New `sim/tb/tb_cvxyl.sv` validates all rows of TI's CVXYL example table
+  (X=0x30,Y=0x40 at PSIZE 16/8/4/2/1, two CONVDP values, and a nonzero OFFSET).
+  Note: the spec's printed table is OCR-corrupted for the PSIZE=4 / nonzero-
+  OFFSET rows (it drops the low X byte); the test uses the recomputed exact
+  values, which the uncorrupted rows confirm.
+
 ### Added (Task 0083 — PIXT pixel transfer, linear forms; first graphics op)
 - PIXT linear forms implemented: PIXT Rs,*Rd (0xF800 store), PIXT *Rs,Rd
   (0xFA00 load), PIXT *Rs,*Rd (0xFC00 indirect-to-indirect). A new

@@ -2894,6 +2894,28 @@ Commit:
 
 ---
 
+### Task 0084: CVXYL (convert XY address to linear)
+Status: complete
+Dependencies: Task 0081/0083 (I/O regs + PSIZE/CONVDP taps), Task 0070 (3rd
+  regfile read port, here repurposed for OFFSET=B4).
+Spec source: SPVU001A page 12-59. Encoding 1110 100S SSSR DDDD (0xE800).
+Acceptance Criteria:
+- INSTR_CVXYL = 7'd93. Datapath: Rd = ((Y << (31-CONVDP[4:0])) | (X <<
+  log2(PSIZE))) + OFFSET; X=Rs[15:0], Y=Rs[31:16] sign-extended.
+- io_regs gains convdp_o tap; B_OFFSET_IDX/B_DPTCH_IDX constants. rf_rs3
+  reads OFFSET (B4) for CVXYL.
+- All flags Unaffected. Rs/Rd same file.
+- sim/tb/tb_cvxyl.sv: TI example table (PSIZE 16/8/4/2/1, CONVDP 0x14/0x13,
+  nonzero OFFSET). PSIZE=4 / nonzero-OFFSET rows use recomputed exact values
+  (spec table OCR-corrupted there).
+Tests: tb_cvxyl PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (CVXYL row), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
