@@ -2763,7 +2763,7 @@ Tests: tb_move_offabs_field PASS; tb_move_offset / tb_move_abs updated and
 Docs: instruction_coverage.md (4 offset/absolute rows), assumptions.md
   (A0020 note), changelog.md, tasks.md.
 Commit:
-- pending
+- e17910d
 
 ---
 
