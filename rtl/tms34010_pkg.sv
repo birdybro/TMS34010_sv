@@ -221,6 +221,49 @@ package tms34010_pkg;
   parameter logic [FIELD_SIZE_WIDTH-1:0] MEM_SIZE_32 = FIELD_SIZE_WIDTH'(DATA_WIDTH); // 6'd32
 
   // ---------------------------------------------------------------------------
+  // On-chip I/O register file (1988 User's Guide Figure 6-1, page 6-3).
+  //
+  // 32 memory-mapped 16-bit registers occupy the bit-address range
+  // 0xC0000000-0xC00001FF. Each register sits at a 0x10-bit-aligned address
+  // (16 bits apart). An address is in I/O space when its two MSBs are 11 and
+  // bits[29:9] are 0; the register index is addr[8:4]. All registers reset to
+  // 0 (UG page 6-?: "All I/O registers ... are cleared to 0 at reset").
+  // ---------------------------------------------------------------------------
+  parameter logic [ADDR_WIDTH-1:0] IO_BASE_ADDR  = 32'hC000_0000;
+  parameter int unsigned           IO_REG_COUNT  = 32;
+  parameter int unsigned           IO_REG_IDX_W  = 5;     // addr[8:4]
+  // Register indices (= address[8:4] = (addr - IO_BASE) >> 4).
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HESYNC  = 5'h00; // Horizontal End Sync
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HEBLNK  = 5'h01; // Horizontal End Blank
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HSBLNK  = 5'h02; // Horizontal Start Blank
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HTOTAL  = 5'h03; // Horizontal Total
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VESYNC  = 5'h04; // Vertical End Sync
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VEBLNK  = 5'h05; // Vertical End Blank
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VSBLNK  = 5'h06; // Vertical Start Blank
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VTOTAL  = 5'h07; // Vertical Total
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYCTL  = 5'h08; // Display Control
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYSTRT = 5'h09; // Display Start
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYINT  = 5'h0A; // Display Interrupt
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_CONTROL = 5'h0B; // Control
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HSTDATA = 5'h0C; // Host Data
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HSTADRL = 5'h0D; // Host Address (LSBs)
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HSTADRH = 5'h0E; // Host Address (MSBs)
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HSTCTLL = 5'h0F; // Host Control (LSBs)
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HSTCTLH = 5'h10; // Host Control (MSBs)
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_INTENB  = 5'h11; // Interrupt Enable
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_INTPEND = 5'h12; // Interrupt Pending
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_CONVSP  = 5'h13; // Source Conversion Pitch
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_CONVDP  = 5'h14; // Destination Conversion Pitch
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_PSIZE   = 5'h15; // Pixel Size
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_PMASK   = 5'h16; // Plane Mask
+  // 0x17-0x1A reserved
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYTAP  = 5'h1B; // Display Tap Point
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HCOUNT  = 5'h1C; // Horizontal Count
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VCOUNT  = 5'h1D; // Vertical Count
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYADR  = 5'h1E; // Display Address
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_REFCNT  = 5'h1F; // DRAM Refresh Count
+
+  // ---------------------------------------------------------------------------
   // Instruction word + decoded-instruction skeleton
   //
   // Spec: bibliography/hdl-reimplementation/02-instruction-set.md

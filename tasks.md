@@ -2816,6 +2816,30 @@ Commit:
 
 ---
 
+### Task 0081: I/O register file foundation (rtl/io/tms34010_io_regs.sv)
+Status: complete
+Dependencies: none (standalone module; begins the graphics/video/interrupt arc).
+Spec source: 1988 User's Guide Figure 6-1 (page 6-3), §6 "I/O Registers".
+Acceptance Criteria:
+- New module: 32×16-bit registers in 0xC0000000–0xC00001FF (each 0x10-bit
+  aligned). is_io = addr[31:30]==11 && addr[29:9]==0; index = addr[8:4].
+  Sync active-high reset → all 0; sync write (req&we&is_io); async read;
+  is_io output. Plain R/W storage (side-effect/read-only registers deferred).
+- pkg: IO_BASE_ADDR / IO_REG_COUNT / IO_REG_IDX_W + IO_IDX_<NAME> for all 28
+  named registers.
+- sim/tb/tb_io_regs.sv: reset-0, write/read-back of the graphics control
+  registers (no aliasing), boundary indices 0 and 31, is_io decode (in/out
+  of range, wrong MSBs), non-I/O write ignored.
+- Not wired into the core memory path yet (next: address-decode routing).
+Tests: tb_io_regs PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: memory_map.md (full I/O register table), architecture.md (module map),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -91,7 +91,7 @@ plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not started | plane mask + transparency |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not started | Bresenham line FSM |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | not started | memory-mapped I/O registers |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed (storage)** | 32×16-bit memory-mapped I/O register file (1988 UG Fig 6-1); plain R/W storage, I/O-space decode + index; side-effect/read-only registers deferred. Not yet wired into the core memory path. |
 | `rtl/video/tms34010_video_timing.sv`    | 9     | not started | HSYNC/VSYNC/blanking generator |
 | `rtl/video/tms34010_refresh.sv`         | 9     | not started | screen refresh / VRAM shift control |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |

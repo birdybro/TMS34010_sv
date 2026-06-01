@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0081 — I/O register file foundation)
+- New `rtl/io/tms34010_io_regs.sv`: the on-chip memory-mapped I/O register
+  file (1988 UG Figure 6-1). 32×16-bit registers in the bit-address range
+  0xC0000000–0xC00001FF; each at a 0x10-bit-aligned address. I/O-space decode
+  (`addr[31:30]==11 && addr[29:9]==0`), register index `addr[8:4]`, sync
+  active-high reset to 0, sync write, async read, and an `is_io` output for
+  the surrounding memory fabric. This is the foundation for graphics
+  (PSIZE/PMASK/CONVSP/CONVDP/CONTROL), video timing, and interrupts.
+- `rtl/tms34010_pkg.sv`: `IO_BASE_ADDR`, `IO_REG_COUNT`, `IO_REG_IDX_W`, and
+  `IO_IDX_<NAME>` constants for all 28 named registers.
+- The block is plain R/W storage; read-only (HCOUNT/VCOUNT/REFCNT/DPYADR) and
+  write-to-clear (INTPEND) behaviors are deferred to the video/interrupt
+  blocks. Not yet wired into the core memory path (address-decode routing is
+  the next step).
+- New `sim/tb/tb_io_regs.sv`: reset-to-0, per-register write/read-back,
+  is_io decode (in/out of range, wrong MSBs), and that non-I/O writes are
+  ignored. `docs/memory_map.md` now carries the full register table.
+
 ### Added (Task 0080 — MOVB move byte)
 - MOVB (move byte) implemented: a special MOVE form with the field size fixed
   at 8 bits. New `decoded.force_byte` flag makes the core force `mv_fs = 8`
