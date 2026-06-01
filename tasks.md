@@ -2711,7 +2711,7 @@ Tests: tb_mem_field PASS; full integration regression PASS under Verilator
   (3 module-level tbs need Questa); lint clean.
 Docs: assumptions.md (A0020 note), changelog.md, tasks.md, memory_map.md.
 Commit:
-- pending
+- c5e3914
 
 ---
 
