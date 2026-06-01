@@ -2935,7 +2935,7 @@ Tests: tb_pixt_xy PASS; tb_pixt/tb_cvxyl regress PASS; full integration
   regression PASS under Verilator (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (3 XY-PIXT rows), changelog.md, tasks.md.
 Commit:
-- pending
+- 4e1b819
 
 ---
 
