@@ -3045,6 +3045,28 @@ Commit:
 
 ---
 
+### Task 0091: PIXT store Boolean pixel processing (PPOP)
+Status: complete
+Dependencies: Task 0090 (RMW pixel-write engine).
+Spec source: SPVU001A CONTROL.PPOP (bits 14-10); the 16 Boolean PPOP table.
+Acceptance Criteria:
+- pixt_processed = PPOP(rf_rs1_data, pix_dest_q) via a 16-way case on
+  io_control[CTRL_PPOP_HI:CTRL_PPOP_LO]; arith codes (0x10-0x15) fall back to
+  replace (TODO). Unified merge: transparency tests the PROCESSED pixel (T &&
+  processed==0 ⇒ write dest back); then plane mask. The Task 0089 EXECUTE-skip
+  is removed (transparent store now RMWs and writes dest back; spec: "memory
+  cycles still occur"). pixt_rmw = force_pixel && is_mv_store.
+- Reset defaults (PPOP=0/T=0/PMASK=0) ⇒ plain replace; existing tests green.
+- sim/tb/tb_pixt_ppop.sv: replace/AND/OR/XOR/NOT-S/no-change (S=0xCC,D=0xAA).
+Tests: tb_pixt_ppop PASS; existing PIXT tests (transp/pmask) PASS; full
+  integration regression PASS under Verilator (3 module-level tbs need Questa);
+  lint clean.
+Docs: instruction_coverage.md (PIXT store rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

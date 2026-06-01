@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0091 — PIXT store Boolean pixel processing (PPOP))
+- PIXT store now applies the CONTROL.PPOP (bits 14-10) pixel-processing
+  operation: the 16 Boolean codes (replace, AND, OR, XOR, NAND/NOR/XNOR, NOT-S,
+  NOT-D, 0, 1, no-change, and their NOT-operand variants) computed bitwise on
+  (source, destination). The 6 arithmetic codes (0x10-0x15) are not yet
+  implemented and fall back to replace (TODO). SPVU001A CONTROL.PPOP.
+- The pixel write engine is now unified: `processed = PPOP(src, dest)`, then
+  transparency (CONTROL.T — now correctly tests the PROCESSED value, not the
+  source) leaves the destination unchanged when the processed pixel is 0, then
+  the plane mask merges. This folds the Task 0089 transparency into the 2-step
+  RMW path (the EXECUTE-skip is removed; a transparent store now does the RMW
+  and writes the dest back, which the spec confirms — "memory cycles still
+  occur"). At reset (PPOP=0, T=0, PMASK=0) the behavior is plain replace, so
+  all existing PIXT/MOVE-store tests are unchanged.
+- New `sim/tb/tb_pixt_ppop.sv`: replace / AND / OR / XOR / NOT-S / no-change
+  with S=0xCC, D=0xAA.
+
 ### Added (Task 0090 — PIXT store plane masking; read-modify-write pixel write)
 - PIXT store now honors PMASK (plane mask): a non-transparent PIXT store is a
   2-step CORE_MEMORY read-modify-write — step 0 reads the destination pixel,

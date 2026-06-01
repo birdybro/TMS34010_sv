@@ -667,36 +667,56 @@ module tms34010_core
     end
   end
 
-  // PIXT transparency (Task 0089): when CONTROL.T is set, a PIXT store whose
-  // (replace-mode) source pixel is 0 is inhibited from overwriting the
-  // destination — the instruction skips its memory write entirely (SPVU001A
-  // CONTROL.T, bit 5). The source pixel is the low PSIZE bits of Rs; in
-  // replace mode (the only PPOP implemented) the processed value equals the
-  // source. Applies to the register-source store forms (linear/XY); the M2M
-  // and load forms are not affected (load writes a register, not a pixel).
-  logic pixt_transp_skip;
-  assign pixt_transp_skip = decoded.force_pixel && is_mv_store
-                          && io_control[CTRL_T_BIT]
-                          && ((rf_rs1_data & mv_fmask) == '0);
-
-  // PIXT store plane-mask read-modify-write (Task 0090). A non-transparent
-  // PIXT store reads the destination pixel first, then writes a value that
-  // keeps the masked planes: merged = (src & ~pmask) | (dest & pmask), where
-  // a PMASK bit of 1 protects that plane (SPVU001A PMASK). The pixel-size
-  // mask (mv_fmask) confines everything to the PSIZE-bit pixel. In replace
-  // mode (the only PPOP implemented) the processed value is the source. With
-  // PMASK=0 (reset) merged = src, so this is transparent to the existing
-  // FS=PSIZE behavior. `pixt_rmw` turns the store into a 2-step CORE_MEMORY
-  // sequence (read then write); regular MOVE store (no force_pixel) stays
-  // single-step.
+  // PIXT store pixel-write engine (Tasks 0089/0090/0091). A PIXT store is a
+  // 2-step CORE_MEMORY read-modify-write: step 0 reads the destination pixel
+  // (pix_dest_q), step 1 writes the result. The result combines three CONTROL
+  // features, all confined to the PSIZE-bit pixel by mv_fmask:
+  //   1. Pixel processing (PPOP, CONTROL[14:10]): processed = f(src, dest).
+  //      The 16 Boolean codes are implemented (pixel-size-independent); the 6
+  //      arithmetic codes (0x10-0x15) are not yet implemented and fall back to
+  //      replace (documented limitation).
+  //   2. Transparency (CONTROL.T, bit 5): if enabled and the PROCESSED pixel
+  //      is 0, the destination is left unchanged (write the old value back —
+  //      memory cycles still occur, per the spec).
+  //   3. Plane mask (PMASK): a 1 bit protects that plane:
+  //      merged = (processed & ~pmask) | (dest & pmask).
+  // `pixt_rmw` selects this path; a regular MOVE store (no force_pixel) stays
+  // a single write.
   logic                  pixt_rmw;
   logic [DATA_WIDTH-1:0] pixt_pmask_field;
   logic [DATA_WIDTH-1:0] pix_dest_q;     // dest pixel latched at the read step
-  logic [DATA_WIDTH-1:0] pixt_merged;
-  assign pixt_rmw         = decoded.force_pixel && is_mv_store && !pixt_transp_skip;
+  logic [DATA_WIDTH-1:0] pixt_processed; // PPOP(src, dest)
+  logic                  pixt_transp;    // transparency inhibits this write
+  logic [DATA_WIDTH-1:0] pixt_merged;    // value written at step 1
+  assign pixt_rmw         = decoded.force_pixel && is_mv_store;
   assign pixt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & mv_fmask;
-  assign pixt_merged      = (rf_rs1_data & ~pixt_pmask_field)
-                          | (pix_dest_q  &  pixt_pmask_field);
+  always_comb begin
+    // Boolean PPOP: src = rf_rs1_data, dest = pix_dest_q (bitwise; the low
+    // PSIZE bits are what get written).
+    unique case (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO])
+      5'h00:   pixt_processed = rf_rs1_data;                       // S (replace)
+      5'h01:   pixt_processed = rf_rs1_data &  pix_dest_q;         // S AND D
+      5'h02:   pixt_processed = rf_rs1_data & ~pix_dest_q;         // S AND ~D
+      5'h03:   pixt_processed = '0;                                // 0
+      5'h04:   pixt_processed = rf_rs1_data | ~pix_dest_q;         // S OR ~D
+      5'h05:   pixt_processed = ~(rf_rs1_data ^ pix_dest_q);       // S XNOR D
+      5'h06:   pixt_processed = ~pix_dest_q;                       // ~D
+      5'h07:   pixt_processed = ~(rf_rs1_data | pix_dest_q);       // S NOR D
+      5'h08:   pixt_processed = rf_rs1_data |  pix_dest_q;         // S OR D
+      5'h09:   pixt_processed = pix_dest_q;                        // D (no change)
+      5'h0A:   pixt_processed = rf_rs1_data ^  pix_dest_q;         // S XOR D
+      5'h0B:   pixt_processed = ~rf_rs1_data & pix_dest_q;         // ~S AND D
+      5'h0C:   pixt_processed = '1;                                // 1
+      5'h0D:   pixt_processed = ~rf_rs1_data | pix_dest_q;         // ~S OR D
+      5'h0E:   pixt_processed = ~(rf_rs1_data & pix_dest_q);       // S NAND D
+      5'h0F:   pixt_processed = ~rf_rs1_data;                      // ~S
+      default: pixt_processed = rf_rs1_data;  // arith ops (0x10-0x15): TODO -> replace
+    endcase
+  end
+  assign pixt_transp  = io_control[CTRL_T_BIT] && ((pixt_processed & mv_fmask) == '0);
+  assign pixt_merged  = pixt_transp
+                      ? pix_dest_q
+                      : ((pixt_processed & ~pixt_pmask_field) | (pix_dest_q & pixt_pmask_field));
 
   // XY-addressed PIXT: the pointer holds an XY value; convert it to a linear
   // bit address (same shift form as CVXYL). CONVDP for a destination pointer
@@ -1748,8 +1768,6 @@ module tms34010_core
           state_d = CORE_DIVIDE;
         else if (is_fill)
           state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
-        else if (pixt_transp_skip)
-          state_d = CORE_WRITEBACK;    // transparent PIXT pixel: no memory write
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
