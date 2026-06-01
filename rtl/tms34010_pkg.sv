@@ -544,6 +544,10 @@ package tms34010_pkg;
     // and sign-extend on load (MOVB loads are always sign-extended). Reuses
     // the INSTR_MOVE_FIELD/OFF/ABS datapaths with FS forced to 8.
     logic          force_byte;
+    // 1 ⇒ PIXT (pixel transfer, linear): force the field size to the PSIZE
+    // I/O register value and ZERO-extend on load. Reuses the INSTR_MOVE_
+    // FIELD_STORE/LOAD/M2M datapaths. PIXT load also reports V = (pixel != 0).
+    logic          force_pixel;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg

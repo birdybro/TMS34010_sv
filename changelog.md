@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0083 — PIXT pixel transfer, linear forms; first graphics op)
+- PIXT linear forms implemented: PIXT Rs,*Rd (0xF800 store), PIXT *Rs,Rd
+  (0xFA00 load), PIXT *Rs,*Rd (0xFC00 indirect-to-indirect). A new
+  `decoded.force_pixel` flag makes the core use FS = the PSIZE I/O register
+  value (1/2/4/8/16) and zero-extend on load (pixels are unsigned), reusing
+  the MOVE field store/load/M2M datapaths. SPVU001A §"PIXT".
+- `tms34010_io_regs` gains a `psize_o` tap (combinational view of PSIZE); the
+  core feeds it into mv_fs when force_pixel is set.
+- PIXT store/M2M leave all flags Unaffected; PIXT load reports V = (pixel != 0)
+  with N/C/Z Undefined (the decode masks them off). Replace mode only —
+  PMASK / transparency / pixel-processing (PPOP) are not yet applied (their
+  reset defaults are no-op, so this matches a post-reset machine).
+- The XY-addressed PIXT forms (0xF000/0xF200/0xF400) remain unimplemented
+  (need XY→linear conversion via CONVDP/CONVSP + OFFSET); they trap as illegal.
+- New `sim/tb/tb_pixt.sv`: sets PSIZE via a MOVE to the I/O register (exercising
+  the Task 0082 path), then PIXT store/load/M2M at PSIZE=8 and a PSIZE=4 pixel,
+  checking zero-extend (vs MOVB sign-extend) and the V=(pixel!=0) flag.
+
 ### Added (Task 0082 — wire the I/O register file into the core memory path)
 - `tms34010_io_regs` is now instantiated inside `tms34010_core`. An access
   whose bit-address decodes as I/O space (0xC0000000–0xC00001FF) is serviced

@@ -2867,6 +2867,33 @@ Commit:
 
 ---
 
+### Task 0083: PIXT pixel transfer (linear forms) — first graphics instruction
+Status: complete
+Dependencies: Tasks 0077–0080 (field machinery + force_byte pattern), Task
+  0081/0082 (I/O regs + PSIZE readable in the core).
+Spec source: SPVU001A §"PIXT" (Pixel Transfer) detail pages; encoding table.
+Acceptance Criteria:
+- New `decoded.force_pixel` field. When set: core uses mv_fs = io_psize and
+  mv_fe = 0 (zero-extend). io_regs exposes `psize_o`.
+- Decode 3 linear PIXT forms: Rs,*Rd (0xF800 top7 1111100 -> FIELD_STORE),
+  *Rs,Rd (0xFA00 top7 1111101 -> FIELD_LOAD), *Rs,*Rd (0xFC00 top7 1111110 ->
+  FIELD_M2M), each with force_pixel.
+- PIXT store/M2M: all flags Unaffected. PIXT load: V = (pixel != 0), N/C/Z
+  masked off (Undefined); flag_input.v overridden for force_pixel.
+- XY PIXT forms (0xF000/0xF200/0xF400) remain illegal (need XY conversion).
+- Replace mode only; PMASK/transparency/PPOP deferred (no-op at reset).
+- sim/tb/tb_pixt.sv: set PSIZE via MOVE to I/O reg; PIXT store/load/M2M at
+  PSIZE=8 (+ zero-extend vs MOVB, V flag), a zero pixel (V=0), and a PSIZE=4
+  pixel.
+Tests: tb_pixt PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (6 PIXT rows: 3 done + 3 deferred), changelog.md,
+  tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

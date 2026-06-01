@@ -543,11 +543,14 @@ module tms34010_core
   assign mv_fs_raw = instr_word_q[9] ? st_value[ST_FS1_HI:ST_FS1_LO]
                                      : st_value[ST_FS0_HI:ST_FS0_LO];
   // MOVB (decoded.force_byte) forces an 8-bit field and sign-extension on
-  // load, independent of ST.FS/FE.
+  // load. PIXT (decoded.force_pixel) forces the field size to the PSIZE I/O
+  // register value and zero-extension on load. Both override ST.FS/FE.
   assign mv_fs     = decoded.force_byte   ? FIELD_SIZE_WIDTH'(8)
+                   : decoded.force_pixel  ? io_psize[FIELD_SIZE_WIDTH-1:0]
                    : (mv_fs_raw == 5'd0)  ? FIELD_SIZE_WIDTH'(DATA_WIDTH)
                                           : {1'b0, mv_fs_raw};
-  assign mv_fe     = decoded.force_byte   ? 1'b1
+  assign mv_fe     = decoded.force_byte   ? 1'b1   // MOVB: sign-extend
+                   : decoded.force_pixel  ? 1'b0   // PIXT: zero-extend
                    : (instr_word_q[9] ? st_value[ST_FE1_BIT] : st_value[ST_FE0_BIT]);
   assign mv_fs_ext = DATA_WIDTH'(mv_fs);
   assign mv_fmask  = (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH))
@@ -1271,17 +1274,19 @@ module tms34010_core
   // 16-bit; the core accesses them with 16-bit fields (set FS=16).
   logic                  io_is_io;
   logic [15:0]           io_rdata16;
+  logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT)
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
-    .clk   (clk),
-    .rst   (rst),
-    .req   (mem_req),
-    .we    (mem_we_int),       // the access's write intent
-    .addr  (mem_addr),
-    .wdata (mem_wdata[15:0]),
-    .rdata (io_rdata16),
-    .is_io (io_is_io)
+    .clk    (clk),
+    .rst    (rst),
+    .req    (mem_req),
+    .we     (mem_we_int),      // the access's write intent
+    .addr   (mem_addr),
+    .wdata  (mem_wdata[15:0]),
+    .rdata  (io_rdata16),
+    .is_io  (io_is_io),
+    .psize_o(io_psize)
   );
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would
@@ -1379,11 +1384,14 @@ module tms34010_core
                                     c: 1'b0, z: 1'b0, v: 1'b0};
       // MOVE load (indirect / offset / absolute): implicit compare-to-0 of
       // the loaded field AFTER FE sign/zero extension (mv_load_data). N =
-      // result sign, Z = result==0, V=0; C masked off by wb_flag_mask.
+      // result sign, Z = result==0, V=0; C masked off by wb_flag_mask. For a
+      // PIXT load (force_pixel) the only defined status bit is V = (pixel !=
+      // 0); the PIXT-load decode masks N/C/Z off (they are spec-Undefined).
       INSTR_MOVE_FIELD_LOAD,
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  flag_input = '{n: mv_load_data[DATA_WIDTH-1],
-                                    c: 1'b0, z: (mv_load_data == '0), v: 1'b0};
+                                    c: 1'b0, z: (mv_load_data == '0),
+                                    v: (decoded.force_pixel && (mv_load_data != '0))};
       INSTR_ADDXY:  flag_input = addxy_flags;
       INSTR_SUBXY:  flag_input = subxy_flags;
       INSTR_CMPXY:  flag_input = cmpxy_flags;

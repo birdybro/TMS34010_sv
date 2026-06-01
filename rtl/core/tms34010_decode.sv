@@ -168,6 +168,16 @@ module tms34010_decode
   localparam logic [6:0] MOVB_OFF_STORE_TOP7 = 7'b1010_110;
   localparam logic [6:0] MOVB_OFF_LOAD_TOP7  = 7'b1010_111;
 
+  // PIXT (pixel transfer), LINEAR forms — a pixel-size (PSIZE) field move
+  // (SPVU001A 12-? / encoding table). The XY forms (1111 000S/001S/010S) need
+  // XY->linear address conversion and are deferred. Linear forms:
+  //   PIXT Rs,*Rd  : 1111 100S (top7 = 1111100, 0xF800) store
+  //   PIXT *Rs,Rd  : 1111 101S (top7 = 1111101, 0xFA00) load
+  //   PIXT *Rs,*Rd : 1111 110S (top7 = 1111110, 0xFC00) indirect-to-indirect
+  localparam logic [6:0] PIXT_STORE_TOP7 = 7'b1111_100;
+  localparam logic [6:0] PIXT_LOAD_TOP7  = 7'b1111_101;
+  localparam logic [6:0] PIXT_M2M_TOP7   = 7'b1111_110;
+
   // MOVX / MOVY — move the X (low 16) or Y (high 16) half of Rs into the
   // same half of Rd, leaving the other half untouched. Per SPVU001A pages
   // 12-162/12-163. Encodings 1110 110S (MOVX) / 1110 111S (MOVY) SSSR DDDD.
@@ -474,6 +484,7 @@ module tms34010_decode
     decoded.rs_file         = reg_file_from_instr;
     decoded.move_mode       = MV_ADDR_NONE;   // only the indirect MOVE family sets this
     decoded.force_byte      = 1'b0;            // only MOVB sets this (force FS=8)
+    decoded.force_pixel     = 1'b0;            // only PIXT sets this (force FS=PSIZE)
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -1405,6 +1416,55 @@ module tms34010_decode
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // -----------------------------------------------------------------------
+    // PIXT (pixel transfer, LINEAR forms) — Task 0083. A pixel-size field
+    // move: force_pixel makes the core use FS = PSIZE and zero-extend loads.
+    // Reuses the MOVE field store/load/M2M datapaths. Replace mode only:
+    // PMASK / transparency / pixel-processing (PPOP) are not yet applied
+    // (their reset defaults are no-op, so this is correct after reset).
+    //   PIXT Rs,*Rd  (0xF800): store — all flags Unaffected.
+    //   PIXT *Rs,Rd  (0xFA00): load  — V = (pixel != 0); N/C/Z Undefined
+    //                                  (masked off here).
+    //   PIXT *Rs,*Rd (0xFC00): M2M   — all flags Unaffected.
+    // -----------------------------------------------------------------------
+    if (top7 == PIXT_STORE_TOP7) begin           // PIXT Rs,*Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_STORE;
+      decoded.force_pixel     = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = linear pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = pixel data
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == PIXT_LOAD_TOP7) begin            // PIXT *Rs,Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_LOAD;
+      decoded.force_pixel     = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = destination
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = linear pointer
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b1;
+      // Only V is defined (V = pixel != 0); N/C/Z are Undefined -> masked off.
+      decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    if (top7 == PIXT_M2M_TOP7) begin             // PIXT *Rs,*Rd
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_FIELD_M2M;
+      decoded.force_pixel     = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;    // Rd = dest pointer
+      decoded.rs_idx          = rs_idx_from_instr;     // Rs = src  pointer
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
     end
 
     // -----------------------------------------------------------------------

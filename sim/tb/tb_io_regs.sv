@@ -22,11 +22,12 @@ module tb_io_regs;
   logic [15:0]           wdata;
   logic [15:0]           rdata;
   logic                  is_io;
+  logic [15:0]           psize_w;
 
   tms34010_io_regs u_io (
     .clk(clk), .rst(rst),
     .req(req), .we(we), .addr(addr), .wdata(wdata),
-    .rdata(rdata), .is_io(is_io)
+    .rdata(rdata), .is_io(is_io), .psize_o(psize_w)
   );
 
   int unsigned failures;
@@ -103,6 +104,10 @@ module tb_io_regs;
     io_write(A_CONVDP, 16'h000A);
     io_write(A_CONTROL,16'h1234);
     check_read("2: PSIZE = 0x0008",   A_PSIZE,   16'h0008);
+    if (psize_w !== 16'h0008) begin
+      $display("TEST_RESULT: FAIL: 2: psize_o tap = %04h, expected 0008", psize_w);
+      failures++;
+    end
     check_read("2: PMASK = 0xFF00",   A_PMASK,   16'hFF00);
     check_read("2: CONVSP = 0x000B",  A_CONVSP,  16'h000B);
     check_read("2: CONVDP = 0x000A",  A_CONVDP,  16'h000A);
