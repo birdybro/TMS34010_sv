@@ -3041,7 +3041,7 @@ Tests: tb_pixt_pmask PASS; existing PIXT/MOVE store tests PASS; full
   Questa); lint clean.
 Docs: instruction_coverage.md (PIXT store rows), changelog.md, tasks.md.
 Commit:
-- pending
+- a9e2c4c
 
 ---
 
