@@ -222,11 +222,17 @@ module tms34010_core
       popped_st_q <= '0;
       popped_pc_q <= '0;
       move_data_q <= '0;
+      pix_dest_q  <= '0;
     end else if (state_q == CORE_MEMORY && mem_ack) begin
       // MOVE *Rs,*Rd: step 0 reads the source field; latch it so step 1
       // can write it to the destination.
       if (decoded.iclass == INSTR_MOVE_FIELD_M2M && mem_op_step == 2'd0) begin
         move_data_q <= mem_rdata_eff;
+      end
+      // PIXT store plane-mask RMW: step 0 reads the destination pixel; latch
+      // it so step 1 can merge it under the plane mask.
+      if (decoded.iclass == INSTR_MOVE_FIELD_STORE && pixt_rmw && mem_op_step == 2'd0) begin
+        pix_dest_q <= mem_rdata_eff;
       end
       // Latch popped values per-iclass per-step before moving on.
       if (decoded.iclass == INSTR_RETI) begin
@@ -252,6 +258,10 @@ module tms34010_core
                                  : mem_op_step + 2'd1;
         INSTR_MOVE_FIELD_M2M:
                     mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
+        // PIXT store RMW: step 0 (read) -> step 1 (write) -> 0. Regular MOVE
+        // store (no force_pixel) is single-step and falls through to default.
+        INSTR_MOVE_FIELD_STORE:
+                    mem_op_step <= (pixt_rmw && mem_op_step == 2'd0) ? 2'd1 : 2'd0;
         default:    mem_op_step <= 2'd0;
       endcase
     end else if (state_q != CORE_MEMORY) begin
@@ -668,6 +678,25 @@ module tms34010_core
   assign pixt_transp_skip = decoded.force_pixel && is_mv_store
                           && io_control[CTRL_T_BIT]
                           && ((rf_rs1_data & mv_fmask) == '0);
+
+  // PIXT store plane-mask read-modify-write (Task 0090). A non-transparent
+  // PIXT store reads the destination pixel first, then writes a value that
+  // keeps the masked planes: merged = (src & ~pmask) | (dest & pmask), where
+  // a PMASK bit of 1 protects that plane (SPVU001A PMASK). The pixel-size
+  // mask (mv_fmask) confines everything to the PSIZE-bit pixel. In replace
+  // mode (the only PPOP implemented) the processed value is the source. With
+  // PMASK=0 (reset) merged = src, so this is transparent to the existing
+  // FS=PSIZE behavior. `pixt_rmw` turns the store into a 2-step CORE_MEMORY
+  // sequence (read then write); regular MOVE store (no force_pixel) stays
+  // single-step.
+  logic                  pixt_rmw;
+  logic [DATA_WIDTH-1:0] pixt_pmask_field;
+  logic [DATA_WIDTH-1:0] pix_dest_q;     // dest pixel latched at the read step
+  logic [DATA_WIDTH-1:0] pixt_merged;
+  assign pixt_rmw         = decoded.force_pixel && is_mv_store && !pixt_transp_skip;
+  assign pixt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & mv_fmask;
+  assign pixt_merged      = (rf_rs1_data & ~pixt_pmask_field)
+                          | (pix_dest_q  &  pixt_pmask_field);
 
   // XY-addressed PIXT: the pointer holds an XY value; convert it to a linear
   // bit address (same shift form as CVXYL). CONVDP for a destination pointer
@@ -1456,6 +1485,7 @@ module tms34010_core
   logic [15:0]           io_convdp;    // CONVDP register (XY->linear dest pitch)
   logic [15:0]           io_convsp;    // CONVSP register (XY->linear source pitch)
   logic [15:0]           io_control;   // CONTROL register (PPOP, T, window mode, ...)
+  logic [15:0]           io_pmask;     // PMASK register (plane mask)
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
@@ -1470,7 +1500,8 @@ module tms34010_core
     .psize_o  (io_psize),
     .convdp_o (io_convdp),
     .convsp_o (io_convsp),
-    .control_o(io_control)
+    .control_o(io_control),
+    .pmask_o  (io_pmask)
   );
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would
@@ -1880,11 +1911,18 @@ module tms34010_core
             // mem[mv_addr]. mv_addr = pointer Rd (postinc/none) or Rd-FS
             // (predec); the pointer auto-update (Rd±FS) is written back at
             // WRITEBACK for the inc/dec forms. FS from the F-selected ST pair.
+            // A PIXT store (pixt_rmw) is a 2-step plane-mask read-modify-write:
+            // step 0 reads the destination pixel, step 1 writes the merged
+            // value. A regular MOVE store (and PMASK=0 PIXT) is a single write.
             mem_req   = 1'b1;
-            mem_we_int    = 1'b1;
             mem_addr  = mv_addr;           // = Rd or Rd-FS (predec)
             mem_size  = mv_fs;             // field size (1..32)
-            mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
+            if (pixt_rmw && mem_op_step == 2'd0) begin
+              mem_we_int = 1'b0;           // step 0: read the destination pixel
+            end else begin
+              mem_we_int = 1'b1;           // write (single, or step 1 of RMW)
+              mem_wdata  = pixt_rmw ? pixt_merged : rf_rs1_data;
+            end
           end
           INSTR_MOVE_FIELD_LOAD: begin
             // MOVE [-]*Rs[+],Rd: read an FS-bit field from mem[mv_addr].
@@ -1966,6 +2004,9 @@ module tms34010_core
             INSTR_MMTM,
             INSTR_MMFM: if (mm_mask_will_be_empty) state_d = CORE_WRITEBACK;
             INSTR_MOVE_FIELD_M2M: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
+            // PIXT store RMW stays for its write step; single-step store exits.
+            INSTR_MOVE_FIELD_STORE:
+                        if (!pixt_rmw || mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;
           endcase
         end

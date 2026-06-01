@@ -3023,6 +3023,28 @@ Commit:
 
 ---
 
+### Task 0090: PIXT store plane masking (RMW pixel-write engine)
+Status: complete
+Dependencies: Task 0089 (transparency / control_o tap).
+Spec source: SPVU001A PMASK register; pixel processing reads dest "through
+  the plane mask".
+Acceptance Criteria:
+- io_regs pmask_o tap. PIXT store (force_pixel && is_mv_store, non-transparent)
+  becomes a 2-step CORE_MEMORY RMW: step0 read dest pixel (latch pix_dest_q),
+  step1 write merged = (src & ~pmask_field) | (dest & pmask_field), pmask_field
+  = low PSIZE bits of PMASK. Gated on force_pixel so MOVE store stays 1-step.
+  mem_op_step + CORE_MEMORY exit updated for FIELD_STORE pixt_rmw.
+- PMASK=0 ⇒ merged=src; all existing PIXT/MOVE-store tests stay green.
+- sim/tb/tb_pixt_pmask.sv: low/high nibble masks; protected planes keep dest.
+Tests: tb_pixt_pmask PASS; existing PIXT/MOVE store tests PASS; full
+  integration regression PASS under Verilator (3 module-level tbs need
+  Questa); lint clean.
+Docs: instruction_coverage.md (PIXT store rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

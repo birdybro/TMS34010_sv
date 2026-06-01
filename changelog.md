@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0090 — PIXT store plane masking; read-modify-write pixel write)
+- PIXT store now honors PMASK (plane mask): a non-transparent PIXT store is a
+  2-step CORE_MEMORY read-modify-write — step 0 reads the destination pixel,
+  step 1 writes `merged = (src & ~PMASK) | (dest & PMASK)` confined to the
+  PSIZE-bit pixel (a PMASK bit of 1 protects that plane). With PMASK=0 (reset)
+  the full source is written, so all existing PIXT tests are unchanged.
+  SPVU001A PMASK.
+- The 2-step is gated on `force_pixel` (a regular MOVE store stays single
+  step). New core signals pixt_rmw / pixt_pmask_field / pix_dest_q /
+  pixt_merged; io_regs gains a `pmask_o` tap.
+- This is the read-modify-write pixel-write foundation that PPOP (pixel
+  processing) will build on: today the processed value is the source (replace
+  mode); PPOP will replace it with a function of (source, dest).
+- New `sim/tb/tb_pixt_pmask.sv`: low-nibble and high-nibble masks over
+  preloaded destination pixels, checking that protected planes keep the
+  destination and unmasked planes take the source.
+
 ### Added (Task 0089 — PIXT store transparency)
 - PIXT store transparency (CONTROL.T, bit 5): when transparency is enabled and
   the source pixel is 0 (in replace mode the processed value equals the
