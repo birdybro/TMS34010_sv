@@ -2840,6 +2840,33 @@ Commit:
 
 ---
 
+### Task 0082: wire the I/O register file into the core memory path
+Status: complete
+Dependencies: Task 0081 (io_regs module).
+Spec source: SPVU001A §6 (I/O Registers), Figure 6-1.
+Acceptance Criteria:
+- Instantiate tms34010_io_regs inside tms34010_core. Compute io_is_io from
+  mem_addr; mux io_regs async read into mem_rdata_eff (all internal mem_rdata
+  consumers now read mem_rdata_eff).
+- Gate the external write for I/O space: mem_we = mem_we_int && !io_is_io
+  (so I/O writes don't corrupt external RAM). External cycle still issued
+  (provides ack).
+- Latch the I/O read at the access ack (io_rdata_q/io_is_io_q) so it persists
+  into WRITEBACK like the external model holds mem_rdata; effective-read mux
+  uses combinational decode during an active transaction (mem_req), latched
+  value after.
+- sim/tb/tb_io_access.sv: MOVE absolute (FS=16) writes PSIZE/PMASK on-chip and
+  reads back (no aliasing); a normal external MOVE still works.
+- A0028 documents the integration model + the deferred external-cycle/on-chip
+  ack refinement and the 16-bit I/O-access assumption.
+Tests: tb_io_access PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0028), architecture.md, changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

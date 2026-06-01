@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0082 — wire the I/O register file into the core memory path)
+- `tms34010_io_regs` is now instantiated inside `tms34010_core`. An access
+  whose bit-address decodes as I/O space (0xC0000000–0xC00001FF) is serviced
+  on-chip: the external write is gated off (`mem_we = mem_we_int && !io_is_io`)
+  so I/O writes never corrupt external RAM, and the read data is muxed from
+  the register file. The I/O read is latched at the access ack (`io_rdata_q`/
+  `io_is_io_q`) so it persists into WRITEBACK the way the external memory
+  model holds `mem_rdata`. See assumption A0028.
+- Internal `mem_rdata` consumers now read `mem_rdata_eff` (the muxed effective
+  read data); the FSM's write intent is `mem_we_int`, gated to the external
+  `mem_we` port.
+- New `sim/tb/tb_io_access.sv`: MOVE absolute (FS=16) writes PSIZE and PMASK
+  on-chip and reads them back, confirms no aliasing, and confirms a normal
+  external MOVE still works through the read-data mux.
+- A debugging note for posterity: the simulation memory model only decodes
+  the low address bits, so before the external-write gating an I/O write
+  aliased onto a low program word and corrupted it — fixed by the gating.
+
 ### Added (Task 0081 — I/O register file foundation)
 - New `rtl/io/tms34010_io_regs.sv`: the on-chip memory-mapped I/O register
   file (1988 UG Figure 6-1). 32×16-bit registers in the bit-address range

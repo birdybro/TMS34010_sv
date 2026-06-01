@@ -535,6 +535,35 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   change the two `<` comparisons in the `subxy_flags` assign (core.sv) to
   signed (`$signed(...) <`). CMPXY (future task) shares this convention.
 
+## A0028 — I/O register integration into the core memory path
+- **Date**: 2026-05-31 (Task 0082).
+- **Status**: implementation choice; faithful at the architectural level,
+  with a deferred refinement noted.
+- **Source**: SPVU001A §6 "I/O Registers", Figure 6-1; "An access of any
+  address in the range C0000000h-C00001FFh is decoded as an access of an
+  on-chip register" and "the accompanying memory cycle ... is altered so
+  that RAS is output but CAS is inhibited".
+- **Choice**: `tms34010_io_regs` is instantiated inside `tms34010_core`.
+  An access whose address decodes as I/O space (`io_is_io`) is serviced
+  on-chip: the external write is gated off (`mem_we = mem_we_int &&
+  !io_is_io`) so an I/O write never reaches external RAM, and the read data
+  is muxed from the register file. Because the I/O register is async-read
+  (it follows `mem_addr`) while the external model holds `mem_rdata` stable
+  into WRITEBACK, the I/O read is latched at the access ack (`io_rdata_q` /
+  `io_is_io_q`) and the effective-read mux uses the combinational decode
+  during an active transaction (`mem_req` high) and the latched value after
+  it retires.
+- **Deferred refinement**: the core still ISSUES an external bus cycle for
+  I/O accesses (with write disabled), rather than fully suppressing it and
+  generating an on-chip ack. This matches the spec's "RAS output, CAS
+  inhibited" external cycle closely enough and lets the existing external
+  memory model provide the ack. A dedicated memory-fabric module with an
+  on-chip ack path is the eventual home for this. Also: I/O registers are
+  16-bit and the core accesses them with 16-bit fields (the ISA uses 16-bit
+  MOVE to I/O space); sub-16-bit field writes to I/O are not read-modify-
+  write (they write the low 16 bits) and 32-bit accesses would span two
+  registers — neither is exercised by the implemented instruction set.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

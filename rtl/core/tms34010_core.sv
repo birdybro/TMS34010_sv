@@ -111,7 +111,7 @@ module tms34010_core
     if (rst) begin
       instr_word_q <= '0;
     end else if (state_q == CORE_FETCH && mem_ack) begin
-      instr_word_q <= mem_rdata[INSTR_WORD_WIDTH-1:0];
+      instr_word_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
     end
   end
 
@@ -197,14 +197,14 @@ module tms34010_core
   // transactions within a single CORE_MEMORY stay. `mem_op_step` ticks
   // through 0, 1, ... as each ack arrives; the FSM only exits to
   // CORE_WRITEBACK on the final step. The `popped_st_q` / `popped_pc_q`
-  // / `mem_data_q` latches capture mem_rdata between transactions
-  // since `mem_rdata` itself is overwritten by the next read.
+  // / `mem_data_q` latches capture mem_rdata_eff between transactions
+  // since `mem_rdata_eff` itself is overwritten by the next read.
   // ---------------------------------------------------------------------------
   logic [1:0]            mem_op_step;
   logic [DATA_WIDTH-1:0] popped_st_q;
   logic [DATA_WIDTH-1:0] popped_pc_q;
   // MOVE *Rs,*Rd (indirect-to-indirect): holds the field read at *Rs in
-  // step 0 so it can be written to *Rd in step 1 (mem_rdata is overwritten
+  // step 0 so it can be written to *Rd in step 1 (mem_rdata_eff is overwritten
   // by the next transaction).
   logic [DATA_WIDTH-1:0] move_data_q;
 
@@ -226,21 +226,21 @@ module tms34010_core
       // MOVE *Rs,*Rd: step 0 reads the source field; latch it so step 1
       // can write it to the destination.
       if (decoded.iclass == INSTR_MOVE_FIELD_M2M && mem_op_step == 2'd0) begin
-        move_data_q <= mem_rdata;
+        move_data_q <= mem_rdata_eff;
       end
       // Latch popped values per-iclass per-step before moving on.
       if (decoded.iclass == INSTR_RETI) begin
-        if (mem_op_step == 2'd0) popped_st_q <= mem_rdata;
-        if (mem_op_step == 2'd1) popped_pc_q <= mem_rdata;
+        if (mem_op_step == 2'd0) popped_st_q <= mem_rdata_eff;
+        if (mem_op_step == 2'd1) popped_pc_q <= mem_rdata_eff;
       end
       // TRAP vector fetch:
       //   - N>0: step 2 (after the two pushes).
       //   - N=0: step 0 (the only step).
       if (decoded.iclass == INSTR_TRAP) begin
         if (trap_skip_push) begin
-          if (mem_op_step == 2'd0) popped_pc_q <= mem_rdata;
+          if (mem_op_step == 2'd0) popped_pc_q <= mem_rdata_eff;
         end else begin
-          if (mem_op_step == 2'd2) popped_pc_q <= mem_rdata;
+          if (mem_op_step == 2'd2) popped_pc_q <= mem_rdata_eff;
         end
       end
       // Step counter: advance unless this is the final step for the
@@ -368,10 +368,10 @@ module tms34010_core
       imm_hi_q <= '0;
     end else begin
       if (state_q == CORE_FETCH_IMM_LO && mem_ack) begin
-        imm_lo_q <= mem_rdata[INSTR_WORD_WIDTH-1:0];
+        imm_lo_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
       if (state_q == CORE_FETCH_IMM_HI && mem_ack) begin
-        imm_hi_q <= mem_rdata[INSTR_WORD_WIDTH-1:0];
+        imm_hi_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
     end
   end
@@ -499,7 +499,7 @@ module tms34010_core
   // shifter depending on `decoded.use_shifter`. For DSJEQ/DSJNE the
   // dsj_precondition further gates the write: if Z doesn't match the
   // pre-condition the spec mandates Rd is left unchanged.
-  // MMFM writes a popped register on every CORE_MEMORY ack (mem_rdata is
+  // MMFM writes a popped register on every CORE_MEMORY ack (mem_rdata_eff is
   // valid in the same cycle mem_ack asserts). This is a second user of
   // the single regfile write port, active in CORE_MEMORY rather than
   // CORE_WRITEBACK; the final-Rp write still happens at WRITEBACK below.
@@ -554,11 +554,11 @@ module tms34010_core
                    ? '1 : ((32'd1 << mv_fs) - 32'd1);
   always_comb begin
     if (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH)) begin
-      mv_load_data = mem_rdata;                         // FS = 32: identity
-    end else if (mv_fe && mem_rdata[mv_fs - 6'd1]) begin
-      mv_load_data = mem_rdata | ~mv_fmask;             // sign-extend
+      mv_load_data = mem_rdata_eff;                         // FS = 32: identity
+    end else if (mv_fe && mem_rdata_eff[mv_fs - 6'd1]) begin
+      mv_load_data = mem_rdata_eff | ~mv_fmask;             // sign-extend
     end else begin
-      mv_load_data = mem_rdata & mv_fmask;              // zero-extend
+      mv_load_data = mem_rdata_eff & mv_fmask;              // zero-extend
     end
   end
 
@@ -929,10 +929,10 @@ module tms34010_core
       INSTR_MODS:   rf_wr_data = div_rem_out;
       INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
-      // MMFM: per-iteration pop writes mem_rdata to the popped register;
+      // MMFM: per-iteration pop writes mem_rdata_eff to the popped register;
       // the WRITEBACK pass writes final Rp (= initial + 32*count).
-      INSTR_MMFM:   rf_wr_data = mmfm_pop_wr ? mem_rdata : mm_rp_q;
-      // MOVE *Rs,Rd: Rd <- the 32 bits read from mem[Rs]. mem_rdata still
+      INSTR_MMFM:   rf_wr_data = mmfm_pop_wr ? mem_rdata_eff : mm_rp_q;
+      // MOVE *Rs,Rd: Rd <- the 32 bits read from mem[Rs]. mem_rdata_eff still
       // holds the value at WRITEBACK (no new transaction is issued there).
       // Store inc/dec writes the auto-updated pointer back to Rd at
       // WRITEBACK (plain store has wb_reg_en=0, so this is unused there).
@@ -1091,7 +1091,7 @@ module tms34010_core
       INSTR_EXGF:  st_write_data = exgf_new_st;
       INSTR_DINT:  st_write_data = st_value & ~(32'd1 << ST_IE_BIT);
       INSTR_EINT:  st_write_data = st_value |  (32'd1 << ST_IE_BIT);
-      INSTR_POPST: st_write_data = mem_rdata;        // popped 32-bit ST value
+      INSTR_POPST: st_write_data = mem_rdata_eff;        // popped 32-bit ST value
       INSTR_RETI:  st_write_data = popped_st_q;      // ST captured in step 0
       INSTR_TRAP:  st_write_data = ST_RESET_VALUE;   // 0x10: IE=0, flags=0, FS0=16, FS1=0 (= reset ST).
       default:     st_write_data = '0;
@@ -1213,13 +1213,13 @@ module tms34010_core
           pc_load_value = branch_target_long;
         end
         INSTR_RETS: begin
-          // Return from subroutine: PC <- popped value (= mem_rdata,
+          // Return from subroutine: PC <- popped value (= mem_rdata_eff,
           // which the memory model still holds after the ack since it
           // doesn't clear on IDLE). The popped value is already
           // word-aligned (since it was pushed by a CALL/CALLA/CALLR
           // or TRAP), so no bottom-nibble mask is needed.
           pc_load_en    = 1'b1;
-          pc_load_value = mem_rdata;
+          pc_load_value = mem_rdata_eff;
         end
         INSTR_RETI: begin
           // Return from interrupt: PC <- popped_pc_q (latched in
@@ -1258,6 +1258,61 @@ module tms34010_core
     .wr_data  (rf_wr_data),
     .sp_o     (rf_sp)
   );
+
+  // ---- On-chip I/O register file (Task 0082) ------------------------------
+  // Accesses whose bit-address is in I/O space (0xC0000000-0xC00001FF) are
+  // serviced on-chip. The register file's async read is muxed into
+  // `mem_rdata_eff`, so MOVE/MOVB loads from I/O space observe the register
+  // value; writes commit into the register file from the same req/we/addr
+  // the external bus sees. The external memory ignores the I/O address range
+  // (it is out of range for the simulation memory model), so the external
+  // cycle is harmless. Faithful external-cycle gating (RAS-only) and an
+  // on-chip ack belong with a later memory-fabric module. I/O registers are
+  // 16-bit; the core accesses them with 16-bit fields (set FS=16).
+  logic                  io_is_io;
+  logic [15:0]           io_rdata16;
+  logic [DATA_WIDTH-1:0] mem_rdata_eff;
+  logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
+  tms34010_io_regs u_io_regs (
+    .clk   (clk),
+    .rst   (rst),
+    .req   (mem_req),
+    .we    (mem_we_int),       // the access's write intent
+    .addr  (mem_addr),
+    .wdata (mem_wdata[15:0]),
+    .rdata (io_rdata16),
+    .is_io (io_is_io)
+  );
+  // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
+  // u_io_regs and must NOT also write external memory (otherwise it would
+  // corrupt RAM — a small external model that only decodes low address bits
+  // would alias 0xC00001xx onto a low word). The external cycle is still
+  // requested (so external memory provides the ack, RAS-style), but with
+  // write disabled for I/O addresses; the read data is muxed below.
+  assign mem_we = mem_we_int && !io_is_io;
+
+  // Effective read data. The external memory model holds mem_rdata stable
+  // from the ack cycle through WRITEBACK, but the I/O register's async read
+  // follows mem_addr and would change once the address moves on. So latch
+  // the I/O read at the access ack and hold it: during an active transaction
+  // (mem_req high, i.e. the ack cycle) use the combinational decode; once the
+  // transaction has retired (WRITEBACK, mem_req low) use the latched I/O
+  // value if the just-completed access was I/O, else the persisted external
+  // mem_rdata.
+  logic [15:0] io_rdata_q;
+  logic        io_is_io_q;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      io_rdata_q <= '0;
+      io_is_io_q <= 1'b0;
+    end else if (mem_req && mem_ack) begin
+      io_rdata_q <= io_rdata16;
+      io_is_io_q <= io_is_io;
+    end
+  end
+  assign mem_rdata_eff =
+      mem_req ? (io_is_io   ? {{(DATA_WIDTH-16){1'b0}}, io_rdata16} : mem_rdata)
+              : (io_is_io_q ? {{(DATA_WIDTH-16){1'b0}}, io_rdata_q} : mem_rdata);
 
   tms34010_alu u_alu (
     .op    (alu_op),
@@ -1397,7 +1452,7 @@ module tms34010_core
     // Defaults.
     state_d       = state_q;
     mem_req       = 1'b0;
-    mem_we        = 1'b0;
+    mem_we_int        = 1'b0;
     mem_addr      = '0;
     mem_size      = '0;
     mem_wdata     = '0;
@@ -1412,7 +1467,7 @@ module tms34010_core
       CORE_FETCH: begin
         // Architectural instruction word is 16 bits. Fetch from PC.
         mem_req  = 1'b1;
-        mem_we   = 1'b0;
+        mem_we_int   = 1'b0;
         mem_addr = pc_value;
         mem_size = INSTR_WORD_BITS;
         if (mem_ack) begin
@@ -1437,7 +1492,7 @@ module tms34010_core
         // Fetch the 16-bit low-immediate word from PC. Same protocol as
         // CORE_FETCH; PC advances by INSTR_WORD_BITS on ack.
         mem_req  = 1'b1;
-        mem_we   = 1'b0;
+        mem_we_int   = 1'b0;
         mem_addr = pc_value;
         mem_size = INSTR_WORD_BITS;
         if (mem_ack) begin
@@ -1448,7 +1503,7 @@ module tms34010_core
 
       CORE_FETCH_IMM_HI: begin
         mem_req  = 1'b1;
-        mem_we   = 1'b0;
+        mem_we_int   = 1'b0;
         mem_addr = pc_value;
         mem_size = INSTR_WORD_BITS;
         if (mem_ack) begin
@@ -1480,13 +1535,13 @@ module tms34010_core
 
       CORE_MEMORY: begin
         // Memory transaction state for instructions that set
-        // decoded.needs_memory_op. The IF signals (mem_req, mem_we,
+        // decoded.needs_memory_op. The IF signals (mem_req, mem_we_int,
         // mem_addr, mem_size, mem_wdata) are driven per iclass.
         unique case (decoded.iclass)
           INSTR_PUSHST: begin
             // Write ST to mem[new SP] as a 32-bit transfer.
             mem_req   = 1'b1;
-            mem_we    = 1'b1;
+            mem_we_int    = 1'b1;
             mem_addr  = alu_result;        // = SP - 32
             mem_size  = MEM_SIZE_32;
             mem_wdata = st_value;          // ST
@@ -1497,7 +1552,7 @@ module tms34010_core
             // we want the pre-increment SP value. POPST has
             // rd_idx=15 (SP) on rs2 — so rs2 gives OLD SP.
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_addr  = rf_rs2_data;       // = current SP
             mem_size  = MEM_SIZE_32;
           end
@@ -1514,7 +1569,7 @@ module tms34010_core
             // we enter CORE_MEMORY (via the FETCH / FETCH_IMM_LO /
             // FETCH_IMM_HI advances).
             mem_req   = 1'b1;
-            mem_we    = 1'b1;
+            mem_we_int    = 1'b1;
             mem_addr  = alu_result;        // = SP - 32
             mem_size  = MEM_SIZE_32;
             mem_wdata = pc_value;          // PC' (return address)
@@ -1523,7 +1578,7 @@ module tms34010_core
             // Pop PC from mem[OLD SP]. mem_addr = current SP value
             // (rf_rs2_data) — NOT alu_result, which is SP + 32 + 16*N.
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_addr  = rf_rs2_data;       // = current SP
             mem_size  = MEM_SIZE_32;
           end
@@ -1533,7 +1588,7 @@ module tms34010_core
             // popped_st_q / popped_pc_q values flow to the WRITEBACK
             // ST-write and PC-load paths below.
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_size  = MEM_SIZE_32;
             mem_addr  = (mem_op_step == 2'd0)
                       ? rf_rs2_data                  // = SP
@@ -1554,22 +1609,22 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_size  = MEM_SIZE_32;
             if (trap_skip_push) begin
-              mem_we    = 1'b0;
+              mem_we_int    = 1'b0;
               mem_addr  = TRAP_VECTOR_BASE;        // N=0 ⇒ vector @ 0xFFFFFFE0
             end else begin
               unique case (mem_op_step)
                 2'd0: begin
-                  mem_we    = 1'b1;
+                  mem_we_int    = 1'b1;
                   mem_addr  = rf_rs2_data - WORD_BIT_SIZE;
                   mem_wdata = pc_value;             // PC'
                 end
                 2'd1: begin
-                  mem_we    = 1'b1;
+                  mem_we_int    = 1'b1;
                   mem_addr  = rf_rs2_data - WORD_BIT_SIZE_2;
                   mem_wdata = st_value;             // ST as it stood
                 end
                 default: begin                       // step 2
-                  mem_we    = 1'b0;
+                  mem_we_int    = 1'b0;
                   // Trap-vector address = TRAP_VECTOR_BASE - N*32.
                   // N is decoded.k5 (5 bits); N*32 = N << 5.
                   mem_addr  = TRAP_VECTOR_BASE
@@ -1584,7 +1639,7 @@ module tms34010_core
             // write; mm_mask_q and mm_rp_q advance on the ack. We stay
             // in CORE_MEMORY until the mask is empty.
             mem_req   = 1'b1;
-            mem_we    = 1'b1;
+            mem_we_int    = 1'b1;
             mem_addr  = mm_rp_q;
             mem_size  = MEM_SIZE_32;
             mem_wdata = rf_rs1_data;       // = value of register R(mm_iter_idx)
@@ -1596,7 +1651,7 @@ module tms34010_core
             // the read. mm_mask_q clears the bit and mm_rp_q advances
             // (+32) on the ack. Stay in CORE_MEMORY until mask empty.
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_addr  = mm_rp_q;
             mem_size  = MEM_SIZE_32;
           end
@@ -1606,7 +1661,7 @@ module tms34010_core
             // (predec); the pointer auto-update (Rd±FS) is written back at
             // WRITEBACK for the inc/dec forms. FS from the F-selected ST pair.
             mem_req   = 1'b1;
-            mem_we    = 1'b1;
+            mem_we_int    = 1'b1;
             mem_addr  = mv_addr;           // = Rd or Rd-FS (predec)
             mem_size  = mv_fs;             // field size (1..32)
             mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
@@ -1618,7 +1673,7 @@ module tms34010_core
             // for inc/dec the updated pointer Rs±FS is written via the
             // mv_load_ptr_wr path on this ack.
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_addr  = mv_addr;           // = Rs or Rs-FS (predec)
             mem_size  = mv_fs;             // field size (1..32)
           end
@@ -1627,7 +1682,7 @@ module tms34010_core
             // mem[Rd + off]. imm32 = sign-extended 16-bit offset; Rd =
             // rf_rs2_data. Field-size aware (Task 0078); no pointer step.
             mem_req   = 1'b1;
-            mem_we    = 1'b1;
+            mem_we_int    = 1'b1;
             mem_addr  = rf_rs2_data + imm32;
             mem_size  = mv_fs;             // field size (1..32)
             mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
@@ -1637,7 +1692,7 @@ module tms34010_core
             // field-extended result -> Rd at WRITEBACK. Rs = rf_rs1_data
             // (pointer); imm32 = sext(off16). Field-size aware (Task 0078).
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_addr  = rf_rs1_data + imm32;
             mem_size  = mv_fs;             // field size (1..32)
           end
@@ -1646,7 +1701,7 @@ module tms34010_core
             // absolute bit address imm32 = {imm_hi_q, imm_lo_q}. Field-size
             // aware (Task 0078).
             mem_req   = 1'b1;
-            mem_we    = 1'b1;
+            mem_we_int    = 1'b1;
             mem_addr  = imm32;
             mem_size  = mv_fs;             // field size (1..32)
             mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
@@ -1656,7 +1711,7 @@ module tms34010_core
             // imm32; the field-extended result goes to Rd at WRITEBACK
             // (rf_wr_data mux), flags from the extended value. Task 0078.
             mem_req   = 1'b1;
-            mem_we    = 1'b0;
+            mem_we_int    = 1'b0;
             mem_addr  = imm32;
             mem_size  = mv_fs;             // field size (1..32)
           end
@@ -1671,10 +1726,10 @@ module tms34010_core
             mem_req   = 1'b1;
             mem_size  = mv_fs;             // field size (1..32)
             if (mem_op_step == 2'd0) begin
-              mem_we   = 1'b0;
+              mem_we_int   = 1'b0;
               mem_addr = m2m_src_addr;     // = Rs (or Rs-FS predec)
             end else begin
-              mem_we   = 1'b1;
+              mem_we_int   = 1'b1;
               mem_addr = m2m_dst_addr;     // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
               mem_wdata = move_data_q;     // field (low FS bits) read in step 0
             end
