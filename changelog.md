@@ -7,6 +7,16 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0092 — PIXT store arithmetic pixel processing (PPOP))
+- The 6 arithmetic CONTROL.PPOP ops (0x10-0x15) now operate on the unsigned
+  PSIZE-bit pixel values: 0x10 D+S (wrap), 0x11 ADDS (add, saturate to all-1s
+  on overflow), 0x12 D-S (wrap), 0x13 SUBS (subtract, saturate to 0 on
+  underflow), 0x14 MAX(D,S), 0x15 MIN(D,S). Completes all 22 PPOP operations.
+  SPVU001A CONTROL.PPOP. (The spec restricts arithmetic ops to 4/8/16-bit
+  pixels; they are computed for all sizes — 1/2-bit results are spec-Undefined.)
+- New `sim/tb/tb_pixt_ppop_arith.sv` checks all six ops including ADDS/SUBS
+  saturation.
+
 ### Added (Task 0091 — PIXT store Boolean pixel processing (PPOP))
 - PIXT store now applies the CONTROL.PPOP (bits 14-10) pixel-processing
   operation: the 16 Boolean codes (replace, AND, OR, XOR, NAND/NOR/XNOR, NOT-S,

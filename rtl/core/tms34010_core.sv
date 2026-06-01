@@ -688,11 +688,20 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pixt_processed; // PPOP(src, dest)
   logic                  pixt_transp;    // transparency inhibits this write
   logic [DATA_WIDTH-1:0] pixt_merged;    // value written at step 1
+  // Arithmetic-PPOP operands: the PSIZE-bit pixels as unsigned values, and
+  // the unsigned add. Arith ops are only defined for pixels of 4/8/16 bits
+  // (SPVU001A); they are computed for all sizes (1/2-bit results are
+  // spec-Undefined, so any value is acceptable).
+  logic [DATA_WIDTH-1:0] pix_src_p, pix_dst_p, pix_addsum;
+  assign pix_src_p   = rf_rs1_data & mv_fmask;
+  assign pix_dst_p   = pix_dest_q  & mv_fmask;
+  assign pix_addsum  = pix_dst_p + pix_src_p;
   assign pixt_rmw         = decoded.force_pixel && is_mv_store;
   assign pixt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & mv_fmask;
   always_comb begin
-    // Boolean PPOP: src = rf_rs1_data, dest = pix_dest_q (bitwise; the low
-    // PSIZE bits are what get written).
+    // PPOP: src = rf_rs1_data, dest = pix_dest_q. The 16 Boolean codes are
+    // bitwise (low PSIZE bits used); the 6 arithmetic codes operate on the
+    // unsigned PSIZE-bit pixel values (pix_src_p / pix_dst_p).
     unique case (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO])
       5'h00:   pixt_processed = rf_rs1_data;                       // S (replace)
       5'h01:   pixt_processed = rf_rs1_data &  pix_dest_q;         // S AND D
@@ -710,7 +719,18 @@ module tms34010_core
       5'h0D:   pixt_processed = ~rf_rs1_data | pix_dest_q;         // ~S OR D
       5'h0E:   pixt_processed = ~(rf_rs1_data & pix_dest_q);       // S NAND D
       5'h0F:   pixt_processed = ~rf_rs1_data;                      // ~S
-      default: pixt_processed = rf_rs1_data;  // arith ops (0x10-0x15): TODO -> replace
+      // Arithmetic ops (4/8/16-bit pixels):
+      5'h10:   pixt_processed = pix_addsum;                        // D + S (wrap)
+      5'h11:   pixt_processed = (pix_addsum > mv_fmask)            // ADDS: saturate to all-1s
+                              ? mv_fmask : pix_addsum;
+      5'h12:   pixt_processed = pix_dst_p - pix_src_p;             // D - S (wrap)
+      5'h13:   pixt_processed = (pix_dst_p >= pix_src_p)           // SUBS: saturate to 0
+                              ? (pix_dst_p - pix_src_p) : '0;
+      5'h14:   pixt_processed = (pix_dst_p >= pix_src_p)           // MAX(D,S)
+                              ? pix_dst_p : pix_src_p;
+      5'h15:   pixt_processed = (pix_dst_p <= pix_src_p)           // MIN(D,S)
+                              ? pix_dst_p : pix_src_p;
+      default: pixt_processed = rf_rs1_data;  // 0x16-0x1F reserved -> replace
     endcase
   end
   assign pixt_transp  = io_control[CTRL_T_BIT] && ((pixt_processed & mv_fmask) == '0);

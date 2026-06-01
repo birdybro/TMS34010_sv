@@ -3067,6 +3067,23 @@ Commit:
 
 ---
 
+### Task 0092: PIXT store arithmetic pixel processing (PPOP 0x10-0x15)
+Status: complete
+Dependencies: Task 0091 (PPOP boolean engine).
+Spec source: SPVU001A CONTROL.PPOP arithmetic table (0x10-0x15).
+Acceptance Criteria:
+- Add the 6 arith ops to the PPOP case on the unsigned PSIZE-bit pixels
+  (pix_src_p/pix_dst_p = Rs/dest & mv_fmask): D+S, ADDS (sat all-1s via
+  pix_addsum > mv_fmask), D-S, SUBS (sat 0), MAX, MIN. Completes 22 PPOP ops.
+- sim/tb/tb_pixt_ppop_arith.sv: all six incl. ADDS/SUBS saturation.
+Tests: tb_pixt_ppop_arith PASS; full integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (PIXT store row), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
