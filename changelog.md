@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0094 — PIXBLT L,L; source-array graphics engine)
+- PIXBLT L,L (0x0F00) implemented: transfer a DY×DX source pixel array
+  (SADDR=B0/SPTCH=B1) to a destination array (DADDR=B2/DPTCH=B3), processing
+  each pixel through the shared pixel engine (PPOP + transparency + plane mask)
+  with the source pixel and destination pixel as operands. SPVU001A PIXBLT L,L.
+  All flags Unaffected.
+- New core states CORE_PBLT_SETUP / CORE_PBLT / CORE_PBLT_WB / CORE_PBLT_WB2
+  (the core_state_t enum is widened to 5 bits). The 5 implied B-regs are read
+  across EXECUTE (SADDR/DADDR/DYDX) + CORE_PBLT_SETUP (SPTCH/DPTCH); the
+  CORE_PBLT loop is a per-pixel 3-step sequence (read source, read destination,
+  write `ppop_apply(src,dest)` merged), with two address trackers that advance
+  ±PSIZE per pixel and row-step by their pitch. SADDR and DADDR are updated to
+  the pixel following their last (written back to B0 then B2).
+- New pkg constants INSTR_PIXBLT_LL, B_SADDR_IDX (B0), B_SPTCH_IDX (B1),
+  B_COLOR0_IDX (B8). Deferred: corner adjust (PBH/PBV), window checking, the
+  XY-addressed variants, and the B (1-bit source expand) form.
+- New `sim/tb/tb_pixblt_ll.sv`: transfers a 2×4 source array to a dest array
+  and checks the copied pixels, the unchanged source, and the updated
+  SADDR/DADDR.
+
 ### Added (Task 0093 — FILL pixel processing; shared PPOP function)
 - The 22-way PPOP computation is factored into a reusable `ppop_apply(src,
   dest, ppop, fmask)` function, shared by the PIXT store engine and FILL.

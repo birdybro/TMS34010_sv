@@ -61,20 +61,24 @@ package tms34010_pkg;
   //   CORE_FETCH_IMM_LO/HI — fetch the 16- or 32-bit immediate that follows
   //   long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, CMPI, etc.).
   // ---------------------------------------------------------------------------
-  typedef enum logic [3:0] {
-    CORE_RESET        = 4'd0,
-    CORE_FETCH        = 4'd1,
-    CORE_DECODE       = 4'd2,
-    CORE_FETCH_IMM_LO = 4'd3,
-    CORE_FETCH_IMM_HI = 4'd4,
-    CORE_EXECUTE      = 4'd5,
-    CORE_MEMORY       = 4'd6,
-    CORE_WRITEBACK    = 4'd7,
-    CORE_DIVIDE       = 4'd8,  // multi-cycle wait for the divider (DIVU/MODU/...)
-    CORE_FILL_SETUP   = 4'd9,  // FILL: latch COLOR1 + init counters (operands B2/B3/B7
+  typedef enum logic [4:0] {
+    CORE_RESET        = 5'd0,
+    CORE_FETCH        = 5'd1,
+    CORE_DECODE       = 5'd2,
+    CORE_FETCH_IMM_LO = 5'd3,
+    CORE_FETCH_IMM_HI = 5'd4,
+    CORE_EXECUTE      = 5'd5,
+    CORE_MEMORY       = 5'd6,
+    CORE_WRITEBACK    = 5'd7,
+    CORE_DIVIDE       = 5'd8,  // multi-cycle wait for the divider (DIVU/MODU/...)
+    CORE_FILL_SETUP   = 5'd9,  // FILL: latch COLOR1 + init counters (operands B2/B3/B7
                                //       latched at EXECUTE); the pixel loop follows
-    CORE_FILL         = 4'd10, // FILL: one pixel write per ack until the array is done
-    CORE_FILL_WB      = 4'd11  // FILL: write the final DADDR back to B2
+    CORE_FILL         = 5'd10, // FILL: per-pixel read-modify-write until the array is done
+    CORE_FILL_WB      = 5'd11, // FILL: write the final DADDR back to B2
+    CORE_PBLT_SETUP   = 5'd12, // PIXBLT: latch SPTCH/DPTCH (SADDR/DADDR/DYDX at EXECUTE)
+    CORE_PBLT         = 5'd13, // PIXBLT: per-pixel read-src / read-dst / write loop
+    CORE_PBLT_WB      = 5'd14, // PIXBLT: write the final SADDR back to B0
+    CORE_PBLT_WB2     = 5'd15  // PIXBLT: write the final DADDR back to B2
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -104,10 +108,13 @@ package tms34010_pkg;
   // Operands"). B2 = DADDR (destination address), B3 = DPTCH (destination
   // pitch), B4 = OFFSET (linear address of XY origin 0,0), B7 = DYDX (array
   // dimensions rows:cols), B9 = COLOR1 (fill / source color).
+  parameter reg_idx_t B_SADDR_IDX  = 4'd0;
+  parameter reg_idx_t B_SPTCH_IDX  = 4'd1;
   parameter reg_idx_t B_DADDR_IDX  = 4'd2;
   parameter reg_idx_t B_DPTCH_IDX  = 4'd3;
   parameter reg_idx_t B_OFFSET_IDX = 4'd4;
   parameter reg_idx_t B_DYDX_IDX   = 4'd7;
+  parameter reg_idx_t B_COLOR0_IDX = 4'd8;
   parameter reg_idx_t B_COLOR1_IDX = 4'd9;
 
   // ---------------------------------------------------------------------------
@@ -499,9 +506,12 @@ package tms34010_pkg;
     INSTR_FILL_L           = 7'd94, // FILL L — fill a DY×DX pixel array with COLOR1 (B9).
                               //                     Implied B-regs DADDR(B2)/DPTCH(B3)/DYDX(B7);
                               //                     multi-cycle. DADDR updated. Encoding 0x0FC0.
-    INSTR_FILL_XY          = 7'd95  // FILL XY — like FILL L but DADDR (B2) holds an XY value,
+    INSTR_FILL_XY          = 7'd95, // FILL XY — like FILL L but DADDR (B2) holds an XY value,
                               //                     converted to linear (CONVDP+OFFSET+PSIZE)
                               //                     before the fill. Encoding 0x0FE0.
+    INSTR_PIXBLT_LL        = 7'd96  // PIXBLT L,L — transfer a DY×DX source array (SADDR=B0/
+                              //                     SPTCH=B1) to a dest array (DADDR=B2/DPTCH=B3),
+                              //                     processing each pixel. Encoding 0x0F00.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

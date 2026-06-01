@@ -2073,6 +2073,18 @@ module tms34010_decode
       decoded.needs_memory_op = 1'b0;
     end
 
+    // PIXBLT L,L — transfer a DY×DX source array (SADDR=B0/SPTCH=B1) to a dest
+    // array (DADDR=B2/DPTCH=B3), processing each pixel. Fixed opcode 0x0F00.
+    // The core's PIXBLT engine reads the implied B-regs and loops; SADDR and
+    // DADDR are updated by the engine. All flags Unaffected.
+    if (instr == 16'h0F00) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PIXBLT_LL;
+      decoded.wb_reg_en       = 1'b0;   // SADDR/DADDR writes handled by the engine
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;   // EXECUTE routes to the PIXBLT states
+    end
+
     // -----------------------------------------------------------------------
     // JUMP Rs (register-indirect jump)
     //

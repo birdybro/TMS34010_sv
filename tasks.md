@@ -3107,6 +3107,28 @@ Commit:
 
 ---
 
+### Task 0094: PIXBLT L,L — source-array graphics engine
+Status: complete
+Dependencies: Task 0087/0093 (FILL engine + shared ppop_apply), pixel engine.
+Spec source: SPVU001A PIXBLT L,L (0x0F00).
+Acceptance Criteria:
+- INSTR_PIXBLT_LL; state enum widened to 5 bits + CORE_PBLT_SETUP/CORE_PBLT/
+  CORE_PBLT_WB/CORE_PBLT_WB2. pkg B_SADDR/B_SPTCH/B_COLOR0 consts.
+- Read 5 implied B-regs across EXECUTE (SADDR/DADDR/DYDX) + SETUP (SPTCH/DPTCH)
+  via the 3 ports (rf_rs is_pblt overrides). Per-pixel 3-step loop: read src,
+  read dst, write ppop_apply(src,dst) merged (transp + PMASK). Dual address
+  trackers advance ±PSIZE + row-step by pitch. SADDR→B0, DADDR→B2 updated
+  (CORE_PBLT_WB / WB2). Deferred: corner adjust, window, XY/B variants.
+- sim/tb/tb_pixblt_ll.sv: 2×4 transfer; check pixels, source unchanged,
+  SADDR/DADDR updated.
+Tests: tb_pixblt_ll PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (PIXBLT rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

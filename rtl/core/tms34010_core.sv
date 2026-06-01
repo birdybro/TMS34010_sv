@@ -423,6 +423,102 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
+  // PIXBLT L,L engine (Task 0094)
+  //
+  // Transfer a DY×DX pixel array from the SOURCE array (SADDR=B0, rows SPTCH=B1
+  // apart) to the DESTINATION array (DADDR=B2, rows DPTCH=B3 apart), processing
+  // each pixel: written = PPOP(source pixel, destination pixel), plane-masked
+  // and transparency-checked. Operands are read at EXECUTE (SADDR/DADDR/DYDX)
+  // and CORE_PBLT_SETUP (SPTCH/DPTCH). Each pixel is a 3-step sequence
+  // (substep 0 read source, 1 read destination, 2 write); both pointers advance
+  // by PSIZE per pixel and row-step by their pitch. SADDR/DADDR are updated to
+  // the pixel following their last (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2).
+  // No corner adjust (top-left → bottom-right), no window checking yet.
+  // ---------------------------------------------------------------------------
+  logic [DATA_WIDTH-1:0] pblt_sptch_q, pblt_dptch_q;
+  logic [15:0]           pblt_dx_q, pblt_dy_q;
+  logic [DATA_WIDTH-1:0] pblt_src_addr_q, pblt_dst_addr_q;
+  logic [DATA_WIDTH-1:0] pblt_src_row_q, pblt_dst_row_q;
+  logic [15:0]           pblt_x_q, pblt_y_q;
+  logic [1:0]            pblt_substep_q;     // 0 read src, 1 read dst, 2 write
+  logic [DATA_WIDTH-1:0] pblt_src_pix_q, pblt_dst_pix_q;
+  logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask, pblt_pmask_field;
+  logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
+  logic                  pblt_row_end, pblt_done, pblt_transp;
+  assign pblt_psize_ext   = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
+  assign pblt_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
+  assign pblt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & pblt_pixel_mask;
+  assign pblt_row_end     = (pblt_x_q == pblt_dx_q - 16'd1);
+  assign pblt_done        = pblt_row_end && (pblt_y_q == pblt_dy_q - 16'd1);
+  assign pblt_processed   = ppop_apply(pblt_src_pix_q, pblt_dst_pix_q,
+                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], pblt_pixel_mask);
+  assign pblt_transp      = io_control[CTRL_T_BIT] && ((pblt_processed & pblt_pixel_mask) == '0);
+  assign pblt_merged      = pblt_transp
+                          ? pblt_dst_pix_q
+                          : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pblt_sptch_q    <= '0;
+      pblt_dptch_q    <= '0;
+      pblt_dx_q       <= '0;
+      pblt_dy_q       <= '0;
+      pblt_src_addr_q <= '0;
+      pblt_dst_addr_q <= '0;
+      pblt_src_row_q  <= '0;
+      pblt_dst_row_q  <= '0;
+      pblt_x_q        <= '0;
+      pblt_y_q        <= '0;
+      pblt_substep_q  <= 2'd0;
+      pblt_src_pix_q  <= '0;
+      pblt_dst_pix_q  <= '0;
+    end else begin
+      // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3).
+      if (state_q == CORE_EXECUTE && is_pblt) begin
+        pblt_src_addr_q <= rf_rs1_data;          // SADDR
+        pblt_src_row_q  <= rf_rs1_data;
+        pblt_dst_addr_q <= rf_rs2_data;          // DADDR
+        pblt_dst_row_q  <= rf_rs2_data;
+        pblt_dx_q       <= rf_rs3_data[15:0];
+        pblt_dy_q       <= rf_rs3_data[DATA_WIDTH-1:16];
+        pblt_x_q        <= 16'd0;
+        pblt_y_q        <= 16'd0;
+        pblt_substep_q  <= 2'd0;
+      end
+      // CORE_PBLT_SETUP: latch SPTCH(port1) / DPTCH(port2).
+      if (state_q == CORE_PBLT_SETUP) begin
+        pblt_sptch_q <= rf_rs1_data;
+        pblt_dptch_q <= rf_rs2_data;
+      end
+      // CORE_PBLT: per pixel, read src (0) / read dst (1) / write (2).
+      if (state_q == CORE_PBLT && mem_ack) begin
+        if (pblt_substep_q == 2'd0) begin
+          pblt_src_pix_q <= mem_rdata_eff;
+          pblt_substep_q <= 2'd1;
+        end else if (pblt_substep_q == 2'd1) begin
+          pblt_dst_pix_q <= mem_rdata_eff;
+          pblt_substep_q <= 2'd2;
+        end else begin
+          // Write ack: advance both pointers to the next pixel.
+          pblt_substep_q  <= 2'd0;
+          pblt_src_addr_q <= pblt_src_addr_q + pblt_psize_ext;
+          pblt_dst_addr_q <= pblt_dst_addr_q + pblt_psize_ext;
+          if (pblt_row_end && !pblt_done) begin
+            pblt_y_q        <= pblt_y_q + 16'd1;
+            pblt_src_row_q  <= pblt_src_row_q + pblt_sptch_q;
+            pblt_dst_row_q  <= pblt_dst_row_q + pblt_dptch_q;
+            pblt_src_addr_q <= pblt_src_row_q + pblt_sptch_q;
+            pblt_dst_addr_q <= pblt_dst_row_q + pblt_dptch_q;
+            pblt_x_q        <= 16'd0;
+          end else if (!pblt_done) begin
+            pblt_x_q <= pblt_x_q + 16'd1;
+          end
+        end
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // MMTM / MMFM iterator (shared)
   //
   // MMTM (push, INSTR_MMTM) and MMFM (pop, INSTR_MMFM) walk the same
@@ -612,11 +708,15 @@ module tms34010_core
   // FILL reads its implied B-file operands across two cycles via the three
   // read ports: at EXECUTE — DADDR(B2) on port1, DPTCH(B3) on port2,
   // DYDX(B7) on port3; at CORE_FILL_SETUP — COLOR1(B9) on port1.
-  logic is_fill, fill_is_xy;
+  logic is_fill, fill_is_xy, is_pblt;
   assign is_fill    = (decoded.iclass == INSTR_FILL_L) || (decoded.iclass == INSTR_FILL_XY);
   assign fill_is_xy = (decoded.iclass == INSTR_FILL_XY);
+  // PIXBLT reads its 5 implied B-file operands across two cycles: at EXECUTE —
+  // SADDR(B0) on port1, DADDR(B2) on port2, DYDX(B7) on port3; at
+  // CORE_PBLT_SETUP — SPTCH(B1) on port1, DPTCH(B3) on port2.
+  assign is_pblt    = (decoded.iclass == INSTR_PIXBLT_LL);
 
-  assign rf_rs1_file = is_fill ? REG_FILE_B
+  assign rf_rs1_file = (is_fill || is_pblt) ? REG_FILE_B
                      : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
                      : decoded.rd_file;
   // Read-port 1 index is normally decoded.rs_idx. MMTM repurposes it
@@ -624,23 +724,28 @@ module tms34010_core
   // points at the current register being pushed, and rf_rs1_data
   // becomes the 32-bit value driven onto mem_wdata.
   assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_SPTCH_IDX : B_SADDR_IDX)
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
   // for CPW) to read the window-start register WSTART = B5; read port 3
   // reads the window-end register WEND = B6. Both are fixed B-file
   // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
-  assign rf_rs2_file = (is_fill || (decoded.iclass == INSTR_CPW)) ? REG_FILE_B : decoded.rd_file;
+  // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
+  assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW))
+                     ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = is_fill ? B_DPTCH_IDX
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_DPTCH_IDX : B_DADDR_IDX)
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
-  // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL reads
-  // DYDX (B7). Otherwise unused.
+  // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
+  // read DYDX (B7) at EXECUTE. Otherwise unused.
   assign rf_rs3_file = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
                      : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
+                     : is_pblt ? B_DYDX_IDX
                      : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 
@@ -836,9 +941,13 @@ module tms34010_core
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
                      && (mem_op_step == 2'd0) && mem_ack;
 
-  // FILL writes the final DADDR back to B2 in CORE_FILL_WB.
-  logic fill_wb;
-  assign fill_wb = (state_q == CORE_FILL_WB);
+  // FILL writes the final DADDR back to B2 in CORE_FILL_WB; PIXBLT writes the
+  // final SADDR (B0) in CORE_PBLT_WB and the final DADDR (B2) in CORE_PBLT_WB2.
+  logic fill_wb, pblt_wb_saddr, pblt_wb_daddr, graphics_wb;
+  assign fill_wb       = (state_q == CORE_FILL_WB);
+  assign pblt_wb_saddr = (state_q == CORE_PBLT_WB);
+  assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2);
+  assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr;
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
                        && dsj_precondition
@@ -847,10 +956,11 @@ module tms34010_core
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
                    || m2m_src_wr
-                   || fill_wb;
-  assign rf_wr_file = fill_wb ? REG_FILE_B : decoded.rd_file;
-  assign rf_wr_idx  = fill_wb                       ? B_DADDR_IDX
-                    : mmfm_pop_wr                   ? mm_iter_idx
+                   || graphics_wb;
+  assign rf_wr_file = graphics_wb ? REG_FILE_B : decoded.rd_file;
+  assign rf_wr_idx  = (fill_wb || pblt_wb_daddr) ? B_DADDR_IDX
+                    : pblt_wb_saddr              ? B_SADDR_IDX
+                    : mmfm_pop_wr                ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
                     : ((is_mpy || is_div) && pair_wb_step) ? (decoded.rd_idx + 4'd1)  // pair low/rem -> Rd+1
                                                      : decoded.rd_idx;
@@ -1232,6 +1342,8 @@ module tms34010_core
       INSTR_CVXYL:  rf_wr_data = cvxyl_result;
       INSTR_FILL_L,
       INSTR_FILL_XY: rf_wr_data = fill_addr_q;  // final (linear) DADDR -> B2 (CORE_FILL_WB)
+      INSTR_PIXBLT_LL: rf_wr_data = pblt_wb_saddr ? pblt_src_addr_q   // SADDR -> B0
+                                                  : pblt_dst_addr_q;  // DADDR -> B2
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = REV_VALUE;
@@ -1823,6 +1935,8 @@ module tms34010_core
           state_d = CORE_DIVIDE;
         else if (is_fill)
           state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
+        else if (is_pblt)
+          state_d = CORE_PBLT_SETUP;   // PIXBLT: latched SADDR/DADDR/DYDX here
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
@@ -1859,6 +1973,47 @@ module tms34010_core
       end
 
       CORE_FILL_WB: begin
+        // Write the final DADDR back to B2, then fetch the next instruction.
+        state_d = CORE_FETCH;
+      end
+
+      CORE_PBLT_SETUP: begin
+        // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE).
+        state_d = CORE_PBLT;
+      end
+
+      CORE_PBLT: begin
+        // Per pixel: read source (sub-step 0), read destination (1), write the
+        // processed pixel (2). Stay until the array's last write completes.
+        mem_req   = 1'b1;
+        mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
+        unique case (pblt_substep_q)
+          2'd0: begin
+            mem_we_int = 1'b0;             // read source pixel
+            mem_addr   = pblt_src_addr_q;
+          end
+          2'd1: begin
+            mem_we_int = 1'b0;             // read destination pixel
+            mem_addr   = pblt_dst_addr_q;
+          end
+          default: begin
+            mem_we_int = 1'b1;             // write the processed pixel
+            mem_addr   = pblt_dst_addr_q;
+            mem_wdata  = pblt_merged;
+          end
+        endcase
+        if (mem_ack && pblt_substep_q == 2'd2 && pblt_done)
+          state_d = CORE_PBLT_WB;
+        else
+          state_d = CORE_PBLT;
+      end
+
+      CORE_PBLT_WB: begin
+        // Write the final SADDR back to B0.
+        state_d = CORE_PBLT_WB2;
+      end
+
+      CORE_PBLT_WB2: begin
         // Write the final DADDR back to B2, then fetch the next instruction.
         state_d = CORE_FETCH;
       end
