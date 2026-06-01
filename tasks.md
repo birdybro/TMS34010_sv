@@ -2912,7 +2912,7 @@ Tests: tb_cvxyl PASS; full integration regression PASS under Verilator (3
   module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (CVXYL row), changelog.md, tasks.md.
 Commit:
-- pending
+- 27b4319
 
 ---
 
