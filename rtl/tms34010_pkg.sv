@@ -277,6 +277,15 @@ package tms34010_pkg;
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYADR  = 5'h1E; // Display Address
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_REFCNT  = 5'h1F; // DRAM Refresh Count
 
+  // CONTROL register bit fields (1988 UG page 4-? CONTROL register).
+  parameter int unsigned CTRL_T_BIT    = 5;   // pixel transparency enable
+  parameter int unsigned CTRL_W_LO     = 6;   // window violation detection mode
+  parameter int unsigned CTRL_W_HI     = 7;
+  parameter int unsigned CTRL_PBH_BIT  = 8;   // PixBlt horizontal direction
+  parameter int unsigned CTRL_PBV_BIT  = 9;   // PixBlt vertical direction
+  parameter int unsigned CTRL_PPOP_LO  = 10;  // pixel-processing operation select
+  parameter int unsigned CTRL_PPOP_HI  = 14;
+
   // ---------------------------------------------------------------------------
   // Instruction word + decoded-instruction skeleton
   //

@@ -657,6 +657,18 @@ module tms34010_core
     end
   end
 
+  // PIXT transparency (Task 0089): when CONTROL.T is set, a PIXT store whose
+  // (replace-mode) source pixel is 0 is inhibited from overwriting the
+  // destination — the instruction skips its memory write entirely (SPVU001A
+  // CONTROL.T, bit 5). The source pixel is the low PSIZE bits of Rs; in
+  // replace mode (the only PPOP implemented) the processed value equals the
+  // source. Applies to the register-source store forms (linear/XY); the M2M
+  // and load forms are not affected (load writes a register, not a pixel).
+  logic pixt_transp_skip;
+  assign pixt_transp_skip = decoded.force_pixel && is_mv_store
+                          && io_control[CTRL_T_BIT]
+                          && ((rf_rs1_data & mv_fmask) == '0);
+
   // XY-addressed PIXT: the pointer holds an XY value; convert it to a linear
   // bit address (same shift form as CVXYL). CONVDP for a destination pointer
   // (store), CONVSP for a source pointer (load). OFFSET = B4 (read port 3).
@@ -1443,20 +1455,22 @@ module tms34010_core
   logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT/CVXYL)
   logic [15:0]           io_convdp;    // CONVDP register (XY->linear dest pitch)
   logic [15:0]           io_convsp;    // CONVSP register (XY->linear source pitch)
+  logic [15:0]           io_control;   // CONTROL register (PPOP, T, window mode, ...)
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
-    .clk     (clk),
-    .rst     (rst),
-    .req     (mem_req),
-    .we      (mem_we_int),     // the access's write intent
-    .addr    (mem_addr),
-    .wdata   (mem_wdata[15:0]),
-    .rdata   (io_rdata16),
-    .is_io   (io_is_io),
-    .psize_o (io_psize),
-    .convdp_o(io_convdp),
-    .convsp_o(io_convsp)
+    .clk      (clk),
+    .rst      (rst),
+    .req      (mem_req),
+    .we       (mem_we_int),    // the access's write intent
+    .addr     (mem_addr),
+    .wdata    (mem_wdata[15:0]),
+    .rdata    (io_rdata16),
+    .is_io    (io_is_io),
+    .psize_o  (io_psize),
+    .convdp_o (io_convdp),
+    .convsp_o (io_convsp),
+    .control_o(io_control)
   );
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would
@@ -1703,6 +1717,8 @@ module tms34010_core
           state_d = CORE_DIVIDE;
         else if (is_fill)
           state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
+        else if (pixt_transp_skip)
+          state_d = CORE_WRITEBACK;    // transparent PIXT pixel: no memory write
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end

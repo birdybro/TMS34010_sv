@@ -3003,6 +3003,26 @@ Commit:
 
 ---
 
+### Task 0089: PIXT store transparency (CONTROL.T)
+Status: complete
+Dependencies: Task 0083/0085 (PIXT store forms), Task 0081 (I/O regs).
+Spec source: SPVU001A CONTROL register, T bit (bit 5).
+Acceptance Criteria:
+- io_regs control_o tap; pkg CTRL_T_BIT (=5) + CTRL_W/PBH/PBV/PPOP consts.
+- pixt_transp_skip = force_pixel && is_mv_store && CONTROL[5] &&
+  ((Rs & mv_fmask) == 0). EXECUTE → WRITEBACK (skip memory) when set, so the
+  transparent pixel is not written. Replace-mode only (the processed value =
+  source). Applies to PIXT store linear+XY; load/M2M unaffected.
+- sim/tb/tb_pixt_transp.sv: T=1 zero pixel skipped (dest preserved), T=0 zero
+  pixel written, nonzero always written.
+Tests: tb_pixt_transp PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (PIXT store rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

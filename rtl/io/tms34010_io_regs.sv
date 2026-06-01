@@ -60,7 +60,8 @@ module tms34010_io_regs
   // that need them land.
   output logic [15:0]           psize_o,  // PSIZE: pixel size in bits (1..16)
   output logic [15:0]           convdp_o, // CONVDP: XY->linear dest pitch shift
-  output logic [15:0]           convsp_o  // CONVSP: XY->linear source pitch shift
+  output logic [15:0]           convsp_o, // CONVSP: XY->linear source pitch shift
+  output logic [15:0]           control_o // CONTROL: PPOP[14:10], PBV/PBH, W, T(bit5)
 );
 
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
@@ -78,9 +79,10 @@ module tms34010_io_regs
   assign rdata = is_io ? io_reg[idx] : 16'h0;
 
   // Dedicated graphics taps.
-  assign psize_o  = io_reg[IO_IDX_PSIZE];
-  assign convdp_o = io_reg[IO_IDX_CONVDP];
-  assign convsp_o = io_reg[IO_IDX_CONVSP];
+  assign psize_o   = io_reg[IO_IDX_PSIZE];
+  assign convdp_o  = io_reg[IO_IDX_CONVDP];
+  assign convsp_o  = io_reg[IO_IDX_CONVSP];
+  assign control_o = io_reg[IO_IDX_CONTROL];
 
   // Synchronous write + reset. The reset loop is bounded (32 iterations) and
   // fully unrollable, so synthesis treats it as parallel resets.

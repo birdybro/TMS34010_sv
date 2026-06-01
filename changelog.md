@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0089 — PIXT store transparency)
+- PIXT store transparency (CONTROL.T, bit 5): when transparency is enabled and
+  the source pixel is 0 (in replace mode the processed value equals the
+  source), the store is inhibited — the instruction skips its memory write
+  (EXECUTE → WRITEBACK), leaving the destination pixel unchanged. SPVU001A
+  CONTROL.T. Applies to the register-source store forms (PIXT Rs,*Rd and
+  PIXT Rs,*Rd.XY); load/M2M are unaffected (loads write a register; M2M source
+  transparency is deferred with the rest of pixel processing).
+- io_regs gains a `control_o` tap; pkg gains CONTROL bit-field constants
+  (CTRL_T_BIT, CTRL_W_*, CTRL_PBH/PBV, CTRL_PPOP_*).
+- New `sim/tb/tb_pixt_transp.sv`: a 0 pixel with T=1 is skipped (dest
+  preserved), a 0 pixel with T=0 is written, and a nonzero pixel always writes.
+
 ### Added (Task 0088 — FILL XY)
 - FILL XY (0x0FE0): like FILL L, but DADDR (B2) holds an XY value that the FILL
   engine converts to a linear start address (CONVDP + OFFSET(B4) + PSIZE, the
