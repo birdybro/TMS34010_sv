@@ -2786,7 +2786,7 @@ Tests: tb_move_m2m_field PASS; tb_move_m2m / tb_move_m2m_incdec updated and
 Docs: instruction_coverage.md (3 M2M rows), assumptions.md (A0020 note),
   changelog.md, tasks.md.
 Commit:
-- pending
+- 744afc8
 
 ---
 
