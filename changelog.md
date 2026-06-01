@@ -7,6 +7,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0093 — FILL pixel processing; shared PPOP function)
+- The 22-way PPOP computation is factored into a reusable `ppop_apply(src,
+  dest, ppop, fmask)` function, shared by the PIXT store engine and FILL.
+- FILL now applies the full pixel engine per pixel: the CORE_FILL loop is a
+  per-pixel read-modify-write (sub-step 0 reads the destination pixel, sub-step
+  1 writes `merged = PPOP(COLOR1, dest)` plane-masked and transparency-checked).
+  At reset defaults (PPOP=0/PMASK=0/T=0) merged = COLOR1, so a plain fill is
+  unchanged (it now also reads first). SPVU001A FILL/CONTROL.
+- New `sim/tb/tb_fill_ppop.sv`: an XOR fill, a transparent (COLOR1=0) fill, and
+  a plane-masked fill over preloaded destination pixels.
+
 ### Added (Task 0092 — PIXT store arithmetic pixel processing (PPOP))
 - The 6 arithmetic CONTROL.PPOP ops (0x10-0x15) now operate on the unsigned
   PSIZE-bit pixel values: 0x10 D+S (wrap), 0x11 ADDS (add, saturate to all-1s

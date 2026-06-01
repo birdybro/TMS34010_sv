@@ -66,6 +66,49 @@ module tms34010_core
 );
 
   // ---------------------------------------------------------------------------
+  // Pixel-processing operation (PPOP) — shared by the PIXT store engine and
+  // the graphics fill/blt engines. Returns f(src, dest) per the CONTROL.PPOP
+  // code (SPVU001A): 16 Boolean ops (bitwise) + 6 arithmetic ops (on the
+  // unsigned PSIZE-bit pixels masked by `fmask`; ADDS/SUBS saturate). The low
+  // `fmask` bits of the result are what the caller writes.
+  // ---------------------------------------------------------------------------
+  function automatic logic [DATA_WIDTH-1:0] ppop_apply(
+      input logic [DATA_WIDTH-1:0] src,
+      input logic [DATA_WIDTH-1:0] dest,
+      input logic [4:0]            ppop,
+      input logic [DATA_WIDTH-1:0] fmask);
+    logic [DATA_WIDTH-1:0] sp, dp, addsum;
+    sp     = src  & fmask;
+    dp     = dest & fmask;
+    addsum = dp + sp;
+    unique case (ppop)
+      5'h00:   ppop_apply = src;               // S (replace)
+      5'h01:   ppop_apply = src &  dest;       // S AND D
+      5'h02:   ppop_apply = src & ~dest;       // S AND ~D
+      5'h03:   ppop_apply = '0;                // 0
+      5'h04:   ppop_apply = src | ~dest;       // S OR ~D
+      5'h05:   ppop_apply = ~(src ^ dest);     // S XNOR D
+      5'h06:   ppop_apply = ~dest;             // ~D
+      5'h07:   ppop_apply = ~(src | dest);     // S NOR D
+      5'h08:   ppop_apply = src |  dest;       // S OR D
+      5'h09:   ppop_apply = dest;              // D (no change)
+      5'h0A:   ppop_apply = src ^  dest;       // S XOR D
+      5'h0B:   ppop_apply = ~src & dest;       // ~S AND D
+      5'h0C:   ppop_apply = '1;                // 1
+      5'h0D:   ppop_apply = ~src | dest;       // ~S OR D
+      5'h0E:   ppop_apply = ~(src & dest);     // S NAND D
+      5'h0F:   ppop_apply = ~src;              // ~S
+      5'h10:   ppop_apply = addsum;            // D + S (wrap)
+      5'h11:   ppop_apply = (addsum > fmask) ? fmask : addsum;       // ADDS (sat all-1s)
+      5'h12:   ppop_apply = dp - sp;           // D - S (wrap)
+      5'h13:   ppop_apply = (dp >= sp) ? (dp - sp) : '0;             // SUBS (sat 0)
+      5'h14:   ppop_apply = (dp >= sp) ? dp : sp;                    // MAX(D,S)
+      5'h15:   ppop_apply = (dp <= sp) ? dp : sp;                    // MIN(D,S)
+      default: ppop_apply = src;               // 0x16-0x1F reserved -> replace
+    endcase
+  endfunction
+
+  // ---------------------------------------------------------------------------
   // Program counter
   // ---------------------------------------------------------------------------
   logic                  pc_advance_en;
@@ -303,6 +346,25 @@ module tms34010_core
       + rf_rs3_data;   // OFFSET (B4) at SETUP
   assign fill_start = fill_is_xy ? fill_xy_linear : fill_daddr_raw_q;
 
+  // FILL pixel processing (Task 0093). Each pixel is a read-modify-write: step
+  // 0 (fill_substep_q=0) reads the destination pixel into fill_dest_q, step 1
+  // writes fill_merged = PPOP(COLOR1, dest) plane-masked and transparency-
+  // checked. At reset defaults (PPOP=0/PMASK=0/T=0) merged = COLOR1, so a plain
+  // fill is unchanged (it just also reads first).
+  logic                  fill_substep_q;   // 0 = read dest, 1 = write merged
+  logic [DATA_WIDTH-1:0] fill_dest_q;      // destination pixel latched at read
+  logic [DATA_WIDTH-1:0] fill_pixel_mask, fill_pmask_field;
+  logic [DATA_WIDTH-1:0] fill_processed, fill_merged;
+  logic                  fill_transp;
+  assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
+  assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
+  assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
+                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], fill_pixel_mask);
+  assign fill_transp      = io_control[CTRL_T_BIT] && ((fill_processed & fill_pixel_mask) == '0);
+  assign fill_merged      = fill_transp
+                          ? fill_dest_q
+                          : ((fill_processed & ~fill_pmask_field) | (fill_dest_q & fill_pmask_field));
+
   always_ff @(posedge clk) begin
     if (rst) begin
       fill_dptch_q     <= '0;
@@ -314,6 +376,8 @@ module tms34010_core
       fill_row_base_q  <= '0;
       fill_x_q         <= '0;
       fill_y_q         <= '0;
+      fill_substep_q   <= 1'b0;
+      fill_dest_q      <= '0;
     end else begin
       // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL. The
       // start address (possibly XY-converted) is finalized at SETUP.
@@ -326,26 +390,34 @@ module tms34010_core
         fill_y_q         <= 16'd0;
       end
       // CORE_FILL_SETUP: latch COLOR1 (port1) and the linear start address
-      // (port3 = OFFSET for the XY conversion).
+      // (port3 = OFFSET for the XY conversion); start at the read sub-step.
       if (state_q == CORE_FILL_SETUP) begin
         fill_color_q    <= rf_rs1_data;        // COLOR1
         fill_addr_q     <= fill_start;
         fill_row_base_q <= fill_start;
+        fill_substep_q  <= 1'b0;
       end
-      // CORE_FILL: advance after each pixel write ack.
+      // CORE_FILL: per pixel, read (sub-step 0) then write (sub-step 1).
       if (state_q == CORE_FILL && mem_ack) begin
-        fill_addr_q <= fill_addr_q + fill_psize_ext;   // next pixel (or final DADDR)
-        if (fill_row_end && !fill_done) begin
-          // Row complete (not the last): jump to the next row's base.
-          fill_y_q        <= fill_y_q + 16'd1;
-          fill_row_base_q <= fill_row_base_q + fill_dptch_q;
-          fill_addr_q     <= fill_row_base_q + fill_dptch_q;
-          fill_x_q        <= 16'd0;
-        end else if (!fill_done) begin
-          fill_x_q <= fill_x_q + 16'd1;
+        fill_substep_q <= ~fill_substep_q;
+        if (!fill_substep_q) begin
+          // Read ack: latch the destination pixel for processing.
+          fill_dest_q <= mem_rdata_eff;
+        end else begin
+          // Write ack: advance to the next pixel (or to the final DADDR).
+          fill_addr_q <= fill_addr_q + fill_psize_ext;
+          if (fill_row_end && !fill_done) begin
+            // Row complete (not the last): jump to the next row's base.
+            fill_y_q        <= fill_y_q + 16'd1;
+            fill_row_base_q <= fill_row_base_q + fill_dptch_q;
+            fill_addr_q     <= fill_row_base_q + fill_dptch_q;
+            fill_x_q        <= 16'd0;
+          end else if (!fill_done) begin
+            fill_x_q <= fill_x_q + 16'd1;
+          end
+          // On fill_done the write ack leaves fill_addr_q at the pixel
+          // following the last (the final DADDR); the FSM moves to CORE_FILL_WB.
         end
-        // On fill_done, fill_addr_q advances by PSIZE to the pixel following
-        // the last (the final DADDR), and the FSM moves to CORE_FILL_WB.
       end
     end
   end
@@ -692,47 +764,10 @@ module tms34010_core
   // the unsigned add. Arith ops are only defined for pixels of 4/8/16 bits
   // (SPVU001A); they are computed for all sizes (1/2-bit results are
   // spec-Undefined, so any value is acceptable).
-  logic [DATA_WIDTH-1:0] pix_src_p, pix_dst_p, pix_addsum;
-  assign pix_src_p   = rf_rs1_data & mv_fmask;
-  assign pix_dst_p   = pix_dest_q  & mv_fmask;
-  assign pix_addsum  = pix_dst_p + pix_src_p;
   assign pixt_rmw         = decoded.force_pixel && is_mv_store;
   assign pixt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & mv_fmask;
-  always_comb begin
-    // PPOP: src = rf_rs1_data, dest = pix_dest_q. The 16 Boolean codes are
-    // bitwise (low PSIZE bits used); the 6 arithmetic codes operate on the
-    // unsigned PSIZE-bit pixel values (pix_src_p / pix_dst_p).
-    unique case (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO])
-      5'h00:   pixt_processed = rf_rs1_data;                       // S (replace)
-      5'h01:   pixt_processed = rf_rs1_data &  pix_dest_q;         // S AND D
-      5'h02:   pixt_processed = rf_rs1_data & ~pix_dest_q;         // S AND ~D
-      5'h03:   pixt_processed = '0;                                // 0
-      5'h04:   pixt_processed = rf_rs1_data | ~pix_dest_q;         // S OR ~D
-      5'h05:   pixt_processed = ~(rf_rs1_data ^ pix_dest_q);       // S XNOR D
-      5'h06:   pixt_processed = ~pix_dest_q;                       // ~D
-      5'h07:   pixt_processed = ~(rf_rs1_data | pix_dest_q);       // S NOR D
-      5'h08:   pixt_processed = rf_rs1_data |  pix_dest_q;         // S OR D
-      5'h09:   pixt_processed = pix_dest_q;                        // D (no change)
-      5'h0A:   pixt_processed = rf_rs1_data ^  pix_dest_q;         // S XOR D
-      5'h0B:   pixt_processed = ~rf_rs1_data & pix_dest_q;         // ~S AND D
-      5'h0C:   pixt_processed = '1;                                // 1
-      5'h0D:   pixt_processed = ~rf_rs1_data | pix_dest_q;         // ~S OR D
-      5'h0E:   pixt_processed = ~(rf_rs1_data & pix_dest_q);       // S NAND D
-      5'h0F:   pixt_processed = ~rf_rs1_data;                      // ~S
-      // Arithmetic ops (4/8/16-bit pixels):
-      5'h10:   pixt_processed = pix_addsum;                        // D + S (wrap)
-      5'h11:   pixt_processed = (pix_addsum > mv_fmask)            // ADDS: saturate to all-1s
-                              ? mv_fmask : pix_addsum;
-      5'h12:   pixt_processed = pix_dst_p - pix_src_p;             // D - S (wrap)
-      5'h13:   pixt_processed = (pix_dst_p >= pix_src_p)           // SUBS: saturate to 0
-                              ? (pix_dst_p - pix_src_p) : '0;
-      5'h14:   pixt_processed = (pix_dst_p >= pix_src_p)           // MAX(D,S)
-                              ? pix_dst_p : pix_src_p;
-      5'h15:   pixt_processed = (pix_dst_p <= pix_src_p)           // MIN(D,S)
-                              ? pix_dst_p : pix_src_p;
-      default: pixt_processed = rf_rs1_data;  // 0x16-0x1F reserved -> replace
-    endcase
-  end
+  assign pixt_processed   = ppop_apply(rf_rs1_data, pix_dest_q,
+                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], mv_fmask);
   assign pixt_transp  = io_control[CTRL_T_BIT] && ((pixt_processed & mv_fmask) == '0);
   assign pixt_merged  = pixt_transp
                       ? pix_dest_q
@@ -1804,14 +1839,20 @@ module tms34010_core
       end
 
       CORE_FILL: begin
-        // Write one PSIZE-bit pixel of COLOR1 per cycle. The memory model RMW
-        // handles sub-word / straddling pixels. Stay until the array is done.
+        // Per pixel, read the destination (sub-step 0) then write the merged
+        // value (sub-step 1): merged = PPOP(COLOR1, dest) plane-masked and
+        // transparency-checked. The memory model RMW handles sub-word /
+        // straddling pixels. Stay until the array's last write completes.
         mem_req   = 1'b1;
-        mem_we_int = 1'b1;
         mem_addr  = fill_addr_q;
         mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
-        mem_wdata = fill_color_q;
-        if (mem_ack && fill_done)
+        if (!fill_substep_q) begin
+          mem_we_int = 1'b0;            // read the destination pixel
+        end else begin
+          mem_we_int = 1'b1;            // write the processed pixel
+          mem_wdata  = fill_merged;
+        end
+        if (mem_ack && fill_substep_q && fill_done)
           state_d = CORE_FILL_WB;
         else
           state_d = CORE_FILL;

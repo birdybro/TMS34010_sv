@@ -3084,6 +3084,29 @@ Commit:
 
 ---
 
+### Task 0093: FILL pixel processing (shared PPOP function; per-pixel RMW)
+Status: complete
+Dependencies: Tasks 0091/0092 (PPOP engine), Task 0087 (FILL).
+Spec source: SPVU001A FILL + CONTROL (PPOP/T/PMASK apply to FILL).
+Acceptance Criteria:
+- Refactor the 22-way PPOP into a module function ppop_apply(src,dest,ppop,
+  fmask); PIXT uses it (pixt_processed). Regression unchanged.
+- FILL CORE_FILL loop becomes a per-pixel read-modify-write: fill_substep_q 0
+  reads dest into fill_dest_q, 1 writes fill_merged = PPOP(COLOR1,dest) plane-
+  masked + transparency-checked. Counters advance on the write ack; exit on
+  (write ack && fill_done). Reset defaults ⇒ replace (existing FILL tests
+  green).
+- sim/tb/tb_fill_ppop.sv: XOR fill, transparent COLOR1=0 fill, plane-masked
+  fill.
+Tests: tb_fill_ppop PASS; tb_fill_l/tb_fill_xy + PIXT PPOP tests PASS; full
+  integration regression PASS under Verilator (3 module-level tbs need Questa);
+  lint clean.
+Docs: instruction_coverage.md (FILL rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
