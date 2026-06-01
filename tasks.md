@@ -3019,7 +3019,7 @@ Tests: tb_pixt_transp PASS; full integration regression PASS under Verilator
   (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (PIXT store rows), changelog.md, tasks.md.
 Commit:
-- pending
+- 319d0e9
 
 ---
 
