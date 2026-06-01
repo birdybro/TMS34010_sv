@@ -113,6 +113,10 @@ module tb_move_indirect_incdec;
     for (i = 0; i < 512; i++) u_mem.mem[i] = 16'h0300;
 
     p = 0;
+    // MOVE now honors the field size: set FS0 = 0 (encodes a 32-bit field)
+    // so stores/loads move 32 bits and the pointers auto-step by ±32 (0x20),
+    // matching this test's expectations. Reset ST has FS0 = 16.
+    p = place_word(p, 16'h0540);   // SETF FS=0, FE=0, F=0
     // ===== Case A: postincrement store then postincrement load =========
     //   A1=data, A2=0x800 ; MOVE A1,*A2+  -> mem[0x800]=data, A2=0x820
     //   A3=0x800          ; MOVE *A3+,A4  -> A4=data, A3=0x820 ; GETST A10

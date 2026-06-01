@@ -525,10 +525,41 @@ module tms34010_core
   assign mv_predec   = (decoded.move_mode == MV_ADDR_PREDEC);
   assign mv_incdec   = mv_postinc || mv_predec;
   assign mv_ptr      = is_mv_store ? rf_rs2_data : rf_rs1_data;
-  assign mv_addr     = mv_predec ? (mv_ptr - WORD_BIT_SIZE) : mv_ptr;
-  assign mv_ptr_new  = mv_predec ? (mv_ptr - WORD_BIT_SIZE) : (mv_ptr + WORD_BIT_SIZE);
   assign mv_load_ptr_wr = (state_q == CORE_MEMORY) && is_mv_load
                        && mv_incdec && mem_ack;
+
+  // ---- MOVE field-size machinery (Task 0077) ------------------------------
+  // The F bit (instr_word_q[9]) selects the FS0/FE0 (0) or FS1/FE1 (1) pair
+  // in ST. FS=0 encodes a 32-bit field. Field stores write the low FS bits
+  // (the memory model does the read-modify-write); field loads extend the
+  // FS-bit field to 32 bits per FE (1 = sign-extend, 0 = zero-extend).
+  // Indirect pointers auto-step by ±FS, not the old hardcoded ±32.
+  logic [4:0]            mv_fs_raw;
+  logic [FIELD_SIZE_WIDTH-1:0] mv_fs;       // actual field size 1..32
+  logic                  mv_fe;             // 1 = sign-extend on load
+  logic [DATA_WIDTH-1:0] mv_fs_ext;         // FS zero-extended to the pointer width
+  logic [DATA_WIDTH-1:0] mv_fmask;
+  logic [DATA_WIDTH-1:0] mv_load_data;      // field-extended load result
+  assign mv_fs_raw = instr_word_q[9] ? st_value[ST_FS1_HI:ST_FS1_LO]
+                                     : st_value[ST_FS0_HI:ST_FS0_LO];
+  assign mv_fs     = (mv_fs_raw == 5'd0) ? FIELD_SIZE_WIDTH'(DATA_WIDTH)
+                                         : {1'b0, mv_fs_raw};
+  assign mv_fe     = instr_word_q[9] ? st_value[ST_FE1_BIT] : st_value[ST_FE0_BIT];
+  assign mv_fs_ext = DATA_WIDTH'(mv_fs);
+  assign mv_fmask  = (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH))
+                   ? '1 : ((32'd1 << mv_fs) - 32'd1);
+  always_comb begin
+    if (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH)) begin
+      mv_load_data = mem_rdata;                         // FS = 32: identity
+    end else if (mv_fe && mem_rdata[mv_fs - 6'd1]) begin
+      mv_load_data = mem_rdata | ~mv_fmask;             // sign-extend
+    end else begin
+      mv_load_data = mem_rdata & mv_fmask;              // zero-extend
+    end
+  end
+
+  assign mv_addr     = mv_predec ? (mv_ptr - mv_fs_ext) : mv_ptr;
+  assign mv_ptr_new  = mv_predec ? (mv_ptr - mv_fs_ext) : (mv_ptr + mv_fs_ext);
 
   // ---- Indirect-to-indirect MOVE auto inc/dec (Task 0062) -----------------
   // Two pointers (Rs=source, Rd=dest) both step by ±32. The source pointer
@@ -901,9 +932,9 @@ module tms34010_core
       // Store inc/dec writes the auto-updated pointer back to Rd at
       // WRITEBACK (plain store has wb_reg_en=0, so this is unused there).
       INSTR_MOVE_FIELD_STORE: rf_wr_data = mv_ptr_new;
-      // Load: at WRITEBACK -> the loaded data to Rd; during CORE_MEMORY
-      // (inc/dec) -> the updated pointer to Rs.
-      INSTR_MOVE_FIELD_LOAD: rf_wr_data = mv_load_ptr_wr ? mv_ptr_new : mem_rdata;
+      // Load: at WRITEBACK -> the field-extended data to Rd; during
+      // CORE_MEMORY (inc/dec) -> the updated pointer to Rs.
+      INSTR_MOVE_FIELD_LOAD: rf_wr_data = mv_load_ptr_wr ? mv_ptr_new : mv_load_data;
       // Indirect-to-indirect inc/dec: source pointer Rs (step-0 ack) or
       // destination pointer Rd (WRITEBACK).
       INSTR_MOVE_FIELD_M2M: rf_wr_data = m2m_src_wr ? m2m_src_new : m2m_dst_new;
@@ -1286,10 +1317,13 @@ module tms34010_core
       // off (Unaffected) via wb_flag_mask, so only the N field matters.
       INSTR_MMTM:   flag_input = '{n: ~rf_rs2_data[DATA_WIDTH-1],
                                     c: 1'b0, z: 1'b0, v: 1'b0};
-      // MOVE *Rs,Rd: implicit compare-to-0 of the loaded field. At field
-      // size 32 the field IS the full 32-bit word (no extension), so N/Z
-      // come straight from mem_rdata; V=0; C masked off by wb_flag_mask.
-      INSTR_MOVE_FIELD_LOAD,
+      // MOVE *Rs,Rd: implicit compare-to-0 of the loaded field, AFTER FE
+      // sign/zero extension (mv_load_data). N = result sign, Z = result==0,
+      // V=0; C masked off by wb_flag_mask.
+      INSTR_MOVE_FIELD_LOAD: flag_input = '{n: mv_load_data[DATA_WIDTH-1],
+                                    c: 1'b0, z: (mv_load_data == '0), v: 1'b0};
+      // Absolute / offset loads remain FS=32 (no extension), so N/Z come
+      // straight from the 32-bit mem_rdata.
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  flag_input = '{n: mem_rdata[DATA_WIDTH-1],
                                     c: 1'b0, z: (mem_rdata == '0), v: 1'b0};
@@ -1565,25 +1599,26 @@ module tms34010_core
             mem_size  = MEM_SIZE_32;
           end
           INSTR_MOVE_FIELD_STORE: begin
-            // MOVE Rs,*Rd[+|-]: write Rs (rf_rs1_data) to mem[mv_addr].
-            // mv_addr = pointer Rd (postinc/none) or Rd-32 (predec). The
-            // pointer auto-update (Rd±32) is written back at WRITEBACK for
-            // the inc/dec forms. 32-bit field, word-aligned.
+            // MOVE Rs,*Rd[+|-]: write the low FS bits of Rs (rf_rs1_data) to
+            // mem[mv_addr]. mv_addr = pointer Rd (postinc/none) or Rd-FS
+            // (predec); the pointer auto-update (Rd±FS) is written back at
+            // WRITEBACK for the inc/dec forms. FS from the F-selected ST pair.
             mem_req   = 1'b1;
             mem_we    = 1'b1;
-            mem_addr  = mv_addr;           // = Rd or Rd-32 (predec)
-            mem_size  = MEM_SIZE_32;
-            mem_wdata = rf_rs1_data;       // = Rs (data)
+            mem_addr  = mv_addr;           // = Rd or Rd-FS (predec)
+            mem_size  = mv_fs;             // field size (1..32)
+            mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
           end
           INSTR_MOVE_FIELD_LOAD: begin
-            // MOVE [-]*Rs[+],Rd: read 32 bits from mem[mv_addr]. mv_addr =
-            // pointer Rs (postinc/none) or Rs-32 (predec). The loaded data
-            // goes to Rd at WRITEBACK; for inc/dec the updated pointer Rs±32
-            // is written via the mv_load_ptr_wr path on this ack.
+            // MOVE [-]*Rs[+],Rd: read an FS-bit field from mem[mv_addr].
+            // mv_addr = pointer Rs (postinc/none) or Rs-FS (predec). The
+            // field-extended data (mv_load_data) goes to Rd at WRITEBACK;
+            // for inc/dec the updated pointer Rs±FS is written via the
+            // mv_load_ptr_wr path on this ack.
             mem_req   = 1'b1;
             mem_we    = 1'b0;
-            mem_addr  = mv_addr;           // = Rs or Rs-32 (predec)
-            mem_size  = MEM_SIZE_32;
+            mem_addr  = mv_addr;           // = Rs or Rs-FS (predec)
+            mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_OFF_STORE: begin
             // MOVE Rs,*Rd(off): write Rs (rf_rs1_data) to mem[Rd + off].

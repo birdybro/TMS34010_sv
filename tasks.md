@@ -2715,6 +2715,34 @@ Commit:
 
 ---
 
+### Task 0077: field-size-aware MOVE register↔indirect (FS/FE machinery, core side)
+Status: complete
+Dependencies: Task 0076 (memory-model bit-field RMW).
+Spec source: SPVU001A pages 12-127 (MOVE Rs,*Rd store) / 12-135 (MOVE
+  *Rs,Rd load). Field size/extend from the F-selected ST pair (FS0/FE0 or
+  FS1/FE1; FS=0 ⇒ 32); pointers step by ±FS.
+Acceptance Criteria:
+- New core signals: mv_fs (1..32 from FS0/FS1 per instr_word_q[9]), mv_fe
+  (FE0/FE1), mv_fs_ext (±pointer step), mv_load_data (FE sign/zero extension
+  of the loaded field). FIELD_STORE/FIELD_LOAD drive mem_size = mv_fs.
+- FIELD_LOAD writeback + N/Z flags use mv_load_data (the extended value);
+  ABS/OFF loads still use raw mem_rdata (they stay FS=32). Pointer step
+  ±mv_fs for postinc/predec.
+- M2M / offset / absolute MOVE forms remain FS=32 (later task).
+- Existing tb_move_indirect / tb_move_indirect_incdec issue SETF FS0=0 up
+  front (reset FS0=16) to preserve their 32-bit-move intent.
+- sim/tb/tb_move_field.sv: FS=8 zext round-trip, FS=8 sext load, FS=16 sext
+  round-trip, zero field (Z=1), FS-aware postinc (+8), FS=16 straddling field.
+Tests: tb_move_field PASS; tb_move_indirect / tb_move_indirect_incdec updated
+  and PASS; full integration regression PASS under Verilator (3 module-level
+  tbs need Questa); lint clean.
+Docs: instruction_coverage.md (6 register↔indirect rows), assumptions.md
+  (A0020 note), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -145,6 +145,9 @@ module tb_move_indirect;
     for (i = 0; i < 512; i++) u_mem.mem[i] = 16'h0300;   // NOP-fill
 
     p = 0;
+    // MOVE now honors the field size: set FS0 = 0 (encodes a 32-bit field)
+    // so these full-word round-trips move 32 bits. Reset ST has FS0 = 16.
+    p = place_word(p, 16'h0540);   // SETF FS=0, FE=0, F=0
     // ---- Case 1: negative value 0xCAFEBABE via PTR1 (A2) ----------------
     //   A1=data, A2=PTR1 ; MOVE A1,*A2 ; MOVE *A2,A3 ; GETST A8
     p = place_movi_il(p, 4'd1, 32'hCAFE_BABE);

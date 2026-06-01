@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0077 — field-size-aware MOVE register↔indirect)
+- The MOVE register↔indirect forms (store/load, plain + postinc + predec) now
+  honor the field size. The core derives FS/FE from the F-selected ST pair
+  (FS0/FE0 if instr bit 9 = 0, else FS1/FE1; FS=0 means 32), drives
+  `mem_size = FS`, sign-extends (FE=1) or zero-extends (FE=0) the loaded field
+  to 32 bits, sets N/Z from the extended value, and steps the auto-inc/dec
+  pointer by ±FS. Unaligned and word-straddling fields are handled by the
+  Task 0076 memory model. SPVU001A pp.12-127/12-135.
+- New `sim/tb/tb_move_field.sv`: FS=8 zero-extend round-trip, FS=8 sign-extend
+  load, FS=16 sign-extend round-trip, zero field (Z=1), FS-aware postincrement
+  (+8), and an FS=16 field straddling a 16-bit word boundary.
+- **Compatibility note**: because MOVE now honors the actual FS, the existing
+  FS=32 round-trip tests (tb_move_indirect, tb_move_indirect_incdec) now issue
+  `SETF FS0=0` (encodes 32) up front — the reset ST has FS0=16, so without it
+  those moves would transfer 16 bits.
+- The M2M (indirect↔indirect), offset, and absolute MOVE forms remain FS=32;
+  their field-awareness is a later task.
+
 ### Added (Task 0076 — sim_memory_model arbitrary bit-field access)
 - The behavioral memory model now reads and writes fields of 1..32 bits at
   any bit address, including fields that straddle 16-bit word boundaries (a
