@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0078 — field-size-aware MOVE offset & absolute forms)
+- The OFFSET (MOVE Rs,*Rd(off) / *Rs(off),Rd) and ABSOLUTE (MOVE Rs,@DAddr /
+  @SAddr,Rd) MOVE forms now honor the field size, reusing the Task 0077
+  `mv_fs` / `mv_load_data` machinery: stores drive `mem_size = FS` and write
+  the low FS bits; loads read FS bits and sign/zero-extend per FE, setting N/Z
+  from the extended value. Neither form steps a pointer. SPVU001A
+  pp.12-132/12-141/12-134/12-153.
+- New `sim/tb/tb_move_offabs_field.sv`: offset FS=8 zero/sign-extend round-trip,
+  absolute FS=16 zero/sign-extend round-trip, and an absolute FS=12 field
+  straddling a 16-bit word boundary.
+- **Compatibility note**: tb_move_offset and tb_move_abs now SETF FS0=0 up
+  front (reset ST has FS0=16) to keep their 32-bit-move intent.
+- Only the M2M (indirect↔indirect) MOVE forms remain FS=32; MOVB falls out of
+  the now-complete field machinery for the single-pointer forms.
+
 ### Added (Task 0077 — field-size-aware MOVE register↔indirect)
 - The MOVE register↔indirect forms (store/load, plain + postinc + predec) now
   honor the field size. The core derives FS/FE from the F-selected ST pair

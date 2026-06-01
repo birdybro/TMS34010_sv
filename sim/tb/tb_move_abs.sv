@@ -121,6 +121,9 @@ module tb_move_abs;
     for (i = 0; i < 512; i++) u_mem.mem[i] = 16'h0300;
 
     p = 0;
+    // MOVE absolute now honors the field size: set FS0 = 0 (encodes a 32-bit
+    // field) so these full-word moves transfer 32 bits. Reset ST has FS0=16.
+    p = place_word(p, 16'h0540);   // SETF FS=0, FE=0, F=0
     // Case 1: negative value round-trip via ADDR1.
     p = place_movi_il(p, 4'd1, 32'hCAFE_BABE);
     p = place_store_abs(p, 4'd1, ADDR1);     // MOVE A1,@ADDR1

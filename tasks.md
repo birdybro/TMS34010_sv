@@ -2743,6 +2743,30 @@ Commit:
 
 ---
 
+### Task 0078: field-size-aware MOVE offset & absolute forms
+Status: complete
+Dependencies: Task 0077 (mv_fs / mv_load_data field machinery).
+Spec source: SPVU001A pages 12-132/12-141 (offset) / 12-134/12-153 (absolute).
+Acceptance Criteria:
+- OFF_STORE / OFF_LOAD / ABS_STORE / ABS_LOAD drive `mem_size = mv_fs`
+  (F = instr bit 9 selects FS0/FS1). No pointer step (neither form moves a
+  pointer).
+- ABS_LOAD / OFF_LOAD writeback + N/Z flags use `mv_load_data` (FE-extended),
+  merged with FIELD_LOAD in the rf_wr_data and flag_input muxes.
+- M2M MOVE forms remain FS=32 (later task).
+- Existing tb_move_offset / tb_move_abs issue SETF FS0=0 up front.
+- sim/tb/tb_move_offabs_field.sv: offset FS=8 zext/sext, absolute FS=16
+  zext/sext, absolute FS=12 straddling field.
+Tests: tb_move_offabs_field PASS; tb_move_offset / tb_move_abs updated and
+  PASS; full integration regression PASS under Verilator (3 module-level tbs
+  need Questa); lint clean.
+Docs: instruction_coverage.md (4 offset/absolute rows), assumptions.md
+  (A0020 note), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

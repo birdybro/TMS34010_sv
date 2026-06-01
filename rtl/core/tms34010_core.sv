@@ -938,10 +938,10 @@ module tms34010_core
       // Indirect-to-indirect inc/dec: source pointer Rs (step-0 ack) or
       // destination pointer Rd (WRITEBACK).
       INSTR_MOVE_FIELD_M2M: rf_wr_data = m2m_src_wr ? m2m_src_new : m2m_dst_new;
-      // MOVE @SAddr,Rd: Rd <- the field read from the absolute address.
-      INSTR_MOVE_ABS_LOAD:  rf_wr_data = mem_rdata;
-      // MOVE *Rs(off),Rd: Rd <- the field read from the offset address.
-      INSTR_MOVE_OFF_LOAD:  rf_wr_data = mem_rdata;
+      // MOVE @SAddr,Rd: Rd <- the field-extended value read from the
+      // absolute address. MOVE *Rs(off),Rd: same, from the offset address.
+      INSTR_MOVE_ABS_LOAD,
+      INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = REV_VALUE;
@@ -1317,16 +1317,13 @@ module tms34010_core
       // off (Unaffected) via wb_flag_mask, so only the N field matters.
       INSTR_MMTM:   flag_input = '{n: ~rf_rs2_data[DATA_WIDTH-1],
                                     c: 1'b0, z: 1'b0, v: 1'b0};
-      // MOVE *Rs,Rd: implicit compare-to-0 of the loaded field, AFTER FE
-      // sign/zero extension (mv_load_data). N = result sign, Z = result==0,
-      // V=0; C masked off by wb_flag_mask.
-      INSTR_MOVE_FIELD_LOAD: flag_input = '{n: mv_load_data[DATA_WIDTH-1],
-                                    c: 1'b0, z: (mv_load_data == '0), v: 1'b0};
-      // Absolute / offset loads remain FS=32 (no extension), so N/Z come
-      // straight from the 32-bit mem_rdata.
+      // MOVE load (indirect / offset / absolute): implicit compare-to-0 of
+      // the loaded field AFTER FE sign/zero extension (mv_load_data). N =
+      // result sign, Z = result==0, V=0; C masked off by wb_flag_mask.
+      INSTR_MOVE_FIELD_LOAD,
       INSTR_MOVE_ABS_LOAD,
-      INSTR_MOVE_OFF_LOAD:  flag_input = '{n: mem_rdata[DATA_WIDTH-1],
-                                    c: 1'b0, z: (mem_rdata == '0), v: 1'b0};
+      INSTR_MOVE_OFF_LOAD:  flag_input = '{n: mv_load_data[DATA_WIDTH-1],
+                                    c: 1'b0, z: (mv_load_data == '0), v: 1'b0};
       INSTR_ADDXY:  flag_input = addxy_flags;
       INSTR_SUBXY:  flag_input = subxy_flags;
       INSTR_CMPXY:  flag_input = cmpxy_flags;
@@ -1621,39 +1618,42 @@ module tms34010_core
             mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_OFF_STORE: begin
-            // MOVE Rs,*Rd(off): write Rs (rf_rs1_data) to mem[Rd + off].
-            // imm32 = sign-extended 16-bit offset; Rd = rf_rs2_data.
+            // MOVE Rs,*Rd(off): write the low FS bits of Rs (rf_rs1_data) to
+            // mem[Rd + off]. imm32 = sign-extended 16-bit offset; Rd =
+            // rf_rs2_data. Field-size aware (Task 0078); no pointer step.
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = rf_rs2_data + imm32;
-            mem_size  = MEM_SIZE_32;
-            mem_wdata = rf_rs1_data;       // = Rs (data)
+            mem_size  = mv_fs;             // field size (1..32)
+            mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
           end
           INSTR_MOVE_OFF_LOAD: begin
-            // MOVE *Rs(off),Rd: read mem[Rs + off]; result -> Rd at
-            // WRITEBACK. Rs = rf_rs1_data (pointer); imm32 = sext(off16).
+            // MOVE *Rs(off),Rd: read an FS-bit field at mem[Rs + off];
+            // field-extended result -> Rd at WRITEBACK. Rs = rf_rs1_data
+            // (pointer); imm32 = sext(off16). Field-size aware (Task 0078).
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = rf_rs1_data + imm32;
-            mem_size  = MEM_SIZE_32;
+            mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_ABS_STORE: begin
-            // MOVE Rs,@DAddr: write Rs (rf_rs1_data) to the 32-bit absolute
-            // address (imm32 = {imm_hi_q, imm_lo_q}). Single 32-bit write.
+            // MOVE Rs,@DAddr: write the low FS bits of Rs (rf_rs1_data) to the
+            // absolute bit address imm32 = {imm_hi_q, imm_lo_q}. Field-size
+            // aware (Task 0078).
             mem_req   = 1'b1;
             mem_we    = 1'b1;
             mem_addr  = imm32;
-            mem_size  = MEM_SIZE_32;
-            mem_wdata = rf_rs1_data;       // = Rs (data)
+            mem_size  = mv_fs;             // field size (1..32)
+            mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
           end
           INSTR_MOVE_ABS_LOAD: begin
-            // MOVE @SAddr,Rd: read 32 bits from the absolute address imm32;
-            // result goes to Rd at WRITEBACK (rf_wr_data mux), flags from
-            // the loaded data.
+            // MOVE @SAddr,Rd: read an FS-bit field from the absolute address
+            // imm32; the field-extended result goes to Rd at WRITEBACK
+            // (rf_wr_data mux), flags from the extended value. Task 0078.
             mem_req   = 1'b1;
             mem_we    = 1'b0;
             mem_addr  = imm32;
-            mem_size  = MEM_SIZE_32;
+            mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_FIELD_M2M: begin
             // Two-step indirect-to-indirect: step 0 reads mem[*Rs], step 1
