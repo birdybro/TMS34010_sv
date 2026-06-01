@@ -6,11 +6,14 @@
 // the core sees (request/valid + bit-addressed) with one-cycle latency and a
 // 16-bit-word physical backing store.
 //
-// Phase 1 scope:
-//   - Reads of `INSTR_WORD_BITS` (=16) at 16-bit-aligned bit addresses.
-//   - Writes of up to 16 bits, low-bits-aligned within the target word.
-//   - Out-of-range or non-aligned reads emit a $display warning so bugs
-//     in the surrounding test setup surface early.
+// Scope:
+//   - Bit-field reads and writes of 1..32 bits at ANY bit address. A field
+//     may straddle 16-bit word boundaries (it spans at most 3 words); writes
+//     are read-modify-write so bits outside the field are preserved. The
+//     common aligned 16/32-bit fetches the core issues today are just the
+//     boff=0 special cases of this path. Sizes outside 1..32 warn.
+//   - Reads return the field zero-extended into the 32-bit data bus; the
+//     core applies any FE-driven sign/zero extension on top.
 //
 // Public API for testbenches:
 //   - The internal `mem[0:DEPTH_WORDS-1]` array is exposed (no SV access
@@ -99,35 +102,49 @@ module sim_memory_model
             latched_wdata <= mem_wdata;
             latched_size  <= mem_size;
             state_q       <= MEM_ACK;
-            // Surface alignment bugs early. Word-aligned fetches must
-            // have mem_addr[3:0] == 0 (16-bit-aligned).
-            if (!mem_we &&
-                (mem_size == INSTR_WORD_BITS || mem_size == 6'd32) &&
-                mem_addr[3:0] != 4'h0) begin
-              $display("sim_memory_model[%0t]: WARN: aligned read at non-aligned addr=%08h",
-                       $time, mem_addr);
+            // Field accesses may be 1..32 bits at ANY bit address (the
+            // generalized RMW path below handles fields that straddle
+            // 16-bit word boundaries). Only invalid sizes warn now.
+            if (mem_size == 6'd0 || mem_size > 6'd32) begin
+              $display("sim_memory_model[%0t]: WARN: field size %0d out of range (1..32)",
+                       $time, mem_size);
             end
           end
         end
 
-        MEM_ACK: begin
+        MEM_ACK: begin : ack_blk
+          // Generalized bit-field access. The backing store is a flat
+          // little-endian bit stream: global bit B is mem[B>>4][B&15].
+          // A field of `sz` bits (1..32) at bit offset `boff` (0..15)
+          // within word `widx` occupies at most 3 consecutive words
+          // (15 + 32 = 47 bits < 48). We read that 48-bit window,
+          // extract (read) or splice-and-write-back (RMW write) the
+          // field, touching only the words it actually spans.
+          //
+          // `automatic` is required so the initializers re-evaluate on
+          // every clock (static procedural vars init only once, at t=0).
+          automatic int unsigned widx = int'(word_idx);
+          automatic int unsigned boff = int'(latched_addr[3:0]);
+          automatic int unsigned sz   = int'(latched_size);
+          automatic logic [15:0] r0 = (widx     < DEPTH_WORDS) ? mem[widx]     : 16'h0;
+          automatic logic [15:0] r1 = (widx + 1 < DEPTH_WORDS) ? mem[widx + 1] : 16'h0;
+          automatic logic [15:0] r2 = (widx + 2 < DEPTH_WORDS) ? mem[widx + 2] : 16'h0;
+          automatic logic [47:0] win   = {r2, r1, r0};
+          automatic logic [47:0] rmask = (48'd1 << sz) - 48'd1;          // sz low bits
+          automatic logic [47:0] smask = rmask << boff;                  // field in place
+          automatic int unsigned last  = boff + sz - 1;                  // top bit, <= 46
+          automatic logic [47:0] merged;
           mem_ack <= 1'b1;
           if (latched_we) begin
-            // Write low half to word[idx]; for 32-bit writes also
-            // write high half to word[idx+1]. Atomic single-ack.
-            mem[word_idx] <= latched_wdata[15:0];
-            if (latched_size == 6'd32) begin
-              mem[word_idx + 1] <= latched_wdata[31:16];
-            end
+            merged = (win & ~smask) | (({16'h0, latched_wdata} << boff) & smask);
+            if (widx     < DEPTH_WORDS)              mem[widx]     <= merged[15:0];
+            if (last >= 16 && widx + 1 < DEPTH_WORDS) mem[widx + 1] <= merged[31:16];
+            if (last >= 32 && widx + 2 < DEPTH_WORDS) mem[widx + 2] <= merged[47:32];
             mem_rdata <= '0;
           end else begin
-            // Read low half; for 32-bit reads also concat high half
-            // from word[idx+1].
-            if (latched_size == 6'd32) begin
-              mem_rdata <= {mem[word_idx + 1], mem[word_idx]};
-            end else begin
-              mem_rdata <= {16'h0, mem[word_idx]};
-            end
+            // Extract the field, zero-extended into the 32-bit return.
+            // The core applies FE-driven sign/zero extension on top.
+            mem_rdata <= 32'((win >> boff) & rmask);
           end
           state_q <= MEM_IDLE;
         end

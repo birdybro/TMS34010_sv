@@ -19,6 +19,13 @@ a bit within that word.
 Field operations specify a **field size** (1–32 bits) and read/write that
 many bits starting at the byte address, crossing word boundaries as needed.
 
+The simulation memory model (`sim/models/sim_memory_model.sv`) implements
+this field semantics as of Task 0076: 1..32-bit reads/writes at any bit
+address, straddling 16-bit words, with read-modify-write preservation of
+the surrounding bits. The core itself still issues only aligned 16/32-bit
+accesses; wiring field sizes through the core (`mem_size = FS`, FE-driven
+sign/zero extension, FS-aware pointer stepping) is the remaining work.
+
 External memory glue (outside the core) is responsible for translating
 bit addresses to whatever the physical memory expects. The core's memory
 interface (see `docs/architecture.md`) exposes the bit address directly.

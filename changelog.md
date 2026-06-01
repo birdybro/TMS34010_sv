@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-05-31
 
+### Added (Task 0076 — sim_memory_model arbitrary bit-field access)
+- The behavioral memory model now reads and writes fields of 1..32 bits at
+  any bit address, including fields that straddle 16-bit word boundaries (a
+  field spans at most 3 words). Writes are read-modify-write, so bits outside
+  the field are preserved; reads return the field zero-extended into the
+  32-bit bus. The core's existing aligned 16/32-bit accesses are the boff=0
+  special cases of this path — the full integration regression is unchanged.
+- This is the memory-model foundation for the TMS34010 field-size (FS/FE)
+  machinery. The core-side field extract/insert and FS-aware pointer step
+  are later tasks; today the core still issues only aligned 16/32 accesses.
+- New `sim/tb/tb_mem_field.sv` drives the request/ack protocol directly (no
+  core): aligned 32/16, sub-word read, RMW preservation, a 9-bit field
+  straddling a word boundary, an unaligned 32-bit field spanning 3 words,
+  and single-bit write/read.
+
 ### Added (Task 0075 — MPYS / MPYU variable multiplier width)
 - MPYS/MPYU now honor field size 1: the Rs multiplier is an FS1-bit field,
   not always the full 32-bit register. The core extracts the low FS1 bits of

@@ -2689,6 +2689,32 @@ Commit:
 
 ---
 
+### Task 0076: sim_memory_model arbitrary bit-field read/write (field-machinery foundation)
+Status: complete
+Dependencies: none (sim-model only; RTL unchanged).
+Spec source: TMS34010 memory is bit-addressed (SPVU001A §2 / memory_map.md);
+  fields are 1..32 bits at any bit address (FS0/FS1 + FE0/FE1). This task
+  builds the memory-model half of the field machinery; the core-side field
+  extract/insert + FS-aware pointer step are later tasks.
+Acceptance Criteria:
+- sim_memory_model handles reads and writes of size 1..32 at ANY bit
+  address, including fields straddling 16-bit word boundaries (span <= 3
+  words). Writes are read-modify-write: bits outside the field preserved.
+- Reads return the field zero-extended into the 32-bit bus (core applies
+  FE sign/zero extension later). Sizes 0 or >32 warn.
+- Backward compatible: the core's existing aligned 16/32-bit accesses are
+  the boff=0 special cases; full integration regression unchanged.
+- sim/tb/tb_mem_field.sv (drives the mem IF directly, no core): aligned
+  32/16, sub-word read, RMW preservation, word-straddling 9-bit field,
+  unaligned 32-bit field (spans 3 words), single-bit write/read.
+Tests: tb_mem_field PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0020 note), changelog.md, tasks.md, memory_map.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
