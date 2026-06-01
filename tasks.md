@@ -2836,7 +2836,7 @@ Tests: tb_io_regs PASS; full integration regression PASS under Verilator
 Docs: memory_map.md (full I/O register table), architecture.md (module map),
   changelog.md, tasks.md.
 Commit:
-- pending
+- ba4106e
 
 ---
 
