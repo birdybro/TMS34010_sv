@@ -487,9 +487,12 @@ package tms34010_pkg;
                               //                     address in Rd: ((Y<<(31-CONVDP)) | (X<<log2
                               //                     PSIZE)) + OFFSET(B4). Flags Unaffected.
                               //                     Encoding 1110 100S SSSR DDDD.
-    INSTR_FILL_L           = 7'd94  // FILL L — fill a DY×DX pixel array with COLOR1 (B9).
+    INSTR_FILL_L           = 7'd94, // FILL L — fill a DY×DX pixel array with COLOR1 (B9).
                               //                     Implied B-regs DADDR(B2)/DPTCH(B3)/DYDX(B7);
                               //                     multi-cycle. DADDR updated. Encoding 0x0FC0.
+    INSTR_FILL_XY          = 7'd95  // FILL XY — like FILL L but DADDR (B2) holds an XY value,
+                              //                     converted to linear (CONVDP+OFFSET+PSIZE)
+                              //                     before the fill. Encoding 0x0FE0.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

@@ -564,6 +564,24 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   write (they write the low 16 bits) and 32-bit accesses would span two
   registers — neither is exercised by the implemented instruction set.
 
+## A0029 — FILL XY updates DADDR to a linear address
+- **Date**: 2026-06-01 (Task 0088).
+- **Status**: assumption (the spec's DADDR-update wording is shared between
+  FILL L and FILL XY and is described in linear terms).
+- **Source**: SPVU001A pages 12-80/12-82 (FILL L / FILL XY): "When the array
+  transfer is complete, DADDR points to the linear address of the pixel
+  following the last pixel written."
+- **Assumption**: FILL XY converts the XY DADDR to a linear start address and
+  then operates entirely in linear space; on completion the engine writes the
+  **linear** address following the last pixel back to DADDR (B2), the same as
+  FILL L. The spec describes the post-FILL DADDR as a linear address for both
+  forms, so writing the linear value (not re-encoding it back to XY) matches
+  the quoted text.
+- **Why uncertain**: a strict reading might expect FILL XY to leave DADDR in
+  XY format. No worked FILL XY before/after example was available to confirm.
+- **How to apply**: if a cross-check shows DADDR should remain XY, add a
+  reverse (linear→XY) conversion in CORE_FILL_WB for INSTR_FILL_XY.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 - Exact register file layout: how A15/B15 alias to SP, and how the B-file

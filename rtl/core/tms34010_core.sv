@@ -271,7 +271,7 @@ module tms34010_core
   // FILL; PMASK/transparency/PPOP default to no-op at reset and are not yet
   // applied). DADDR is updated to the address following the last pixel.
   // ---------------------------------------------------------------------------
-  logic [DATA_WIDTH-1:0] fill_dptch_q, fill_color_q;
+  logic [DATA_WIDTH-1:0] fill_dptch_q, fill_color_q, fill_daddr_raw_q;
   logic [15:0]           fill_dx_q, fill_dy_q;
   logic [DATA_WIDTH-1:0] fill_addr_q, fill_row_base_q;
   logic [15:0]           fill_x_q, fill_y_q;
@@ -281,30 +281,46 @@ module tms34010_core
   assign fill_row_end   = (fill_x_q == fill_dx_q - 16'd1);
   assign fill_done      = fill_row_end && (fill_y_q == fill_dy_q - 16'd1);
 
+  // FILL XY: convert the XY DADDR (latched raw at EXECUTE) to a linear start
+  // address at SETUP, where OFFSET (B4) is on read port 3. Same shift form as
+  // CVXYL: ((Y<<(31-CONVDP)) | (X<<log2 PSIZE)) + OFFSET.
+  logic [4:0]            fill_xy_yshift;
+  logic [DATA_WIDTH-1:0] fill_xy_linear, fill_start;
+  assign fill_xy_yshift = 5'd31 - io_convdp[4:0];
+  assign fill_xy_linear =
+      (({{16{fill_daddr_raw_q[DATA_WIDTH-1]}}, fill_daddr_raw_q[DATA_WIDTH-1:16]} << fill_xy_yshift)
+       | ({16'b0, fill_daddr_raw_q[15:0]} << pix_xy_xsh))
+      + rf_rs3_data;   // OFFSET (B4) at SETUP
+  assign fill_start = fill_is_xy ? fill_xy_linear : fill_daddr_raw_q;
+
   always_ff @(posedge clk) begin
     if (rst) begin
-      fill_dptch_q    <= '0;
-      fill_color_q    <= '0;
-      fill_dx_q       <= '0;
-      fill_dy_q       <= '0;
-      fill_addr_q     <= '0;
-      fill_row_base_q <= '0;
-      fill_x_q        <= '0;
-      fill_y_q        <= '0;
+      fill_dptch_q     <= '0;
+      fill_color_q     <= '0;
+      fill_daddr_raw_q <= '0;
+      fill_dx_q        <= '0;
+      fill_dy_q        <= '0;
+      fill_addr_q      <= '0;
+      fill_row_base_q  <= '0;
+      fill_x_q         <= '0;
+      fill_y_q         <= '0;
     end else begin
-      // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL.
+      // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL. The
+      // start address (possibly XY-converted) is finalized at SETUP.
       if (state_q == CORE_EXECUTE && is_fill) begin
-        fill_addr_q     <= rf_rs1_data;       // DADDR
-        fill_row_base_q <= rf_rs1_data;
-        fill_dptch_q    <= rf_rs2_data;       // DPTCH
-        fill_dx_q       <= rf_rs3_data[15:0]; // DX
-        fill_dy_q       <= rf_rs3_data[DATA_WIDTH-1:16]; // DY
-        fill_x_q        <= 16'd0;
-        fill_y_q        <= 16'd0;
+        fill_daddr_raw_q <= rf_rs1_data;       // DADDR (linear, or XY for FILL XY)
+        fill_dptch_q     <= rf_rs2_data;       // DPTCH
+        fill_dx_q        <= rf_rs3_data[15:0]; // DX
+        fill_dy_q        <= rf_rs3_data[DATA_WIDTH-1:16]; // DY
+        fill_x_q         <= 16'd0;
+        fill_y_q         <= 16'd0;
       end
-      // CORE_FILL_SETUP: latch COLOR1 (port1).
+      // CORE_FILL_SETUP: latch COLOR1 (port1) and the linear start address
+      // (port3 = OFFSET for the XY conversion).
       if (state_q == CORE_FILL_SETUP) begin
-        fill_color_q <= rf_rs1_data;          // COLOR1
+        fill_color_q    <= rf_rs1_data;        // COLOR1
+        fill_addr_q     <= fill_start;
+        fill_row_base_q <= fill_start;
       end
       // CORE_FILL: advance after each pixel write ack.
       if (state_q == CORE_FILL && mem_ack) begin
@@ -514,8 +530,9 @@ module tms34010_core
   // FILL reads its implied B-file operands across two cycles via the three
   // read ports: at EXECUTE — DADDR(B2) on port1, DPTCH(B3) on port2,
   // DYDX(B7) on port3; at CORE_FILL_SETUP — COLOR1(B9) on port1.
-  logic is_fill;
-  assign is_fill = (decoded.iclass == INSTR_FILL_L);
+  logic is_fill, fill_is_xy;
+  assign is_fill    = (decoded.iclass == INSTR_FILL_L) || (decoded.iclass == INSTR_FILL_XY);
+  assign fill_is_xy = (decoded.iclass == INSTR_FILL_XY);
 
   assign rf_rs1_file = is_fill ? REG_FILE_B
                      : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
@@ -541,7 +558,7 @@ module tms34010_core
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
-                     : is_fill ? B_DYDX_IDX
+                     : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
                      : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 
@@ -1097,7 +1114,8 @@ module tms34010_core
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
       INSTR_CVXYL:  rf_wr_data = cvxyl_result;
-      INSTR_FILL_L: rf_wr_data = fill_addr_q;   // final DADDR -> B2 (CORE_FILL_WB)
+      INSTR_FILL_L,
+      INSTR_FILL_XY: rf_wr_data = fill_addr_q;  // final (linear) DADDR -> B2 (CORE_FILL_WB)
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = REV_VALUE;

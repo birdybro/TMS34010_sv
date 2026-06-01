@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-01
 
+### Added (Task 0088 — FILL XY)
+- FILL XY (0x0FE0): like FILL L, but DADDR (B2) holds an XY value that the FILL
+  engine converts to a linear start address (CONVDP + OFFSET(B4) + PSIZE, the
+  same shift form as CVXYL) at CORE_FILL_SETUP, where read port 3 reads OFFSET.
+  Rows still step by the linear DPTCH; the rest of the engine is shared with
+  FILL L. SPVU001A 12-82. All flags Unaffected. Window checking deferred.
+- New INSTR_FILL_XY; `is_fill` now covers both forms and `fill_is_xy` selects
+  the start conversion. The final DADDR is written back as a linear address
+  (assumption A0029).
+- New `sim/tb/tb_fill_xy.sv`: converts an XY start (X=0x20,Y=1 with CONVDP=0x1B,
+  OFFSET=0x800 → 0x910) and fills a 2×2 array, checking the filled words, the
+  untouched gap, and the updated DADDR.
+
 ### Added (Task 0087 — FILL L; first multi-cycle graphics engine)
 - FILL L (0x0FC0) implemented: fill a DY×DX pixel array with COLOR1 (B9),
   starting at DADDR (B2), rows DPTCH (B3) bits apart, each pixel a PSIZE-bit

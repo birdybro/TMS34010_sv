@@ -2062,6 +2062,17 @@ module tms34010_decode
       decoded.needs_memory_op = 1'b0;   // EXECUTE routes to the FILL states
     end
 
+    // FILL XY — like FILL L, but DADDR (B2) holds an XY value that the FILL
+    // engine converts to a linear start address (CONVDP + OFFSET(B4) + PSIZE)
+    // at CORE_FILL_SETUP. Fixed opcode 0x0FE0. Window checking deferred.
+    if (instr == 16'h0FE0) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_FILL_XY;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;
+    end
+
     // -----------------------------------------------------------------------
     // JUMP Rs (register-indirect jump)
     //

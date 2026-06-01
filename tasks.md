@@ -2982,6 +2982,27 @@ Commit:
 
 ---
 
+### Task 0088: FILL XY
+Status: complete
+Dependencies: Task 0087 (FILL engine), Task 0084/0085 (XY conversion).
+Spec source: SPVU001A page 12-82. Fixed opcode 0x0FE0.
+Acceptance Criteria:
+- INSTR_FILL_XY = 7'd95. is_fill covers FILL_L|FILL_XY; fill_is_xy selects
+  the start conversion. At CORE_FILL_SETUP, port 3 reads OFFSET(B4) and the
+  XY DADDR (latched raw at EXECUTE) is converted to a linear start
+  (CONVDP+OFFSET+PSIZE); FILL_L uses the raw DADDR. Rest of the engine shared.
+- Final DADDR written back linear (A0029).
+- sim/tb/tb_fill_xy.sv: XY start (X=0x20,Y=1, CONVDP=0x1B, OFFSET=0x800 ->
+  0x910) fills a 2×2 array; checks words, gap, DADDR (0x9A0).
+Tests: tb_fill_xy PASS; tb_fill_l regress PASS; full integration regression
+  PASS under Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (FILL XY row), assumptions.md (A0029),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
