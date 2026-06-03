@@ -3148,6 +3148,27 @@ Commit:
 
 ---
 
+### Task 0096: PIXBLT B,L / B,XY — 1-bit source color-expand
+Status: complete
+Dependencies: Task 0094/0095 (PIXBLT engine + XY).
+Spec source: SPVU001A PIXBLT B,L (0x0F80) / B,XY (0x0FA0).
+Acceptance Criteria:
+- New struct flag blt_binary; new state CORE_PBLT_SETUP2 (5'd16) reads
+  COLOR0(B8)/COLOR1(B9). Source sub-step reads 1 bit (mem_size=1); src addr
+  advances by pblt_src_step (1 for binary, PSIZE otherwise). pblt_src_eff =
+  src_bit ? COLOR1 : COLOR0 (or the raw pixel) feeds ppop_apply.
+- Decode 0x0F80 (B,L) / 0x0FA0 (B,XY = binary + dst XY).
+- sim/tb/tb_pixblt_b.sv: 4-bit source bitmap expanded; check pixels + SADDR/
+  DADDR updates. All 6 PIXBLT forms now implemented.
+Tests: tb_pixblt_b PASS; tb_pixblt_ll/tb_pixblt_xy regress PASS; full
+  integration regression PASS under Verilator (3 module-level tbs need Questa);
+  lint clean.
+Docs: instruction_coverage.md (PIXBLT B rows), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -498,6 +498,7 @@ module tms34010_decode
     decoded.xy_addr         = 1'b0;            // only XY-addressed PIXT sets this
     decoded.blt_src_xy      = 1'b0;            // PIXBLT source XY (XY,L / XY,XY)
     decoded.blt_dst_xy      = 1'b0;            // PIXBLT dest XY   (L,XY / XY,XY)
+    decoded.blt_binary      = 1'b0;            // PIXBLT B (1-bit source color expand)
     decoded.shift_op        = SHIFT_OP_SLL;
     decoded.use_shifter     = 1'b0;
     decoded.k5              = '0;
@@ -2112,6 +2113,27 @@ module tms34010_decode
       decoded.illegal         = 1'b0;
       decoded.iclass          = INSTR_PIXBLT_LL;
       decoded.blt_src_xy      = 1'b1;
+      decoded.blt_dst_xy      = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;
+    end
+
+    // PIXBLT B variants — the source is a 1-bit-per-pixel bitmap; each bit
+    // expands to COLOR1(B9) if 1, COLOR0(B8) if 0, before processing.
+    //   B,L  (0x0F80): linear dest.   B,XY (0x0FA0): XY dest (CONVDP convert).
+    if (instr == 16'h0F80) begin          // PIXBLT B,L
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PIXBLT_LL;
+      decoded.blt_binary      = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b0;
+    end
+    if (instr == 16'h0FA0) begin          // PIXBLT B,XY
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_PIXBLT_LL;
+      decoded.blt_binary      = 1'b1;
       decoded.blt_dst_xy      = 1'b1;
       decoded.wb_reg_en       = 1'b0;
       decoded.wb_flags_en     = 1'b0;

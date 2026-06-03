@@ -5,6 +5,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-02
+
+### Added (Task 0096 — PIXBLT B,L / B,XY; 1-bit source color-expand)
+- PIXBLT B,L (0x0F80) and B,XY (0x0FA0): the source is a 1-bit-per-pixel
+  bitmap; each source bit expands to COLOR1 (B9) if 1, COLOR0 (B8) if 0
+  (`blt_binary` flag), then processes with the destination through the shared
+  pixel engine. SPVU001A.
+- The source is read 1 bit at a time (mem_size=1 in the source sub-step) and
+  the source address advances by 1 bit per pixel (vs PSIZE for the dest);
+  COLOR0/COLOR1 are read in a new second setup cycle (CORE_PBLT_SETUP2, enum
+  5'd16). B,XY also converts the XY destination (reusing blt_dst_xy / CONVDP).
+- New `sim/tb/tb_pixblt_b.sv`: a 4-bit source bitmap (1010) expanded to
+  COLOR0/COLOR1 over a destination row, checking the pixels and the updated
+  SADDR (advanced by bits) / DADDR. Completes all 6 PIXBLT addressing forms.
+
 ## 2026-06-01
 
 ### Added (Task 0095 — PIXBLT XY variants)

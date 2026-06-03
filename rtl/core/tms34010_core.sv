@@ -445,12 +445,22 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask, pblt_pmask_field;
   logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
   logic                  pblt_row_end, pblt_done, pblt_transp;
+  // PIXBLT B (color expand): COLOR0/COLOR1 latched at SETUP2; the source read is
+  // 1 bit (mem_size 1, src step 1) and expands to COLOR1 / COLOR0.
+  logic [DATA_WIDTH-1:0] pblt_color0_q, pblt_color1_q;
+  logic [DATA_WIDTH-1:0] pblt_src_eff, pblt_src_step;
   assign pblt_psize_ext   = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
   assign pblt_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign pblt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & pblt_pixel_mask;
   assign pblt_row_end     = (pblt_x_q == pblt_dx_q - 16'd1);
   assign pblt_done        = pblt_row_end && (pblt_y_q == pblt_dy_q - 16'd1);
-  assign pblt_processed   = ppop_apply(pblt_src_pix_q, pblt_dst_pix_q,
+  // Effective source pixel: a binary source bit selects COLOR1/COLOR0.
+  assign pblt_src_eff     = decoded.blt_binary
+                          ? (pblt_src_pix_q[0] ? pblt_color1_q : pblt_color0_q)
+                          : pblt_src_pix_q;
+  // Source advances 1 bit/pixel for the binary form, PSIZE bits otherwise.
+  assign pblt_src_step    = decoded.blt_binary ? 32'd1 : pblt_psize_ext;
+  assign pblt_processed   = ppop_apply(pblt_src_eff, pblt_dst_pix_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], pblt_pixel_mask);
   assign pblt_transp      = io_control[CTRL_T_BIT] && ((pblt_processed & pblt_pixel_mask) == '0);
   assign pblt_merged      = pblt_transp
@@ -483,6 +493,8 @@ module tms34010_core
       pblt_substep_q  <= 2'd0;
       pblt_src_pix_q  <= '0;
       pblt_dst_pix_q  <= '0;
+      pblt_color0_q   <= '0;
+      pblt_color1_q   <= '0;
     end else begin
       // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3).
       if (state_q == CORE_EXECUTE && is_pblt) begin
@@ -510,6 +522,11 @@ module tms34010_core
           pblt_dst_row_q  <= pblt_dst_conv;
         end
       end
+      // CORE_PBLT_SETUP2 (binary form): latch COLOR0(port1) / COLOR1(port2).
+      if (state_q == CORE_PBLT_SETUP2) begin
+        pblt_color0_q <= rf_rs1_data;
+        pblt_color1_q <= rf_rs2_data;
+      end
       // CORE_PBLT: per pixel, read src (0) / read dst (1) / write (2).
       if (state_q == CORE_PBLT && mem_ack) begin
         if (pblt_substep_q == 2'd0) begin
@@ -519,9 +536,10 @@ module tms34010_core
           pblt_dst_pix_q <= mem_rdata_eff;
           pblt_substep_q <= 2'd2;
         end else begin
-          // Write ack: advance both pointers to the next pixel.
+          // Write ack: advance both pointers to the next pixel (source by 1
+          // bit for the binary form, PSIZE otherwise; dest always by PSIZE).
           pblt_substep_q  <= 2'd0;
-          pblt_src_addr_q <= pblt_src_addr_q + pblt_psize_ext;
+          pblt_src_addr_q <= pblt_src_addr_q + pblt_src_step;
           pblt_dst_addr_q <= pblt_dst_addr_q + pblt_psize_ext;
           if (pblt_row_end && !pblt_done) begin
             pblt_y_q        <= pblt_y_q + 16'd1;
@@ -744,7 +762,8 @@ module tms34010_core
   // points at the current register being pushed, and rf_rs1_data
   // becomes the 32-bit value driven onto mem_wdata.
   assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_SPTCH_IDX : B_SADDR_IDX)
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
+                                : (state_q == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
@@ -755,7 +774,8 @@ module tms34010_core
   assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW))
                      ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = is_fill ? B_DPTCH_IDX
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_DPTCH_IDX : B_DADDR_IDX)
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
+                                : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
   // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
@@ -1998,19 +2018,27 @@ module tms34010_core
       end
 
       CORE_PBLT_SETUP: begin
-        // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE).
+        // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE). The
+        // binary form reads COLOR0/COLOR1 in a second setup cycle.
+        state_d = decoded.blt_binary ? CORE_PBLT_SETUP2 : CORE_PBLT;
+      end
+
+      CORE_PBLT_SETUP2: begin
+        // Latch COLOR0/COLOR1 for the color-expand source.
         state_d = CORE_PBLT;
       end
 
       CORE_PBLT: begin
         // Per pixel: read source (sub-step 0), read destination (1), write the
         // processed pixel (2). Stay until the array's last write completes.
+        // The binary source is read 1 bit at a time; otherwise PSIZE bits.
         mem_req   = 1'b1;
         mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
         unique case (pblt_substep_q)
           2'd0: begin
-            mem_we_int = 1'b0;             // read source pixel
+            mem_we_int = 1'b0;             // read source pixel (1 bit if binary)
             mem_addr   = pblt_src_addr_q;
+            if (decoded.blt_binary) mem_size = FIELD_SIZE_WIDTH'(1);
           end
           2'd1: begin
             mem_we_int = 1'b0;             // read destination pixel

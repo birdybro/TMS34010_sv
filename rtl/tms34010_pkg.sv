@@ -78,7 +78,8 @@ package tms34010_pkg;
     CORE_PBLT_SETUP   = 5'd12, // PIXBLT: latch SPTCH/DPTCH (SADDR/DADDR/DYDX at EXECUTE)
     CORE_PBLT         = 5'd13, // PIXBLT: per-pixel read-src / read-dst / write loop
     CORE_PBLT_WB      = 5'd14, // PIXBLT: write the final SADDR back to B0
-    CORE_PBLT_WB2     = 5'd15  // PIXBLT: write the final DADDR back to B2
+    CORE_PBLT_WB2     = 5'd15, // PIXBLT: write the final DADDR back to B2
+    CORE_PBLT_SETUP2  = 5'd16  // PIXBLT B (color expand): latch COLOR0/COLOR1
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -600,6 +601,9 @@ package tms34010_pkg;
     // XY value (converted to linear at PBLT_SETUP via CONVSP / CONVDP).
     logic          blt_src_xy;
     logic          blt_dst_xy;
+    // PIXBLT binary (B,L / B,XY): the source is a 1-bit-per-pixel bitmap; each
+    // bit expands to COLOR1(B9) if 1, COLOR0(B8) if 0.
+    logic          blt_binary;
   } decoded_instr_t;
 
 endpackage : tms34010_pkg
