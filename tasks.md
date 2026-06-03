@@ -3165,7 +3165,7 @@ Tests: tb_pixblt_b PASS; tb_pixblt_ll/tb_pixblt_xy regress PASS; full
   lint clean.
 Docs: instruction_coverage.md (PIXBLT B rows), changelog.md, tasks.md.
 Commit:
-- pending
+- 6ea50b1
 
 ---
 
