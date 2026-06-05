@@ -1578,6 +1578,11 @@ module tms34010_core
       CC_EQ:   branch_taken = st_z;                    // =
       CC_NE:   branch_taken = !st_z;                   // !=
       CC_HS:   branch_taken = !st_c;                   // unsigned >=  (== NC)
+      CC_C:    branch_taken = st_c;                     // carry set (== B)
+      CC_V:    branch_taken = st_v;                     // overflow
+      CC_NV:   branch_taken = !st_v;                    // no overflow
+      CC_N:    branch_taken = st_n;                     // negative
+      CC_NN:   branch_taken = !st_n;                    // nonnegative
       default: branch_taken = 1'b0;
     endcase
   end

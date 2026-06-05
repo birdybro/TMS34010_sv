@@ -7,6 +7,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-04
 
+### Added (Task 0101 — JRcc/JAcc general-arithmetic condition codes)
+- Added the five single-flag condition codes from Table 12-8 (page 12-31) to
+  the branch-condition evaluator and all three decoder recognition blocks
+  (JRcc short, JRcc long, JAcc): C/B (1000, C=1), V (1100, V=1), NV (1101,
+  V=0), N (1110, N=1), NN (1111, N=0). JRcc now recognizes all 16 cc codes
+  (previously the 11 compare-form codes; the rest trapped as illegal).
+- New CC_C/CC_V/CC_NV/CC_N/CC_NN constants in the package.
+- New `sim/tb/tb_jrcc_arith.sv`: each of the five codes exercised take + skip
+  via CMP-set flags (C via unsigned borrow, N via negative result, V via
+  signed overflow).
+
 ### Added (Task 0100 — maskable-interrupt recognition + entry sequence)
 - The interrupt priority encoder (Task 0098) is now wired into the core. New
   INTENB/INTPEND taps on `tms34010_io_regs` feed `tms34010_int_ctrl`, whose

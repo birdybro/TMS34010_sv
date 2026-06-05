@@ -1992,7 +1992,12 @@ module tms34010_decode
          instr[11:8] == CC_GE ||
          instr[11:8] == CC_EQ ||
          instr[11:8] == CC_NE ||
-         instr[11:8] == CC_HS)) begin
+         instr[11:8] == CC_HS ||
+         instr[11:8] == CC_C  ||
+         instr[11:8] == CC_V  ||
+         instr[11:8] == CC_NV ||
+         instr[11:8] == CC_N  ||
+         instr[11:8] == CC_NN)) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_JRCC_SHORT;
       decoded.branch_cc   = instr[11:8];
@@ -2031,7 +2036,12 @@ module tms34010_decode
          instr[11:8] == CC_GE ||
          instr[11:8] == CC_EQ ||
          instr[11:8] == CC_NE ||
-         instr[11:8] == CC_HS)) begin
+         instr[11:8] == CC_HS ||
+         instr[11:8] == CC_C  ||
+         instr[11:8] == CC_V  ||
+         instr[11:8] == CC_NV ||
+         instr[11:8] == CC_N  ||
+         instr[11:8] == CC_NN)) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_JRCC_LONG;
       decoded.branch_cc   = instr[11:8];
@@ -2231,7 +2241,12 @@ module tms34010_decode
          instr[11:8] == CC_GE ||
          instr[11:8] == CC_EQ ||
          instr[11:8] == CC_NE ||
-         instr[11:8] == CC_HS)) begin
+         instr[11:8] == CC_HS ||
+         instr[11:8] == CC_C  ||
+         instr[11:8] == CC_V  ||
+         instr[11:8] == CC_NV ||
+         instr[11:8] == CC_N  ||
+         instr[11:8] == CC_NN)) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_JACC;
       decoded.branch_cc   = instr[11:8];

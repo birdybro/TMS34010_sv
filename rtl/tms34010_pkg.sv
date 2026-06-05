@@ -547,9 +547,16 @@ package tms34010_pkg;
   parameter logic [3:0] CC_GE = 4'b0101;  // greater-or-equal (signed;   N ^ V = 0; alias "JRZ" in spec when comparing-to-zero? — see A0023)
   parameter logic [3:0] CC_LE = 4'b0110;  // less-or-equal    (signed;   (N ^ V) | Z = 1)
   parameter logic [3:0] CC_GT = 4'b0111;  // greater-than     (signed;   !(N ^ V) & !Z = 1)
-  parameter logic [3:0] CC_HS = 4'b1001;  // higher-or-same   (unsigned; C = 0; alias "NC")
+  parameter logic [3:0] CC_HS = 4'b1001;  // higher-or-same   (unsigned; C = 0; alias "NC"/"NB")
   parameter logic [3:0] CC_EQ = 4'b1010;  // equal            (Z = 1; alias "JRZ")
   parameter logic [3:0] CC_NE = 4'b1011;  // not-equal        (Z = 0; alias "JRNZ")
+  // General-arithmetic single-flag conditions (Table 12-8, page 12-31). These
+  // test one ST flag directly; unambiguous single-bit codes from the table.
+  parameter logic [3:0] CC_C  = 4'b1000;  // carry set        (C = 1; alias "B" borrow)
+  parameter logic [3:0] CC_V  = 4'b1100;  // overflow         (V = 1; also window clip)
+  parameter logic [3:0] CC_NV = 4'b1101;  // no overflow      (V = 0)
+  parameter logic [3:0] CC_N  = 4'b1110;  // negative         (N = 1)
+  parameter logic [3:0] CC_NN = 4'b1111;  // nonnegative      (N = 0)
 
   // Auto-update addressing mode for the indirect MOVE family. The pointer
   // register steps by the field size (32 bits for the implemented FS=32

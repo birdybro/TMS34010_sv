@@ -3247,6 +3247,25 @@ Commit:
 
 ---
 
+### Task 0101: JRcc/JAcc general-arithmetic condition codes (C/V/NV/N/NN)
+Status: complete
+Dependencies: none (extends existing JRcc/JAcc decode + branch evaluator).
+Spec source: SPVU001A Table 12-8 (page 12-31): single-flag arithmetic codes
+  C/B(1000), V(1100), NV(1101), N(1110), NN(1111).
+Acceptance Criteria:
+- pkg: add CC_C/CC_V/CC_NV/CC_N/CC_NN.
+- core branch evaluator: add the five single-flag tests.
+- decode: add the five codes to JRcc short / JRcc long / JAcc recognition
+  (previously trapped as illegal).
+- tb_jrcc_arith: each code take + skip via CMP-set flags.
+Tests: tb_jrcc_arith PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (JRcc rows → 16/16 cc), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
