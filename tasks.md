@@ -3186,7 +3186,7 @@ Tests: tb_video PASS; full integration regression PASS under Verilator (3
   module-level tbs need Questa); lint clean.
 Docs: architecture.md (module map), changelog.md, tasks.md.
 Commit:
-- pending
+- 2f78003
 
 ---
 
