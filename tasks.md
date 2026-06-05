@@ -3262,7 +3262,7 @@ Tests: tb_jrcc_arith PASS; full integration regression PASS under Verilator
   (3 module-level tbs need Questa); lint clean.
 Docs: instruction_coverage.md (JRcc rows → 16/16 cc), changelog.md, tasks.md.
 Commit:
-- pending
+- 35db85f
 
 ---
 
