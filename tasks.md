@@ -3169,6 +3169,27 @@ Commit:
 
 ---
 
+### Task 0097: video timing generator (standalone module)
+Status: complete
+Dependencies: none (standalone; begins the video subsystem).
+Spec source: 1988 UG §"Video Timing"; HESYNC/HEBLNK/HSBLNK/HTOTAL + V* regs.
+Acceptance Criteria:
+- New rtl/video/tms34010_video.sv: HCOUNT increments per clk, wraps at HTOTAL
+  (VCOUNT++); VCOUNT wraps at VTOTAL. hsync=(hcount<hesync); hblank=(hcount<
+  heblnk)||(hcount>=hsblnk); same for V; blank=hblank||vblank; dpyint_pulse=
+  (hcount==0)&&(vcount==dpyint). Sync active-high (document); rising-edge clk
+  (A0003).
+- sim/tb/tb_video.sv: per-cycle transition + window + strobe checks over
+  ~2.5 frames; confirms HTOTAL/VTOTAL reached and wrap.
+- Not yet wired to io_regs timing values or a pixel clock (follow-up).
+Tests: tb_video PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: architecture.md (module map), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

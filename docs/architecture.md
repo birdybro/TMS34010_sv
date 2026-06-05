@@ -92,7 +92,7 @@ plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not started | Bresenham line FSM |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
 | `rtl/io/tms34010_io_regs.sv`            | 6     | **landed + wired** | 32×16-bit memory-mapped I/O register file (1988 UG Fig 6-1); plain R/W storage, I/O-space decode + index. Instantiated inside the core (Task 0082): I/O-space accesses are serviced on-chip — external write gated off, read data muxed/latched in. Side-effect/read-only register behaviors deferred (A0028). |
-| `rtl/video/tms34010_video_timing.sv`    | 9     | not started | HSYNC/VSYNC/blanking generator |
+| `rtl/video/tms34010_video.sv`           | 9     | **landed (standalone)** | HSYNC/VSYNC/blanking generator: free-running HCOUNT/VCOUNT off VCLK, wraps at HTOTAL/VTOTAL, sync/blank window compares, DPYINT scan-line strobe. Not yet wired to the I/O register timing values or a pixel clock (Task 0097). |
 | `rtl/video/tms34010_refresh.sv`         | 9     | not started | screen refresh / VRAM shift control |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |

@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-02
 
+### Added (Task 0097 — video timing generator)
+- New `rtl/video/tms34010_video.sv`: a standalone, synthesizable horizontal /
+  vertical timing generator (1988 UG §"Video Timing"). Free-running HCOUNT/
+  VCOUNT off the video clock: HCOUNT wraps at HTOTAL (VCOUNT increments on the
+  wrap), VCOUNT wraps at VTOTAL (a new frame). HSYNC/HBLANK/VSYNC/VBLANK are
+  window compares against HESYNC/HEBLNK/HSBLNK / VESYNC/VEBLNK/VSBLNK; BLANK is
+  the combined blank; DPYINT_PULSE is a one-clock strobe at the start of the
+  scan line equal to DPYINT.
+- Standalone for now (not yet wired to the I/O register timing values or a real
+  pixel clock — that integration, plus the display-interrupt request into the
+  interrupt block, is a follow-up).
+- New `sim/tb/tb_video.sv` drives small timing values and checks every cycle
+  over ~2.5 frames: counter transitions/wraps, the sync/blank windows, and the
+  DPYINT strobe.
+
+## 2026-06-02
+
 ### Added (Task 0096 — PIXBLT B,L / B,XY; 1-bit source color-expand)
 - PIXBLT B,L (0x0F80) and B,XY (0x0FA0): the source is a 1-bit-per-pixel
   bitmap; each source bit expands to COLOR1 (B9) if 1, COLOR0 (B8) if 0
