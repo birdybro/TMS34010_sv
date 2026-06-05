@@ -29,3 +29,6 @@ output_files/
 *~
 .DS_Store
 Thumbs.db
+
+# Claude Code local session/scheduler state (not project content)
+.claude/
