@@ -994,9 +994,10 @@ module tms34010_core
   assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2);
   assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr;
   // Interrupt-entry SP writeback: at CORE_INT_DONE, SP <- SP-64 (two 32-bit
-  // pushes done). Highest-priority regfile write that cycle.
+  // pushes done). Only when context was actually pushed (an NMI with NMIM=1
+  // saves nothing, so SP is unchanged). Highest-priority regfile write.
   logic int_sp_wb;
-  assign int_sp_wb = (state_q == CORE_INT_DONE);
+  assign int_sp_wb = (state_q == CORE_INT_DONE) && int_push_q;
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
                        && dsj_precondition
@@ -1537,7 +1538,7 @@ module tms34010_core
                         (decoded.iclass == INSTR_POPST) ||
                         (decoded.iclass == INSTR_RETI)  ||
                         (decoded.iclass == INSTR_TRAP)))
-                    || (state_q == CORE_INT_DONE);
+                    || ((state_q == CORE_INT_DONE) && int_push_q);
   always_comb begin
     if (state_q == CORE_INT_DONE) begin
       // Interrupt entry: clear ST.IE so nested maskable interrupts are masked
@@ -1749,6 +1750,8 @@ module tms34010_core
   logic [15:0]           io_pmask;     // PMASK register (plane mask)
   logic [15:0]           io_intenb;    // INTENB register (maskable-interrupt enables)
   logic [15:0]           io_intpend;   // INTPEND register (maskable-interrupt pending)
+  logic [15:0]           io_hstctlh;   // HSTCTLH register (host control; NMI/NMIM bits)
+  logic                  nmi_clear;    // pulse to clear HSTCTLH.NMI on taking the NMI
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
@@ -1766,7 +1769,9 @@ module tms34010_core
     .control_o(io_control),
     .pmask_o  (io_pmask),
     .intenb_o (io_intenb),
-    .intpend_o(io_intpend)
+    .intpend_o(io_intpend),
+    .hstctlh_o(io_hstctlh),
+    .nmi_clear(nmi_clear)
   );
 
   // ---- Maskable-interrupt priority encoder (Task 0100) --------------------
@@ -1783,14 +1788,39 @@ module tms34010_core
     .int_req   (int_req),
     .int_vector(int_vector)
   );
-  // Latched vector for the entry sequence (captured when leaving CORE_FETCH).
+  // Nonmaskable interrupt (NMI): host sets HSTCTLH.NMI. It is non-maskable
+  // (ignores ST.IE) and takes priority over maskable interrupts. NMIM selects
+  // whether context (PC/ST) is pushed. The device auto-clears the NMI bit on
+  // taking it (nmi_clear pulse below), else — being non-maskable — it would
+  // re-trigger forever.
+  logic nmi_req, nmi_nmim;
+  assign nmi_req  = io_hstctlh[HSTCTL_NMI_BIT];
+  assign nmi_nmim = io_hstctlh[HSTCTL_NMIM_BIT];
+  // Any interrupt is taken at the fetch boundary when NMI is pending or a
+  // maskable request is asserted.
+  logic int_take;
+  assign int_take = nmi_req || int_req;
+
+  // Latched state for the entry sequence (captured when leaving CORE_FETCH):
+  //   int_vec_q    — the trap-vector address to fetch.
+  //   int_is_nmi_q — this entry is an NMI (drives the auto-clear).
+  //   int_push_q   — context is pushed (always for maskable; NMIM=0 for NMI).
+  // nmi_clear pulses in CORE_INT_DONE when the latched entry was an NMI.
   logic [ADDR_WIDTH-1:0] int_vec_q;
+  logic                  int_is_nmi_q;
+  logic                  int_push_q;
   always_ff @(posedge clk) begin
-    if (rst)
-      int_vec_q <= '0;
-    else if (state_q == CORE_FETCH && int_req)
-      int_vec_q <= int_vector;
+    if (rst) begin
+      int_vec_q    <= '0;
+      int_is_nmi_q <= 1'b0;
+      int_push_q   <= 1'b0;
+    end else if (state_q == CORE_FETCH && int_take) begin
+      int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
+      int_is_nmi_q <= nmi_req;
+      int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
+    end
   end
+  assign nmi_clear = (state_q == CORE_INT_DONE) && int_is_nmi_q;
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would
   // corrupt RAM — a small external model that only decodes low address bits
@@ -1976,12 +2006,13 @@ module tms34010_core
       end
 
       CORE_FETCH: begin
-        // Recognise a pending maskable interrupt at the instruction boundary.
-        // If one is asserted (ST.IE=1 and an enabled INTPEND bit set), do NOT
-        // fetch — pc_value stays at the resume address and the entry sequence
-        // pushes it. Otherwise fetch the 16-bit instruction word from PC.
-        if (int_req) begin
-          state_d = CORE_INT_PUSH_PC;
+        // Recognise a pending interrupt at the instruction boundary. NMI
+        // (non-maskable) takes priority over a maskable request (ST.IE=1 and an
+        // enabled INTPEND bit). When taken, do NOT fetch — pc_value stays at the
+        // resume address. An NMI with NMIM=1 saves no context and jumps
+        // straight to the vector; everything else pushes PC+ST first.
+        if (int_take) begin
+          state_d = (nmi_req && nmi_nmim) ? CORE_INT_VECTOR : CORE_INT_PUSH_PC;
         end else begin
           mem_req  = 1'b1;
           mem_we_int   = 1'b0;

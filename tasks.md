@@ -3282,6 +3282,27 @@ Commit:
 
 ---
 
+### Task 0103: Nonmaskable interrupt (NMI) via HSTCTLH
+Status: complete
+Dependencies: Task 0100 (interrupt entry FSM), Task 0082 (io_regs integration).
+Spec source: 1988 UG §8 (NMI, NMIM; auto-clear), HSTCTLH (page 5507/4322),
+  Table 8-2 NMI vector 0xFFFFFEE0 (trap 8).
+Acceptance Criteria:
+- pkg: INT_VEC_NMI, HSTCTL_NMI_BIT(8), HSTCTL_NMIM_BIT(9).
+- io_regs: HSTCTLH tap + nmi_clear input (clears NMI bit synchronously); wire
+  in tb_io_regs.
+- core: nmi_req (ignores IE) priority over int_req at CORE_FETCH; latch
+  is_nmi/push flags; NMIM=1 → straight to CORE_INT_VECTOR (no push); SP/IE
+  writeback gated by push; assert nmi_clear in CORE_INT_DONE.
+- tb_nmi (NMIM=0, IE=0, RETI resume) + tb_nmi_nopush (NMIM=1, no push).
+Tests: tb_nmi, tb_nmi_nopush PASS; full integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: architecture.md, changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

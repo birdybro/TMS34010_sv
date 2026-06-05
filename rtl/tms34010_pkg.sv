@@ -303,6 +303,13 @@ package tms34010_pkg;
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_DI = 32'hFFFF_FEA0; // trap 10
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_WV = 32'hFFFF_FE80; // trap 11
 
+  // Nonmaskable interrupt (NMI): host sets HSTCTLH.NMI; the device vectors
+  // through trap 8 and (if NMIM=0) pushes PC+ST. 1988 UG §8 (Table 8-2,
+  // page 8-? "NMI ... 8 ... FFFFFEE0h") and HSTCTLH (page 5507/4322).
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_NMI   = 32'hFFFF_FEE0; // trap 8
+  parameter int unsigned           HSTCTL_NMI_BIT  = 8;  // HSTCTLH: NMI request
+  parameter int unsigned           HSTCTL_NMIM_BIT = 9;  // HSTCTLH: NMI mode (1=no push)
+
   // CONTROL register bit fields (1988 UG page 4-? CONTROL register).
   parameter int unsigned CTRL_T_BIT    = 5;   // pixel transparency enable
   parameter int unsigned CTRL_W_LO     = 6;   // window violation detection mode

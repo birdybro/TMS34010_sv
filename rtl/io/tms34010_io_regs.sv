@@ -64,7 +64,9 @@ module tms34010_io_regs
   output logic [15:0]           control_o,// CONTROL: PPOP[14:10], PBV/PBH, W, T(bit5)
   output logic [15:0]           pmask_o,  // PMASK: plane mask (1 bit = plane masked)
   output logic [15:0]           intenb_o, // INTENB: maskable-interrupt enables
-  output logic [15:0]           intpend_o // INTPEND: maskable-interrupt pending bits
+  output logic [15:0]           intpend_o,// INTPEND: maskable-interrupt pending bits
+  output logic [15:0]           hstctlh_o,// HSTCTLH: host control (NMI/NMIM in bits 8/9)
+  input  logic                  nmi_clear // 1-cycle: clear HSTCTLH.NMI (device took NMI)
 );
 
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
@@ -89,6 +91,7 @@ module tms34010_io_regs
   assign pmask_o   = io_reg[IO_IDX_PMASK];
   assign intenb_o  = io_reg[IO_IDX_INTENB];
   assign intpend_o = io_reg[IO_IDX_INTPEND];
+  assign hstctlh_o = io_reg[IO_IDX_HSTCTLH];
 
   // Synchronous write + reset. The reset loop is bounded (32 iterations) and
   // fully unrollable, so synthesis treats it as parallel resets.
@@ -99,6 +102,11 @@ module tms34010_io_regs
       end
     end else if (req && we && is_io) begin
       io_reg[idx] <= wdata;
+    end else if (nmi_clear) begin
+      // The device automatically clears HSTCTLH.NMI when it takes the NMI
+      // (1988 UG §8). A normal I/O write takes precedence (the else-if order):
+      // simultaneous host write + take is a don't-care corner.
+      io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
     end
   end
 

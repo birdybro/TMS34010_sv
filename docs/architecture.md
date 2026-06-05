@@ -147,6 +147,15 @@ CORE_FETCH (int_req) ─▶ CORE_INT_PUSH_PC  (mem[SP-32] ← PC)
 The push order (PC high, ST low) matches RETI's pop, so interrupt+RETI
 round-trips. Only ST.IE is cleared (A0030); the saved ST carries the rest.
 
+**NMI** (Task 0103): a nonmaskable interrupt (host sets HSTCTLH.NMI) is sampled
+at the same `CORE_FETCH` boundary with priority over maskable requests and
+*ignores* ST.IE. It vectors through trap 8 (0xFFFFFEE0). HSTCTLH.NMIM picks the
+mode: NMIM=0 takes the full push path above; NMIM=1 jumps straight to
+`CORE_INT_VECTOR` (no push, SP/ST untouched). The device auto-clears
+HSTCTLH.NMI on entry (a one-cycle `nmi_clear` into `tms34010_io_regs`,
+asserted at `CORE_INT_DONE`) — mandatory, since a non-maskable request would
+otherwise re-fire every cycle.
+
 ## Memory interface (planned)
 
 A single `request/valid/ready` interface from the core to the external

@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-04
 
+### Added (Task 0103 — nonmaskable interrupt (NMI) via HSTCTLH)
+- The core now takes a nonmaskable interrupt when the host sets HSTCTLH.NMI
+  (bit 8). NMI ignores ST.IE and takes priority over maskable interrupts; it
+  vectors through trap 8 (0xFFFFFEE0) and reuses the entry FSM from Task 0100.
+- HSTCTLH.NMIM (bit 9) selects context save: NMIM=0 pushes PC+ST (then RETI
+  can resume); NMIM=1 saves nothing and jumps straight to the vector (SP and ST
+  untouched). The entry FSM branches on NMIM at CORE_FETCH.
+- The device auto-clears HSTCTLH.NMI on taking the interrupt — required since,
+  being non-maskable, it would otherwise re-trigger forever. Implemented as a
+  one-cycle `nmi_clear` side channel into `tms34010_io_regs` (asserted in
+  CORE_INT_DONE); a new HSTCTLH tap feeds the NMI/NMIM bits to the core.
+- New `sim/tb/tb_nmi.sv` (NMIM=0: taken with IE=0, PC/ST pushed, auto-cleared,
+  RETI resumes) and `sim/tb/tb_nmi_nopush.sv` (NMIM=1: no push, SP unchanged).
+- pkg: INT_VEC_NMI, HSTCTL_NMI_BIT, HSTCTL_NMIM_BIT. tb_io_regs updated for the
+  new tap + input.
+
 ### Added (Task 0102 — interrupt + RETI round-trip integration test)
 - New `sim/tb/tb_int_reti.sv` validates the full maskable-interrupt lifecycle
   end-to-end: entry (Task 0100) → ISR clears INTPEND and sets a marker → RETI
