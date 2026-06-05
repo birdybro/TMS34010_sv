@@ -3315,7 +3315,7 @@ Acceptance Criteria:
 Tests: tb_int_priority PASS (Verilator); lint unaffected (no RTL change).
 Docs: changelog.md, tasks.md.
 Commit:
-- pending
+- 41a5e36
 
 ---
 
