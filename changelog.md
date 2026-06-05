@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-02
 
+### Added (Task 0098 — maskable-interrupt priority encoder)
+- New `rtl/core/tms34010_int_ctrl.sv`: a combinational priority encoder for the
+  maskable interrupts (1988 UG §8.3/§8.4, Tables 8-2/8-3). Given INTPEND,
+  INTENB, and the global IE bit it decides whether to take a maskable interrupt
+  (`int_req = IE && |(INTPEND & INTENB)`) and supplies the trap-vector address
+  of the highest-priority pending-and-enabled source. Priority HI(bit9) >
+  DI(bit10) > WV(bit11) > INT1(bit1) > INT2(bit2) (internal before external);
+  vectors HI=0xFFFFFEC0, DI=0xFFFFFEA0, WV=0xFFFFFE80, INT1=0xFFFFFFC0,
+  INT2=0xFFFFFFA0. (NMI is requested via HSTCTL and handled separately.)
+- New pkg constants for the INTENB/INTPEND bit positions and the vectors.
+- The interrupt RECOGNITION (sampling int_req at an instruction boundary) and
+  ENTRY sequence (push ST/PC, clear IE, load PC from the vector — reusing the
+  TRAP push path) are the core-FSM follow-up.
+- New `sim/tb/tb_int_ctrl.sv` checks the INTENB/IE gating, the full priority
+  order, and the vector mapping.
+
+## 2026-06-02
+
 ### Added (Task 0097 — video timing generator)
 - New `rtl/video/tms34010_video.sv`: a standalone, synthesizable horizontal /
   vertical timing generator (1988 UG §"Video Timing"). Free-running HCOUNT/

@@ -285,6 +285,20 @@ package tms34010_pkg;
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYADR  = 5'h1E; // Display Address
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_REFCNT  = 5'h1F; // DRAM Refresh Count
 
+  // Interrupt enable/pending (INTENB/INTPEND) bit positions and the trap vector
+  // address of each maskable interrupt (1988 UG §8.3/8.4, Tables 8-2/8-3).
+  // Priority (high→low): HI > DI > WV > INT1 > INT2 (internal before external).
+  parameter int unsigned INT_X1_BIT = 1;   // external interrupt 1
+  parameter int unsigned INT_X2_BIT = 2;   // external interrupt 2
+  parameter int unsigned INT_HI_BIT = 9;   // host interrupt
+  parameter int unsigned INT_DI_BIT = 10;  // display interrupt
+  parameter int unsigned INT_WV_BIT = 11;  // window violation
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_X1 = 32'hFFFF_FFC0; // trap 1
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_X2 = 32'hFFFF_FFA0; // trap 2
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_HI = 32'hFFFF_FEC0; // trap 9
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_DI = 32'hFFFF_FEA0; // trap 10
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_WV = 32'hFFFF_FE80; // trap 11
+
   // CONTROL register bit fields (1988 UG page 4-? CONTROL register).
   parameter int unsigned CTRL_T_BIT    = 5;   // pixel transparency enable
   parameter int unsigned CTRL_W_LO     = 6;   // window violation detection mode

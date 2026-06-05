@@ -3190,6 +3190,24 @@ Commit:
 
 ---
 
+### Task 0098: maskable-interrupt priority encoder (standalone module)
+Status: complete
+Dependencies: none (standalone; begins the interrupt subsystem).
+Spec source: 1988 UG §8.3/§8.4, Tables 8-2/8-3 (vectors + priority).
+Acceptance Criteria:
+- New rtl/core/tms34010_int_ctrl.sv: int_req = ie && |(intpend & intenb over
+  the maskable bits); int_vector = the highest-priority winner's vector.
+  Priority HI>DI>WV>INT1>INT2. pkg INT_*_BIT + INT_VEC_* constants.
+- sim/tb/tb_int_ctrl.sv: gating (INTENB/IE), priority order, vector mapping.
+- FSM recognition + entry sequence is the follow-up (reuse TRAP push).
+Tests: tb_int_ctrl PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
