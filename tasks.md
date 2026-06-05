@@ -3278,7 +3278,7 @@ Acceptance Criteria:
 Tests: tb_int_reti PASS (Verilator); lint unaffected (no RTL change).
 Docs: changelog.md, tasks.md.
 Commit:
-- pending
+- d11564a
 
 ---
 
