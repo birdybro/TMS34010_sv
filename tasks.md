@@ -3266,6 +3266,22 @@ Commit:
 
 ---
 
+### Task 0102: Interrupt + RETI round-trip integration test
+Status: complete
+Dependencies: Task 0100 (interrupt entry), RETI (existing).
+Spec source: 1988 UG §8 (interrupt processing) + RETI (page 12-230).
+Acceptance Criteria:
+- New tb_int_reti: main sets SP/INTENB.DI/INTPEND.DI/EINT; ISR clears INTPEND,
+  sets A5, RETI; verify ISR ran once, resume target after RETI ran, SP back to
+  SP_INIT, ST.IE re-enabled, INTPEND cleared, no re-entry.
+- Test-only; no RTL change.
+Tests: tb_int_reti PASS (Verilator); lint unaffected (no RTL change).
+Docs: changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

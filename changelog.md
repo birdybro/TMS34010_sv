@@ -7,6 +7,13 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-04
 
+### Added (Task 0102 — interrupt + RETI round-trip integration test)
+- New `sim/tb/tb_int_reti.sv` validates the full maskable-interrupt lifecycle
+  end-to-end: entry (Task 0100) → ISR clears INTPEND and sets a marker → RETI
+  restores PC+ST → execution resumes at the instruction that was pending when
+  the interrupt fired, with ST.IE re-enabled and SP returned to its start, and
+  no spurious re-entry. Test-only (no RTL change); locks in Task 0100 + RETI.
+
 ### Added (Task 0101 — JRcc/JAcc general-arithmetic condition codes)
 - Added the five single-flag condition codes from Table 12-8 (page 12-31) to
   the branch-condition evaluator and all three decoder recognition blocks
