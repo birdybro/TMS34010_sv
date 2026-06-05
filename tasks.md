@@ -3204,7 +3204,7 @@ Tests: tb_int_ctrl PASS; full integration regression PASS under Verilator (3
   module-level tbs need Questa); lint clean.
 Docs: changelog.md, tasks.md.
 Commit:
-- pending
+- 840917e
 
 ---
 
