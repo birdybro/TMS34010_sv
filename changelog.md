@@ -7,6 +7,14 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-04
 
+### Added (Task 0104 — NMI + maskable interrupt priority integration test)
+- New `sim/tb/tb_int_priority.sv` arms an NMI (NMIM=0) and a maskable display
+  interrupt simultaneously and verifies the core takes the NMI first, then the
+  DI after NMI's RETI restores ST.IE — NMI → RETI → DI → RETI → resume, with SP
+  balanced and both sources cleared. Ordering is guaranteed by construction
+  (the NMI entry clears IE, so DI cannot preempt the NMI handler). Test-only
+  (no RTL change); exercises the shared interrupt entry FSM under both sources.
+
 ### Added (Task 0103 — nonmaskable interrupt (NMI) via HSTCTLH)
 - The core now takes a nonmaskable interrupt when the host sets HSTCTLH.NMI
   (bit 8). NMI ignores ST.IE and takes priority over maskable interrupts; it

@@ -3303,6 +3303,22 @@ Commit:
 
 ---
 
+### Task 0104: NMI + maskable interrupt priority integration test
+Status: complete
+Dependencies: Task 0100 (maskable entry), Task 0103 (NMI).
+Spec source: 1988 UG §8 (NMI non-maskable + priority; maskable gated by IE).
+Acceptance Criteria:
+- New tb_int_priority: arm NMI(NMIM=0)+INTPEND.DI+IE; verify NMI taken first,
+  DI after NMI's RETI, resume after both, SP balanced, both sources cleared.
+- Ordering guaranteed by construction (NMI clears IE → DI can't preempt).
+- Test-only; no RTL change.
+Tests: tb_int_priority PASS (Verilator); lint unaffected (no RTL change).
+Docs: changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
