@@ -3208,6 +3208,24 @@ Commit:
 
 ---
 
+### Task 0099: DRAM-refresh address generator (standalone module)
+Status: complete
+Dependencies: none (standalone).
+Spec source: 1988 UG §6 (REFCNT, CONTROL.RR), page 6-11.
+Acceptance Criteria:
+- New rtl/video/tms34010_refresh.sv: prescaler off clk, interval 32 (RR=00) /
+  64 (RR=01); RR=10/11 disable. 8-bit REFCNT row increments per refresh,
+  wraps 255->0; refresh_req one-clock strobe.
+- sim/tb/tb_refresh.sv: interval per RR, row increment, RR=11 disable.
+- Not yet wired to a memory arbiter (follow-up).
+Tests: tb_refresh PASS; full integration regression PASS under Verilator (3
+  module-level tbs need Questa); lint clean.
+Docs: architecture.md (module map), changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

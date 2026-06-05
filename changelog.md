@@ -7,6 +7,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-02
 
+### Added (Task 0099 — DRAM-refresh address generator)
+- New `rtl/video/tms34010_refresh.sv`: generates the periodic DRAM-refresh
+  cycles (1988 UG §6, REFCNT / CONTROL.RR). A prescaler off the local clock
+  ticks every 32 (RR=00) or 64 (RR=01) clocks; RR=10 (reserved) and RR=11 are
+  treated as no-refresh. Each tick increments the 8-bit REFCNT row address
+  (0..255 wrap) and pulses `refresh_req` for one clock. Not yet wired to the
+  memory arbiter (the RAS-only refresh cycle issue is a follow-up).
+- New `sim/tb/tb_refresh.sv` checks the 32/64-clock interval per RR, the row
+  increment, and that RR=11 disables refresh.
+
+## 2026-06-02
+
 ### Added (Task 0098 — maskable-interrupt priority encoder)
 - New `rtl/core/tms34010_int_ctrl.sv`: a combinational priority encoder for the
   maskable interrupts (1988 UG §8.3/§8.4, Tables 8-2/8-3). Given INTPEND,
