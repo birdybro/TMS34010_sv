@@ -3299,7 +3299,7 @@ Tests: tb_nmi, tb_nmi_nopush PASS; full integration regression PASS under
   Verilator (3 module-level tbs need Questa); lint clean.
 Docs: architecture.md, changelog.md, tasks.md.
 Commit:
-- pending
+- 772115d
 
 ---
 
