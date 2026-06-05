@@ -3222,7 +3222,7 @@ Tests: tb_refresh PASS; full integration regression PASS under Verilator (3
   module-level tbs need Questa); lint clean.
 Docs: architecture.md (module map), changelog.md, tasks.md.
 Commit:
-- pending
+- dee5c72
 
 ---
 
