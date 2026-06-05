@@ -307,6 +307,11 @@ module tms34010_core
                     mem_op_step <= (pixt_rmw && mem_op_step == 2'd0) ? 2'd1 : 2'd0;
         default:    mem_op_step <= 2'd0;
       endcase
+    end else if (state_q == CORE_INT_VECTOR && mem_ack) begin
+      // Interrupt entry: latch the fetched trap vector (ISR entry address) so
+      // CORE_INT_DONE can load it into the PC.
+      popped_pc_q <= mem_rdata_eff;
+      mem_op_step <= 2'd0;
     end else if (state_q != CORE_MEMORY) begin
       // Defensive reset between instructions.
       mem_op_step <= 2'd0;
@@ -988,6 +993,10 @@ module tms34010_core
   assign pblt_wb_saddr = (state_q == CORE_PBLT_WB);
   assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2);
   assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr;
+  // Interrupt-entry SP writeback: at CORE_INT_DONE, SP <- SP-64 (two 32-bit
+  // pushes done). Highest-priority regfile write that cycle.
+  logic int_sp_wb;
+  assign int_sp_wb = (state_q == CORE_INT_DONE);
   assign rf_wr_en   = ((state_q == CORE_WRITEBACK)
                        && decoded.wb_reg_en
                        && dsj_precondition
@@ -996,9 +1005,12 @@ module tms34010_core
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
                    || m2m_src_wr
-                   || graphics_wb;
-  assign rf_wr_file = graphics_wb ? REG_FILE_B : decoded.rd_file;
-  assign rf_wr_idx  = (fill_wb || pblt_wb_daddr) ? B_DADDR_IDX
+                   || graphics_wb
+                   || int_sp_wb;
+  assign rf_wr_file = int_sp_wb ? REG_FILE_A
+                    : graphics_wb ? REG_FILE_B : decoded.rd_file;
+  assign rf_wr_idx  = int_sp_wb ? REG_SP_IDX
+                    : (fill_wb || pblt_wb_daddr) ? B_DADDR_IDX
                     : pblt_wb_saddr              ? B_SADDR_IDX
                     : mmfm_pop_wr                ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
@@ -1335,6 +1347,10 @@ module tms34010_core
   //   LMO_RR → priority-encoder result
   // The default routes the shifter or ALU result per decoded.use_shifter.
   always_comb begin
+    if (int_sp_wb) begin
+      // Interrupt entry: SP <- SP - 64 (two 32-bit pushes complete).
+      rf_wr_data = rf_sp - WORD_BIT_SIZE_2;
+    end else
     unique case (decoded.iclass)
       // MOVX: Rd.X (low 16) <- Rs.X, Rd.Y (high 16) kept. MOVY: Rd.Y <-
       // Rs.Y, Rd.X kept. rf_rs1=Rs, rf_rs2=old Rd (async read, same cycle).
@@ -1512,7 +1528,7 @@ module tms34010_core
     end
   end
 
-  assign st_write_en = (state_q == CORE_WRITEBACK)
+  assign st_write_en = ((state_q == CORE_WRITEBACK)
                     && ((decoded.iclass == INSTR_PUTST) ||
                         (decoded.iclass == INSTR_SETF)  ||
                         (decoded.iclass == INSTR_EXGF)  ||
@@ -1520,8 +1536,15 @@ module tms34010_core
                         (decoded.iclass == INSTR_EINT)  ||
                         (decoded.iclass == INSTR_POPST) ||
                         (decoded.iclass == INSTR_RETI)  ||
-                        (decoded.iclass == INSTR_TRAP));
+                        (decoded.iclass == INSTR_TRAP)))
+                    || (state_q == CORE_INT_DONE);
   always_comb begin
+    if (state_q == CORE_INT_DONE) begin
+      // Interrupt entry: clear ST.IE so nested maskable interrupts are masked
+      // until RETI restores the pushed ST. Other ST bits are preserved (the
+      // full ST was saved on the stack). A0030.
+      st_write_data = st_value & ~(32'd1 << ST_IE_BIT);
+    end else
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
       INSTR_SETF:  st_write_data = setf_new_st;
@@ -1674,6 +1697,12 @@ module tms34010_core
         end
         default: ; // no branch
       endcase
+    end else if (state_q == CORE_INT_DONE) begin
+      // Interrupt entry: load PC with the trap vector (ISR entry address),
+      // latched into popped_pc_q on the CORE_INT_VECTOR ack. Already word-
+      // aligned (it is a vector word), so no bottom-nibble mask.
+      pc_load_en    = 1'b1;
+      pc_load_value = popped_pc_q;
     end
   end
 
@@ -1713,6 +1742,8 @@ module tms34010_core
   logic [15:0]           io_convsp;    // CONVSP register (XY->linear source pitch)
   logic [15:0]           io_control;   // CONTROL register (PPOP, T, window mode, ...)
   logic [15:0]           io_pmask;     // PMASK register (plane mask)
+  logic [15:0]           io_intenb;    // INTENB register (maskable-interrupt enables)
+  logic [15:0]           io_intpend;   // INTPEND register (maskable-interrupt pending)
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
@@ -1728,8 +1759,33 @@ module tms34010_core
     .convdp_o (io_convdp),
     .convsp_o (io_convsp),
     .control_o(io_control),
-    .pmask_o  (io_pmask)
+    .pmask_o  (io_pmask),
+    .intenb_o (io_intenb),
+    .intpend_o(io_intpend)
   );
+
+  // ---- Maskable-interrupt priority encoder (Task 0100) --------------------
+  // Combinational: int_req asserts when ST.IE=1 and an enabled INTPEND bit is
+  // set; int_vector is the winning source's trap-vector address. The core
+  // recognises the request at the CORE_FETCH boundary and runs the entry
+  // sequence below. NMI (host, via HSTCTL) is separate and not handled here.
+  logic                  int_req;
+  logic [ADDR_WIDTH-1:0] int_vector;
+  tms34010_int_ctrl u_int_ctrl (
+    .intpend   (io_intpend),
+    .intenb    (io_intenb),
+    .ie        (st_value[ST_IE_BIT]),
+    .int_req   (int_req),
+    .int_vector(int_vector)
+  );
+  // Latched vector for the entry sequence (captured when leaving CORE_FETCH).
+  logic [ADDR_WIDTH-1:0] int_vec_q;
+  always_ff @(posedge clk) begin
+    if (rst)
+      int_vec_q <= '0;
+    else if (state_q == CORE_FETCH && int_req)
+      int_vec_q <= int_vector;
+  end
   // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
   // u_io_regs and must NOT also write external memory (otherwise it would
   // corrupt RAM — a small external model that only decodes low address bits
@@ -1915,15 +1971,60 @@ module tms34010_core
       end
 
       CORE_FETCH: begin
-        // Architectural instruction word is 16 bits. Fetch from PC.
-        mem_req  = 1'b1;
-        mem_we_int   = 1'b0;
-        mem_addr = pc_value;
-        mem_size = INSTR_WORD_BITS;
-        if (mem_ack) begin
-          state_d       = CORE_DECODE;
-          pc_advance_en = 1'b1;       // advance PC by INSTR_WORD_BITS
+        // Recognise a pending maskable interrupt at the instruction boundary.
+        // If one is asserted (ST.IE=1 and an enabled INTPEND bit set), do NOT
+        // fetch — pc_value stays at the resume address and the entry sequence
+        // pushes it. Otherwise fetch the 16-bit instruction word from PC.
+        if (int_req) begin
+          state_d = CORE_INT_PUSH_PC;
+        end else begin
+          mem_req  = 1'b1;
+          mem_we_int   = 1'b0;
+          mem_addr = pc_value;
+          mem_size = INSTR_WORD_BITS;
+          if (mem_ack) begin
+            state_d       = CORE_DECODE;
+            pc_advance_en = 1'b1;       // advance PC by INSTR_WORD_BITS
+          end
         end
+      end
+
+      CORE_INT_PUSH_PC: begin
+        // Push the resume PC to mem[SP-32] (32-bit). SP is not updated until
+        // CORE_INT_DONE; the second push uses SP-64. Order matches RETI's pop
+        // (ST at the lower address, PC at the higher) and the TRAP push.
+        mem_req   = 1'b1;
+        mem_we_int = 1'b1;
+        mem_addr  = rf_sp - WORD_BIT_SIZE;
+        mem_size  = MEM_SIZE_32;
+        mem_wdata = pc_value;
+        if (mem_ack) state_d = CORE_INT_PUSH_ST;
+      end
+
+      CORE_INT_PUSH_ST: begin
+        // Push ST to mem[SP-64] (32-bit).
+        mem_req   = 1'b1;
+        mem_we_int = 1'b1;
+        mem_addr  = rf_sp - WORD_BIT_SIZE_2;
+        mem_size  = MEM_SIZE_32;
+        mem_wdata = st_value;
+        if (mem_ack) state_d = CORE_INT_VECTOR;
+      end
+
+      CORE_INT_VECTOR: begin
+        // Read the 32-bit trap vector (the ISR entry address) at the latched
+        // vector address; latch it into popped_pc_q for the PC load below.
+        mem_req   = 1'b1;
+        mem_we_int = 1'b0;
+        mem_addr  = int_vec_q;
+        mem_size  = MEM_SIZE_32;
+        if (mem_ack) state_d = CORE_INT_DONE;
+      end
+
+      CORE_INT_DONE: begin
+        // One cycle to retire the entry: SP <- SP-64 (regfile), PC <- vector,
+        // ST.IE <- 0 (mask nested interrupts until RETI). Then fetch the ISR.
+        state_d = CORE_FETCH;
       end
 
       CORE_DECODE: begin

@@ -132,6 +132,21 @@ CORE_WRITEBACK ─▶ CORE_FETCH
 Multi-cycle graphics operations are sub-FSMs invoked from `CORE_EXECUTE`
 and return to `CORE_WRITEBACK` only when done.
 
+**Maskable-interrupt entry** (Task 0100): `tms34010_int_ctrl` is instantiated
+in the core; `int_req` (ST.IE=1 and an enabled INTPEND bit set, via the
+INTENB/INTPEND taps on `tms34010_io_regs`) is sampled at `CORE_FETCH`. If
+asserted, the core does not fetch — it runs a four-state entry sequence:
+
+```
+CORE_FETCH (int_req) ─▶ CORE_INT_PUSH_PC  (mem[SP-32] ← PC)
+                     ─▶ CORE_INT_PUSH_ST  (mem[SP-64] ← ST)
+                     ─▶ CORE_INT_VECTOR   (PC ← mem[vector])
+                     ─▶ CORE_INT_DONE     (SP -= 64; ST.IE ← 0) ─▶ CORE_FETCH
+```
+
+The push order (PC high, ST low) matches RETI's pop, so interrupt+RETI
+round-trips. Only ST.IE is cleared (A0030); the saved ST carries the rest.
+
 ## Memory interface (planned)
 
 A single `request/valid/ready` interface from the core to the external

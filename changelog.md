@@ -5,6 +5,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-04
+
+### Added (Task 0100 — maskable-interrupt recognition + entry sequence)
+- The interrupt priority encoder (Task 0098) is now wired into the core. New
+  INTENB/INTPEND taps on `tms34010_io_regs` feed `tms34010_int_ctrl`, whose
+  `int_req`/`int_vector` drive a new entry sequence in the core FSM.
+- At the CORE_FETCH boundary, if `int_req` (ST.IE=1 and an enabled INTPEND bit
+  set), the core diverts instead of fetching: CORE_INT_PUSH_PC (push resume PC
+  at SP-32) → CORE_INT_PUSH_ST (push ST at SP-64) → CORE_INT_VECTOR (read the
+  trap vector → PC) → CORE_INT_DONE (SP-=64, ST.IE←0). The push order matches
+  RETI's pop, so an interrupt + RETI round-trips. No new core ports.
+- A0030: the interrupt entry clears only ST.IE and preserves the other ST bits
+  (the full ST is saved/restored by RETI), in contrast to TRAP which loads
+  ST_RESET_VALUE.
+- New `sim/tb/tb_int_entry.sv`: drives INTENB.DI/INTPEND.DI + EINT and verifies
+  the ISR is entered (vector taken), the instruction after EINT is skipped, SP
+  is decremented by 64, the pushed PC/ST are correct, and ST.IE is cleared.
+- `tb_io_regs` updated for the two new taps.
+
 ## 2026-06-02
 
 ### Added (Task 0099 — DRAM-refresh address generator)

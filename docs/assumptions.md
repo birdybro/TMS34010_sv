@@ -564,6 +564,29 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   write (they write the low 16 bits) and 32-bit accesses would span two
   registers — neither is exercised by the implemented instruction set.
 
+## A0030 — Maskable-interrupt entry clears only ST.IE (preserves other ST bits)
+- **Date**: 2026-06-04 (Task 0100).
+- **Status**: assumption (spec describes the push/vector sequence; the exact
+  post-entry ST contents for a hardware interrupt are not quoted verbatim).
+- **Source**: 1988 UG §8 (interrupt processing): "the PC and the ST are pushed
+  onto the stack" on interrupt; RETI "restores the ST and PC"; "Assuming the IE
+  bit in the restored ST is a 1, interrupts are again enabled."
+- **Assumption**: the maskable-interrupt entry sequence pushes PC then ST,
+  reads the trap vector into PC, and clears **only** ST.IE (masking nested
+  maskable interrupts until RETI). The other ST bits (flags, FE/FS field-size
+  pairs, PBX, etc.) are left unchanged — the full pre-interrupt ST is saved on
+  the stack and restored by RETI, so the in-flight ST need not be reset.
+- **Contrast with TRAP** (A0-none): TRAP replaces ST with ST_RESET_VALUE
+  (0x10). A hardware interrupt is modeled here as preserving ST except IE,
+  because (unlike a software TRAP that begins a fresh context) an interrupt
+  transparently borrows the current thread and RETI must restore it exactly.
+- **Why uncertain**: the User's Guide does not give a worked before/after ST
+  for a hardware interrupt entry. If a cross-check shows the device also resets
+  FE/FS on interrupt entry, change the CORE_INT_DONE st_write_data to
+  ST_RESET_VALUE | (preserved bits).
+- **How to apply**: the clear is at CORE_INT_DONE in `tms34010_core.sv`
+  (`st_write_data = st_value & ~(1<<ST_IE_BIT)`).
+
 ## A0029 — FILL XY updates DADDR to a linear address
 - **Date**: 2026-06-01 (Task 0088).
 - **Status**: assumption (the spec's DADDR-update wording is shared between

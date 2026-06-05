@@ -62,7 +62,9 @@ module tms34010_io_regs
   output logic [15:0]           convdp_o, // CONVDP: XY->linear dest pitch shift
   output logic [15:0]           convsp_o, // CONVSP: XY->linear source pitch shift
   output logic [15:0]           control_o,// CONTROL: PPOP[14:10], PBV/PBH, W, T(bit5)
-  output logic [15:0]           pmask_o   // PMASK: plane mask (1 bit = plane masked)
+  output logic [15:0]           pmask_o,  // PMASK: plane mask (1 bit = plane masked)
+  output logic [15:0]           intenb_o, // INTENB: maskable-interrupt enables
+  output logic [15:0]           intpend_o // INTPEND: maskable-interrupt pending bits
 );
 
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
@@ -85,6 +87,8 @@ module tms34010_io_regs
   assign convsp_o  = io_reg[IO_IDX_CONVSP];
   assign control_o = io_reg[IO_IDX_CONTROL];
   assign pmask_o   = io_reg[IO_IDX_PMASK];
+  assign intenb_o  = io_reg[IO_IDX_INTENB];
+  assign intpend_o = io_reg[IO_IDX_INTPEND];
 
   // Synchronous write + reset. The reset loop is bounded (32 iterations) and
   // fully unrollable, so synthesis treats it as parallel resets.

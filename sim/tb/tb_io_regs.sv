@@ -27,13 +27,16 @@ module tb_io_regs;
   logic [15:0]           convsp_w;
   logic [15:0]           control_w;
   logic [15:0]           pmask_w;
+  logic [15:0]           intenb_w;
+  logic [15:0]           intpend_w;
 
   tms34010_io_regs u_io (
     .clk(clk), .rst(rst),
     .req(req), .we(we), .addr(addr), .wdata(wdata),
     .rdata(rdata), .is_io(is_io),
     .psize_o(psize_w), .convdp_o(convdp_w), .convsp_o(convsp_w),
-    .control_o(control_w), .pmask_o(pmask_w)
+    .control_o(control_w), .pmask_o(pmask_w),
+    .intenb_o(intenb_w), .intpend_o(intpend_w)
   );
 
   int unsigned failures;

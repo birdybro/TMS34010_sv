@@ -79,7 +79,11 @@ package tms34010_pkg;
     CORE_PBLT         = 5'd13, // PIXBLT: per-pixel read-src / read-dst / write loop
     CORE_PBLT_WB      = 5'd14, // PIXBLT: write the final SADDR back to B0
     CORE_PBLT_WB2     = 5'd15, // PIXBLT: write the final DADDR back to B2
-    CORE_PBLT_SETUP2  = 5'd16  // PIXBLT B (color expand): latch COLOR0/COLOR1
+    CORE_PBLT_SETUP2  = 5'd16, // PIXBLT B (color expand): latch COLOR0/COLOR1
+    CORE_INT_PUSH_ST  = 5'd17, // interrupt entry: push ST onto the stack
+    CORE_INT_PUSH_PC  = 5'd18, // interrupt entry: push PC onto the stack
+    CORE_INT_VECTOR   = 5'd19, // interrupt entry: read the vector -> PC
+    CORE_INT_DONE     = 5'd20  // interrupt entry: write back SP, clear IE
   } core_state_t;
 
   // ---------------------------------------------------------------------------

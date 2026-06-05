@@ -3226,6 +3226,27 @@ Commit:
 
 ---
 
+### Task 0100: Maskable-interrupt recognition + entry sequence (core integration)
+Status: complete
+Dependencies: Task 0098 (int_ctrl), Task 0082 (io_regs integration).
+Spec source: 1988 UG §8 (interrupt processing: push PC+ST, vector→PC, IE clear);
+  RETI restore semantics. Vectors/priority per Table 8-2 and int_ctrl.
+Acceptance Criteria:
+- io_regs: add INTENB/INTPEND taps (wire in tb_io_regs).
+- core: instantiate tms34010_int_ctrl (ie=ST.IE). At CORE_FETCH, if int_req,
+  divert (no fetch) into CORE_INT_PUSH_PC → PUSH_ST → VECTOR → DONE. Push PC at
+  SP-32, ST at SP-64; read vector→PC; SP-=64; clear ST.IE only (A0030). No new
+  core ports.
+- tb_int_entry: INTENB.DI+INTPEND.DI+EINT → ISR entered, post-EINT instr
+  skipped, SP-64, pushed PC/ST correct, ST.IE cleared.
+Tests: tb_int_entry PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0030), architecture.md, changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
