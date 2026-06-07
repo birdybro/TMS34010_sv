@@ -494,7 +494,23 @@ module tms34010_core
   assign pblt_processed   = ppop_apply(pblt_src_eff, pblt_dst_pix_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], pblt_pixel_mask);
   assign pblt_transp      = io_control[CTRL_T_BIT] && ((pblt_processed & pblt_pixel_mask) == '0);
-  assign pblt_merged      = pblt_transp
+  // Window clipping (CONTROL.W=3, PIXBLT with XY dest — Task 0106). The raw XY
+  // DADDR is preserved (pblt_dst_xy_raw_q) because pblt_dst_addr_q is converted
+  // to linear at SETUP; each pixel's absolute XY = (rawX+col, rawY+row) is
+  // tested against the inclusive [WSTART..WEND] rectangle and out-of-window
+  // pixels are left unchanged (same skip path as transparency). W=1/W=2 and the
+  // WV interrupt are not implemented (A0031).
+  logic [DATA_WIDTH-1:0] pblt_dst_xy_raw_q, pblt_wstart_q, pblt_wend_q;
+  logic                  pblt_win_en_q;
+  logic [15:0]           pblt_px, pblt_py;
+  logic                  pblt_in_window, pblt_clip_out;
+  assign pblt_px = pblt_dst_xy_raw_q[15:0]            + pblt_x_q;
+  assign pblt_py = pblt_dst_xy_raw_q[DATA_WIDTH-1:16] + pblt_y_q;
+  assign pblt_in_window =
+        (pblt_px >= pblt_wstart_q[15:0]) && (pblt_px <= pblt_wend_q[15:0])
+     && (pblt_py >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_py <= pblt_wend_q[DATA_WIDTH-1:16]);
+  assign pblt_clip_out = pblt_win_en_q && !pblt_in_window;
+  assign pblt_merged      = (pblt_transp || pblt_clip_out)
                           ? pblt_dst_pix_q
                           : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
 
@@ -526,18 +542,32 @@ module tms34010_core
       pblt_dst_pix_q  <= '0;
       pblt_color0_q   <= '0;
       pblt_color1_q   <= '0;
+      pblt_dst_xy_raw_q <= '0;
+      pblt_wstart_q   <= '0;
+      pblt_wend_q     <= '0;
+      pblt_win_en_q   <= 1'b0;
     end else begin
-      // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3).
+      // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3). Window
+      // clipping engages only for an XY destination with CONTROL.W=3; keep the
+      // raw XY DADDR (pblt_dst_addr_q is converted to linear at SETUP).
       if (state_q == CORE_EXECUTE && is_pblt) begin
         pblt_src_addr_q <= rf_rs1_data;          // SADDR
         pblt_src_row_q  <= rf_rs1_data;
         pblt_dst_addr_q <= rf_rs2_data;          // DADDR
         pblt_dst_row_q  <= rf_rs2_data;
+        pblt_dst_xy_raw_q <= rf_rs2_data;        // raw XY DADDR (for window)
         pblt_dx_q       <= rf_rs3_data[15:0];
         pblt_dy_q       <= rf_rs3_data[DATA_WIDTH-1:16];
         pblt_x_q        <= 16'd0;
         pblt_y_q        <= 16'd0;
         pblt_substep_q  <= 2'd0;
+        pblt_win_en_q   <= decoded.blt_dst_xy &&
+                           (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
+      end
+      // CORE_PBLT_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
+      if (state_q == CORE_PBLT_SETUP_WIN) begin
+        pblt_wstart_q <= rf_rs1_data;
+        pblt_wend_q   <= rf_rs2_data;
       end
       // CORE_PBLT_SETUP: latch SPTCH(port1) / DPTCH(port2); for the XY variants
       // convert the XY SADDR/DADDR to linear (port3 = OFFSET here).
@@ -794,7 +824,8 @@ module tms34010_core
   // becomes the 32-bit value driven onto mem_wdata.
   assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WSTART_IDX
                                 : (state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WSTART_IDX
+                                : (state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
                      : decoded.rs_idx;
@@ -806,7 +837,8 @@ module tms34010_core
   assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW))
                      ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
+                     : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WEND_IDX
+                                : (state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
@@ -2189,12 +2221,19 @@ module tms34010_core
 
       CORE_PBLT_SETUP: begin
         // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE). The
-        // binary form reads COLOR0/COLOR1 in a second setup cycle.
-        state_d = decoded.blt_binary ? CORE_PBLT_SETUP2 : CORE_PBLT;
+        // binary form reads COLOR0/COLOR1 in a second setup cycle; a windowed
+        // (W=3) XY blt reads WSTART/WEND in CORE_PBLT_SETUP_WIN.
+        state_d = decoded.blt_binary ? CORE_PBLT_SETUP2
+                : pblt_win_en_q       ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
       end
 
       CORE_PBLT_SETUP2: begin
         // Latch COLOR0/COLOR1 for the color-expand source.
+        state_d = pblt_win_en_q ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
+      end
+
+      CORE_PBLT_SETUP_WIN: begin
+        // One cycle to latch WSTART(B5)/WEND(B6) for window clipping.
         state_d = CORE_PBLT;
       end
 

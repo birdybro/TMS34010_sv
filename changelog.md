@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-07
 
+### Added (Task 0106 — PIXBLT XY window clipping, CONTROL.W=3)
+- Extends the FILL XY window clip (Task 0105) to the PIXBLT engine for any
+  XY-destination PIXBLT (1988 UG §7.10.3). WSTART/WEND read in a new
+  CORE_PBLT_SETUP_WIN cycle (entered only for windowed XY blts). The raw XY
+  DADDR is preserved (pblt_dst_xy_raw_q) since pblt_dst_addr_q is converted to
+  linear at SETUP; each dest pixel's absolute XY = (rawX+col, rawY+row) is
+  tested against [WSTART..WEND] and out-of-window pixels are left unchanged.
+- A0031 updated: W=3 clip now covers FILL XY + PIXBLT XY. W=1/W=2, the WV
+  interrupt, and LINE/DRAV/PIXT clipping remain deferred (documented).
+- New `sim/tb/tb_pixblt_window.sv`: PIXBLT XY,XY with a 1-pixel-wide window
+  verifies the in-window pixel is transferred and the out-of-window pixel is
+  skipped, with SADDR/DADDR still advancing over the full array.
+
 ### Added (Task 0105 — FILL XY window clipping, CONTROL.W=3)
 - The FILL XY engine now clips to the destination window when CONTROL.W=3
   (1988 UG §7.10.3). WSTART(B5)/WEND(B6) are read in a new CORE_FILL_SETUP_WIN

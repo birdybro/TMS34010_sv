@@ -571,17 +571,19 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   (no draw, WV interrupt on a pixel inside); W=2 miss detection (abort + V-bit +
   WV interrupt on a pixel outside); W=3 window clipping (draw inside, skip
   outside). WSTART=B5/WEND=B6 are inclusive XY corners; WVP=INTPEND bit 11.
-- **Implemented**: W=3 (clip) for **FILL XY**. Each pixel's absolute XY =
-  (DADDR.X + col, DADDR.Y + row); a pixel outside the inclusive [WSTART..WEND]
-  rectangle is left unchanged (write-back of the read destination, the same
-  skip path as transparency). 16-bit unsigned XY compares.
+- **Implemented**: W=3 (clip) for **FILL XY** (Task 0105) and **PIXBLT with an
+  XY destination** (Task 0106). Each pixel's absolute XY = (DADDR.X + col,
+  DADDR.Y + row); a pixel outside the inclusive [WSTART..WEND] rectangle is left
+  unchanged (write-back of the read destination, the same skip path as
+  transparency). 16-bit unsigned XY compares. PIXBLT preserves the raw XY DADDR
+  (pblt_dst_xy_raw_q) since pblt_dst_addr_q is converted to linear at SETUP.
 - **NOT implemented (deferred)**:
   - W=1 and W=2 modes (hit/miss detection), the WV (window-violation) interrupt
-    request (WVP), the V-bit window semantics, and the W=2 abort. A FILL XY with
-    W=1 or W=2 currently does NOT clip and does NOT raise WV — it behaves as
-    W=0. **This is recorded here, not silently stubbed; see
+    request (WVP), the V-bit window semantics, and the W=2 abort. A FILL/PIXBLT
+    XY with W=1 or W=2 currently does NOT clip and does NOT raise WV — it behaves
+    as W=0. **This is recorded here, not silently stubbed; see
     docs/instruction_coverage.md.**
-  - Window clipping for PIXBLT XY, LINE, DRAV, PIXT (only FILL XY so far).
+  - Window clipping for LINE, DRAV, PIXT (FILL XY + PIXBLT XY done so far).
 - **How to apply / extend**: the clip predicate (fill_in_window / fill_clip_out)
   and the WSTART/WEND read (CORE_FILL_SETUP_WIN) in tms34010_core.sv are the
   template. W=2 adds "any pixel outside ⇒ V=1 + WVP"; W=1 adds "any pixel inside

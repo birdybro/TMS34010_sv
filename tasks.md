@@ -3342,6 +3342,27 @@ Commit:
 
 ---
 
+### Task 0106: PIXBLT XY window clipping (CONTROL.W=3)
+Status: complete
+Dependencies: Task 0095 (PIXBLT XY engine), Task 0105 (FILL window template).
+Spec source: 1988 UG §7.10.3 (W=3 Window Clipping); WSTART(B5)/WEND(B6).
+Acceptance Criteria:
+- pkg: CORE_PBLT_SETUP_WIN state.
+- core: for any XY-destination PIXBLT with CONTROL.W=3, preserve the raw XY
+  DADDR (pblt_dst_xy_raw_q), read WSTART/WEND (new setup cycle, after SETUP/
+  SETUP2), per-pixel absolute XY tested against [WSTART..WEND], out-of-window
+  dest pixels skipped (reuse transparency path). Non-windowed timing unchanged.
+- A0031 extended to PIXBLT XY; W=1/W=2/WV/LINE/DRAV/PIXT still deferred.
+- tb_pixblt_window: PIXBLT XY,XY with a 1-pixel window.
+Tests: tb_pixblt_window PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0031), instruction_coverage.md (PIXBLT XY row),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
