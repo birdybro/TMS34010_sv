@@ -3319,6 +3319,29 @@ Commit:
 
 ---
 
+### Task 0105: FILL XY window clipping (CONTROL.W=3)
+Status: complete
+Dependencies: Task 0088 (FILL XY engine).
+Spec source: 1988 UG §7.10.3 (W=3 Window Clipping); WSTART(B5)/WEND(B6).
+Acceptance Criteria:
+- pkg: CORE_FILL_SETUP_WIN state.
+- core: for FILL XY with CONTROL.W=3, read WSTART/WEND (new setup cycle via
+  spare regfile ports B5/B6); per-pixel absolute XY = (DADDR.X+col, DADDR.Y+row)
+  tested against inclusive [WSTART..WEND]; out-of-window pixels skipped (write
+  dest unchanged, reusing the transparency path). Non-windowed FILL timing
+  unchanged (extra cycle only when windowed).
+- A0031: only W=3 for FILL XY; W=1/W=2/WV-interrupt/PIXBLT-LINE-DRAV-PIXT
+  deferred and DOCUMENTED (not silent-stubbed).
+- tb_fill_window: 2x2 FILL XY, window excludes one column.
+Tests: tb_fill_window PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0031), instruction_coverage.md (FILL XY row),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -83,7 +83,8 @@ package tms34010_pkg;
     CORE_INT_PUSH_ST  = 5'd17, // interrupt entry: push ST onto the stack
     CORE_INT_PUSH_PC  = 5'd18, // interrupt entry: push PC onto the stack
     CORE_INT_VECTOR   = 5'd19, // interrupt entry: read the vector -> PC
-    CORE_INT_DONE     = 5'd20  // interrupt entry: write back SP, clear IE
+    CORE_INT_DONE     = 5'd20, // interrupt entry: write back SP, clear IE
+    CORE_FILL_SETUP_WIN = 5'd21 // FILL XY (W=3): read WSTART/WEND for clipping
   } core_state_t;
 
   // ---------------------------------------------------------------------------

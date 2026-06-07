@@ -5,6 +5,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-07
+
+### Added (Task 0105 — FILL XY window clipping, CONTROL.W=3)
+- The FILL XY engine now clips to the destination window when CONTROL.W=3
+  (1988 UG §7.10.3). WSTART(B5)/WEND(B6) are read in a new CORE_FILL_SETUP_WIN
+  cycle (only entered for windowed XY fills, so non-windowed FILL timing is
+  unchanged). Each pixel's absolute XY = (DADDR.X+col, DADDR.Y+row) is tested
+  against the inclusive [WSTART..WEND] rectangle; out-of-window pixels are left
+  unchanged (reusing the transparency write-back-dest skip path).
+- A0031: only W=3 (clip) for FILL XY is implemented. W=1/W=2 (hit/miss
+  detection), the WV interrupt, the V-bit window semantics, and clipping for
+  PIXBLT/LINE/DRAV/PIXT are explicitly deferred (documented, not silently
+  stubbed) — see docs/instruction_coverage.md and docs/assumptions.md.
+- New `sim/tb/tb_fill_window.sv`: a 2×2 FILL XY with a window excluding one
+  column verifies in-window pixels are drawn and out-of-window pixels skipped,
+  and DADDR still advances over the full array.
+
 ## 2026-06-04
 
 ### Added (Task 0104 — NMI + maskable interrupt priority integration test)

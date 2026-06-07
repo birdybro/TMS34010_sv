@@ -361,12 +361,27 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] fill_pixel_mask, fill_pmask_field;
   logic [DATA_WIDTH-1:0] fill_processed, fill_merged;
   logic                  fill_transp;
+  // Window clipping (CONTROL.W = 3, FILL XY only — Task 0105). WSTART/WEND are
+  // XY (X in [15:0], Y in [31:16]). A pixel outside the inclusive window
+  // rectangle is left unchanged (write-back of the read dest, the same skip
+  // mechanism as transparency). W=1/W=2 (hit/miss detection, WV interrupt,
+  // abort) are NOT implemented yet (A0031) — only W=3 clips.
+  logic [DATA_WIDTH-1:0] fill_wstart_q, fill_wend_q;
+  logic                  fill_win_en_q;    // W=3 clipping active for this FILL
+  logic [15:0]           fill_px, fill_py; // current pixel absolute XY
+  logic                  fill_in_window, fill_clip_out;
+  assign fill_px = fill_daddr_raw_q[15:0]            + fill_x_q;
+  assign fill_py = fill_daddr_raw_q[DATA_WIDTH-1:16] + fill_y_q;
+  assign fill_in_window =
+        (fill_px >= fill_wstart_q[15:0]) && (fill_px <= fill_wend_q[15:0])
+     && (fill_py >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_py <= fill_wend_q[DATA_WIDTH-1:16]);
+  assign fill_clip_out = fill_win_en_q && !fill_in_window;
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], fill_pixel_mask);
   assign fill_transp      = io_control[CTRL_T_BIT] && ((fill_processed & fill_pixel_mask) == '0);
-  assign fill_merged      = fill_transp
+  assign fill_merged      = (fill_transp || fill_clip_out)
                           ? fill_dest_q
                           : ((fill_processed & ~fill_pmask_field) | (fill_dest_q & fill_pmask_field));
 
@@ -383,9 +398,13 @@ module tms34010_core
       fill_y_q         <= '0;
       fill_substep_q   <= 1'b0;
       fill_dest_q      <= '0;
+      fill_wstart_q    <= '0;
+      fill_wend_q      <= '0;
+      fill_win_en_q    <= 1'b0;
     end else begin
       // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL. The
-      // start address (possibly XY-converted) is finalized at SETUP.
+      // start address (possibly XY-converted) is finalized at SETUP. Window
+      // clipping engages only for FILL XY with CONTROL.W = 3.
       if (state_q == CORE_EXECUTE && is_fill) begin
         fill_daddr_raw_q <= rf_rs1_data;       // DADDR (linear, or XY for FILL XY)
         fill_dptch_q     <= rf_rs2_data;       // DPTCH
@@ -393,6 +412,13 @@ module tms34010_core
         fill_dy_q        <= rf_rs3_data[DATA_WIDTH-1:16]; // DY
         fill_x_q         <= 16'd0;
         fill_y_q         <= 16'd0;
+        fill_win_en_q    <= fill_is_xy &&
+                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
+      end
+      // CORE_FILL_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
+      if (state_q == CORE_FILL_SETUP_WIN) begin
+        fill_wstart_q <= rf_rs1_data;
+        fill_wend_q   <= rf_rs2_data;
       end
       // CORE_FILL_SETUP: latch COLOR1 (port1) and the linear start address
       // (port3 = OFFSET for the XY conversion); start at the read sub-step.
@@ -766,7 +792,8 @@ module tms34010_core
   // during CORE_MEMORY to scan the register list — rf_rs1_idx then
   // points at the current register being pushed, and rf_rs1_data
   // becomes the 32-bit value driven onto mem_wdata.
-  assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
+  assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WSTART_IDX
+                                : (state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
@@ -778,7 +805,7 @@ module tms34010_core
   // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
   assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW))
                      ? REG_FILE_B : decoded.rd_file;
-  assign rf_rs2_idx  = is_fill ? B_DPTCH_IDX
+  assign rf_rs2_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
@@ -2126,6 +2153,12 @@ module tms34010_core
 
       CORE_FILL_SETUP: begin
         // One cycle to latch COLOR1 (and the counters were seeded at EXECUTE).
+        // FILL XY with CONTROL.W=3 takes one more cycle to read WSTART/WEND.
+        state_d = fill_win_en_q ? CORE_FILL_SETUP_WIN : CORE_FILL;
+      end
+
+      CORE_FILL_SETUP_WIN: begin
+        // One cycle to latch WSTART(B5)/WEND(B6) for window clipping.
         state_d = CORE_FILL;
       end
 

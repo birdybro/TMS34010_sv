@@ -564,6 +564,31 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   write (they write the low 16 bits) and 32-bit accesses would span two
   registers — neither is exercised by the implemented instruction set.
 
+## A0031 — Window checking: only W=3 (clip) implemented for FILL XY
+- **Date**: 2026-06-07 (Task 0105).
+- **Status**: partial implementation, explicitly scoped (NOT a silent stub).
+- **Source**: 1988 UG §7.10 (Window Checking): W=0 off; W=1 hit detection
+  (no draw, WV interrupt on a pixel inside); W=2 miss detection (abort + V-bit +
+  WV interrupt on a pixel outside); W=3 window clipping (draw inside, skip
+  outside). WSTART=B5/WEND=B6 are inclusive XY corners; WVP=INTPEND bit 11.
+- **Implemented**: W=3 (clip) for **FILL XY**. Each pixel's absolute XY =
+  (DADDR.X + col, DADDR.Y + row); a pixel outside the inclusive [WSTART..WEND]
+  rectangle is left unchanged (write-back of the read destination, the same
+  skip path as transparency). 16-bit unsigned XY compares.
+- **NOT implemented (deferred)**:
+  - W=1 and W=2 modes (hit/miss detection), the WV (window-violation) interrupt
+    request (WVP), the V-bit window semantics, and the W=2 abort. A FILL XY with
+    W=1 or W=2 currently does NOT clip and does NOT raise WV — it behaves as
+    W=0. **This is recorded here, not silently stubbed; see
+    docs/instruction_coverage.md.**
+  - Window clipping for PIXBLT XY, LINE, DRAV, PIXT (only FILL XY so far).
+- **How to apply / extend**: the clip predicate (fill_in_window / fill_clip_out)
+  and the WSTART/WEND read (CORE_FILL_SETUP_WIN) in tms34010_core.sv are the
+  template. W=2 adds "any pixel outside ⇒ V=1 + WVP"; W=1 adds "any pixel inside
+  ⇒ WVP, draw nothing"; both tie into the now-complete interrupt subsystem
+  (INTPEND bit 11 = INT_WV_BIT). Replicate the XY tracking for the PIXBLT engine
+  (pblt_* already tracks its own col/row).
+
 ## A0030 — Maskable-interrupt entry clears only ST.IE (preserves other ST bits)
 - **Date**: 2026-06-04 (Task 0100).
 - **Status**: assumption (spec describes the push/vector sequence; the exact
