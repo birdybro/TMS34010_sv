@@ -84,8 +84,9 @@ package tms34010_pkg;
     CORE_INT_PUSH_PC  = 5'd18, // interrupt entry: push PC onto the stack
     CORE_INT_VECTOR   = 5'd19, // interrupt entry: read the vector -> PC
     CORE_INT_DONE     = 5'd20, // interrupt entry: write back SP, clear IE
-    CORE_FILL_SETUP_WIN = 5'd21, // FILL XY (W=3): read WSTART/WEND for clipping
-    CORE_PBLT_SETUP_WIN = 5'd22  // PIXBLT XY (W=3): read WSTART/WEND for clipping
+    CORE_FILL_SETUP_WIN = 5'd21, // FILL XY (W=2/3): read WSTART/WEND for window
+    CORE_PBLT_SETUP_WIN = 5'd22, // PIXBLT XY (W=3): read WSTART/WEND for clipping
+    CORE_FILL_WIN_MISS  = 5'd23  // FILL XY (W=2): array outside window — no draw, V=1, WVP
   } core_state_t;
 
   // ---------------------------------------------------------------------------

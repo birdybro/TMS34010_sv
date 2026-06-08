@@ -38,7 +38,7 @@ module tb_io_regs;
     .psize_o(psize_w), .convdp_o(convdp_w), .convsp_o(convsp_w),
     .control_o(control_w), .pmask_o(pmask_w),
     .intenb_o(intenb_w), .intpend_o(intpend_w),
-    .hstctlh_o(hstctlh_w), .nmi_clear(1'b0)
+    .hstctlh_o(hstctlh_w), .nmi_clear(1'b0), .wvp_set(1'b0)
   );
 
   int unsigned failures;

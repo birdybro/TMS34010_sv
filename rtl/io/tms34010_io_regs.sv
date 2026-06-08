@@ -66,7 +66,8 @@ module tms34010_io_regs
   output logic [15:0]           intenb_o, // INTENB: maskable-interrupt enables
   output logic [15:0]           intpend_o,// INTPEND: maskable-interrupt pending bits
   output logic [15:0]           hstctlh_o,// HSTCTLH: host control (NMI/NMIM in bits 8/9)
-  input  logic                  nmi_clear // 1-cycle: clear HSTCTLH.NMI (device took NMI)
+  input  logic                  nmi_clear,// 1-cycle: clear HSTCTLH.NMI (device took NMI)
+  input  logic                  wvp_set   // 1-cycle: set INTPEND.WV (window violation)
 );
 
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
@@ -107,6 +108,11 @@ module tms34010_io_regs
       // (1988 UG §8). A normal I/O write takes precedence (the else-if order):
       // simultaneous host write + take is a don't-care corner.
       io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
+    end else if (wvp_set) begin
+      // The graphics engine sets INTPEND.WV on a window violation (1988 UG
+      // §7.10). Like nmi_clear, this is a device-internal set, lower priority
+      // than a host/program I/O write.
+      io_reg[IO_IDX_INTPEND][INT_WV_BIT] <= 1'b1;
     end
   end
 

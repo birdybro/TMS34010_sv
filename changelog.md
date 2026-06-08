@@ -5,6 +5,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-08
+
+### Added (Task 0107 — FILL XY window miss detection, CONTROL.W=2)
+- FILL XY now implements W=2 (1988 UG §7.10.2): the array is drawn only if it
+  lies entirely within the window (V=0); otherwise it is NOT drawn, V=1, and a
+  window-violation interrupt is requested (INTPEND.WV set). This is an
+  all-or-nothing rectangle-containment test on the array's corners, evaluated
+  at CORE_FILL_SETUP_WIN; a miss diverts to the new CORE_FILL_WIN_MISS state.
+- Two new mechanisms (both reusable for PIXBLT W=2 next): a graphics-engine V
+  flag write (status-register flag-update port via the fill_win_flag_wb
+  override) and a one-cycle `wvp_set` side channel into `tms34010_io_regs` that
+  sets INTPEND.WV. The WV interrupt then flows through the existing maskable
+  interrupt path (INTPEND bit 11, INT_WV_BIT).
+- A0031 updated. W=1, PIXBLT W=2, and LINE/DRAV/PIXT window handling remain
+  deferred (documented).
+- New `sim/tb/tb_fill_w2.sv`: an inside-window FILL (drawn, V=0) and a
+  crossing-window FILL (not drawn, V=1, INTPEND.WV set), V captured via GETST.
+
 ## 2026-06-07
 
 ### Added (Task 0106 — PIXBLT XY window clipping, CONTROL.W=3)

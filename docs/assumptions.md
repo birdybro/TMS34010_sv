@@ -571,19 +571,27 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   (no draw, WV interrupt on a pixel inside); W=2 miss detection (abort + V-bit +
   WV interrupt on a pixel outside); W=3 window clipping (draw inside, skip
   outside). WSTART=B5/WEND=B6 are inclusive XY corners; WVP=INTPEND bit 11.
-- **Implemented**: W=3 (clip) for **FILL XY** (Task 0105) and **PIXBLT with an
-  XY destination** (Task 0106). Each pixel's absolute XY = (DADDR.X + col,
-  DADDR.Y + row); a pixel outside the inclusive [WSTART..WEND] rectangle is left
-  unchanged (write-back of the read destination, the same skip path as
-  transparency). 16-bit unsigned XY compares. PIXBLT preserves the raw XY DADDR
-  (pblt_dst_xy_raw_q) since pblt_dst_addr_q is converted to linear at SETUP.
+- **Implemented**:
+  - **W=3 (clip)** for **FILL XY** (Task 0105) and **PIXBLT with an XY
+    destination** (Task 0106). Each pixel's absolute XY = (DADDR.X + col,
+    DADDR.Y + row); a pixel outside the inclusive [WSTART..WEND] rectangle is
+    left unchanged (write-back of the read destination, the same skip path as
+    transparency). PIXBLT preserves the raw XY DADDR (pblt_dst_xy_raw_q). Per
+    §7.10.3, FILL/PIXBLT in W=3 set NO V-bit and raise no interrupt — matched.
+  - **W=2 (miss detection)** for **FILL XY** (Task 0107). All-or-nothing
+    rectangle containment (the array's corners vs [WSTART..WEND], evaluated at
+    CORE_FILL_SETUP_WIN): if the whole array fits → drawn, V=0; else → NOT drawn
+    (CORE_FILL_WIN_MISS), V=1, and INTPEND.WV set (a one-cycle wvp_set side
+    channel into tms34010_io_regs). The V write reuses the status-register
+    flag-update port via the fill_win_flag_wb override.
 - **NOT implemented (deferred)**:
-  - W=1 and W=2 modes (hit/miss detection), the WV (window-violation) interrupt
-    request (WVP), the V-bit window semantics, and the W=2 abort. A FILL/PIXBLT
-    XY with W=1 or W=2 currently does NOT clip and does NOT raise WV — it behaves
-    as W=0. **This is recorded here, not silently stubbed; see
-    docs/instruction_coverage.md.**
-  - Window clipping for LINE, DRAV, PIXT (FILL XY + PIXBLT XY done so far).
+  - W=1 mode (hit detection: no draw, WV interrupt if any pixel inside).
+  - W=2 for **PIXBLT** (FILL XY done; PIXBLT XY W=2 is the direct follow-up —
+    same containment test on pblt_dst_xy_raw_q + dx/dy, same V/WVP path).
+  - Window handling for LINE, DRAV, PIXT.
+  These behave as W=0 (no window) for the not-yet-covered instruction/mode
+  combinations. **Recorded here, not silently stubbed; see
+  docs/instruction_coverage.md.**
 - **How to apply / extend**: the clip predicate (fill_in_window / fill_clip_out)
   and the WSTART/WEND read (CORE_FILL_SETUP_WIN) in tms34010_core.sv are the
   template. W=2 adds "any pixel outside ⇒ V=1 + WVP"; W=1 adds "any pixel inside

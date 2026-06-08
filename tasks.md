@@ -3363,6 +3363,29 @@ Commit:
 
 ---
 
+### Task 0107: FILL XY window miss detection (CONTROL.W=2)
+Status: complete
+Dependencies: Task 0105 (FILL window setup), Task 0100 (interrupt subsystem).
+Spec source: 1988 UG §7.10.2 (W=2 Window Miss Detection); WV=INTPEND bit 11.
+Acceptance Criteria:
+- pkg: CORE_FILL_WIN_MISS state.
+- io_regs: wvp_set input sets INTPEND.WV (wire in tb_io_regs).
+- core: for FILL XY W=2, compute array containment at CORE_FILL_SETUP_WIN
+  (corners vs WSTART/WEND from live reads). Inside → draw, V=0. Miss →
+  CORE_FILL_WIN_MISS (no draw), V=1, wvp_set. V written via the
+  fill_win_flag_wb override on the status-register flag-update port.
+- A0031 extended; W=1, PIXBLT W=2, LINE/DRAV/PIXT still deferred.
+- tb_fill_w2: inside (drawn, V=0) + miss (not drawn, V=1, INTPEND.WV), V via
+  GETST.
+Tests: tb_fill_w2 PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0031), instruction_coverage.md (FILL XY row),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

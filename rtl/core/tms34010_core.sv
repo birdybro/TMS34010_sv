@@ -368,6 +368,7 @@ module tms34010_core
   // abort) are NOT implemented yet (A0031) — only W=3 clips.
   logic [DATA_WIDTH-1:0] fill_wstart_q, fill_wend_q;
   logic                  fill_win_en_q;    // W=3 clipping active for this FILL
+  logic                  fill_w2_q;        // W=2 (miss detection) active for this FILL
   logic [15:0]           fill_px, fill_py; // current pixel absolute XY
   logic                  fill_in_window, fill_clip_out;
   assign fill_px = fill_daddr_raw_q[15:0]            + fill_x_q;
@@ -376,6 +377,27 @@ module tms34010_core
         (fill_px >= fill_wstart_q[15:0]) && (fill_px <= fill_wend_q[15:0])
      && (fill_py >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_py <= fill_wend_q[DATA_WIDTH-1:16]);
   assign fill_clip_out = fill_win_en_q && !fill_in_window;
+  // W=2 (miss detection): the whole array is drawn only if it lies entirely
+  // within the window. Containment is a single rectangle test on the array's
+  // corners, evaluated combinationally at CORE_FILL_SETUP_WIN from the live
+  // WSTART(port1)/WEND(port2) reads (X=[15:0], Y=[31:16]).
+  logic                  fill_array_inside;
+  logic [15:0]           fill_arr_x0, fill_arr_y0, fill_arr_x1, fill_arr_y1;
+  assign fill_arr_x0 = fill_daddr_raw_q[15:0];
+  assign fill_arr_y0 = fill_daddr_raw_q[DATA_WIDTH-1:16];
+  assign fill_arr_x1 = fill_arr_x0 + fill_dx_q - 16'd1;   // last column
+  assign fill_arr_y1 = fill_arr_y0 + fill_dy_q - 16'd1;   // last row
+  assign fill_array_inside =
+        (fill_arr_x0 >= rf_rs1_data[15:0]) && (fill_arr_x1 <= rf_rs2_data[15:0])
+     && (fill_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (fill_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
+  // Window-violation flag write (sets V; the miss path also pulses wvp_set):
+  //   CORE_FILL_WIN_MISS — array outside the window → V=1, request WVP.
+  //   CORE_FILL_WB with W=2 (array was inside) → V=0, no interrupt.
+  logic fill_win_flag_wb, fill_win_violation;
+  assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS);
+  assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
+                            || ((state_q == CORE_FILL_WB) && fill_w2_q);
+  assign wvp_set = (state_q == CORE_FILL_WIN_MISS);
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -401,6 +423,7 @@ module tms34010_core
       fill_wstart_q    <= '0;
       fill_wend_q      <= '0;
       fill_win_en_q    <= 1'b0;
+      fill_w2_q        <= 1'b0;
     end else begin
       // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL. The
       // start address (possibly XY-converted) is finalized at SETUP. Window
@@ -414,6 +437,8 @@ module tms34010_core
         fill_y_q         <= 16'd0;
         fill_win_en_q    <= fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
+        fill_w2_q        <= fill_is_xy &&
+                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
       end
       // CORE_FILL_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_FILL_SETUP_WIN) begin
@@ -1562,7 +1587,8 @@ module tms34010_core
 
   // Status-register inputs. Flag-update is gated by FSM state, like the
   // regfile write. Full ST write port is unused until POPST lands.
-  assign st_flag_update_en = (state_q == CORE_WRITEBACK) && decoded.wb_flags_en;
+  assign st_flag_update_en = ((state_q == CORE_WRITEBACK) && decoded.wb_flags_en)
+                           || fill_win_flag_wb;   // FILL W=2 writes V
   // ST-write data + enable. Two instructions drive the full ST-write
   // path:
   //   PUTST Rs: ST ← Rs (full copy).
@@ -1811,6 +1837,7 @@ module tms34010_core
   logic [15:0]           io_intpend;   // INTPEND register (maskable-interrupt pending)
   logic [15:0]           io_hstctlh;   // HSTCTLH register (host control; NMI/NMIM bits)
   logic                  nmi_clear;    // pulse to clear HSTCTLH.NMI on taking the NMI
+  logic                  wvp_set;      // pulse to set INTPEND.WV on a window violation
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
@@ -1830,7 +1857,8 @@ module tms34010_core
     .intenb_o (io_intenb),
     .intpend_o(io_intpend),
     .hstctlh_o(io_hstctlh),
-    .nmi_clear(nmi_clear)
+    .nmi_clear(nmi_clear),
+    .wvp_set  (wvp_set)
   );
 
   // ---- Maskable-interrupt priority encoder (Task 0100) --------------------
@@ -1957,6 +1985,10 @@ module tms34010_core
   // per `decoded.use_shifter`.
   alu_flags_t  flag_input;
   always_comb begin
+    if (fill_win_flag_wb) begin
+      // FILL W=2 window result: only V is written (mask below is V-only).
+      flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: fill_win_violation};
+    end else
     unique case (decoded.iclass)
       INSTR_SETC:   flag_input = '{n: 1'b0, c: 1'b1, z: 1'b0, v: 1'b0};
       INSTR_CLRC:   flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b0};
@@ -2016,6 +2048,8 @@ module tms34010_core
   always_comb begin
     effective_flag_mask = decoded.wb_flag_mask;
     if (is_div_mod && div_v) effective_flag_mask.z = 1'b0;  // MODU/MODS: Z unaffected on Rs=0
+    if (fill_win_flag_wb)
+      effective_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};  // FILL W=2: V only
   end
 
   tms34010_status_reg u_status_reg (
@@ -2185,13 +2219,23 @@ module tms34010_core
 
       CORE_FILL_SETUP: begin
         // One cycle to latch COLOR1 (and the counters were seeded at EXECUTE).
-        // FILL XY with CONTROL.W=3 takes one more cycle to read WSTART/WEND.
-        state_d = fill_win_en_q ? CORE_FILL_SETUP_WIN : CORE_FILL;
+        // FILL XY with a window (W=2 or W=3) takes one more cycle to read
+        // WSTART/WEND.
+        state_d = (fill_win_en_q || fill_w2_q) ? CORE_FILL_SETUP_WIN : CORE_FILL;
       end
 
       CORE_FILL_SETUP_WIN: begin
-        // One cycle to latch WSTART(B5)/WEND(B6) for window clipping.
-        state_d = CORE_FILL;
+        // Latch WSTART(B5)/WEND(B6). W=3 proceeds to the (per-pixel-clipped)
+        // fill. W=2 (miss detection) checks array containment now: draw only if
+        // the whole array is inside, else skip to CORE_FILL_WIN_MISS (no draw).
+        state_d = (fill_w2_q && !fill_array_inside) ? CORE_FILL_WIN_MISS
+                                                    : CORE_FILL;
+      end
+
+      CORE_FILL_WIN_MISS: begin
+        // W=2 window miss: no pixels drawn; V=1 and WVP set (combinationally),
+        // then fetch the next instruction.
+        state_d = CORE_FETCH;
       end
 
       CORE_FILL: begin
