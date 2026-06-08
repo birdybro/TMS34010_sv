@@ -585,12 +585,21 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
     CORE_PBLT_WIN_MISS), V=1, and INTPEND.WV set (a one-cycle wvp_set side
     channel into tms34010_io_regs). The V write reuses the status-register
     flag-update port via the shared fill_win_flag_wb override.
+  - **W=1 (hit detection)** for **FILL XY** (Task 0109). No pixels are ever
+    drawn; the array's overlap with the window is tested (from the latched
+    WSTART/WEND in CORE_FILL_WIN_HIT). Overlap → V=0 and INTPEND.WV set (the
+    "pick" found an object); entirely outside → V=1, no interrupt. Uses the same
+    shared V-write / wvp_set mechanism.
 - **NOT implemented (deferred)**:
-  - W=1 mode (hit detection: no draw, WV interrupt if any pixel inside).
+  - W=1 for **PIXBLT** (FILL XY done; PIXBLT W=1 is the direct follow-up — same
+    overlap test on pblt_dst_xy_raw_q + dx/dy, same no-draw + V/WVP path).
   - Window handling for LINE, DRAV, PIXT.
   These behave as W=0 (no window) for the not-yet-covered instruction/mode
   combinations. **Recorded here, not silently stubbed; see
   docs/instruction_coverage.md.**
+
+FILL XY now implements all four CONTROL.W modes (W=0/1/2/3). PIXBLT XY
+implements W=0/2/3 (W=1 pending).
 - **How to apply / extend**: the clip predicate (fill_in_window / fill_clip_out)
   and the WSTART/WEND read (CORE_FILL_SETUP_WIN) in tms34010_core.sv are the
   template. W=2 adds "any pixel outside ⇒ V=1 + WVP"; W=1 adds "any pixel inside

@@ -3407,6 +3407,26 @@ Commit:
 
 ---
 
+### Task 0109: FILL XY window hit detection (CONTROL.W=1)
+Status: complete
+Dependencies: Task 0107 (FILL W=2 mechanism).
+Spec source: 1988 UG §7.10.1 (W=1 Window Hit Detection).
+Acceptance Criteria:
+- pkg: CORE_FILL_WIN_HIT state.
+- core: fill_w1_q; overlap test (fill_array_hit, from latched WSTART/WEND).
+  W=1 never draws → CORE_FILL_WIN_HIT. Overlap → V=0 + wvp_set; outside →
+  V=1, no wvp. Reuses the shared V-write path; W=2/W=3 untouched.
+- A0031: FILL XY now W=0/1/2/3 complete; PIXBLT W=1 + LINE/DRAV/PIXT deferred.
+- tb_fill_w1: outside (V=1, no WVP) + overlap (V=0, INTPEND.WV), neither drawn.
+Tests: tb_fill_w1 PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0031), instruction_coverage.md (FILL XY row),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

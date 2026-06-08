@@ -7,6 +7,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-08
 
+### Added (Task 0109 — FILL XY window hit detection, CONTROL.W=1)
+- FILL XY now implements W=1 (1988 UG §7.10.1), completing all four CONTROL.W
+  modes for FILL. W=1 is a no-draw "pick"/hit-detect mode: the array's overlap
+  with the window is computed (from the latched WSTART/WEND in the new
+  CORE_FILL_WIN_HIT state). Overlap → V=0, INTPEND.WV set; entirely outside →
+  V=1, no interrupt. No pixels are ever written. Reuses the shared V-write /
+  wvp_set mechanism with no change to the W=2/W=3 paths.
+- A0031 updated. PIXBLT W=1 and LINE/DRAV/PIXT window handling remain deferred.
+- New `sim/tb/tb_fill_w1.sv`: an outside-window FILL (V=1, no WVP — INTPEND
+  captured via MOVE load) and an overlapping FILL (V=0, INTPEND.WV set), neither
+  drawing any pixels; V captured via GETST.
+
+## 2026-06-08
+
 ### Added (Task 0108 — PIXBLT XY window miss detection, CONTROL.W=2)
 - Extends FILL W=2 (Task 0107) to the PIXBLT engine for XY-destination blts
   (1988 UG §7.10.2): all-or-nothing rectangle containment on the dest array

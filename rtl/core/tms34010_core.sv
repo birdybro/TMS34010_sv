@@ -390,6 +390,14 @@ module tms34010_core
   assign fill_array_inside =
         (fill_arr_x0 >= rf_rs1_data[15:0]) && (fill_arr_x1 <= rf_rs2_data[15:0])
      && (fill_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (fill_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
+  // W=1 (hit detection): no pixels are drawn. The array "hits" the window if it
+  // overlaps at all; computed from the LATCHED WSTART/WEND (valid in
+  // CORE_FILL_WIN_HIT, after the SETUP_WIN latch). Overlap = NOT fully to one
+  // side. Inclusive corners.
+  logic fill_w1_q, fill_array_hit;
+  assign fill_array_hit = !(
+        (fill_arr_x1 < fill_wstart_q[15:0]) || (fill_arr_x0 > fill_wend_q[15:0])
+     || (fill_arr_y1 < fill_wstart_q[DATA_WIDTH-1:16]) || (fill_arr_y0 > fill_wend_q[DATA_WIDTH-1:16]));
   // Window-violation flag write (sets V; the miss path also pulses wvp_set):
   //   CORE_FILL_WIN_MISS — array outside the window → V=1, request WVP.
   //   CORE_FILL_WB with W=2 (array was inside) → V=0, no interrupt.
@@ -398,14 +406,21 @@ module tms34010_core
   // assigns). win_flag_wb enables the V write; win_violation is the V value
   // (1 = a miss); wvp_set pulses INTPEND.WV on a miss.
   logic fill_win_flag_wb, fill_win_violation;
+  // V value written: W=2 miss → 1; W=2 inside (at WB) → 0; W=1 hit → V = NOT
+  // overlapped (1 if the array is entirely outside the window, else 0).
   assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS)
-                            || (state_q == CORE_PBLT_WIN_MISS);
+                            || (state_q == CORE_PBLT_WIN_MISS)
+                            || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
                             || ((state_q == CORE_FILL_WB) && fill_w2_q)
                             || (state_q == CORE_PBLT_WIN_MISS)
-                            || ((state_q == CORE_PBLT_WB2) && pblt_w2_q);
+                            || ((state_q == CORE_PBLT_WB2) && pblt_w2_q)
+                            || (state_q == CORE_FILL_WIN_HIT);
+  // WVP requested on a W=2 miss, and on a W=1 hit (the array overlaps the
+  // window — the "pick" detected an object).
   assign wvp_set = (state_q == CORE_FILL_WIN_MISS)
-                 || (state_q == CORE_PBLT_WIN_MISS);
+                 || (state_q == CORE_PBLT_WIN_MISS)
+                 || ((state_q == CORE_FILL_WIN_HIT) && fill_array_hit);
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -432,6 +447,7 @@ module tms34010_core
       fill_wend_q      <= '0;
       fill_win_en_q    <= 1'b0;
       fill_w2_q        <= 1'b0;
+      fill_w1_q        <= 1'b0;
     end else begin
       // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL. The
       // start address (possibly XY-converted) is finalized at SETUP. Window
@@ -447,6 +463,8 @@ module tms34010_core
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
         fill_w2_q        <= fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
+        fill_w1_q        <= fill_is_xy &&
+                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
       end
       // CORE_FILL_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_FILL_SETUP_WIN) begin
@@ -2245,20 +2263,29 @@ module tms34010_core
         // One cycle to latch COLOR1 (and the counters were seeded at EXECUTE).
         // FILL XY with a window (W=2 or W=3) takes one more cycle to read
         // WSTART/WEND.
-        state_d = (fill_win_en_q || fill_w2_q) ? CORE_FILL_SETUP_WIN : CORE_FILL;
+        state_d = (fill_win_en_q || fill_w2_q || fill_w1_q) ? CORE_FILL_SETUP_WIN
+                                                            : CORE_FILL;
       end
 
       CORE_FILL_SETUP_WIN: begin
         // Latch WSTART(B5)/WEND(B6). W=3 proceeds to the (per-pixel-clipped)
         // fill. W=2 (miss detection) checks array containment now: draw only if
         // the whole array is inside, else skip to CORE_FILL_WIN_MISS (no draw).
-        state_d = (fill_w2_q && !fill_array_inside) ? CORE_FILL_WIN_MISS
-                                                    : CORE_FILL;
+        // W=1 (hit detection) never draws — go straight to CORE_FILL_WIN_HIT.
+        state_d = fill_w1_q                          ? CORE_FILL_WIN_HIT
+                : (fill_w2_q && !fill_array_inside)  ? CORE_FILL_WIN_MISS
+                                                     : CORE_FILL;
       end
 
       CORE_FILL_WIN_MISS: begin
         // W=2 window miss: no pixels drawn; V=1 and WVP set (combinationally),
         // then fetch the next instruction.
+        state_d = CORE_FETCH;
+      end
+
+      CORE_FILL_WIN_HIT: begin
+        // W=1 hit detection: no pixels drawn. V and WVP are driven
+        // combinationally from fill_array_hit (overlap), then fetch.
         state_d = CORE_FETCH;
       end
 
