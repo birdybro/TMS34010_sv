@@ -3386,6 +3386,27 @@ Commit:
 
 ---
 
+### Task 0108: PIXBLT XY window miss detection (CONTROL.W=2)
+Status: complete
+Dependencies: Task 0106 (PIXBLT window setup), Task 0107 (FILL W=2 mechanism).
+Spec source: 1988 UG §7.10.2 (W=2 Window Miss Detection).
+Acceptance Criteria:
+- pkg: CORE_PBLT_WIN_MISS state.
+- core: pblt_w2_q; array containment at CORE_PBLT_SETUP_WIN (corners of
+  pblt_dst_xy_raw_q + DX/DY vs live WSTART/WEND). Inside → blt + V=0 at
+  PBLT_WB2; miss → CORE_PBLT_WIN_MISS (no draw) + V=1 + wvp_set. Reuses the
+  shared fill_win_flag_wb / wvp_set V-write mechanism (now OR'd with PBLT).
+- A0031 extended; W=1, LINE/DRAV/PIXT still deferred.
+- tb_pixblt_w2: inside (drawn, V=0) + miss (not drawn, V=1, INTPEND.WV).
+Tests: tb_pixblt_w2 PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0031), instruction_coverage.md (PIXBLT XY row),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

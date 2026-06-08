@@ -393,11 +393,19 @@ module tms34010_core
   // Window-violation flag write (sets V; the miss path also pulses wvp_set):
   //   CORE_FILL_WIN_MISS — array outside the window → V=1, request WVP.
   //   CORE_FILL_WB with W=2 (array was inside) → V=0, no interrupt.
+  // Shared window-violation flag write for FILL and PIXBLT W=2 (declared here;
+  // pblt_w2_q is assigned later — order-independent for these continuous
+  // assigns). win_flag_wb enables the V write; win_violation is the V value
+  // (1 = a miss); wvp_set pulses INTPEND.WV on a miss.
   logic fill_win_flag_wb, fill_win_violation;
-  assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS);
+  assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS)
+                            || (state_q == CORE_PBLT_WIN_MISS);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
-                            || ((state_q == CORE_FILL_WB) && fill_w2_q);
-  assign wvp_set = (state_q == CORE_FILL_WIN_MISS);
+                            || ((state_q == CORE_FILL_WB) && fill_w2_q)
+                            || (state_q == CORE_PBLT_WIN_MISS)
+                            || ((state_q == CORE_PBLT_WB2) && pblt_w2_q);
+  assign wvp_set = (state_q == CORE_FILL_WIN_MISS)
+                 || (state_q == CORE_PBLT_WIN_MISS);
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -526,7 +534,8 @@ module tms34010_core
   // pixels are left unchanged (same skip path as transparency). W=1/W=2 and the
   // WV interrupt are not implemented (A0031).
   logic [DATA_WIDTH-1:0] pblt_dst_xy_raw_q, pblt_wstart_q, pblt_wend_q;
-  logic                  pblt_win_en_q;
+  logic                  pblt_win_en_q;    // W=3 per-pixel clip active
+  logic                  pblt_w2_q;        // W=2 (miss detection) active
   logic [15:0]           pblt_px, pblt_py;
   logic                  pblt_in_window, pblt_clip_out;
   assign pblt_px = pblt_dst_xy_raw_q[15:0]            + pblt_x_q;
@@ -535,6 +544,18 @@ module tms34010_core
         (pblt_px >= pblt_wstart_q[15:0]) && (pblt_px <= pblt_wend_q[15:0])
      && (pblt_py >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_py <= pblt_wend_q[DATA_WIDTH-1:16]);
   assign pblt_clip_out = pblt_win_en_q && !pblt_in_window;
+  // W=2 (miss detection): array containment test on the dest corners, evaluated
+  // combinationally at CORE_PBLT_SETUP_WIN from the live WSTART(port1)/WEND
+  // (port2) reads (mirrors the FILL W=2 path).
+  logic        pblt_array_inside;
+  logic [15:0] pblt_arr_x0, pblt_arr_y0, pblt_arr_x1, pblt_arr_y1;
+  assign pblt_arr_x0 = pblt_dst_xy_raw_q[15:0];
+  assign pblt_arr_y0 = pblt_dst_xy_raw_q[DATA_WIDTH-1:16];
+  assign pblt_arr_x1 = pblt_arr_x0 + pblt_dx_q - 16'd1;
+  assign pblt_arr_y1 = pblt_arr_y0 + pblt_dy_q - 16'd1;
+  assign pblt_array_inside =
+        (pblt_arr_x0 >= rf_rs1_data[15:0]) && (pblt_arr_x1 <= rf_rs2_data[15:0])
+     && (pblt_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
   assign pblt_merged      = (pblt_transp || pblt_clip_out)
                           ? pblt_dst_pix_q
                           : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
@@ -571,6 +592,7 @@ module tms34010_core
       pblt_wstart_q   <= '0;
       pblt_wend_q     <= '0;
       pblt_win_en_q   <= 1'b0;
+      pblt_w2_q       <= 1'b0;
     end else begin
       // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3). Window
       // clipping engages only for an XY destination with CONTROL.W=3; keep the
@@ -588,6 +610,8 @@ module tms34010_core
         pblt_substep_q  <= 2'd0;
         pblt_win_en_q   <= decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
+        pblt_w2_q       <= decoded.blt_dst_xy &&
+                           (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
       end
       // CORE_PBLT_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_PBLT_SETUP_WIN) begin
@@ -2267,18 +2291,26 @@ module tms34010_core
         // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE). The
         // binary form reads COLOR0/COLOR1 in a second setup cycle; a windowed
         // (W=3) XY blt reads WSTART/WEND in CORE_PBLT_SETUP_WIN.
-        state_d = decoded.blt_binary ? CORE_PBLT_SETUP2
-                : pblt_win_en_q       ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
+        state_d = decoded.blt_binary           ? CORE_PBLT_SETUP2
+                : (pblt_win_en_q || pblt_w2_q) ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
       end
 
       CORE_PBLT_SETUP2: begin
         // Latch COLOR0/COLOR1 for the color-expand source.
-        state_d = pblt_win_en_q ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
+        state_d = (pblt_win_en_q || pblt_w2_q) ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
       end
 
       CORE_PBLT_SETUP_WIN: begin
-        // One cycle to latch WSTART(B5)/WEND(B6) for window clipping.
-        state_d = CORE_PBLT;
+        // Latch WSTART(B5)/WEND(B6). W=3 proceeds to the per-pixel-clipped blt;
+        // W=2 (miss detection) checks array containment now — draw only if the
+        // whole array is inside, else skip to CORE_PBLT_WIN_MISS (no draw).
+        state_d = (pblt_w2_q && !pblt_array_inside) ? CORE_PBLT_WIN_MISS
+                                                    : CORE_PBLT;
+      end
+
+      CORE_PBLT_WIN_MISS: begin
+        // W=2 window miss: no pixels drawn; V=1 and WVP set, then fetch.
+        state_d = CORE_FETCH;
       end
 
       CORE_PBLT: begin

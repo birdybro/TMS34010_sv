@@ -578,16 +578,15 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
     left unchanged (write-back of the read destination, the same skip path as
     transparency). PIXBLT preserves the raw XY DADDR (pblt_dst_xy_raw_q). Per
     §7.10.3, FILL/PIXBLT in W=3 set NO V-bit and raise no interrupt — matched.
-  - **W=2 (miss detection)** for **FILL XY** (Task 0107). All-or-nothing
-    rectangle containment (the array's corners vs [WSTART..WEND], evaluated at
-    CORE_FILL_SETUP_WIN): if the whole array fits → drawn, V=0; else → NOT drawn
-    (CORE_FILL_WIN_MISS), V=1, and INTPEND.WV set (a one-cycle wvp_set side
+  - **W=2 (miss detection)** for **FILL XY** (Task 0107) and **PIXBLT XY**
+    (Task 0108). All-or-nothing rectangle containment (the array's corners vs
+    [WSTART..WEND], evaluated at CORE_FILL_SETUP_WIN / CORE_PBLT_SETUP_WIN): if
+    the whole array fits → drawn, V=0; else → NOT drawn (CORE_FILL_WIN_MISS /
+    CORE_PBLT_WIN_MISS), V=1, and INTPEND.WV set (a one-cycle wvp_set side
     channel into tms34010_io_regs). The V write reuses the status-register
-    flag-update port via the fill_win_flag_wb override.
+    flag-update port via the shared fill_win_flag_wb override.
 - **NOT implemented (deferred)**:
   - W=1 mode (hit detection: no draw, WV interrupt if any pixel inside).
-  - W=2 for **PIXBLT** (FILL XY done; PIXBLT XY W=2 is the direct follow-up —
-    same containment test on pblt_dst_xy_raw_q + dx/dy, same V/WVP path).
   - Window handling for LINE, DRAV, PIXT.
   These behave as W=0 (no window) for the not-yet-covered instruction/mode
   combinations. **Recorded here, not silently stubbed; see

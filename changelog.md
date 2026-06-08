@@ -7,6 +7,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-08
 
+### Added (Task 0108 — PIXBLT XY window miss detection, CONTROL.W=2)
+- Extends FILL W=2 (Task 0107) to the PIXBLT engine for XY-destination blts
+  (1988 UG §7.10.2): all-or-nothing rectangle containment on the dest array
+  corners (pblt_dst_xy_raw_q + DX/DY vs WSTART/WEND, at CORE_PBLT_SETUP_WIN).
+  Inside → transferred, V=0; miss → CORE_PBLT_WIN_MISS (not drawn), V=1,
+  INTPEND.WV set. Reuses the shared V-write / wvp_set mechanism from Task 0107.
+- Window violation now covers FILL XY + PIXBLT XY for both W=2 and W=3. W=1 and
+  LINE/DRAV/PIXT window handling remain deferred (A0031).
+- New `sim/tb/tb_pixblt_w2.sv`: inside-window blt (transferred, V=0) and a
+  crossing-window blt (not drawn, V=1, INTPEND.WV), V captured via GETST.
+
 ### Added (Task 0107 — FILL XY window miss detection, CONTROL.W=2)
 - FILL XY now implements W=2 (1988 UG §7.10.2): the array is drawn only if it
   lies entirely within the window (V=0); otherwise it is NOT drawn, V=1, and a

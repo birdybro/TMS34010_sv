@@ -86,7 +86,8 @@ package tms34010_pkg;
     CORE_INT_DONE     = 5'd20, // interrupt entry: write back SP, clear IE
     CORE_FILL_SETUP_WIN = 5'd21, // FILL XY (W=2/3): read WSTART/WEND for window
     CORE_PBLT_SETUP_WIN = 5'd22, // PIXBLT XY (W=3): read WSTART/WEND for clipping
-    CORE_FILL_WIN_MISS  = 5'd23  // FILL XY (W=2): array outside window — no draw, V=1, WVP
+    CORE_FILL_WIN_MISS  = 5'd23, // FILL XY (W=2): array outside window — no draw, V=1, WVP
+    CORE_PBLT_WIN_MISS  = 5'd24  // PIXBLT XY (W=2): array outside window — no draw, V=1, WVP
   } core_state_t;
 
   // ---------------------------------------------------------------------------
