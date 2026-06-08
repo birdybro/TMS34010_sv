@@ -3423,7 +3423,7 @@ Tests: tb_fill_w1 PASS; full integration regression PASS under Verilator
 Docs: assumptions.md (A0031), instruction_coverage.md (FILL XY row),
   changelog.md, tasks.md.
 Commit:
-- pending
+- 1af38dd
 
 ---
 
