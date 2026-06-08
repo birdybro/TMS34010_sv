@@ -3403,7 +3403,7 @@ Tests: tb_pixblt_w2 PASS; full integration regression PASS under Verilator
 Docs: assumptions.md (A0031), instruction_coverage.md (PIXBLT XY row),
   changelog.md, tasks.md.
 Commit:
-- pending
+- b425065
 
 ---
 
