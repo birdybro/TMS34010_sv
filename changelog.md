@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-08
 
+### Added (Task 0110 — PIXBLT XY window hit detection, CONTROL.W=1)
+- Extends FILL W=1 (Task 0109) to the PIXBLT engine (1988 UG §7.10.1),
+  COMPLETING window checking (W=0/1/2/3) for both array engines. W=1 never
+  draws; the dest array's overlap with the window is computed (latched
+  WSTART/WEND, new CORE_PBLT_WIN_HIT state). Overlap → V=0, INTPEND.WV set;
+  outside → V=1, no interrupt. Reuses the shared V-write / wvp_set mechanism.
+- A0031 updated: window checking complete for FILL XY + PIXBLT XY. Only
+  LINE/DRAV/PIXT window handling remains (different per-instruction rules).
+- New `sim/tb/tb_pixblt_w1.sv`: an outside-window blt (V=1, no WVP) and an
+  overlapping blt (V=0, INTPEND.WV set), neither drawing pixels.
+
+## 2026-06-08
+
 ### Added (Task 0109 — FILL XY window hit detection, CONTROL.W=1)
 - FILL XY now implements W=1 (1988 UG §7.10.1), completing all four CONTROL.W
   modes for FILL. W=1 is a no-draw "pick"/hit-detect mode: the array's overlap

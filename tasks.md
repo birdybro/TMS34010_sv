@@ -3427,6 +3427,27 @@ Commit:
 
 ---
 
+### Task 0110: PIXBLT XY window hit detection (CONTROL.W=1)
+Status: complete
+Dependencies: Task 0108 (PIXBLT W=2), Task 0109 (FILL W=1 mechanism).
+Spec source: 1988 UG §7.10.1 (W=1 Window Hit Detection).
+Acceptance Criteria:
+- pkg: CORE_PBLT_WIN_HIT state.
+- core: pblt_w1_q; overlap test (pblt_array_hit from latched WSTART/WEND).
+  W=1 never draws → CORE_PBLT_WIN_HIT. Overlap → V=0 + wvp_set; outside →
+  V=1, no wvp. Reuses the shared V-write path (OR'd with PBLT_WIN_HIT).
+- A0031: window checking COMPLETE for FILL XY + PIXBLT XY (all W modes);
+  only LINE/DRAV/PIXT deferred.
+- tb_pixblt_w1: outside (V=1, no WVP) + overlap (V=0, INTPEND.WV), neither drawn.
+Tests: tb_pixblt_w1 PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: assumptions.md (A0031), instruction_coverage.md (PIXBLT XY row),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

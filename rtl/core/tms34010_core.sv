@@ -410,17 +410,20 @@ module tms34010_core
   // overlapped (1 if the array is entirely outside the window, else 0).
   assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS)
                             || (state_q == CORE_PBLT_WIN_MISS)
-                            || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit);
+                            || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit)
+                            || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
                             || ((state_q == CORE_FILL_WB) && fill_w2_q)
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_PBLT_WB2) && pblt_w2_q)
-                            || (state_q == CORE_FILL_WIN_HIT);
+                            || (state_q == CORE_FILL_WIN_HIT)
+                            || (state_q == CORE_PBLT_WIN_HIT);
   // WVP requested on a W=2 miss, and on a W=1 hit (the array overlaps the
   // window — the "pick" detected an object).
   assign wvp_set = (state_q == CORE_FILL_WIN_MISS)
                  || (state_q == CORE_PBLT_WIN_MISS)
-                 || ((state_q == CORE_FILL_WIN_HIT) && fill_array_hit);
+                 || ((state_q == CORE_FILL_WIN_HIT) && fill_array_hit)
+                 || ((state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit);
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -574,6 +577,12 @@ module tms34010_core
   assign pblt_array_inside =
         (pblt_arr_x0 >= rf_rs1_data[15:0]) && (pblt_arr_x1 <= rf_rs2_data[15:0])
      && (pblt_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
+  // W=1 (hit detection): never draws; overlap test from the LATCHED WSTART/WEND
+  // (valid in CORE_PBLT_WIN_HIT). Mirrors the FILL W=1 path.
+  logic pblt_w1_q, pblt_array_hit;
+  assign pblt_array_hit = !(
+        (pblt_arr_x1 < pblt_wstart_q[15:0]) || (pblt_arr_x0 > pblt_wend_q[15:0])
+     || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16]) || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
   assign pblt_merged      = (pblt_transp || pblt_clip_out)
                           ? pblt_dst_pix_q
                           : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
@@ -611,6 +620,7 @@ module tms34010_core
       pblt_wend_q     <= '0;
       pblt_win_en_q   <= 1'b0;
       pblt_w2_q       <= 1'b0;
+      pblt_w1_q       <= 1'b0;
     end else begin
       // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3). Window
       // clipping engages only for an XY destination with CONTROL.W=3; keep the
@@ -630,6 +640,8 @@ module tms34010_core
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
         pblt_w2_q       <= decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
+        pblt_w1_q       <= decoded.blt_dst_xy &&
+                           (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
       end
       // CORE_PBLT_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_PBLT_SETUP_WIN) begin
@@ -2318,25 +2330,34 @@ module tms34010_core
         // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE). The
         // binary form reads COLOR0/COLOR1 in a second setup cycle; a windowed
         // (W=3) XY blt reads WSTART/WEND in CORE_PBLT_SETUP_WIN.
-        state_d = decoded.blt_binary           ? CORE_PBLT_SETUP2
-                : (pblt_win_en_q || pblt_w2_q) ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
+        state_d = decoded.blt_binary                          ? CORE_PBLT_SETUP2
+                : (pblt_win_en_q || pblt_w2_q || pblt_w1_q)   ? CORE_PBLT_SETUP_WIN
+                                                              : CORE_PBLT;
       end
 
       CORE_PBLT_SETUP2: begin
         // Latch COLOR0/COLOR1 for the color-expand source.
-        state_d = (pblt_win_en_q || pblt_w2_q) ? CORE_PBLT_SETUP_WIN : CORE_PBLT;
+        state_d = (pblt_win_en_q || pblt_w2_q || pblt_w1_q) ? CORE_PBLT_SETUP_WIN
+                                                            : CORE_PBLT;
       end
 
       CORE_PBLT_SETUP_WIN: begin
         // Latch WSTART(B5)/WEND(B6). W=3 proceeds to the per-pixel-clipped blt;
         // W=2 (miss detection) checks array containment now — draw only if the
         // whole array is inside, else skip to CORE_PBLT_WIN_MISS (no draw).
-        state_d = (pblt_w2_q && !pblt_array_inside) ? CORE_PBLT_WIN_MISS
+        // W=1 (hit detection) never draws — go straight to CORE_PBLT_WIN_HIT.
+        state_d = pblt_w1_q                         ? CORE_PBLT_WIN_HIT
+                : (pblt_w2_q && !pblt_array_inside) ? CORE_PBLT_WIN_MISS
                                                     : CORE_PBLT;
       end
 
       CORE_PBLT_WIN_MISS: begin
         // W=2 window miss: no pixels drawn; V=1 and WVP set, then fetch.
+        state_d = CORE_FETCH;
+      end
+
+      CORE_PBLT_WIN_HIT: begin
+        // W=1 hit detection: no pixels drawn; V/WVP from pblt_array_hit, fetch.
         state_d = CORE_FETCH;
       end
 
