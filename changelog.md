@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-15
 
+### Added (Task 0116 — LINE window abort modes, CONTROL.W=1/W=2)
+- Completes LINE window checking (all four W modes). W=2 (miss): LINE draws
+  inside pixels and, on the first OUTSIDE pixel, inhibits the write, sets V=1,
+  sets INTPEND.WV, and aborts. W=1 (hit): LINE draws OUTSIDE pixels and, on the
+  first INSIDE pixel, inhibits the write, sets V=0 (inside found), sets
+  INTPEND.WV, and aborts (the "pick" use). The abort stops the per-pixel loop
+  (terminal on line_abort), the WVP→INTPEND.WV interrupt is then serviced by the
+  maskable interrupt subsystem. V at the end = NOT last-pixel-inside for every
+  windowed mode. The per-pixel draw decision generalizes the W=3 path:
+  W=1 draws outside, W=2/W=3 draw inside.
+- A0031 updated: LINE window now complete (W=0/1/2/3). Only PIXT window and the
+  multi-word MOVB forms remain.
+- New `sim/tb/tb_line_abort.sv`: a W=2 line (aborts on outside) and a W=1 line
+  (aborts on inside), checking drawn/skipped pixels, V, and INTPEND.WV.
+
+## 2026-06-15
+
 ### Added (Task 0115 — LINE window clipping, CONTROL.W=3)
 - LINE now clips to the window in W=3 (1988 UG §7.10.3): WSTART/WEND are read in
   a new CORE_LINE_SETUP_WIN cycle (only for windowed lines), each pixel's

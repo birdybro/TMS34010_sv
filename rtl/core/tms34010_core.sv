@@ -435,7 +435,8 @@ module tms34010_core
                  || ((state_q == CORE_FILL_WIN_HIT) && fill_array_hit)
                  || ((state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit)
                  || (drav_win_wb && (((drav_w_q == 2'd1) && drav_inside_q)
-                                  || ((drav_w_q == 2'd2) && !drav_inside_q)));
+                                  || ((drav_w_q == 2'd2) && !drav_inside_q)))
+                 || (line_win_wb && line_aborted_q);  // LINE W=1/W=2 abort
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -814,14 +815,24 @@ module tms34010_core
   // (abort modes) are deferred (A0031). WSTART/WEND read at CORE_LINE_SETUP_WIN.
   logic [DATA_WIDTH-1:0] line_wstart_q, line_wend_q;
   logic                  line_last_inside_q;  // inside status of the last pixel
-  logic                  line_win_en;         // W=3 active for this LINE
-  logic                  line_in_window, line_clip_out;
-  assign line_win_en    = (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
+  logic                  line_aborted_q;      // W=1/W=2 aborted on a violation
+  logic [1:0]            line_w_mode;
+  logic                  line_win_en;         // any window mode active (W!=0)
+  logic                  line_in_window, line_draw_pixel, line_clip_out, line_abort;
+  assign line_w_mode    = io_control[CTRL_W_HI:CTRL_W_LO];
+  assign line_win_en    = (line_w_mode != 2'd0);
   assign line_in_window =
         (line_daddr_q[15:0] >= line_wstart_q[15:0]) && (line_daddr_q[15:0] <= line_wend_q[15:0])
      && (line_daddr_q[DATA_WIDTH-1:16] >= line_wstart_q[DATA_WIDTH-1:16])
      && (line_daddr_q[DATA_WIDTH-1:16] <= line_wend_q[DATA_WIDTH-1:16]);
-  assign line_clip_out  = line_win_en && !line_in_window;
+  // Draw decision: W=1 (hit) draws the pixels OUTSIDE the window and aborts on
+  // an inside pixel; W=2 (miss) and W=3 (clip) draw INSIDE pixels (W=2 aborts
+  // on an outside pixel, W=3 just inhibits it). V at the end is NOT last-inside
+  // for every windowed mode; WVP is set on a W=1/W=2 abort.
+  assign line_draw_pixel = (line_w_mode == 2'd1) ? !line_in_window : line_in_window;
+  assign line_clip_out   = line_win_en && !line_draw_pixel;
+  assign line_abort      = (line_w_mode == 2'd1 &&  line_in_window)
+                         || (line_w_mode == 2'd2 && !line_in_window);
   assign line_merged      = (line_transp || line_clip_out)
                           ? line_dest_q
                           : ((line_processed & ~line_pmask_field) | (line_dest_q & line_pmask_field));
@@ -857,7 +868,10 @@ module tms34010_core
       line_wstart_q  <= '0;
       line_wend_q    <= '0;
       line_last_inside_q <= 1'b0;
+      line_aborted_q <= 1'b0;
     end else begin
+      // Clear the abort flag when a new LINE starts (at EXECUTE).
+      if (state_q == CORE_EXECUTE && is_line) line_aborted_q <= 1'b0;
       if (state_q == CORE_LINE_SETUP_WIN) begin
         line_wstart_q <= rf_rs1_data;          // WSTART (B5)
         line_wend_q   <= rf_rs2_data;          // WEND (B6)
@@ -883,9 +897,11 @@ module tms34010_core
         if (!line_substep_q) begin
           line_dest_q <= mem_rdata_eff;              // read ack
         end else begin
-          // Write ack: record this pixel's window status (for the final V),
-          // then advance the Bresenham state for the next pixel.
+          // Write ack: record this pixel's window status (for the final V) and
+          // whether it triggered a W=1/W=2 abort, then advance the Bresenham
+          // state for the next pixel.
           line_last_inside_q <= line_in_window;
+          if (line_abort) line_aborted_q <= 1'b1;
           line_d_q     <= line_d_next;
           line_daddr_q <= line_daddr_next;
           line_count_q <= line_count_next;
@@ -2596,7 +2612,8 @@ module tms34010_core
           mem_we_int = 1'b1;           // write the merged pixel
           mem_wdata  = line_merged;
         end
-        if (mem_ack && line_substep_q && (line_count_q == 32'd1))
+        // Stop on the last pixel OR a W=1/W=2 window-violation abort.
+        if (mem_ack && line_substep_q && ((line_count_q == 32'd1) || line_abort))
           state_d = CORE_LINE_WB_D;
         else
           state_d = CORE_LINE_DRAW;

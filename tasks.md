@@ -3549,6 +3549,27 @@ Commit:
 
 ---
 
+### Task 0116: LINE window abort modes (CONTROL.W=1/W=2)
+Status: complete
+Dependencies: Task 0115 (LINE W=3 window infra), interrupt subsystem.
+Spec source: 1988 UG §7.10.1/2 (LINE hit/miss detection with abort).
+Acceptance Criteria:
+- core: generalize line_win_en to W!=0; per-pixel line_draw_pixel (W=1 draws
+  outside, W=2/3 inside) and line_abort (W=1 inside / W=2 outside); latch
+  line_aborted_q; LINE_DRAW terminal includes line_abort; wvp_set on
+  (line_win_wb && aborted); V = NOT last-inside (all windowed). W=3 unchanged.
+- tb_line_abort: W=2 (abort on outside, V=1) + W=1 (abort on inside, V=0),
+  drawn/skipped pixels + INTPEND.WV.
+- A0031: LINE window complete; only PIXT window + multi-word MOVB remain.
+Tests: tb_line_abort + tb_line_win PASS; full integration regression PASS under
+  Verilator (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (LINE row), assumptions.md (A0031),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
