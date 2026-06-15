@@ -3566,7 +3566,7 @@ Tests: tb_line_abort + tb_line_win PASS; full integration regression PASS under
 Docs: instruction_coverage.md (LINE row), assumptions.md (A0031),
   changelog.md, tasks.md.
 Commit:
-- pending
+- 31dc4b2
 
 ---
 
