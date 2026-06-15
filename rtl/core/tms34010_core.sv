@@ -414,12 +414,16 @@ module tms34010_core
   // LINE W=3 writes V at the d-writeback (V = NOT last-pixel-inside; no WVP).
   logic line_win_wb;
   assign line_win_wb = (state_q == CORE_LINE_WB_D) && line_win_en;
+  // Windowed XY PIXT writes V (and maybe WVP) at CORE_WRITEBACK, like DRAV.
+  logic pixt_win_wb;
+  assign pixt_win_wb = (state_q == CORE_WRITEBACK) && pixt_xy_win;
   assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS)
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit)
                             || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit)
                             || (drav_win_wb && !drav_inside_q)
-                            || (line_win_wb && !line_last_inside_q);
+                            || (line_win_wb && !line_last_inside_q)
+                            || (pixt_win_wb && !pixt_inside_q);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
                             || ((state_q == CORE_FILL_WB) && fill_w2_q)
                             || (state_q == CORE_PBLT_WIN_MISS)
@@ -427,7 +431,8 @@ module tms34010_core
                             || (state_q == CORE_FILL_WIN_HIT)
                             || (state_q == CORE_PBLT_WIN_HIT)
                             || drav_win_wb
-                            || line_win_wb;
+                            || line_win_wb
+                            || pixt_win_wb;
   // WVP requested on a W=2 miss / W=1 hit for the array engines; for DRAV (per
   // pixel) on a W=1 hit (pixel inside) or a W=2 miss (pixel outside).
   assign wvp_set = (state_q == CORE_FILL_WIN_MISS)
@@ -436,7 +441,9 @@ module tms34010_core
                  || ((state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit)
                  || (drav_win_wb && (((drav_w_q == 2'd1) && drav_inside_q)
                                   || ((drav_w_q == 2'd2) && !drav_inside_q)))
-                 || (line_win_wb && line_aborted_q);  // LINE W=1/W=2 abort
+                 || (line_win_wb && line_aborted_q)   // LINE W=1/W=2 abort
+                 || (pixt_win_wb && (((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) && pixt_inside_q)
+                                  || ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2) && !pixt_inside_q)));
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -1123,6 +1130,7 @@ module tms34010_core
                                || (state_q == CORE_LINE_SETUP_WIN));
 
   assign rf_rs1_file = line_rd_b ? REG_FILE_B
+                     : (state_q == CORE_PIXT_SETUP_WIN) ? REG_FILE_B
                      : (is_drav && ((state_q == CORE_DRAV) || (state_q == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
                      : (is_fill || is_pblt) ? REG_FILE_B
                      : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
@@ -1143,6 +1151,7 @@ module tms34010_core
                      : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC1_IDX    // INC1 (B11)
                      : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_DADDR_IDX   // DADDR (B2)
                      : (is_line && (state_q == CORE_LINE_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART (B5)
+                     : (state_q == CORE_PIXT_SETUP_WIN) ? CPW_WSTART_IDX           // PIXT WSTART
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
   // for CPW) to read the window-start register WSTART = B5; read port 3
@@ -1150,6 +1159,7 @@ module tms34010_core
   // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
   // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
   assign rf_rs2_file = (line_rd_b || is_fill || is_pblt || (decoded.iclass == INSTR_CPW)
+                        || (state_q == CORE_PIXT_SETUP_WIN)
                         || (is_drav && (state_q == CORE_DRAV_SETUP_WIN)))
                      ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
@@ -1161,6 +1171,7 @@ module tms34010_core
                      : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC2_IDX    // INC2 (B12)
                      : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_COLOR1_IDX  // COLOR1 (B9)
                      : (is_line && (state_q == CORE_LINE_SETUP_WIN)) ? CPW_WEND_IDX // WEND (B6)
+                     : (state_q == CORE_PIXT_SETUP_WIN) ? CPW_WEND_IDX             // PIXT WEND
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
   // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
@@ -1301,9 +1312,43 @@ module tms34010_core
   assign pixt_processed   = ppop_apply(rf_rs1_data, pix_dest_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], mv_fmask);
   assign pixt_transp  = io_control[CTRL_T_BIT] && ((pixt_processed & mv_fmask) == '0);
-  assign pixt_merged  = pixt_transp
+  // Per-pixel window check for an XY PIXT store (Task 0117), mirroring DRAV.
+  // WSTART/WEND are read at CORE_PIXT_SETUP_WIN; the pointer's XY (mv_ptr) is
+  // tested. Drawn for W=0, or W=2/W=3 when inside; W=1 never draws. V (W!=0) =
+  // NOT inside; WVP on a W=1 hit (inside) or W=2 miss (outside). Gated by
+  // pixt_xy_win so a regular MOVE / non-XY PIXT / W=0 PIXT is unaffected.
+  logic                  pixt_xy_win;
+  logic [DATA_WIDTH-1:0] pixt_wstart_q, pixt_wend_q;
+  logic                  pixt_inside_q;     // latched at the RMW write step
+  logic                  pixt_in_window, pixt_clip_out;
+  assign pixt_xy_win  = pixt_rmw && decoded.xy_addr
+                     && (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0);
+  assign pixt_in_window =
+        (mv_ptr[15:0] >= pixt_wstart_q[15:0]) && (mv_ptr[15:0] <= pixt_wend_q[15:0])
+     && (mv_ptr[DATA_WIDTH-1:16] >= pixt_wstart_q[DATA_WIDTH-1:16])
+     && (mv_ptr[DATA_WIDTH-1:16] <= pixt_wend_q[DATA_WIDTH-1:16]);
+  // W=1 never draws; W=2/W=3 draw inside.
+  assign pixt_clip_out = pixt_xy_win &&
+                         ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) || !pixt_in_window);
+  assign pixt_merged  = (pixt_transp || pixt_clip_out)
                       ? pix_dest_q
                       : ((pixt_processed & ~pixt_pmask_field) | (pix_dest_q & pixt_pmask_field));
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pixt_wstart_q <= '0;
+      pixt_wend_q   <= '0;
+      pixt_inside_q <= 1'b0;
+    end else begin
+      if (state_q == CORE_PIXT_SETUP_WIN) begin
+        pixt_wstart_q <= rf_rs1_data;   // WSTART (B5)
+        pixt_wend_q   <= rf_rs2_data;   // WEND (B6)
+      end
+      // Latch the pointer's window status at the RMW write step (for the
+      // final V / WVP written at CORE_WRITEBACK).
+      if ((state_q == CORE_MEMORY) && pixt_rmw && (mem_op_step == 2'd1) && mem_ack)
+        pixt_inside_q <= pixt_in_window;
+    end
+  end
 
   // XY-addressed PIXT: the pointer holds an XY value; convert it to a linear
   // bit address (same shift form as CVXYL). CONVDP for a destination pointer
@@ -2523,6 +2568,8 @@ module tms34010_core
                                                               : CORE_DRAV;
         else if (is_line)
           state_d = CORE_LINE_SETUP1;  // LINE: read the implied B operands
+        else if (pixt_xy_win)
+          state_d = CORE_PIXT_SETUP_WIN; // windowed XY PIXT: read WSTART/WEND
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
@@ -2569,6 +2616,12 @@ module tms34010_core
         // to CORE_WRITEBACK, which still advances Rd and writes V/WVP.
         state_d = (((drav_w_q == 2'd2) || (drav_w_q == 2'd3)) && drav_in_window)
                 ? CORE_DRAV : CORE_WRITEBACK;
+      end
+
+      CORE_PIXT_SETUP_WIN: begin
+        // One cycle to read WSTART(B5)/WEND(B6); then the normal PIXT-store RMW
+        // runs in CORE_MEMORY (the window inhibits the write per pixel).
+        state_d = CORE_MEMORY;
       end
 
       CORE_DRAV: begin

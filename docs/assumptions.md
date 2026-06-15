@@ -596,10 +596,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
     on a violation). DRAV and LINE are fully windowed: DRAV W=1/2/3 (0111/0112),
     LINE W=0 (0114) + W=3 clip (0115) + W=1/W=2 abort (0116, abort stops the
     loop + sets INTPEND.WV; the WVP interrupt is serviced by the maskable
-    interrupt subsystem, whose pushed PC already points past the LINE). Only
-    **PIXT window** remains (would follow the DRAV single-pixel pattern but
-    lives in the shared MOVE_FIELD_STORE path, which has no setup phase for the
-    WSTART/WEND reads).
+    interrupt subsystem, whose pushed PC already points past the LINE). PIXT XY
+    is now also windowed (Task 0117 — CORE_PIXT_SETUP_WIN reads WSTART/WEND,
+    gated by pixt_xy_win so the shared MOVE path is otherwise untouched). **All
+    drawing instructions now support window checking.**
   These behave as W=0 (no window) for the not-yet-covered instructions.
   **Recorded here, not silently stubbed; see docs/instruction_coverage.md.**
 

@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-15
 
+### Added (Task 0117 — PIXT XY per-pixel window checking)
+- The XY-addressed PIXT store now applies the per-pixel window (CONTROL.W), the
+  last instruction to gain window support. A windowed XY PIXT reads WSTART/WEND
+  in a new CORE_PIXT_SETUP_WIN cycle (entered only when force_pixel && xy_addr
+  && W!=0, so regular MOVE / non-XY PIXT / W=0 PIXT are unaffected), tests the
+  pointer's XY, and — mirroring DRAV — draws for W=2/W=3 inside, never for W=1;
+  the write is inhibited (pixt_merged = dest) outside; V (W!=0) = NOT inside and
+  WVP on a W=1 hit / W=2 miss are written at CORE_WRITEBACK via the shared
+  fill_win_flag_wb / wvp_set path.
+- **Window checking is now complete for every drawing instruction**
+  (FILL, PIXBLT, DRAV, LINE, PIXT). A0031 updated.
+- New `sim/tb/tb_pixt_win.sv`: W=3 inside (drawn, V=0), W=3 outside (skipped,
+  V=1), W=2 outside (skipped, V=1, INTPEND.WV).
+
+## 2026-06-15
+
 ### Added (Task 0116 — LINE window abort modes, CONTROL.W=1/W=2)
 - Completes LINE window checking (all four W modes). W=2 (miss): LINE draws
   inside pixels and, on the first OUTSIDE pixel, inhibits the write, sets V=1,

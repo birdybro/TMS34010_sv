@@ -3570,6 +3570,28 @@ Commit:
 
 ---
 
+### Task 0117: PIXT XY per-pixel window checking
+Status: complete
+Dependencies: Task 0112 (DRAV window pattern), Task 0085 (PIXT XY).
+Spec source: 1988 UG §7.10 (per-pixel window for PIXT/DRAV).
+Acceptance Criteria:
+- pkg: CORE_PIXT_SETUP_WIN state.
+- core: pixt_xy_win = pixt_rmw && xy_addr && W!=0; route EXECUTE→SETUP_WIN→
+  CORE_MEMORY for windowed XY PIXT; read WSTART/WEND; test mv_ptr's XY;
+  inhibit pixt_merged outside (W=1 always); latch pixt_inside_q at the RMW
+  write step; V/WVP at CORE_WRITEBACK via shared fill_win_flag_wb/wvp_set.
+  Regular MOVE / non-XY PIXT / W=0 unaffected.
+- tb_pixt_win: W=3 in/out + W=2 out (WVP).
+- Window checking now complete for ALL drawing instructions.
+Tests: tb_pixt_win PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (PIXT XY row), assumptions.md (A0031),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
