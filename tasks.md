@@ -3487,7 +3487,7 @@ Tests: tb_drav_win PASS; full integration regression PASS under Verilator
 Docs: instruction_coverage.md (DRAV row), assumptions.md (A0031),
   changelog.md, tasks.md.
 Commit:
-- pending
+- ba61d32
 
 ---
 
