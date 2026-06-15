@@ -3588,7 +3588,7 @@ Tests: tb_pixt_win PASS; full integration regression PASS under Verilator
 Docs: instruction_coverage.md (PIXT XY row), assumptions.md (A0031),
   changelog.md, tasks.md.
 Commit:
-- pending
+- 5089ca2
 
 ---
 
