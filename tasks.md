@@ -3523,7 +3523,7 @@ Tests: tb_line PASS; full integration regression PASS under Verilator
 Docs: instruction_coverage.md (new LINE row), assumptions.md (A0031),
   changelog.md, tasks.md.
 Commit:
-- pending
+- 3df5ff5
 
 ---
 
