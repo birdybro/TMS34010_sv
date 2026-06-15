@@ -3466,7 +3466,7 @@ Tests: tb_drav PASS; full integration regression PASS under Verilator
 Docs: instruction_coverage.md (new DRAV row), assumptions.md (A0031),
   changelog.md, tasks.md.
 Commit:
-- pending
+- a352ca5
 
 ---
 
