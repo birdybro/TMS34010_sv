@@ -3491,6 +3491,21 @@ Commit:
 
 ---
 
+### Task 0113: Widen core_state_t to 6 bits (enable LINE)
+Status: complete
+Dependencies: none (enabling refactor for Task 0114 LINE).
+Acceptance Criteria:
+- core_state_t: logic [4:0] → logic [5:0]; all enum values 5'dN → 6'dN. No new
+  states, no behavior change.
+- Full regression unchanged (no functional impact).
+Tests: full integration regression PASS under Verilator (3 module-level tbs
+  need Questa); lint clean.
+Docs: changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

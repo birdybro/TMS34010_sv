@@ -61,37 +61,37 @@ package tms34010_pkg;
   //   CORE_FETCH_IMM_LO/HI — fetch the 16- or 32-bit immediate that follows
   //   long-immediate-form instructions (MOVI IW/IL, ADDI IW/IL, CMPI, etc.).
   // ---------------------------------------------------------------------------
-  typedef enum logic [4:0] {
-    CORE_RESET        = 5'd0,
-    CORE_FETCH        = 5'd1,
-    CORE_DECODE       = 5'd2,
-    CORE_FETCH_IMM_LO = 5'd3,
-    CORE_FETCH_IMM_HI = 5'd4,
-    CORE_EXECUTE      = 5'd5,
-    CORE_MEMORY       = 5'd6,
-    CORE_WRITEBACK    = 5'd7,
-    CORE_DIVIDE       = 5'd8,  // multi-cycle wait for the divider (DIVU/MODU/...)
-    CORE_FILL_SETUP   = 5'd9,  // FILL: latch COLOR1 + init counters (operands B2/B3/B7
+  typedef enum logic [5:0] {
+    CORE_RESET        = 6'd0,
+    CORE_FETCH        = 6'd1,
+    CORE_DECODE       = 6'd2,
+    CORE_FETCH_IMM_LO = 6'd3,
+    CORE_FETCH_IMM_HI = 6'd4,
+    CORE_EXECUTE      = 6'd5,
+    CORE_MEMORY       = 6'd6,
+    CORE_WRITEBACK    = 6'd7,
+    CORE_DIVIDE       = 6'd8,  // multi-cycle wait for the divider (DIVU/MODU/...)
+    CORE_FILL_SETUP   = 6'd9,  // FILL: latch COLOR1 + init counters (operands B2/B3/B7
                                //       latched at EXECUTE); the pixel loop follows
-    CORE_FILL         = 5'd10, // FILL: per-pixel read-modify-write until the array is done
-    CORE_FILL_WB      = 5'd11, // FILL: write the final DADDR back to B2
-    CORE_PBLT_SETUP   = 5'd12, // PIXBLT: latch SPTCH/DPTCH (SADDR/DADDR/DYDX at EXECUTE)
-    CORE_PBLT         = 5'd13, // PIXBLT: per-pixel read-src / read-dst / write loop
-    CORE_PBLT_WB      = 5'd14, // PIXBLT: write the final SADDR back to B0
-    CORE_PBLT_WB2     = 5'd15, // PIXBLT: write the final DADDR back to B2
-    CORE_PBLT_SETUP2  = 5'd16, // PIXBLT B (color expand): latch COLOR0/COLOR1
-    CORE_INT_PUSH_ST  = 5'd17, // interrupt entry: push ST onto the stack
-    CORE_INT_PUSH_PC  = 5'd18, // interrupt entry: push PC onto the stack
-    CORE_INT_VECTOR   = 5'd19, // interrupt entry: read the vector -> PC
-    CORE_INT_DONE     = 5'd20, // interrupt entry: write back SP, clear IE
-    CORE_FILL_SETUP_WIN = 5'd21, // FILL XY (W=2/3): read WSTART/WEND for window
-    CORE_PBLT_SETUP_WIN = 5'd22, // PIXBLT XY (W=3): read WSTART/WEND for clipping
-    CORE_FILL_WIN_MISS  = 5'd23, // FILL XY (W=2): array outside window — no draw, V=1, WVP
-    CORE_PBLT_WIN_MISS  = 5'd24, // PIXBLT XY (W=2): array outside window — no draw, V=1, WVP
-    CORE_FILL_WIN_HIT   = 5'd25, // FILL XY (W=1): hit detection — no draw, V/WVP on overlap
-    CORE_PBLT_WIN_HIT   = 5'd26, // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
-    CORE_DRAV           = 5'd27, // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
-    CORE_DRAV_SETUP_WIN = 5'd28  // DRAV (W!=0): read WSTART/WEND, test Rd's XY against window
+    CORE_FILL         = 6'd10, // FILL: per-pixel read-modify-write until the array is done
+    CORE_FILL_WB      = 6'd11, // FILL: write the final DADDR back to B2
+    CORE_PBLT_SETUP   = 6'd12, // PIXBLT: latch SPTCH/DPTCH (SADDR/DADDR/DYDX at EXECUTE)
+    CORE_PBLT         = 6'd13, // PIXBLT: per-pixel read-src / read-dst / write loop
+    CORE_PBLT_WB      = 6'd14, // PIXBLT: write the final SADDR back to B0
+    CORE_PBLT_WB2     = 6'd15, // PIXBLT: write the final DADDR back to B2
+    CORE_PBLT_SETUP2  = 6'd16, // PIXBLT B (color expand): latch COLOR0/COLOR1
+    CORE_INT_PUSH_ST  = 6'd17, // interrupt entry: push ST onto the stack
+    CORE_INT_PUSH_PC  = 6'd18, // interrupt entry: push PC onto the stack
+    CORE_INT_VECTOR   = 6'd19, // interrupt entry: read the vector -> PC
+    CORE_INT_DONE     = 6'd20, // interrupt entry: write back SP, clear IE
+    CORE_FILL_SETUP_WIN = 6'd21, // FILL XY (W=2/3): read WSTART/WEND for window
+    CORE_PBLT_SETUP_WIN = 6'd22, // PIXBLT XY (W=3): read WSTART/WEND for clipping
+    CORE_FILL_WIN_MISS  = 6'd23, // FILL XY (W=2): array outside window — no draw, V=1, WVP
+    CORE_PBLT_WIN_MISS  = 6'd24, // PIXBLT XY (W=2): array outside window — no draw, V=1, WVP
+    CORE_FILL_WIN_HIT   = 6'd25, // FILL XY (W=1): hit detection — no draw, V/WVP on overlap
+    CORE_PBLT_WIN_HIT   = 6'd26, // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
+    CORE_DRAV           = 6'd27, // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
+    CORE_DRAV_SETUP_WIN = 6'd28  // DRAV (W!=0): read WSTART/WEND, test Rd's XY against window
   } core_state_t;
 
   // ---------------------------------------------------------------------------

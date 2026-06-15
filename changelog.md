@@ -7,6 +7,15 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-14
 
+### Changed (Task 0113 — widen core_state_t to 6 bits)
+- `core_state_t` widened from `logic [4:0]` (max 32 states, 29 used) to
+  `logic [5:0]` to make room for the LINE engine's ~7 additional FSM states.
+  Pure mechanical refactor — every enum value updated `5'dN`→`6'dN`, no
+  behavior change. The full regression confirms no functional impact. Enables
+  Task 0114 (LINE).
+
+## 2026-06-14
+
 ### Added (Task 0112 — DRAV per-pixel window checking, CONTROL.W=1/2/3)
 - Completes DRAV's window handling (1988 UG page 12-67 / §7.10). A windowed
   DRAV reads WSTART/WEND in a new CORE_DRAV_SETUP_WIN cycle and tests Rd's
