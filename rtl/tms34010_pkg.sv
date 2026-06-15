@@ -89,7 +89,8 @@ package tms34010_pkg;
     CORE_FILL_WIN_MISS  = 5'd23, // FILL XY (W=2): array outside window — no draw, V=1, WVP
     CORE_PBLT_WIN_MISS  = 5'd24, // PIXBLT XY (W=2): array outside window — no draw, V=1, WVP
     CORE_FILL_WIN_HIT   = 5'd25, // FILL XY (W=1): hit detection — no draw, V/WVP on overlap
-    CORE_PBLT_WIN_HIT   = 5'd26  // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
+    CORE_PBLT_WIN_HIT   = 5'd26, // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
+    CORE_DRAV           = 5'd27  // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -541,9 +542,12 @@ package tms34010_pkg;
     INSTR_FILL_XY          = 7'd95, // FILL XY — like FILL L but DADDR (B2) holds an XY value,
                               //                     converted to linear (CONVDP+OFFSET+PSIZE)
                               //                     before the fill. Encoding 0x0FE0.
-    INSTR_PIXBLT_LL        = 7'd96  // PIXBLT L,L — transfer a DY×DX source array (SADDR=B0/
+    INSTR_PIXBLT_LL        = 7'd96, // PIXBLT L,L — transfer a DY×DX source array (SADDR=B0/
                               //                     SPTCH=B1) to a dest array (DADDR=B2/DPTCH=B3),
                               //                     processing each pixel. Encoding 0x0F00.
+    INSTR_DRAV             = 7'd97  // DRAV Rs,Rd — draw COLOR1 at Rd's XY (PSIZE pixel, with
+                              //                     PPOP/T/PMASK), then Rd += Rs as an XY add
+                              //                     (no carry X->Y). Encoding 0xF600. W=0 only.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

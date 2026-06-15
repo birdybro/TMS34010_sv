@@ -697,6 +697,56 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
+  // DRAV (Draw and Advance) — SPVU001A page 12-67.
+  //
+  // A single-pixel COLOR1 draw at Rd's XY address, then Rd advances by Rs as an
+  // XY add. At EXECUTE: Rd (port2) is XY-converted to a linear address with
+  // OFFSET (port3) — pix_xy_dst_linear, the same form as PIXT XY / FILL XY —
+  // and latched; Rs/Rd are latched for the advance. CORE_DRAV then runs a
+  // 2-step read-dest / write-merged RMW (COLOR1 on port1), reusing the FILL
+  // pixel-merge (PPOP / transparency / PMASK). The advance is written back at
+  // CORE_WRITEBACK. Window modes (W=1/2/3) are not yet applied (A0031, W=0).
+  // ---------------------------------------------------------------------------
+  logic [DATA_WIDTH-1:0] drav_rd_q, drav_rs_q, drav_linear_q, drav_dest_q;
+  logic                  drav_substep_q;    // 0 = read dest, 1 = write merged
+  logic [DATA_WIDTH-1:0] drav_pixel_mask, drav_pmask_field, drav_processed, drav_merged;
+  logic                  drav_transp;
+  logic [DATA_WIDTH-1:0] drav_advance;
+  assign drav_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
+  assign drav_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & drav_pixel_mask;
+  // COLOR1 is rf_rs1_data in CORE_DRAV (port1 reads B9 there).
+  assign drav_processed   = ppop_apply(rf_rs1_data, drav_dest_q,
+                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], drav_pixel_mask);
+  assign drav_transp      = io_control[CTRL_T_BIT] && ((drav_processed & drav_pixel_mask) == '0);
+  assign drav_merged      = drav_transp
+                          ? drav_dest_q
+                          : ((drav_processed & ~drav_pmask_field) | (drav_dest_q & drav_pmask_field));
+  // Rd advanced by Rs: independent 16-bit X and Y adds, no carry X->Y.
+  assign drav_advance = {drav_rd_q[DATA_WIDTH-1:16] + drav_rs_q[DATA_WIDTH-1:16],
+                         drav_rd_q[15:0]            + drav_rs_q[15:0]};
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      drav_rd_q      <= '0;
+      drav_rs_q      <= '0;
+      drav_linear_q  <= '0;
+      drav_dest_q    <= '0;
+      drav_substep_q <= 1'b0;
+    end else begin
+      if (state_q == CORE_EXECUTE && is_drav) begin
+        drav_rd_q      <= rf_rs2_data;        // Rd (XY dest)
+        drav_rs_q      <= rf_rs1_data;        // Rs (XY increment)
+        drav_linear_q  <= pix_xy_dst_linear;  // convert(Rd) + OFFSET (port3)
+        drav_substep_q <= 1'b0;
+      end
+      if (state_q == CORE_DRAV && mem_ack) begin
+        drav_substep_q <= ~drav_substep_q;
+        if (!drav_substep_q) drav_dest_q <= mem_rdata_eff;  // read ack
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // MMTM / MMFM iterator (shared)
   //
   // MMTM (push, INSTR_MMTM) and MMFM (pop, INSTR_MMFM) walk the same
@@ -893,8 +943,13 @@ module tms34010_core
   // SADDR(B0) on port1, DADDR(B2) on port2, DYDX(B7) on port3; at
   // CORE_PBLT_SETUP — SPTCH(B1) on port1, DPTCH(B3) on port2.
   assign is_pblt    = (decoded.iclass == INSTR_PIXBLT_LL);
+  // DRAV: at EXECUTE — Rs on port1, Rd on port2, OFFSET(B4) on port3 (for the
+  // XY->linear conversion of Rd); in CORE_DRAV — COLOR1(B9) on port1.
+  logic is_drav;
+  assign is_drav    = (decoded.iclass == INSTR_DRAV);
 
-  assign rf_rs1_file = (is_fill || is_pblt) ? REG_FILE_B
+  assign rf_rs1_file = (is_drav && (state_q == CORE_DRAV)) ? REG_FILE_B
+                     : (is_fill || is_pblt) ? REG_FILE_B
                      : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
                      : decoded.rd_file;
   // Read-port 1 index is normally decoded.rs_idx. MMTM repurposes it
@@ -907,6 +962,7 @@ module tms34010_core
                                 : (state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
+                     : (is_drav && (state_q == CORE_DRAV)) ? B_COLOR1_IDX  // COLOR1 for the draw
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
   // for CPW) to read the window-start register WSTART = B5; read port 3
@@ -929,7 +985,7 @@ module tms34010_core
                      ? (decoded.rd_idx + 4'd1)
                      : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
-                     : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr) ? B_OFFSET_IDX
+                     : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr || is_drav) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
@@ -1497,6 +1553,7 @@ module tms34010_core
       INSTR_MOVY:   rf_wr_data = {rf_rs1_data[DATA_WIDTH-1:16], rf_rs2_data[15:0]};
       INSTR_ADDXY:  rf_wr_data = addxy_result;
       INSTR_SUBXY:  rf_wr_data = subxy_result;
+      INSTR_DRAV:   rf_wr_data = drav_advance;   // Rd advanced by Rs (XY add)
       INSTR_CPW:    rf_wr_data = cpw_result;
       // MPYS/MPYU: even Rd -> hi32 then (Rd+1) lo32; odd Rd -> lo32.
       INSTR_MPYS,
@@ -2261,6 +2318,8 @@ module tms34010_core
           state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
         else if (is_pblt)
           state_d = CORE_PBLT_SETUP;   // PIXBLT: latched SADDR/DADDR/DYDX here
+        else if (is_drav)
+          state_d = CORE_DRAV;         // DRAV: latched Rd/Rs/linear here
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
@@ -2299,6 +2358,25 @@ module tms34010_core
         // W=1 hit detection: no pixels drawn. V and WVP are driven
         // combinationally from fill_array_hit (overlap), then fetch.
         state_d = CORE_FETCH;
+      end
+
+      CORE_DRAV: begin
+        // Single-pixel RMW at Rd's linear address: read the destination pixel
+        // (sub-step 0), then write the merged COLOR1 (sub-step 1). On the write
+        // ack proceed to CORE_WRITEBACK, which advances Rd by Rs.
+        mem_req  = 1'b1;
+        mem_addr = drav_linear_q;
+        mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
+        if (!drav_substep_q) begin
+          mem_we_int = 1'b0;            // read the destination pixel
+        end else begin
+          mem_we_int = 1'b1;           // write the merged pixel
+          mem_wdata  = drav_merged;
+        end
+        if (mem_ack && drav_substep_q)
+          state_d = CORE_WRITEBACK;
+        else
+          state_d = CORE_DRAV;
       end
 
       CORE_FILL: begin

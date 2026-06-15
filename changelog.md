@@ -5,6 +5,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-14
+
+### Added (Task 0111 — DRAV (Draw and Advance), W=0)
+- First incremental-drawing instruction. DRAV Rs,Rd (encoding 0xF600, 1988 UG
+  page 12-67) writes COLOR1 (B9) to the pixel at Rd's XY address, then advances
+  Rd by Rs as an XY add (X+X, Y+Y, no carry between halves). At EXECUTE, Rd is
+  XY→linear converted (CONVDP + OFFSET(B4) + PSIZE, reusing pix_xy_dst_linear)
+  and latched along with Rs/Rd; CORE_DRAV runs a 2-step read-dest / write-merged
+  RMW (COLOR1 on port 1, reusing the FILL pixel-merge: PPOP/T/PMASK); the
+  advance (reusing the ADDXY datapath) is written back to Rd at CORE_WRITEBACK.
+- New INSTR_DRAV, CORE_DRAV state, DRAV_TOP7 decode arm.
+- Window modes W=1/2/3 for DRAV are NOT yet applied (behave as W=0; A0031) —
+  per-pixel window would reuse the existing V-write / wvp_set mechanism.
+- New `sim/tb/tb_drav.sv`: two chained DRAVs draw both pixels of a word and
+  verify Rd advances by Rs each time.
+
 ## 2026-06-08
 
 ### Added (Task 0110 — PIXBLT XY window hit detection, CONTROL.W=1)

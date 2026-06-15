@@ -3448,6 +3448,28 @@ Commit:
 
 ---
 
+### Task 0111: DRAV (Draw and Advance), W=0
+Status: complete
+Dependencies: pixel engine (ppop_apply), XY conversion (pix_xy_dst_linear),
+  ADDXY datapath.
+Spec source: 1988 UG page 12-67 (DRAV Rs,Rd; encoding 0xF600).
+Acceptance Criteria:
+- pkg: INSTR_DRAV, CORE_DRAV state.
+- decode: DRAV_TOP7 (1111011) reg-reg arm (rs/rd same file).
+- core: EXECUTE latches Rd/Rs and the XY→linear address (port3=OFFSET);
+  CORE_DRAV 2-step RMW (port1=COLOR1, FILL-style merge); CORE_WRITEBACK writes
+  Rd ← XY-add(Rd,Rs). No flags (W=0).
+- A0031: DRAV window modes (W=1/2/3) deferred (behave as W=0).
+- tb_drav: two chained DRAVs draw both pixels of a word, Rd advances each time.
+Tests: tb_drav PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (new DRAV row), assumptions.md (A0031),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -202,6 +202,9 @@ module tms34010_decode
   // info (computed in the core's XY datapath). Same-file. (Task 0066.)
   localparam logic [6:0] ADDXY_TOP7   = 7'b1110_000;
   localparam logic [6:0] SUBXY_TOP7   = 7'b1110_001;
+  // DRAV Rs,Rd — draw COLOR1 at Rd's XY then Rd += Rs (XY). Encoding
+  // `1111 011S SSSR DDDD` (base 0xF600), same reg-reg field layout as ADDXY.
+  localparam logic [6:0] DRAV_TOP7    = 7'b1111_011;
   // CMPXY — nondestructive XY compare (Rd unchanged). Sets status as if
   // RdX-RsX / RdY-RsY were computed. Per SPVU001A page 12-55. Encoding
   // 1110 010S SSSR DDDD. (Task 0067.)
@@ -799,6 +802,21 @@ module tms34010_decode
       decoded.rs_idx      = rs_idx_from_instr;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+    end
+
+    // DRAV Rs,Rd — Draw and Advance (SPVU001A page 12-67). Writes COLOR1 (B9)
+    // to the pixel at Rd's XY address (PSIZE-bit, with PPOP/T/PMASK), then
+    // advances Rd by Rs as an XY add (X+X, Y+Y, no carry between halves —
+    // reuses the ADDXY datapath). Rd is written back; no flags for W=0 window
+    // mode. Same-file reg-reg layout as ADDXY. Window modes deferred (A0031).
+    if (top7 == DRAV_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_DRAV;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;     // Rd (XY dest + advanced)
+      decoded.rs_idx          = rs_idx_from_instr;      // Rs (XY increment)
+      decoded.wb_reg_en       = 1'b1;                   // Rd <- advanced XY
+      decoded.needs_memory_op = 1'b1;                   // RMW pixel write
     end
 
     // CMPXY: nondestructive — sets flags only, Rd unchanged (wb_reg_en=0).
