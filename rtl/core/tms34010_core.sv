@@ -411,18 +411,23 @@ module tms34010_core
   // DRAV per-pixel window write-back (CORE_WRITEBACK, W!=0): V = NOT inside.
   logic drav_win_wb;
   assign drav_win_wb = (state_q == CORE_WRITEBACK) && is_drav && (drav_w_q != 2'd0);
+  // LINE W=3 writes V at the d-writeback (V = NOT last-pixel-inside; no WVP).
+  logic line_win_wb;
+  assign line_win_wb = (state_q == CORE_LINE_WB_D) && line_win_en;
   assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS)
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit)
                             || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit)
-                            || (drav_win_wb && !drav_inside_q);
+                            || (drav_win_wb && !drav_inside_q)
+                            || (line_win_wb && !line_last_inside_q);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
                             || ((state_q == CORE_FILL_WB) && fill_w2_q)
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_PBLT_WB2) && pblt_w2_q)
                             || (state_q == CORE_FILL_WIN_HIT)
                             || (state_q == CORE_PBLT_WIN_HIT)
-                            || drav_win_wb;
+                            || drav_win_wb
+                            || line_win_wb;
   // WVP requested on a W=2 miss / W=1 hit for the array engines; for DRAV (per
   // pixel) on a W=1 hit (pixel inside) or a W=2 miss (pixel outside).
   assign wvp_set = (state_q == CORE_FILL_WIN_MISS)
@@ -803,7 +808,21 @@ module tms34010_core
   assign line_processed   = ppop_apply(line_color_q, line_dest_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], line_pixel_mask);
   assign line_transp      = io_control[CTRL_T_BIT] && ((line_processed & line_pixel_mask) == '0);
-  assign line_merged      = line_transp
+  // Per-pixel window clip (CONTROL.W=3, Task 0115). LINE inhibits writes to
+  // pixels outside the window (no preclip — tested at draw time); the V bit at
+  // the end reflects whether the last pixel calculated was inside. W=1/W=2
+  // (abort modes) are deferred (A0031). WSTART/WEND read at CORE_LINE_SETUP_WIN.
+  logic [DATA_WIDTH-1:0] line_wstart_q, line_wend_q;
+  logic                  line_last_inside_q;  // inside status of the last pixel
+  logic                  line_win_en;         // W=3 active for this LINE
+  logic                  line_in_window, line_clip_out;
+  assign line_win_en    = (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
+  assign line_in_window =
+        (line_daddr_q[15:0] >= line_wstart_q[15:0]) && (line_daddr_q[15:0] <= line_wend_q[15:0])
+     && (line_daddr_q[DATA_WIDTH-1:16] >= line_wstart_q[DATA_WIDTH-1:16])
+     && (line_daddr_q[DATA_WIDTH-1:16] <= line_wend_q[DATA_WIDTH-1:16]);
+  assign line_clip_out  = line_win_en && !line_in_window;
+  assign line_merged      = (line_transp || line_clip_out)
                           ? line_dest_q
                           : ((line_processed & ~line_pmask_field) | (line_dest_q & line_pmask_field));
   // Bresenham decision: branch (diagonal, +INC1) when d>0 (Z=0) or d>=0 (Z=1).
@@ -835,7 +854,14 @@ module tms34010_core
       line_b_q       <= '0;
       line_a_q       <= '0;
       line_substep_q <= 1'b0;
+      line_wstart_q  <= '0;
+      line_wend_q    <= '0;
+      line_last_inside_q <= 1'b0;
     end else begin
+      if (state_q == CORE_LINE_SETUP_WIN) begin
+        line_wstart_q <= rf_rs1_data;          // WSTART (B5)
+        line_wend_q   <= rf_rs2_data;          // WEND (B6)
+      end
       if (state_q == CORE_LINE_SETUP1) begin
         line_d_q     <= rf_rs1_data;                 // d (B0)
         line_b_q     <= rf_rs2_data[DATA_WIDTH-1:16]; // b = DYDX minor
@@ -857,7 +883,9 @@ module tms34010_core
         if (!line_substep_q) begin
           line_dest_q <= mem_rdata_eff;              // read ack
         end else begin
-          // Write ack: advance the Bresenham state for the next pixel.
+          // Write ack: record this pixel's window status (for the final V),
+          // then advance the Bresenham state for the next pixel.
+          line_last_inside_q <= line_in_window;
           line_d_q     <= line_d_next;
           line_daddr_q <= line_daddr_next;
           line_count_q <= line_count_next;
@@ -1075,7 +1103,8 @@ module tms34010_core
   logic line_rd_b;   // LINE is doing B-file setup reads this cycle
   assign line_rd_b  = is_line && ((state_q == CORE_LINE_SETUP1)
                                || (state_q == CORE_LINE_SETUP2)
-                               || (state_q == CORE_LINE_SETUP3));
+                               || (state_q == CORE_LINE_SETUP3)
+                               || (state_q == CORE_LINE_SETUP_WIN));
 
   assign rf_rs1_file = line_rd_b ? REG_FILE_B
                      : (is_drav && ((state_q == CORE_DRAV) || (state_q == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
@@ -1097,6 +1126,7 @@ module tms34010_core
                      : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_SADDR_IDX   // d (B0)
                      : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC1_IDX    // INC1 (B11)
                      : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_DADDR_IDX   // DADDR (B2)
+                     : (is_line && (state_q == CORE_LINE_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART (B5)
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
   // for CPW) to read the window-start register WSTART = B5; read port 3
@@ -1114,6 +1144,7 @@ module tms34010_core
                      : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_DYDX_IDX    // DYDX (B7)
                      : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC2_IDX    // INC2 (B12)
                      : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_COLOR1_IDX  // COLOR1 (B9)
+                     : (is_line && (state_q == CORE_LINE_SETUP_WIN)) ? CPW_WEND_IDX // WEND (B6)
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
   // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
@@ -2546,8 +2577,11 @@ module tms34010_core
       CORE_LINE_SETUP1: state_d = CORE_LINE_SETUP2;
       CORE_LINE_SETUP2: state_d = CORE_LINE_SETUP3;
       CORE_LINE_SETUP3:
-        // If COUNT is 0 there is nothing to draw; go straight to writeback.
-        state_d = (line_count_q == '0) ? CORE_LINE_WB_D : CORE_LINE_DRAW;
+        // A windowed (W=3) LINE reads WSTART/WEND first. If COUNT is 0 there is
+        // nothing to draw; go straight to writeback.
+        state_d = (line_count_q == '0) ? CORE_LINE_WB_D
+                : line_win_en           ? CORE_LINE_SETUP_WIN : CORE_LINE_DRAW;
+      CORE_LINE_SETUP_WIN: state_d = CORE_LINE_DRAW;
 
       CORE_LINE_DRAW: begin
         // Per-pixel RMW at DADDR's linear address: read dest (sub-step 0), write

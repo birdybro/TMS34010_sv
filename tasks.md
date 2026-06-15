@@ -3527,6 +3527,28 @@ Commit:
 
 ---
 
+### Task 0115: LINE window clipping (CONTROL.W=3)
+Status: complete
+Dependencies: Task 0114 (LINE engine), window V-write mechanism.
+Spec source: 1988 UG §7.10.3 (LINE W=3 — inhibit outside pixels, V from last).
+Acceptance Criteria:
+- pkg: CORE_LINE_SETUP_WIN state.
+- core: read WSTART/WEND at CORE_LINE_SETUP_WIN (only when W=3); per-pixel
+  inside test on DADDR; out-of-window pixels write dest unchanged (clip); track
+  last-pixel inside; V = NOT last-inside at CORE_LINE_WB_D via shared
+  fill_win_flag_wb. No interrupt (W=3).
+- A0031: LINE W=1/W=2 (abort) + PIXT window still deferred.
+- tb_line_win: vertical line half in window — inside drawn, outside clipped,
+  V=1 (last pixel outside).
+Tests: tb_line_win PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (LINE row), assumptions.md (A0031),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -5,6 +5,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-06-15
+
+### Added (Task 0115 — LINE window clipping, CONTROL.W=3)
+- LINE now clips to the window in W=3 (1988 UG §7.10.3): WSTART/WEND are read in
+  a new CORE_LINE_SETUP_WIN cycle (only for windowed lines), each pixel's
+  DADDR XY is tested, and out-of-window pixels are inhibited (write the dest
+  back unchanged, no preclip — matching the spec's "tested at draw time"). At
+  the end V = NOT last-pixel-inside (no interrupt for W=3), written via the
+  shared fill_win_flag_wb path at CORE_LINE_WB_D.
+- A0031 updated. LINE W=1/W=2 (abort-on-violation + WVP) and PIXT window remain
+  deferred.
+- New `sim/tb/tb_line_win.sv`: a 4-pixel vertical line half inside the window —
+  inside pixels drawn, outside clipped, final V=1 (last pixel outside).
+
 ## 2026-06-14
 
 ### Added (Task 0114 — LINE (Bresenham inner loop), W=0)

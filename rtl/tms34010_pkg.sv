@@ -98,7 +98,8 @@ package tms34010_pkg;
     CORE_LINE_DRAW      = 6'd32, // LINE: per-pixel RMW draw + Bresenham step (d/DADDR/COUNT)
     CORE_LINE_WB_D      = 6'd33, // LINE: write back d -> B0
     CORE_LINE_WB_DADDR  = 6'd34, // LINE: write back DADDR -> B2
-    CORE_LINE_WB_COUNT  = 6'd35  // LINE: write back COUNT (=0) -> B10
+    CORE_LINE_WB_COUNT  = 6'd35, // LINE: write back COUNT (=0) -> B10
+    CORE_LINE_SETUP_WIN = 6'd36  // LINE (W=3): read WSTART/WEND for per-pixel clip
   } core_state_t;
 
   // ---------------------------------------------------------------------------
