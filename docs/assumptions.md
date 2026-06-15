@@ -592,11 +592,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
     object); entirely outside → V=1, no interrupt. Same shared V-write /
     wvp_set mechanism.
 - **NOT implemented (deferred)**:
-  - Window handling for LINE, DRAV, PIXT (the per-instruction §7.10 rules
-    differ: PIXT/DRAV are per-pixel, LINE aborts on a violation). DRAV itself is
-    now implemented for W=0 (Task 0111); its per-pixel window (W=1/2/3) is the
-    next window increment and would reuse the shared V-write / wvp_set path with
-    a single-pixel inside-test on Rd's XY.
+  - Window handling for LINE and PIXT (PIXT is per-pixel like DRAV; LINE aborts
+    on a violation). DRAV is fully implemented including per-pixel window modes
+    W=1/2/3 (Tasks 0111/0112). PIXT window would follow the same single-pixel
+    pattern (test the PIXT XY pointer, reuse the V-write / wvp_set path).
   These behave as W=0 (no window) for the not-yet-covered instructions.
   **Recorded here, not silently stubbed; see docs/instruction_coverage.md.**
 

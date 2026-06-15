@@ -408,22 +408,29 @@ module tms34010_core
   logic fill_win_flag_wb, fill_win_violation;
   // V value written: W=2 miss → 1; W=2 inside (at WB) → 0; W=1 hit → V = NOT
   // overlapped (1 if the array is entirely outside the window, else 0).
+  // DRAV per-pixel window write-back (CORE_WRITEBACK, W!=0): V = NOT inside.
+  logic drav_win_wb;
+  assign drav_win_wb = (state_q == CORE_WRITEBACK) && is_drav && (drav_w_q != 2'd0);
   assign fill_win_violation = (state_q == CORE_FILL_WIN_MISS)
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit)
-                            || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit);
+                            || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit)
+                            || (drav_win_wb && !drav_inside_q);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
                             || ((state_q == CORE_FILL_WB) && fill_w2_q)
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_PBLT_WB2) && pblt_w2_q)
                             || (state_q == CORE_FILL_WIN_HIT)
-                            || (state_q == CORE_PBLT_WIN_HIT);
-  // WVP requested on a W=2 miss, and on a W=1 hit (the array overlaps the
-  // window — the "pick" detected an object).
+                            || (state_q == CORE_PBLT_WIN_HIT)
+                            || drav_win_wb;
+  // WVP requested on a W=2 miss / W=1 hit for the array engines; for DRAV (per
+  // pixel) on a W=1 hit (pixel inside) or a W=2 miss (pixel outside).
   assign wvp_set = (state_q == CORE_FILL_WIN_MISS)
                  || (state_q == CORE_PBLT_WIN_MISS)
                  || ((state_q == CORE_FILL_WIN_HIT) && fill_array_hit)
-                 || ((state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit);
+                 || ((state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit)
+                 || (drav_win_wb && (((drav_w_q == 2'd1) && drav_inside_q)
+                                  || ((drav_w_q == 2'd2) && !drav_inside_q)));
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
   assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
@@ -709,6 +716,22 @@ module tms34010_core
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] drav_rd_q, drav_rs_q, drav_linear_q, drav_dest_q;
   logic                  drav_substep_q;    // 0 = read dest, 1 = write merged
+  // Per-pixel window check (CONTROL.W, Task 0112). Rd's XY is tested against the
+  // inclusive [WSTART..WEND] rectangle (read at CORE_DRAV_SETUP_WIN). The pixel
+  // is drawn only for W=0, or W=2/W=3 when inside. V (W!=0) = NOT inside; WVP is
+  // requested for W=1 inside (hit) or W=2 outside (miss). The advance always
+  // happens. Reuses the shared fill_win_flag_wb / wvp_set V-write path.
+  logic [1:0]            drav_w_q;          // CONTROL.W latched at EXECUTE
+  logic                  drav_inside_q;     // Rd's pixel lies inside the window
+  logic                  drav_in_window;    // combinational test at SETUP_WIN
+  logic                  drav_draw;         // pixel is actually written
+  assign drav_in_window =
+        (drav_rd_q[15:0] >= rf_rs1_data[15:0]) && (drav_rd_q[15:0] <= rf_rs2_data[15:0])
+     && (drav_rd_q[DATA_WIDTH-1:16] >= rf_rs1_data[DATA_WIDTH-1:16])
+     && (drav_rd_q[DATA_WIDTH-1:16] <= rf_rs2_data[DATA_WIDTH-1:16]);
+  // Drawn for W=0 always; for W=2/W=3 only when inside; W=1 never draws.
+  assign drav_draw = (drav_w_q == 2'd0)
+                   || (((drav_w_q == 2'd2) || (drav_w_q == 2'd3)) && drav_inside_q);
   logic [DATA_WIDTH-1:0] drav_pixel_mask, drav_pmask_field, drav_processed, drav_merged;
   logic                  drav_transp;
   logic [DATA_WIDTH-1:0] drav_advance;
@@ -732,13 +755,18 @@ module tms34010_core
       drav_linear_q  <= '0;
       drav_dest_q    <= '0;
       drav_substep_q <= 1'b0;
+      drav_w_q       <= 2'd0;
+      drav_inside_q  <= 1'b0;
     end else begin
       if (state_q == CORE_EXECUTE && is_drav) begin
         drav_rd_q      <= rf_rs2_data;        // Rd (XY dest)
         drav_rs_q      <= rf_rs1_data;        // Rs (XY increment)
         drav_linear_q  <= pix_xy_dst_linear;  // convert(Rd) + OFFSET (port3)
         drav_substep_q <= 1'b0;
+        drav_w_q       <= io_control[CTRL_W_HI:CTRL_W_LO];
       end
+      // CORE_DRAV_SETUP_WIN: latch the window test (WSTART=port1, WEND=port2).
+      if (state_q == CORE_DRAV_SETUP_WIN) drav_inside_q <= drav_in_window;
       if (state_q == CORE_DRAV && mem_ack) begin
         drav_substep_q <= ~drav_substep_q;
         if (!drav_substep_q) drav_dest_q <= mem_rdata_eff;  // read ack
@@ -948,7 +976,7 @@ module tms34010_core
   logic is_drav;
   assign is_drav    = (decoded.iclass == INSTR_DRAV);
 
-  assign rf_rs1_file = (is_drav && (state_q == CORE_DRAV)) ? REG_FILE_B
+  assign rf_rs1_file = (is_drav && ((state_q == CORE_DRAV) || (state_q == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
                      : (is_fill || is_pblt) ? REG_FILE_B
                      : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
                      : decoded.rd_file;
@@ -962,6 +990,7 @@ module tms34010_core
                                 : (state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
+                     : (is_drav && (state_q == CORE_DRAV_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART
                      : (is_drav && (state_q == CORE_DRAV)) ? B_COLOR1_IDX  // COLOR1 for the draw
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
@@ -969,12 +998,14 @@ module tms34010_core
   // reads the window-end register WEND = B6. Both are fixed B-file
   // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
   // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
-  assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW))
+  assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW)
+                        || (is_drav && (state_q == CORE_DRAV_SETUP_WIN)))
                      ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WEND_IDX
                                 : (state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
+                     : (is_drav && (state_q == CORE_DRAV_SETUP_WIN)) ? CPW_WEND_IDX  // WEND
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
   // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
@@ -2319,7 +2350,10 @@ module tms34010_core
         else if (is_pblt)
           state_d = CORE_PBLT_SETUP;   // PIXBLT: latched SADDR/DADDR/DYDX here
         else if (is_drav)
-          state_d = CORE_DRAV;         // DRAV: latched Rd/Rs/linear here
+          // DRAV: latched Rd/Rs/linear here. A windowed DRAV (W!=0) first reads
+          // WSTART/WEND to test Rd's pixel; W=0 goes straight to the draw.
+          state_d = (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0) ? CORE_DRAV_SETUP_WIN
+                                                              : CORE_DRAV;
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
@@ -2358,6 +2392,14 @@ module tms34010_core
         // W=1 hit detection: no pixels drawn. V and WVP are driven
         // combinationally from fill_array_hit (overlap), then fetch.
         state_d = CORE_FETCH;
+      end
+
+      CORE_DRAV_SETUP_WIN: begin
+        // One cycle to read WSTART(B5)/WEND(B6) and test Rd's pixel. If the
+        // pixel is drawn (W=2/3 inside) go to the RMW; otherwise skip straight
+        // to CORE_WRITEBACK, which still advances Rd and writes V/WVP.
+        state_d = (((drav_w_q == 2'd2) || (drav_w_q == 2'd3)) && drav_in_window)
+                ? CORE_DRAV : CORE_WRITEBACK;
       end
 
       CORE_DRAV: begin

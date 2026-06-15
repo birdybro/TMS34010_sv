@@ -3470,6 +3470,27 @@ Commit:
 
 ---
 
+### Task 0112: DRAV per-pixel window checking (CONTROL.W=1/2/3)
+Status: complete
+Dependencies: Task 0111 (DRAV W=0), Tasks 0107-0110 (window V-write/wvp).
+Spec source: 1988 UG page 12-67 / §7.10 (per-pixel window for DRAV).
+Acceptance Criteria:
+- pkg: CORE_DRAV_SETUP_WIN state.
+- core: drav_w_q (latched at EXECUTE); a windowed DRAV reads WSTART/WEND at
+  CORE_DRAV_SETUP_WIN, tests Rd's pixel (drav_in_window), latches drav_inside_q.
+  W=1 never draws; W=2/W=3 draw iff inside; no-draw routes straight to
+  CORE_WRITEBACK. Advance always. V/WVP at WRITEBACK via the shared
+  fill_win_flag_wb/wvp_set path (DRAV terms, is_drav-keyed).
+- tb_drav_win: W=3 in/out, W=2 out, W=1 in — draw/skip + V + INTPEND.WV.
+Tests: tb_drav_win PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (DRAV row), assumptions.md (A0031),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

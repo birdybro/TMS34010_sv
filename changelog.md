@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-14
 
+### Added (Task 0112 — DRAV per-pixel window checking, CONTROL.W=1/2/3)
+- Completes DRAV's window handling (1988 UG page 12-67 / §7.10). A windowed
+  DRAV reads WSTART/WEND in a new CORE_DRAV_SETUP_WIN cycle and tests Rd's
+  pixel: W=1 never draws (V = NOT inside, WVP if inside); W=2 draws iff inside
+  (else not drawn, V=1, WVP); W=3 draws iff inside (else not drawn, V=1). The
+  advance (Rd += Rs) always happens; the no-draw path skips the RMW and goes
+  straight to CORE_WRITEBACK. V/WVP reuse the shared fill_win_flag_wb / wvp_set
+  mechanism (DRAV terms added, keyed on is_drav at CORE_WRITEBACK).
+- New `sim/tb/tb_drav_win.sv`: W=3 inside/outside, W=2 outside, W=1 inside —
+  draw/skip + V (via GETST) + INTPEND.WV.
+
+## 2026-06-14
+
 ### Added (Task 0111 — DRAV (Draw and Advance), W=0)
 - First incremental-drawing instruction. DRAV Rs,Rd (encoding 0xF600, 1988 UG
   page 12-67) writes COLOR1 (B9) to the pixel at Rd's XY address, then advances

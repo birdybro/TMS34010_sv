@@ -90,7 +90,8 @@ package tms34010_pkg;
     CORE_PBLT_WIN_MISS  = 5'd24, // PIXBLT XY (W=2): array outside window — no draw, V=1, WVP
     CORE_FILL_WIN_HIT   = 5'd25, // FILL XY (W=1): hit detection — no draw, V/WVP on overlap
     CORE_PBLT_WIN_HIT   = 5'd26, // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
-    CORE_DRAV           = 5'd27  // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
+    CORE_DRAV           = 5'd27, // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
+    CORE_DRAV_SETUP_WIN = 5'd28  // DRAV (W!=0): read WSTART/WEND, test Rd's XY against window
   } core_state_t;
 
   // ---------------------------------------------------------------------------
