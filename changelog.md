@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-06-14
 
+### Added (Task 0114 — LINE (Bresenham inner loop), W=0)
+- The line-drawing instruction. LINE Z (encoding 0xDF1A Z=0 / 0xDF9A Z=1,
+  1988 UG page 12-99) draws COUNT pixels of COLOR1 along a line. The implied
+  B-file operands (d=B0, DADDR=B2, OFFSET=B4, DYDX=B7→{b:a}, COLOR1=B9,
+  COUNT=B10, INC1=B11, INC2=B12) are read over 3 setup cycles
+  (CORE_LINE_SETUP1/2/3); CORE_LINE_DRAW runs the per-pixel loop: a 2-step RMW
+  draw at DADDR's XY (reusing the FILL/DRAV pixel merge), then the Bresenham
+  step — d += 2b−2a and DADDR += INC1 when d>0 (the diagonal move), else
+  d += 2b and DADDR += INC2 — and COUNT−−. The Z bit selects whether d=0 counts
+  as ">0". At the end d/DADDR/COUNT are written back to B0/B2/B10
+  (CORE_LINE_WB_*). DADDR/INC adds are XY (independent halves, no carry),
+  reusing the ADDXY/DRAV form.
+- New INSTR_LINE, 7 LINE FSM states (enabled by the Task 0113 6-bit widening),
+  B_COUNT/INC1/INC2 index constants. Window modes (W=1/2/3, abort-on-violation)
+  deferred (A0031).
+- New `sim/tb/tb_line.sv`: a 4-pixel vertical line (INC2 path) and a 3-pixel
+  45° diagonal (d>0 → INC1 path), checking the drawn pixels and the
+  d/DADDR/COUNT writebacks.
+
+## 2026-06-14
+
 ### Changed (Task 0113 — widen core_state_t to 6 bits)
 - `core_state_t` widened from `logic [4:0]` (max 32 states, 29 used) to
   `logic [5:0]` to make room for the LINE engine's ~7 additional FSM states.

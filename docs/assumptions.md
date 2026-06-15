@@ -593,9 +593,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
     wvp_set mechanism.
 - **NOT implemented (deferred)**:
   - Window handling for LINE and PIXT (PIXT is per-pixel like DRAV; LINE aborts
-    on a violation). DRAV is fully implemented including per-pixel window modes
-    W=1/2/3 (Tasks 0111/0112). PIXT window would follow the same single-pixel
-    pattern (test the PIXT XY pointer, reuse the V-write / wvp_set path).
+    on a violation). DRAV is fully windowed (Tasks 0111/0112). LINE is
+    implemented for W=0 (Task 0114); its window (per-pixel test on DADDR,
+    abort + saved-PC-past-LINE on violation) is deferred. PIXT window would
+    follow the DRAV single-pixel pattern (reuse the V-write / wvp_set path).
   These behave as W=0 (no window) for the not-yet-covered instructions.
   **Recorded here, not silently stubbed; see docs/instruction_coverage.md.**
 

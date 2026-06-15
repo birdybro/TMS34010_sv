@@ -819,6 +819,18 @@ module tms34010_decode
       decoded.needs_memory_op = 1'b1;                   // RMW pixel write
     end
 
+    // LINE Z — Bresenham inner loop (SPVU001A page 12-99). Encoding
+    // `1101 1111 Z001 1010` = 0xDF1A (Z=0) / 0xDF9A (Z=1); the Z bit (bit 7)
+    // selects the d=0 treatment and is read directly from instr_word_q[7] in
+    // the core. All operands are implied B-file registers — no rs/rd. The
+    // engine writes back d(B0)/DADDR(B2)/COUNT(B10) itself, so wb_reg_en=0.
+    if ((instr[15:8] == 8'hDF) && (instr[6:0] == 7'h1A)) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_LINE;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
     // CMPXY: nondestructive — sets flags only, Rd unchanged (wb_reg_en=0).
     if (top7 == CMPXY_TOP7) begin
       decoded.illegal     = 1'b0;

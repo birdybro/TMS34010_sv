@@ -3506,6 +3506,27 @@ Commit:
 
 ---
 
+### Task 0114: LINE (Bresenham inner loop), W=0
+Status: complete
+Dependencies: Task 0113 (6-bit state enum), DRAV/FILL pixel engine, ADDXY.
+Spec source: 1988 UG page 12-99 (LINE Z; encoding 0xDF1A/0xDF9A).
+Acceptance Criteria:
+- pkg: INSTR_LINE, 7 LINE states, B_COUNT/INC1/INC2 idx consts.
+- decode: 0xDF1A/0xDF9A (Z=bit7) → INSTR_LINE; operands implied (B file).
+- core: 3 setup cycles read d/DYDX/COUNT/INC1/INC2/OFFSET/DADDR/COLOR1;
+  CORE_LINE_DRAW per-pixel RMW + Bresenham step (d += 2b−2a/2b, DADDR +=
+  INC1/INC2 XY, COUNT−−; Z selects d>0 vs d≥0); writeback d/DADDR/COUNT to
+  B0/B2/B10. Window deferred (A0031).
+- tb_line: vertical line (INC2) + 45° diagonal (INC1) + writeback checks.
+Tests: tb_line PASS; full integration regression PASS under Verilator
+  (3 module-level tbs need Questa); lint clean.
+Docs: instruction_coverage.md (new LINE row), assumptions.md (A0031),
+  changelog.md, tasks.md.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```

@@ -91,7 +91,14 @@ package tms34010_pkg;
     CORE_FILL_WIN_HIT   = 6'd25, // FILL XY (W=1): hit detection — no draw, V/WVP on overlap
     CORE_PBLT_WIN_HIT   = 6'd26, // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
     CORE_DRAV           = 6'd27, // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
-    CORE_DRAV_SETUP_WIN = 6'd28  // DRAV (W!=0): read WSTART/WEND, test Rd's XY against window
+    CORE_DRAV_SETUP_WIN = 6'd28, // DRAV (W!=0): read WSTART/WEND, test Rd's XY against window
+    CORE_LINE_SETUP1    = 6'd29, // LINE: read d(B0)/DYDX(B7)/COUNT(B10)
+    CORE_LINE_SETUP2    = 6'd30, // LINE: read INC1(B11)/INC2(B12)/OFFSET(B4)
+    CORE_LINE_SETUP3    = 6'd31, // LINE: read DADDR(B2)/COLOR1(B9)
+    CORE_LINE_DRAW      = 6'd32, // LINE: per-pixel RMW draw + Bresenham step (d/DADDR/COUNT)
+    CORE_LINE_WB_D      = 6'd33, // LINE: write back d -> B0
+    CORE_LINE_WB_DADDR  = 6'd34, // LINE: write back DADDR -> B2
+    CORE_LINE_WB_COUNT  = 6'd35  // LINE: write back COUNT (=0) -> B10
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -129,6 +136,10 @@ package tms34010_pkg;
   parameter reg_idx_t B_DYDX_IDX   = 4'd7;
   parameter reg_idx_t B_COLOR0_IDX = 4'd8;
   parameter reg_idx_t B_COLOR1_IDX = 4'd9;
+  // LINE (and other incremental-draw) implied B registers.
+  parameter reg_idx_t B_COUNT_IDX  = 4'd10; // COUNT (loop count) / SADDR-d alias
+  parameter reg_idx_t B_INC1_IDX   = 4'd11; // INC1 (minor/diagonal XY increment)
+  parameter reg_idx_t B_INC2_IDX   = 4'd12; // INC2 (major/dominant XY increment)
 
   // ---------------------------------------------------------------------------
   // ALU operation enum
@@ -546,9 +557,12 @@ package tms34010_pkg;
     INSTR_PIXBLT_LL        = 7'd96, // PIXBLT L,L — transfer a DY×DX source array (SADDR=B0/
                               //                     SPTCH=B1) to a dest array (DADDR=B2/DPTCH=B3),
                               //                     processing each pixel. Encoding 0x0F00.
-    INSTR_DRAV             = 7'd97  // DRAV Rs,Rd — draw COLOR1 at Rd's XY (PSIZE pixel, with
+    INSTR_DRAV             = 7'd97, // DRAV Rs,Rd — draw COLOR1 at Rd's XY (PSIZE pixel, with
                               //                     PPOP/T/PMASK), then Rd += Rs as an XY add
-                              //                     (no carry X->Y). Encoding 0xF600. W=0 only.
+                              //                     (no carry X->Y). Encoding 0xF600.
+    INSTR_LINE             = 7'd98  // LINE Z — Bresenham inner loop: draw COUNT pixels of
+                              //                     COLOR1 along a line. B-file: d/DADDR/DYDX
+                              //                     (b:a)/COUNT/INC1/INC2. Enc 0xDF1A/0xDF9A.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

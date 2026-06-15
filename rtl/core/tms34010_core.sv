@@ -775,6 +775,98 @@ module tms34010_core
   end
 
   // ---------------------------------------------------------------------------
+  // LINE (Bresenham inner loop) — SPVU001A page 12-99.
+  //
+  // The implied B operands are read over 3 setup cycles (line_rd_b above), then
+  // CORE_LINE_DRAW runs the per-pixel loop: draw COLOR1 at DADDR's XY (2-step
+  // RMW, reusing the FILL/DRAV pixel merge), then step the decision variable d
+  // and DADDR (+INC1 when d>0 i.e. the diagonal move, else +INC2) and decrement
+  // COUNT. The Z bit (instr_word_q[7]) selects whether d=0 counts as ">0"
+  // (Z=1 -> d>=0). At the end d/DADDR/COUNT are written back to B0/B2/B10.
+  // Window modes are not yet applied (W=0; A0031). DADDR/INC adds are XY
+  // (independent 16-bit halves, no carry), matching ADDXY / DRAV.
+  // ---------------------------------------------------------------------------
+  logic [DATA_WIDTH-1:0] line_d_q, line_count_q, line_inc1_q, line_inc2_q;
+  logic [DATA_WIDTH-1:0] line_offset_q, line_daddr_q, line_color_q, line_dest_q;
+  logic [15:0]           line_b_q, line_a_q;
+  logic                  line_substep_q;
+  // Per-pixel linear address from DADDR's XY (same conversion form as FILL XY).
+  logic [DATA_WIDTH-1:0] line_linear;
+  assign line_linear =
+      (({{16{line_daddr_q[DATA_WIDTH-1]}}, line_daddr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convdp[4:0]))
+       | ({16'b0, line_daddr_q[15:0]} << pix_xy_xsh)) + line_offset_q;
+  // Pixel merge (PPOP / transparency / PMASK), COLOR1 = line_color_q.
+  logic [DATA_WIDTH-1:0] line_pixel_mask, line_pmask_field, line_processed, line_merged;
+  logic                  line_transp;
+  assign line_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
+  assign line_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & line_pixel_mask;
+  assign line_processed   = ppop_apply(line_color_q, line_dest_q,
+                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], line_pixel_mask);
+  assign line_transp      = io_control[CTRL_T_BIT] && ((line_processed & line_pixel_mask) == '0);
+  assign line_merged      = line_transp
+                          ? line_dest_q
+                          : ((line_processed & ~line_pmask_field) | (line_dest_q & line_pmask_field));
+  // Bresenham decision: branch (diagonal, +INC1) when d>0 (Z=0) or d>=0 (Z=1).
+  logic        line_branch;
+  logic [DATA_WIDTH-1:0] line_2b, line_2a, line_d_next, line_daddr_next, line_count_next;
+  assign line_branch = instr_word_q[7] ? !line_d_q[DATA_WIDTH-1]              // Z=1: d >= 0
+                                       : (!line_d_q[DATA_WIDTH-1] && (line_d_q != '0)); // Z=0: d > 0
+  assign line_2b = {16'b0, line_b_q} << 1;
+  assign line_2a = {16'b0, line_a_q} << 1;
+  assign line_d_next = line_branch ? (line_d_q + line_2b - line_2a)
+                                   : (line_d_q + line_2b);
+  assign line_daddr_next = line_branch
+      ? {line_daddr_q[DATA_WIDTH-1:16] + line_inc1_q[DATA_WIDTH-1:16],
+         line_daddr_q[15:0]            + line_inc1_q[15:0]}
+      : {line_daddr_q[DATA_WIDTH-1:16] + line_inc2_q[DATA_WIDTH-1:16],
+         line_daddr_q[15:0]            + line_inc2_q[15:0]};
+  assign line_count_next = line_count_q - 32'd1;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      line_d_q       <= '0;
+      line_count_q   <= '0;
+      line_inc1_q    <= '0;
+      line_inc2_q    <= '0;
+      line_offset_q  <= '0;
+      line_daddr_q   <= '0;
+      line_color_q   <= '0;
+      line_dest_q    <= '0;
+      line_b_q       <= '0;
+      line_a_q       <= '0;
+      line_substep_q <= 1'b0;
+    end else begin
+      if (state_q == CORE_LINE_SETUP1) begin
+        line_d_q     <= rf_rs1_data;                 // d (B0)
+        line_b_q     <= rf_rs2_data[DATA_WIDTH-1:16]; // b = DYDX minor
+        line_a_q     <= rf_rs2_data[15:0];            // a = DYDX major
+        line_count_q <= rf_rs3_data;                 // COUNT (B10)
+      end
+      if (state_q == CORE_LINE_SETUP2) begin
+        line_inc1_q   <= rf_rs1_data;                // INC1 (B11)
+        line_inc2_q   <= rf_rs2_data;                // INC2 (B12)
+        line_offset_q <= rf_rs3_data;                // OFFSET (B4)
+      end
+      if (state_q == CORE_LINE_SETUP3) begin
+        line_daddr_q   <= rf_rs1_data;               // DADDR (B2)
+        line_color_q   <= rf_rs2_data;               // COLOR1 (B9)
+        line_substep_q <= 1'b0;
+      end
+      if (state_q == CORE_LINE_DRAW && mem_ack) begin
+        line_substep_q <= ~line_substep_q;
+        if (!line_substep_q) begin
+          line_dest_q <= mem_rdata_eff;              // read ack
+        end else begin
+          // Write ack: advance the Bresenham state for the next pixel.
+          line_d_q     <= line_d_next;
+          line_daddr_q <= line_daddr_next;
+          line_count_q <= line_count_next;
+        end
+      end
+    end
+  end
+
+  // ---------------------------------------------------------------------------
   // MMTM / MMFM iterator (shared)
   //
   // MMTM (push, INSTR_MMTM) and MMFM (pop, INSTR_MMFM) walk the same
@@ -975,8 +1067,18 @@ module tms34010_core
   // XY->linear conversion of Rd); in CORE_DRAV — COLOR1(B9) on port1.
   logic is_drav;
   assign is_drav    = (decoded.iclass == INSTR_DRAV);
+  // LINE: 3 setup cycles read the implied B operands —
+  //   SETUP1: d(B0)/DYDX(B7)/COUNT(B10);  SETUP2: INC1(B11)/INC2(B12)/OFFSET(B4);
+  //   SETUP3: DADDR(B2)/COLOR1(B9).  All reads are from the B file.
+  logic is_line;
+  assign is_line    = (decoded.iclass == INSTR_LINE);
+  logic line_rd_b;   // LINE is doing B-file setup reads this cycle
+  assign line_rd_b  = is_line && ((state_q == CORE_LINE_SETUP1)
+                               || (state_q == CORE_LINE_SETUP2)
+                               || (state_q == CORE_LINE_SETUP3));
 
-  assign rf_rs1_file = (is_drav && ((state_q == CORE_DRAV) || (state_q == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
+  assign rf_rs1_file = line_rd_b ? REG_FILE_B
+                     : (is_drav && ((state_q == CORE_DRAV) || (state_q == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
                      : (is_fill || is_pblt) ? REG_FILE_B
                      : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
                      : decoded.rd_file;
@@ -992,13 +1094,16 @@ module tms34010_core
                      : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
                      : (is_drav && (state_q == CORE_DRAV_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART
                      : (is_drav && (state_q == CORE_DRAV)) ? B_COLOR1_IDX  // COLOR1 for the draw
+                     : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_SADDR_IDX   // d (B0)
+                     : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC1_IDX    // INC1 (B11)
+                     : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_DADDR_IDX   // DADDR (B2)
                      : decoded.rs_idx;
   // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
   // for CPW) to read the window-start register WSTART = B5; read port 3
   // reads the window-end register WEND = B6. Both are fixed B-file
   // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
   // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
-  assign rf_rs2_file = (is_fill || is_pblt || (decoded.iclass == INSTR_CPW)
+  assign rf_rs2_file = (line_rd_b || is_fill || is_pblt || (decoded.iclass == INSTR_CPW)
                         || (is_drav && (state_q == CORE_DRAV_SETUP_WIN)))
                      ? REG_FILE_B : decoded.rd_file;
   assign rf_rs2_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
@@ -1006,6 +1111,9 @@ module tms34010_core
                                 : (state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
                      : (is_drav && (state_q == CORE_DRAV_SETUP_WIN)) ? CPW_WEND_IDX  // WEND
+                     : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_DYDX_IDX    // DYDX (B7)
+                     : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC2_IDX    // INC2 (B12)
+                     : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_COLOR1_IDX  // COLOR1 (B9)
                      : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
   // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
   // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
@@ -1016,6 +1124,8 @@ module tms34010_core
                      ? (decoded.rd_idx + 4'd1)
                      : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
+                     : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_COUNT_IDX   // COUNT (B10)
+                     : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_OFFSET_IDX  // OFFSET (B4)
                      : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr || is_drav) ? B_OFFSET_IDX
                      : CPW_WEND_IDX;
 
@@ -1217,7 +1327,13 @@ module tms34010_core
   assign fill_wb       = (state_q == CORE_FILL_WB);
   assign pblt_wb_saddr = (state_q == CORE_PBLT_WB);
   assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2);
-  assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr;
+  // LINE writebacks: d -> B0, DADDR -> B2, COUNT -> B10, one per cycle.
+  logic line_wb_d, line_wb_daddr, line_wb_count, line_wb;
+  assign line_wb_d     = (state_q == CORE_LINE_WB_D);
+  assign line_wb_daddr = (state_q == CORE_LINE_WB_DADDR);
+  assign line_wb_count = (state_q == CORE_LINE_WB_COUNT);
+  assign line_wb       = line_wb_d || line_wb_daddr || line_wb_count;
+  assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr || line_wb;
   // Interrupt-entry SP writeback: at CORE_INT_DONE, SP <- SP-64 (two 32-bit
   // pushes done). Only when context was actually pushed (an NMI with NMIM=1
   // saves nothing, so SP is unchanged). Highest-priority regfile write.
@@ -1236,8 +1352,9 @@ module tms34010_core
   assign rf_wr_file = int_sp_wb ? REG_FILE_A
                     : graphics_wb ? REG_FILE_B : decoded.rd_file;
   assign rf_wr_idx  = int_sp_wb ? REG_SP_IDX
-                    : (fill_wb || pblt_wb_daddr) ? B_DADDR_IDX
-                    : pblt_wb_saddr              ? B_SADDR_IDX
+                    : line_wb_count              ? B_COUNT_IDX
+                    : (fill_wb || pblt_wb_daddr || line_wb_daddr) ? B_DADDR_IDX
+                    : (pblt_wb_saddr || line_wb_d) ? B_SADDR_IDX  // LINE d -> B0
                     : mmfm_pop_wr                ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
                     : ((is_mpy || is_div) && pair_wb_step) ? (decoded.rd_idx + 4'd1)  // pair low/rem -> Rd+1
@@ -1627,6 +1744,9 @@ module tms34010_core
       INSTR_FILL_XY: rf_wr_data = fill_addr_q;  // final (linear) DADDR -> B2 (CORE_FILL_WB)
       INSTR_PIXBLT_LL: rf_wr_data = pblt_wb_saddr ? pblt_src_addr_q   // SADDR -> B0
                                                   : pblt_dst_addr_q;  // DADDR -> B2
+      INSTR_LINE:    rf_wr_data = line_wb_d     ? line_d_q      // d -> B0
+                               : line_wb_daddr  ? line_daddr_q  // DADDR -> B2
+                                                : line_count_q; // COUNT -> B10
       INSTR_GETPC,
       INSTR_EXGPC:  rf_wr_data = pc_value;
       INSTR_REV:    rf_wr_data = REV_VALUE;
@@ -2354,6 +2474,8 @@ module tms34010_core
           // WSTART/WEND to test Rd's pixel; W=0 goes straight to the draw.
           state_d = (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0) ? CORE_DRAV_SETUP_WIN
                                                               : CORE_DRAV;
+        else if (is_line)
+          state_d = CORE_LINE_SETUP1;  // LINE: read the implied B operands
         else
           state_d = decoded.needs_memory_op ? CORE_MEMORY : CORE_WRITEBACK;
       end
@@ -2420,6 +2542,35 @@ module tms34010_core
         else
           state_d = CORE_DRAV;
       end
+
+      CORE_LINE_SETUP1: state_d = CORE_LINE_SETUP2;
+      CORE_LINE_SETUP2: state_d = CORE_LINE_SETUP3;
+      CORE_LINE_SETUP3:
+        // If COUNT is 0 there is nothing to draw; go straight to writeback.
+        state_d = (line_count_q == '0) ? CORE_LINE_WB_D : CORE_LINE_DRAW;
+
+      CORE_LINE_DRAW: begin
+        // Per-pixel RMW at DADDR's linear address: read dest (sub-step 0), write
+        // the merged COLOR1 (sub-step 1). On the write ack of the last pixel
+        // (COUNT about to reach 0) go to writeback; else draw the next pixel.
+        mem_req  = 1'b1;
+        mem_addr = line_linear;
+        mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
+        if (!line_substep_q) begin
+          mem_we_int = 1'b0;            // read the destination pixel
+        end else begin
+          mem_we_int = 1'b1;           // write the merged pixel
+          mem_wdata  = line_merged;
+        end
+        if (mem_ack && line_substep_q && (line_count_q == 32'd1))
+          state_d = CORE_LINE_WB_D;
+        else
+          state_d = CORE_LINE_DRAW;
+      end
+
+      CORE_LINE_WB_D:     state_d = CORE_LINE_WB_DADDR; // write d  -> B0
+      CORE_LINE_WB_DADDR: state_d = CORE_LINE_WB_COUNT; // write DADDR -> B2
+      CORE_LINE_WB_COUNT: state_d = CORE_FETCH;         // write COUNT -> B10, then fetch
 
       CORE_FILL: begin
         // Per pixel, read the destination (sub-step 0) then write the merged
