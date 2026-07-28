@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0122: architectural widths and register layouts,
+// Current through Task 0123: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -82,7 +82,7 @@ package tms34010_pkg;
     CORE_INT_PUSH_ST  = 6'd17, // interrupt entry: push ST onto the stack
     CORE_INT_PUSH_PC  = 6'd18, // interrupt entry: push PC onto the stack
     CORE_INT_VECTOR   = 6'd19, // interrupt entry: read the vector -> PC
-    CORE_INT_DONE     = 6'd20, // interrupt entry: write back SP, clear IE
+    CORE_INT_DONE     = 6'd20, // interrupt entry: write back SP, initialize ST
     CORE_FILL_SETUP_WIN = 6'd21, // FILL XY (W=2/3): read WSTART/WEND for window
     CORE_PBLT_SETUP_WIN = 6'd22, // PIXBLT XY (W=3): read WSTART/WEND for clipping
     CORE_FILL_WIN_MISS  = 6'd23, // FILL XY (W=2): array outside window — no draw, V=1, WVP

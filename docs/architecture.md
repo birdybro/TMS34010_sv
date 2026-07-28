@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented through Task 0122, with integration gaps**. The core
+> Status: **implemented through Task 0123, with integration gaps**. The core
 > executes the instruction and graphics operations tracked in
 > `instruction_coverage.md`; reset-vector fetch, I/O registers, and interrupt
 > entry are integrated. Video timing and refresh exist as standalone modules.
@@ -80,7 +80,7 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0122** | multicycle CPU, reset/illegal-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0123** | multicycle CPU, reset/illegal-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -159,11 +159,13 @@ asserted, the core does not fetch — it runs a four-state entry sequence:
 CORE_FETCH (int_req) ─▶ CORE_INT_PUSH_PC  (mem[SP-32] ← PC)
                      ─▶ CORE_INT_PUSH_ST  (mem[SP-64] ← ST)
                      ─▶ CORE_INT_VECTOR   (PC ← mem[vector])
-                     ─▶ CORE_INT_DONE     (SP -= 64; ST.IE ← 0) ─▶ CORE_FETCH
+                     ─▶ CORE_INT_DONE     (SP -= 64; ST ← 0x10) ─▶ CORE_FETCH
 ```
 
 The push order (PC high, ST low) matches RETI's pop, so interrupt+RETI
-round-trips. Only ST.IE is cleared (A0030); the saved ST carries the rest.
+round-trips. Task 0123 resolved A0030 against the page 8-6 ST diagram: live
+ST is initialized to `ST_RESET_VALUE` for the service context, while the
+exact pre-entry word remains stacked for RETI.
 
 **Illegal-opcode entry** (Task 0122): encodings in the reserved ranges from
 User's Guide Table 8-6 never reach execute. From `CORE_DECODE`, they enter the
@@ -178,10 +180,10 @@ valid-but-unimplemented encodings retain their existing placeholder path.
 at the same `CORE_FETCH` boundary with priority over maskable requests and
 *ignores* ST.IE. It vectors through trap 8 (0xFFFFFEE0). HSTCTLH.NMIM picks the
 mode: NMIM=0 takes the full push path above; NMIM=1 jumps straight to
-`CORE_INT_VECTOR` (no push, SP/ST untouched). The device auto-clears
-HSTCTLH.NMI on entry (a one-cycle `nmi_clear` into `tms34010_io_regs`,
-asserted at `CORE_INT_DONE`) — mandatory, since a non-maskable request would
-otherwise re-fire every cycle.
+`CORE_INT_VECTOR` (no push and no SP update), but still initializes live ST
+to `ST_RESET_VALUE` at `CORE_INT_DONE`. The device auto-clears HSTCTLH.NMI on
+entry (a one-cycle `nmi_clear` into `tms34010_io_regs`) — mandatory, since a
+non-maskable request would otherwise re-fire every cycle.
 
 ## Memory interface
 

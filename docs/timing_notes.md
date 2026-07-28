@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0122, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0123, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -27,6 +27,9 @@
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
   updates SP/ST/PC before handler fetch. ST.IE and INTENB do not gate entry.
+- **Interrupt completion** — `CORE_INT_DONE` initializes live ST and loads PC
+  in one internal cycle. Context-saving entries also decrement SP there;
+  NMIM=1 NMI omits the SP write but retains the ST/PC updates.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on

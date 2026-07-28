@@ -8,19 +8,20 @@
 //   1) SP -= 32; mem[SP] <- PC   (resume address)
 //   2) SP -= 32; mem[SP] <- ST   (old ST, IE still 1)
 //   3) PC <- mem[vector]         (ISR entry address)
-//   4) ST.IE <- 0                (mask nested interrupts until RETI)
+//   4) ST <- 0x00000010          (fresh interrupt service context)
 //
 // (1988 UG §8 interrupt processing; the push order matches RETI's pop and the
 // TRAP push.) NMI/host (HSTCTL) interrupts are separate and not covered here.
 //
 // Test plan (DI = display interrupt, bit 10, vector 0xFFFFFEA0):
 //   - Set SP, write INTENB.DI and INTPEND.DI via MOVE absolute to I/O space,
-//     then EINT. The next fetch must divert into the entry sequence (the
-//     marker MOVI A6 right after EINT must NOT run).
+//     then PUTST a distinguishable word with IE=1. The next fetch must divert
+//     into the entry sequence (the marker MOVI A6 right after PUTST must not
+//     run).
 //   - The ISR at word 100 writes A5 = 0xBEEF and halts.
 //   Verify: A5 = 0xBEEF (PC reached the vector), A6 = 0 (marker skipped),
 //   SP = SP-64, pushed PC = marker address, pushed ST = old ST (IE=1),
-//   current ST.IE = 0.
+//   current ST = ST_RESET_VALUE while the exact old ST is stacked.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -94,8 +95,13 @@ module tb_int_entry;
 
   localparam logic [DATA_WIDTH-1:0] SP_INIT    = 32'h0000_0800; // word 128
   localparam logic [DATA_WIDTH-1:0] SERVICE_PC = 32'h0000_0640; // word 100 (ISR)
-  localparam logic [31:0] A_INTENB  = IO_BASE_ADDR + (IO_IDX_INTENB  << 4); // C0000110
-  localparam logic [31:0] A_INTPEND = IO_BASE_ADDR + (IO_IDX_INTPEND << 4); // C0000120
+  // IE=1 plus nondefault flags/field definitions; distinguishes full
+  // architectural ST initialization from the old "clear IE only" behavior.
+  localparam logic [DATA_WIDTH-1:0] PRE_INT_ST = 32'hF0E0_0C3F;
+  localparam logic [31:0] A_INTENB =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_INTENB) << 4); // C0000110
+  localparam logic [31:0] A_INTPEND =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_INTPEND) << 4); // C0000120
   localparam logic [15:0] DI_MASK   = 16'(1 << INT_DI_BIT);                 // 0x0400
   localparam int unsigned VEC_WORD_LO = 1002;
   localparam int unsigned VEC_WORD_HI = 1003;
@@ -127,15 +133,18 @@ module tb_int_entry;
     // INTPEND.DI <- 1 (request a display interrupt).
     p = place_movi_il(p, 4'd1, {16'h0, DI_MASK});
     p = place_store_abs(p, 4'd1, A_INTPEND);
-    // EINT — set ST.IE. The interrupt must be taken at the NEXT fetch.
-    p = place_word(p, 16'h0D60);
-    // Marker that MUST be skipped (interrupt diverts before it). Its address
-    // is the resume PC that gets pushed.
+    // Install a nondefault ST whose IE bit is set. The interrupt must be
+    // taken at the next fetch boundary after PUTST.
+    p = place_movi_il(p, 4'd3, PRE_INT_ST);
+    p = place_word(p, 16'h01A3); // PUTST A3
+    // Marker that must be skipped. Its address is the resume PC that gets
+    // pushed.
     marker_word = p;
     p = place_movi_il(p, 4'd6, 32'h0000_DEAD);
     p = place_word(p, 16'hC0FF);     // halt (only reached if interrupt missed)
 
     repeat (3) @(posedge clk);
+    #1;
     rst = 1'b0;
     repeat (3000) @(posedge clk);
     #1;
@@ -150,18 +159,19 @@ module tb_int_entry;
     // SP decremented by 64 (two 32-bit pushes).
     check_reg("INT: SP <- SP_INIT - 64",
               u_core.u_regfile.sp_q, SP_INIT - 32'd64);
-    // ST.IE cleared on entry; ISR's MOVI A5 leaves flags 0 → ST = 0x10.
-    check_reg("INT: ST.IE cleared on entry (ST = 0x10)",
-              u_core.u_status_reg.st_q, 32'h0000_0010);
+    // Full live ST is initialized on entry; ISR's positive/nonzero MOVI
+    // leaves the reset flags unchanged.
+    check_reg("INT: live ST initialized to ST_RESET_VALUE",
+              u_core.u_status_reg.st_q, ST_RESET_VALUE);
 
     // Pushed PC at SP-32 (words 126/127) = marker address (resume PC).
     pushed_pc = {u_mem.mem[127], u_mem.mem[126]};
     check_reg("INT: pushed PC = marker (resume) address",
               pushed_pc, 32'(marker_word) << 4);
-    // Pushed ST at SP-64 (words 124/125) = old ST with IE=1 (0x00200010).
+    // Pushed ST at SP-64 (words 124/125) is the exact pre-entry word.
     pushed_st = {u_mem.mem[125], u_mem.mem[124]};
-    check_reg("INT: pushed ST = old ST with IE set (0x00200010)",
-              pushed_st, 32'h0020_0010);
+    check_reg("INT: pushed ST = exact pre-entry ST",
+              pushed_st, PRE_INT_ST);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
@@ -169,7 +179,7 @@ module tb_int_entry;
     end
 
     if (failures == 0)
-      $display("TEST_RESULT: PASS (interrupt recognised at fetch; PC/ST pushed, IE cleared, vector taken)");
+      $display("TEST_RESULT: PASS (interrupt recognised; PC/ST pushed, live ST initialized, vector taken)");
     else
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     $finish;

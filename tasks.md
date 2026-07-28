@@ -2,12 +2,13 @@
 
 ## Current Milestone: Complete interrupt/trap and system integration
 
-The functional implementation is complete through Task 0122. Task 0118
+The functional implementation is complete through Task 0123. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
 cross-phase integration with the architectural reset-vector fetch. Task 0122
-closes the deferred illegal-opcode interrupt path.
+closed the deferred illegal-opcode interrupt path. Task 0123 resolves the
+remaining interrupt-entry status assumption directly against the guide.
 
 ## Task index
 
@@ -135,6 +136,7 @@ closes the deferred illegal-opcode interrupt path.
 | 0120 | Complete multiword MOVB memory-to-memory forms | complete |
 | 0121 | Fetch the architectural level-0 reset vector | complete |
 | 0122 | Trap illegal opcodes through architectural vector 30 | complete |
+| 0123 | Initialize architectural ST on every interrupt entry | complete |
 
 ---
 
@@ -3838,6 +3840,47 @@ Docs:
   `docs/memory_map.md`, `docs/timing_notes.md`.
 Commit:
 - 1ede2ba
+
+---
+
+### Task 0123: Initialize architectural ST on every interrupt entry
+Status: complete
+Dependencies:
+- Task 0100 (shared maskable-interrupt entry FSM and A0030).
+- Task 0103 (NMI context-save/no-save modes).
+- Task 0122 (shared illegal-opcode entry and `ST_RESET_VALUE` behavior).
+Spec source:
+- 1988 TI TMS34010 User's Guide §8.5, page 8-6, step 3 and the accompanying
+  status-register diagram: interrupt entry clears every live ST bit except
+  `FS0=16`, producing `0x0000_0010`; the text confirms IE=0, FE0/FE1=0,
+  FS0=16, and FS1=32.
+- User's Guide §8.4, page 8-5: HSTCTLH.NMIM controls whether NMI context is
+  saved on the stack; it does not exempt NMI from the §8.5 live-ST update.
+Acceptance Criteria:
+- Replace the provisional A0030 “clear IE only” behavior with
+  `ST_RESET_VALUE` for maskable interrupts and context-saving NMI.
+- Apply the same live-ST initialization to NMIM=1 NMI while continuing to
+  suppress both stack writes and the SP decrement in that mode.
+- Preserve the pre-entry ST in the stacked word whenever context saving is
+  enabled, so RETI still restores the interrupted context exactly.
+- Remove state that existed only to distinguish illegal-opcode ST replacement
+  from the provisional hardware-interrupt behavior.
+Tests:
+- Strengthen `tb_int_entry` with a nondefault pre-interrupt ST and verify that
+  the exact old word is stacked while live ST becomes `ST_RESET_VALUE`.
+- Strengthen `tb_nmi_nopush` with a nondefault pre-NMI ST and verify
+  `ST_RESET_VALUE` despite no stack or SP update.
+- Run strict RTL lint, focused maskable/NMI/illegal/TRAP/RETI tests, and the
+  complete regression.
+- `scripts/lint.sh` completed with zero diagnostics under Verilator 5.048;
+  `tb_int_entry`, `tb_nmi_nopush`, `tb_int_reti`, `tb_nmi`,
+  `tb_int_priority`, `tb_illegal_opcode`, `tb_trap`, and `tb_trap0` passed.
+- `REGRESS_JOBS=4 scripts/regress.sh` reported `111/111 PASS`.
+Docs:
+- `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`, `docs/timing_notes.md`.
+Commit:
+- pending (record after commit)
 
 ---
 

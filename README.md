@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0122, and the strict
+Functional implementation work is complete through Task 0123, and the strict
 whole-repository validation baseline is complete through Task 0119. The
 repository currently contains:
 

@@ -4,14 +4,14 @@
 // Nonmaskable interrupt, no-context-save mode (NMIM=1). Per 1988 UG §8: when
 // HSTCTLH.NMIM=1, the device saves NOTHING on the stack — it vectors straight
 // to the NMI handler (trap 8, 0xFFFFFEE0) and auto-clears the NMI bit. SP is
-// left unchanged. (Used by a host for a clean restart, where the prior context
-// is irrelevant.) This exercises the no-push branch of the entry FSM.
+// left unchanged, but §8.5 still initializes the live ST for the service
+// context. This exercises the no-push branch of the entry FSM.
 //
-//   main:  set SP, write HSTCTLH = NMI|NMIM ; (next instr skipped, no resume)
+//   main:  set SP/ST, write HSTCTLH = NMI|NMIM ; (next instr skipped)
 //   ISR :  MOVI A6,0xCAFE, halt
 //
 // Checks: A6=0xCAFE (handler reached), SP=SP_INIT (nothing pushed),
-// HSTCTLH.NMI auto-cleared.
+// ST=ST_RESET_VALUE, HSTCTLH.NMI auto-cleared.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -62,6 +62,7 @@ module tb_nmi_nopush;
   endfunction
 
   int unsigned failures;
+  bit saw_push_state;
   task automatic check_reg(input string label, input logic [DATA_WIDTH-1:0] actual, expected);
     if (actual !== expected) begin
       $display("TEST_RESULT: FAIL: %s: expected=%08h actual=%08h", label, expected, actual);
@@ -71,14 +72,24 @@ module tb_nmi_nopush;
 
   localparam logic [DATA_WIDTH-1:0] SP_INIT    = 32'h0000_0800;
   localparam logic [DATA_WIDTH-1:0] SERVICE_PC = 32'h0000_0640; // word 100
-  localparam logic [31:0] A_HSTCTLH = IO_BASE_ADDR + (IO_IDX_HSTCTLH << 4);
+  localparam logic [DATA_WIDTH-1:0] PRE_NMI_ST = 32'hF5A5_0C3F;
+  localparam logic [31:0] A_HSTCTLH =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HSTCTLH) << 4);
   localparam logic [15:0] NMI_REQ_NMIM1 =
       16'((1 << HSTCTL_NMI_BIT) | (1 << HSTCTL_NMIM_BIT)); // 0x0300
   localparam int unsigned VEC_LO = 1006, VEC_HI = 1007;
 
+  always @(posedge clk) begin
+    if (!rst && ((state_w == CORE_INT_PUSH_PC) ||
+                 (state_w == CORE_INT_PUSH_ST))) begin
+      saw_push_state = 1'b1;
+    end
+  end
+
   initial begin : main
     int unsigned p, i;
     failures = 0;
+    saw_push_state = 1'b0;
     for (i = 0; i < 1024; i++) u_mem.mem[i] = 16'h0300;
 
     // ISR (word 100): A6 <- 0xCAFE, halt. No RETI (NMIM=1 saved no context).
@@ -92,6 +103,8 @@ module tb_nmi_nopush;
     p = 0;
     p = place_movi_il(p, 4'd2, SP_INIT);
     p = place_word(p, 16'h4C4F);                   // MOVE A2,A15 (SP)
+    p = place_movi_il(p, 4'd1, PRE_NMI_ST);
+    p = place_word(p, 16'h01A1);                   // PUTST A1
     p = place_movi_il(p, 4'd0, {16'h0, NMI_REQ_NMIM1});
     p = place_store_abs(p, 4'd0, A_HSTCTLH);       // HSTCTLH <- NMI|NMIM
     // Following instruction would-be A5=0xDEAD; must be skipped (no resume).
@@ -99,6 +112,7 @@ module tb_nmi_nopush;
     p = place_word(p, 16'hC0FF);
 
     repeat (3) @(posedge clk);
+    #1;
     rst = 1'b0;
     repeat (4000) @(posedge clk);
     #1;
@@ -107,8 +121,14 @@ module tb_nmi_nopush;
               u_core.u_regfile.a_regs[6], 32'h0000_CAFE);
     check_reg("NMI NMIM=1: nothing pushed (SP unchanged)",
               u_core.u_regfile.sp_q, SP_INIT);
+    check_reg("NMI NMIM=1: live ST initialized",
+              u_core.u_status_reg.st_q, ST_RESET_VALUE);
     check_reg("NMI NMIM=1: instruction after request skipped (A5 not 0xDEAD)",
               u_core.u_regfile.a_regs[5], 32'h0000_0000);
+    if (saw_push_state) begin
+      $display("TEST_RESULT: FAIL: NMIM=1 entered a stack-push state");
+      failures++;
+    end
     if (u_core.u_io_regs.io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] !== 1'b0) begin
       $display("TEST_RESULT: FAIL: HSTCTLH.NMI not auto-cleared");
       failures++;
@@ -118,7 +138,7 @@ module tb_nmi_nopush;
     end
 
     if (failures == 0)
-      $display("TEST_RESULT: PASS (NMI NMIM=1: no push, SP unchanged, vector taken, auto-cleared)");
+      $display("TEST_RESULT: PASS (NMI NMIM=1: no push, SP unchanged, ST initialized, vector taken)");
     else
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     $finish;

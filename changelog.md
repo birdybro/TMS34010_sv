@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0123 — architectural interrupt-entry status)
+- Resolved A0030 using the status-register transition diagram in the 1988
+  User's Guide §8.5 page 8-6. Every interrupt service context now starts with
+  `ST_RESET_VALUE` (`0x0000_0010`) rather than preserving all live bits except
+  IE.
+- `CORE_INT_DONE` writes the initialized ST for maskable, NMI, and illegal
+  entry. Context-saving modes still stack the exact pre-entry ST for RETI.
+  NMIM=1 continues to skip both pushes and the SP decrement but no longer
+  incorrectly preserves the old live ST.
+- Strengthened `tb_int_entry` with a nondefault, IE-enabled status word and
+  `tb_nmi_nopush` with a nondefault no-save context. They distinguish exact
+  old-ST stacking, fresh live ST, and the absence of NMIM=1 push states.
+- Validation: strict RTL lint completed with zero diagnostics, all focused
+  maskable/NMI/illegal/TRAP/RETI benches passed, and the complete Verilator
+  regression reported `111/111 PASS`.
+
 ### Added (Task 0122 — architectural illegal-opcode interrupt)
 - Classified all reserved ranges in User's Guide Table 8-6 separately from
   other unimplemented encodings and routed that architectural-illegal subset

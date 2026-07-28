@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0122.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0123.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -1995,16 +1995,13 @@ module tms34010_core
                         (decoded.iclass == INSTR_POPST) ||
                         (decoded.iclass == INSTR_RETI)  ||
                         (decoded.iclass == INSTR_TRAP)))
-                    || ((state_q == CORE_INT_DONE) && int_push_q);
+                    || (state_q == CORE_INT_DONE);
   always_comb begin
     if (state_q == CORE_INT_DONE) begin
-      // Illegal opcode entry is architecturally equivalent to TRAP 30 and
-      // therefore installs the same fresh-context ST value. Existing
-      // maskable/NMI entry retains the Task-0100 A0030 behavior until that
-      // separately tracked status-entry assumption is resolved.
-      st_write_data = int_reset_st_q
-                    ? ST_RESET_VALUE
-                    : (st_value & ~(32'd1 << ST_IE_BIT));
+      // 1988 User's Guide §8.5 page 8-6, step 3: every interrupt installs
+      // the fresh service-context value (IE=0, FS0=16, FS1=32, FE/flags=0).
+      // NMIM controls stacking only; NMIM=1 still receives this live ST.
+      st_write_data = ST_RESET_VALUE;
     end else
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
@@ -2274,30 +2271,25 @@ module tms34010_core
   //   int_is_nmi_q  — this entry is an NMI (drives the auto-clear).
   //   int_push_q    — context is pushed (always for maskable/illegal;
   //                   NMIM=0 for NMI).
-  //   int_reset_st_q— replace ST with the trap entry value (illegal opcode).
   // nmi_clear pulses in CORE_INT_DONE when the latched entry was an NMI.
   logic [ADDR_WIDTH-1:0] int_vec_q;
   logic                  int_is_nmi_q;
   logic                  int_push_q;
-  logic                  int_reset_st_q;
   always_ff @(posedge clk) begin
     if (rst) begin
-      int_vec_q      <= '0;
-      int_is_nmi_q   <= 1'b0;
-      int_push_q     <= 1'b0;
-      int_reset_st_q <= 1'b0;
+      int_vec_q    <= '0;
+      int_is_nmi_q <= 1'b0;
+      int_push_q   <= 1'b0;
     end else if (state_q == CORE_FETCH && int_take) begin
-      int_vec_q      <= nmi_req ? INT_VEC_NMI : int_vector;
-      int_is_nmi_q   <= nmi_req;
-      int_push_q     <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
-      int_reset_st_q <= 1'b0;
+      int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
+      int_is_nmi_q <= nmi_req;
+      int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
     end else if (state_q == CORE_DECODE && decoded.illegal_trap) begin
       // 1988 User's Guide §8.7: an illegal opcode is an unmaskable
       // TRAP-30-equivalent event. PC already points past the illegal word.
-      int_vec_q      <= INT_VEC_ILLOP;
-      int_is_nmi_q   <= 1'b0;
-      int_push_q     <= 1'b1;
-      int_reset_st_q <= 1'b1;
+      int_vec_q    <= INT_VEC_ILLOP;
+      int_is_nmi_q <= 1'b0;
+      int_push_q   <= 1'b1;
     end
   end
   assign nmi_clear = (state_q == CORE_INT_DONE) && int_is_nmi_q;
@@ -2554,7 +2546,8 @@ module tms34010_core
 
       CORE_INT_DONE: begin
         // One cycle to retire the entry: SP <- SP-64 (regfile), PC <- vector,
-        // ST.IE <- 0 (mask nested interrupts until RETI). Then fetch the ISR.
+        // and ST <- ST_RESET_VALUE. NMIM=1 suppresses only the SP update.
+        // Then fetch the ISR.
         state_d = CORE_FETCH;
       end
 

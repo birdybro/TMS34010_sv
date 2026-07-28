@@ -590,28 +590,24 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_pixblt_window`, `tb_pixblt_w1`, `tb_pixblt_w2`, `tb_drav_win`,
   `tb_line_win`, `tb_line_abort`, and `tb_pixt_win`.
 
-## A0030 — Maskable-interrupt entry clears only ST.IE (preserves other ST bits)
-- **Date**: 2026-06-04 (Task 0100).
-- **Status**: assumption (spec describes the push/vector sequence; the exact
-  post-entry ST contents for a hardware interrupt are not quoted verbatim).
-- **Source**: 1988 UG §8 (interrupt processing): "the PC and the ST are pushed
-  onto the stack" on interrupt; RETI "restores the ST and PC"; "Assuming the IE
-  bit in the restored ST is a 1, interrupts are again enabled."
-- **Assumption**: the maskable-interrupt entry sequence pushes PC then ST,
-  reads the trap vector into PC, and clears **only** ST.IE (masking nested
-  maskable interrupts until RETI). The other ST bits (flags, FE/FS field-size
-  pairs, PBX, etc.) are left unchanged — the full pre-interrupt ST is saved on
-  the stack and restored by RETI, so the in-flight ST need not be reset.
-- **Contrast with TRAP** (A0-none): TRAP replaces ST with ST_RESET_VALUE
-  (0x10). A hardware interrupt is modeled here as preserving ST except IE,
-  because (unlike a software TRAP that begins a fresh context) an interrupt
-  transparently borrows the current thread and RETI must restore it exactly.
-- **Why uncertain**: the User's Guide does not give a worked before/after ST
-  for a hardware interrupt entry. If a cross-check shows the device also resets
-  FE/FS on interrupt entry, change the CORE_INT_DONE st_write_data to
-  ST_RESET_VALUE | (preserved bits).
-- **How to apply**: the clear is at CORE_INT_DONE in `tms34010_core.sv`
-  (`st_write_data = st_value & ~(1<<ST_IE_BIT)`).
+## A0030 — RESOLVED: every interrupt initializes the live ST service context
+- **Date**: 2026-06-04 (Task 0100); **resolved 2026-07-28 (Task 0123)**.
+- **Status**: **RESOLVED** against the 1988 User's Guide §8.5 page 8-6.
+- **Original assumption**: maskable/NMI entry cleared only ST.IE and preserved
+  the remaining live status bits.
+- **Primary evidence**: step 3's status-register diagram explicitly shows
+  every bit cleared except `FS0=16`, yielding `0x0000_0010`. The text below
+  confirms that interrupts are disabled, field 0 is 16-bit zero-extended, and
+  field 1 is 32-bit zero-extended.
+- **Conclusion**: every completed interrupt entry writes
+  `ST_RESET_VALUE`. When context is saved, the exact pre-entry ST is pushed
+  first and RETI restores it. HSTCTLH.NMIM changes only whether NMI pushes
+  PC/ST and decrements SP; NMIM=1 still initializes the live service-context
+  ST after fetching the vector.
+- **Implementation/tests**: `CORE_INT_DONE` always writes
+  `ST_RESET_VALUE`; its SP write remains gated by `int_push_q`.
+  `tb_int_entry` distinguishes stacked old ST from live initialized ST, and
+  `tb_nmi_nopush` verifies initialization without either push state.
 
 ## A0029 — FILL XY updates DADDR to a linear address
 - **Date**: 2026-06-01 (Task 0088).
@@ -636,7 +632,6 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - Remaining per-instruction flag nuances still marked provisional in earlier
   entries; do not rely on the age of an entry as evidence it was resolved.
 - SUBXY unsigned-vs-signed greater-than behavior (A0027).
-- Exact hardware-interrupt post-entry ST behavior beyond clearing IE (A0030).
 - Whether FILL XY writes back DADDR in linear or XY form (A0029).
 - Physical bus-cycle phasing and wait-state behavior for unaligned fields
   crossing the original 16-bit external bus.
