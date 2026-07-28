@@ -4139,7 +4139,7 @@ Docs:
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
 Commit:
-- pending
+- `39ccb9b` — Correct shift encodings and status semantics (Task 0130)
 
 ---
 
