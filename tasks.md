@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0132. Task 0118
+The functional implementation is complete through Task 0133. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -19,7 +19,8 @@ the complete shift family's encodings, SLA overflow, and status masks.
 Task 0131 corrected both MOVI widths to preserve C while updating N/Z and
 clearing V, and made carry-dependent tests establish their inputs explicitly.
 Task 0132 resolved REV's result and EXGPC's next-PC/alignment behavior against
-their primary instruction pages.
+their primary instruction pages. Task 0133 resolved FILL XY's final linear
+DADDR representation and W=0 status behavior.
 
 ## Task index
 
@@ -157,6 +158,7 @@ their primary instruction pages.
 | 0130 | Correct shift encodings and status semantics | complete |
 | 0131 | Correct MOVI status semantics | complete |
 | 0132 | Resolve REV and EXGPC architectural semantics | complete |
+| 0133 | Resolve FILL XY DADDR writeback semantics | complete |
 
 ---
 
@@ -3062,13 +3064,13 @@ Commit:
 ### Task 0088: FILL XY
 Status: complete
 Dependencies: Task 0087 (FILL engine), Task 0084/0085 (XY conversion).
-Spec source: SPVU001A page 12-82. Fixed opcode 0x0FE0.
+Spec source: 1988 User's Guide pages 12-84 through 12-86. Fixed opcode 0x0FE0.
 Acceptance Criteria:
 - INSTR_FILL_XY = 7'd95. is_fill covers FILL_L|FILL_XY; fill_is_xy selects
   the start conversion. At CORE_FILL_SETUP, port 3 reads OFFSET(B4) and the
   XY DADDR (latched raw at EXECUTE) is converted to a linear start
   (CONVDP+OFFSET+PSIZE); FILL_L uses the raw DADDR. Rest of the engine shared.
-- Final DADDR written back linear (A0029).
+- Final DADDR written back linear (A0029, resolved by Task 0133).
 - sim/tb/tb_fill_xy.sv: XY start (X=0x20,Y=1, CONVDP=0x1B, OFFSET=0x800 ->
   0x910) fills a 2×2 array; checks words, gap, DADDR (0x9A0).
 Tests: tb_fill_xy PASS; tb_fill_l regress PASS; full integration regression
@@ -4202,6 +4204,33 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - ce5caba
+
+---
+
+### Task 0133: Resolve FILL XY DADDR writeback semantics
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption and status audit).
+- Task 0088 (FILL XY engine).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 12-84 through 12-86, FILL XY.
+Acceptance Criteria:
+- Resolve A0029 from the primary FILL XY page: convert the initial XY DADDR
+  with OFFSET/CONVDP and write back the linear address immediately following
+  the last pixel on the final row.
+- Preserve the existing row-pitch and last-row-width behavior.
+- Verify that W=0 leaves N/C/Z/V unaffected.
+Tests:
+- Strengthened `tb_fill_xy` PASS with exact converted start/final linear
+  DADDR and full-status preservation checks.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 117/117 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

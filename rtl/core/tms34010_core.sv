@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0132.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0133.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -344,7 +344,8 @@ module tms34010_core
 
   // FILL XY: convert the XY DADDR (latched raw at EXECUTE) to a linear start
   // address at SETUP, where OFFSET (B4) is on read port 3. Same shift form as
-  // CVXYL: ((Y<<(31-CONVDP)) | (X<<log2 PSIZE)) + OFFSET.
+  // CVXYL: ((Y<<(31-CONVDP)) | (X<<log2 PSIZE)) + OFFSET. Per the User's
+  // Guide page 12-85, final DADDR remains the next linear address.
   logic [4:0]            fill_xy_yshift;
   logic [DATA_WIDTH-1:0] fill_xy_linear, fill_start;
   assign fill_xy_yshift = 5'd31 - io_convdp[4:0];

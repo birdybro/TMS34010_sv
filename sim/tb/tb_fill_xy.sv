@@ -4,7 +4,8 @@
 // FILL XY (0x0FE0) — Task 0088. Like FILL L, but DADDR (B2) holds an XY value
 // that the FILL engine converts to a linear start address (CONVDP + OFFSET(B4)
 // + PSIZE, same shift form as CVXYL) before filling. Rows still step by the
-// linear DPTCH. SPVU001A 12-82. All flags Unaffected.
+// linear DPTCH. The primary description is on pages 12-84 through 12-86.
+// With W=0, all flags are Unaffected.
 //
 // Vector: PSIZE=8, CONVDP=0x1B (Y shift 4), OFFSET(B4)=0x800.
 //   DADDR(B2) XY = (X=0x20, Y=0x01) -> linear (1<<4)|(0x20<<3)+0x800 = 0x910
@@ -16,6 +17,8 @@
 
 module tb_fill_xy;
   import tms34010_pkg::*;
+
+  localparam logic [DATA_WIDTH-1:0] ST_SEED = 32'hF000_0010;
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -59,6 +62,12 @@ module tb_fill_xy;
              | 16'b0000_0000_0100_0000 | (instr_word_t'(fe) << 5)
              | instr_word_t'(fs);
   endfunction
+  function automatic instr_word_t getst_enc(input reg_file_t rf, input reg_idx_t rd);
+    getst_enc = 16'h0180 | (instr_word_t'(rf) << 4) | instr_word_t'(rd);
+  endfunction
+  function automatic instr_word_t putst_enc(input reg_file_t rf, input reg_idx_t rs);
+    putst_enc = 16'h01A0 | (instr_word_t'(rf) << 4) | instr_word_t'(rs);
+  endfunction
 
   function automatic int unsigned place_movi_il(input int unsigned p,
                                                 input reg_idx_t i,
@@ -98,8 +107,10 @@ module tb_fill_xy;
     end
   endtask
 
-  localparam logic [31:0] A_PSIZE  = IO_BASE_ADDR + (IO_IDX_PSIZE  << 4);
-  localparam logic [31:0] A_CONVDP = IO_BASE_ADDR + (IO_IDX_CONVDP << 4);
+  localparam logic [31:0] A_PSIZE  =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_PSIZE) << 4);
+  localparam logic [31:0] A_CONVDP =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_CONVDP) << 4);
 
   initial begin : main
     int unsigned p, i;
@@ -118,7 +129,10 @@ module tb_fill_xy;
     p = place_movi_il_b(p, 4'd4, 32'h0000_0800);         // OFFSET (B4)
     p = place_movi_il_b(p, 4'd7, 32'h0002_0002);         // DYDX (B7): DY=2, DX=2
     p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1 (B9)
+    p = place_movi_il  (p, 4'd14, ST_SEED);
+    p = place_word(p, putst_enc(REG_FILE_A, 4'd14));     // Seed NCZV=1111.
     p = place_word(p, 16'h0FE0);                         // FILL XY
+    p = place_word(p, getst_enc(REG_FILE_A, 4'd13));     // Snapshot post-FILL ST.
 
     p = place_word(p, 16'hC0FF);
 
@@ -139,6 +153,11 @@ module tb_fill_xy;
                u_core.u_regfile.b_regs[2]);
       failures++;
     end
+    if (u_core.u_regfile.a_regs[13] !== ST_SEED) begin
+      $display("TEST_RESULT: FAIL: FILL XY changed ST: expected=%08h actual=%08h",
+               ST_SEED, u_core.u_regfile.a_regs[13]);
+      failures++;
+    end
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
@@ -146,7 +165,7 @@ module tb_fill_xy;
     end
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (FILL XY: XY start converted via CONVDP+OFFSET, array filled, DADDR updated)");
+      $display("TEST_RESULT: PASS (FILL XY: converted start, linear DADDR writeback, ST preserved)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

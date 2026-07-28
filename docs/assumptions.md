@@ -630,22 +630,23 @@ yet individually reconciled.
   `tb_nmi_nopush` verifies initialization without either push state.
 
 ## A0029 — FILL XY updates DADDR to a linear address
-- **Date**: 2026-06-01 (Task 0088).
-- **Status**: assumption (the spec's DADDR-update wording is shared between
-  FILL L and FILL XY and is described in linear terms).
-- **Source**: SPVU001A pages 12-80/12-82 (FILL L / FILL XY): "When the array
-  transfer is complete, DADDR points to the linear address of the pixel
-  following the last pixel written."
-- **Assumption**: FILL XY converts the XY DADDR to a linear start address and
-  then operates entirely in linear space; on completion the engine writes the
-  **linear** address following the last pixel back to DADDR (B2), the same as
-  FILL L. The spec describes the post-FILL DADDR as a linear address for both
-  forms, so writing the linear value (not re-encoding it back to XY) matches
-  the quoted text.
-- **Why uncertain**: a strict reading might expect FILL XY to leave DADDR in
-  XY format. No worked FILL XY before/after example was available to confirm.
-- **How to apply**: if a cross-check shows DADDR should remain XY, add a
-  reverse (linear→XY) conversion in CORE_FILL_WB for INSTR_FILL_XY.
+- **Date**: 2026-06-01; **resolved 2026-07-28 (Task 0133)**.
+- **Status**: **RESOLVED** against the primary FILL XY instruction text.
+- **Source**: 1988 TI TMS34010 User's Guide pages 12-84 through 12-86,
+  especially the "Destination Array" section on page 12-85.
+- **Resolution**: The guide separately states that DADDR initially contains
+  the XY address used with OFFSET and CONVDP to calculate the linear start,
+  that DADDR points to the next pixel during execution, and that it contains
+  the *linear* address following the last pixel when complete. It further
+  identifies that final position as the next X pixel on the final row. The
+  existing writeback
+  `linear_start + (DY - 1) * DPTCH + DX * PSIZE` is therefore exact; no
+  reverse linear-to-XY conversion belongs in `CORE_FILL_WB`.
+- **Status rule**: Page 12-86 says N/C/Z are Unaffected and V is Unaffected
+  when window checking is disabled.
+- **Regression evidence**: `tb_fill_xy` converts XY `0x00010020` to linear
+  `0x00000910`, verifies both pitched rows, checks exact final DADDR
+  `0x000009A0`, and snapshots the complete seeded ST unchanged for W=0.
 
 ## TODO / spec-uncertain (waiting on detailed read)
 
@@ -656,7 +657,6 @@ that ordered ledger before declaring the TMS34010 implementation complete.
 - Remaining per-instruction flag nuances still marked provisional in earlier
   entries; do not rely on the age of an entry as evidence it was resolved.
 - SUBXY unsigned-vs-signed greater-than behavior (A0027).
-- Whether FILL XY writes back DADDR in linear or XY form (A0029).
 - Physical bus-cycle phasing and wait-state behavior for unaligned fields
   crossing the original 16-bit external bus.
 - I/O side effects, on-chip completion timing, and host-visible semantics not

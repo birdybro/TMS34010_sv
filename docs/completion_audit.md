@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0132, with strict RTL
+> Baseline: functional implementation through Task 0133, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -45,6 +45,12 @@ the guide's `0x00000008` TMS34010 revision value; EXGPC stores the next PC in
 Rd and clears all four LSBs of the register-sourced PC. A deliberately
 unaligned target and full-status snapshots now lock both rules.
 
+Task 0133 resolved A0029 from the FILL XY destination-array description.
+The initial XY DADDR is converted with OFFSET/CONVDP; the final DADDR is the
+linear address immediately after the last pixel on the final row. Exact
+address, row-pitch, memory-effect, and W=0 full-status checks are regression
+locked.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -55,7 +61,6 @@ deviation:
   memory interface.
 - A0009: per-instruction N/C/Z/V write masks.
 - A0027: SUBXY comparison signedness.
-- A0029: FILL XY DADDR writeback representation.
 
 A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), and A0006 (functional-first timing) are intentional design choices.

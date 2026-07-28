@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Verified (Task 0133 — FILL XY DADDR writeback semantics)
+- Resolved A0029 directly against the FILL XY destination-array description
+  on page 12-85: the initial XY DADDR is converted with OFFSET/CONVDP, and
+  completion leaves the linear address immediately after the final row's last
+  pixel in DADDR.
+- Strengthened `tb_fill_xy` to retain its exact `0x910` converted start and
+  `0x9A0` final DADDR checks while snapshotting a seeded full ST after W=0.
+- Retained the existing FILL datapath because its final-address expression
+  already matches the primary text; corrected the provisional page citation
+  and removed A0029 from the active completion ledger.
+- Validation: focused bench PASS; `scripts/lint.sh` clean; full regression
+  117/117 PASS.
+
 ### Verified (Task 0132 — REV and EXGPC architectural semantics)
 - Resolved A0025 directly against the 1988 User's Guide pages 12-233 and
   12-79: REV returns `0x00000008`; EXGPC exchanges Rd with the next PC and
