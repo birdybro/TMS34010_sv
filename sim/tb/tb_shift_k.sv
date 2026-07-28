@@ -11,13 +11,12 @@
 // Encodings (SPVU001A A-14):
 //   SLA K, Rd  = 0010 00KK KKKR DDDD
 //   SLL K, Rd  = 0010 01KK KKKR DDDD
-//   SRA K, Rd  = 0010 10KK KKKR DDDD
-//   SRL K, Rd  = 0010 11KK KKKR DDDD
+//   SRA K, Rd  = 0010 10kk kkkR DDDD, k = 2's complement of K
+//   SRL K, Rd  = 0010 11kk kkkR DDDD, k = 2's complement of K
 //   RL  K, Rd  = 0011 00KK KKKR DDDD
 //
 // All five exercise the shifter writeback path (use_shifter = 1).
-// K=0 is NOT tested — the TMS34010 K=0→32 hypothesis is deferred
-// to A0019 along with the equivalent for ADDK/SUBK.
+// Architectural K is 0..31 for every form; zero is an identity shift.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -77,10 +76,16 @@ module tb_shift_k;
                                               input logic [4:0] k,
                                               input reg_file_t  rf,
                                               input reg_idx_t   rd);
-    shift_k_enc = (instr_word_t'(top6) << 10)
-                | (instr_word_t'(k)    << 5)
-                | (instr_word_t'(rf)   << 4)
-                | (instr_word_t'(rd));
+    logic [4:0] opcode_k;
+    begin
+      opcode_k = (top6 == SRA_K_TOP6 || top6 == SRL_K_TOP6)
+               ? ((~k) + 5'd1)
+               : k;
+      shift_k_enc = (instr_word_t'(top6)    << 10)
+                  | (instr_word_t'(opcode_k) << 5)
+                  | (instr_word_t'(rf)       << 4)
+                  | instr_word_t'(rd);
+    end
   endfunction
 
   localparam logic [5:0] SLA_K_TOP6 = 6'b001000;
@@ -125,8 +130,8 @@ module tb_shift_k;
     // Encoding sanity:
     //   SLA 1, A0 = 0010_00_00001_0_0000 = 0010 0000 0010 0000 = 0x2020
     //   SLL 4, A0 = 0010_01_00100_0_0000 = 0010 0100 1000 0000 = 0x2480
-    //   SRA 1, A0 = 0010_10_00001_0_0000 = 0010 1000 0010 0000 = 0x2820
-    //   SRL 4, A0 = 0010_11_00100_0_0000 = 0010 1100 1000 0000 = 0x2C80
+    //   SRA 1, A0 = 0010_10_11111_0_0000 = 0x2BE0
+    //   SRL 4, A0 = 0010_11_11100_0_0000 = 0x2F80
     //   RL  16,A0 = 0011_00_10000_0_0000 = 0011 0010 0000 0000 = 0x3200
     if (shift_k_enc(SLA_K_TOP6, 5'd1, REG_FILE_A, 4'd0) !== 16'h2020) begin
       $display("TEST_RESULT: FAIL: SLA 1,A0 = %04h, expected 2020",
@@ -138,6 +143,16 @@ module tb_shift_k;
                shift_k_enc(RL_K_TOP6, 5'd16, REG_FILE_A, 4'd0));
       failures++;
     end
+    if (shift_k_enc(SRA_K_TOP6, 5'd1, REG_FILE_A, 4'd0) !== 16'h2BE0) begin
+      $display("TEST_RESULT: FAIL: SRA 1,A0 = %04h, expected 2BE0",
+               shift_k_enc(SRA_K_TOP6, 5'd1, REG_FILE_A, 4'd0));
+      failures++;
+    end
+    if (shift_k_enc(SRL_K_TOP6, 5'd4, REG_FILE_A, 4'd0) !== 16'h2F80) begin
+      $display("TEST_RESULT: FAIL: SRL 4,A0 = %04h, expected 2F80",
+               shift_k_enc(SRL_K_TOP6, 5'd4, REG_FILE_A, 4'd0));
+      failures++;
+    end
 
     // Program:
     //   MOVI 0x00000001, A1 ; SLL 4, A1   → A1 = 0x10
@@ -146,6 +161,8 @@ module tb_shift_k;
     //   MOVI 0x0000F0F0, A4 ; SLA 8, A4   → A4 = 0x00F0F000
     //   MOVI 0x1234_5678, A5; RL  16, A5  → A5 = 0x5678_1234
     //   MOVI 0xCAFE_BABE, B1; SRL 4,  B1  → B1 = 0x0CAF_EBAB (B-file)
+    //   MOVI 0x1357_9BDF, A6; SLL 0,  A6  → unchanged
+    //   MOVI 0x2468_ACE0, A7; SRL 0,  A7  → unchanged
     p = 0;
     p = place_movi_il(p, REG_FILE_A, 4'd1, 32'h0000_0001);
     p = place_shift_k(p, SLL_K_TOP6, 5'd4, REG_FILE_A, 4'd1);
@@ -165,6 +182,12 @@ module tb_shift_k;
     p = place_movi_il(p, REG_FILE_B, 4'd1, 32'hCAFE_BABE);
     p = place_shift_k(p, SRL_K_TOP6, 5'd4, REG_FILE_B, 4'd1);
 
+    p = place_movi_il(p, REG_FILE_A, 4'd6, 32'h1357_9BDF);
+    p = place_shift_k(p, SLL_K_TOP6, 5'd0, REG_FILE_A, 4'd6);
+
+    p = place_movi_il(p, REG_FILE_A, 4'd7, 32'h2468_ACE0);
+    p = place_shift_k(p, SRL_K_TOP6, 5'd0, REG_FILE_A, 4'd7);
+
     repeat (3) @(posedge clk);
     rst = 1'b0;
 
@@ -177,9 +200,11 @@ module tb_shift_k;
     check_reg("SLA 8 of 0x0000F0F0 → 0x00F0F000", u_core.u_regfile.a_regs[4], 32'h00F0_F000);
     check_reg("RL 16 of 0x12345678 (halfword swap)", u_core.u_regfile.a_regs[5], 32'h5678_1234);
     check_reg("SRL 4 of 0xCAFE_BABE (B-file)",       u_core.u_regfile.b_regs[1], 32'h0CAF_EBAB);
+    check_reg("SLL 0 identity", u_core.u_regfile.a_regs[6], 32'h1357_9BDF);
+    check_reg("SRL 0 identity", u_core.u_regfile.a_regs[7], 32'h2468_ACE0);
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (5 K-form shifts verified across 6 cases; shifter wired)");
+      $display("TEST_RESULT: PASS (K-form shift encodings/results, including zero, verified)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

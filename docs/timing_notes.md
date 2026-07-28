@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0128, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0130, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -13,6 +13,7 @@
 | Bit-addressed field/XY address logic| 5 / 7            | landed in core, unmeasured | register conversion/extract paths if combinational logic is too wide |
 | PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
 | Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
+| SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
 ## Multi-cycle operations

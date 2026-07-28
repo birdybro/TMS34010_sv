@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0129. Task 0124
+The functional implementation is complete through Task 0130. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -20,7 +20,8 @@ forms with destination postincrement. Task 0128 implemented RUN/EMU sampling,
 active-low EMUA acknowledgement, halt, and resume, closing the last
 unimplemented official instruction-summary row. Task 0129 corrected and
 verified the MOVK/ADDK/SUBK encoded-zero constant as architectural value 32.
-The implementation includes the
+Task 0130 corrected and verified the complete shift family's count encodings,
+SLA overflow, and individual status masks. The implementation includes the
 multicycle CPU core, the currently tracked instruction set, bit-field memory
 operations, graphics operations
 through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers,

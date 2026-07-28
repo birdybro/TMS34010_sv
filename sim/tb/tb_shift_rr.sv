@@ -11,9 +11,9 @@
 //   SRL Rs, Rd : 0110 011S SSSR DDDD   (top7 = 7'b0110_011)
 //   RL  Rs, Rd : 0110 100S SSSR DDDD   (top7 = 7'b0110_100)
 //
-// Per A0019 (extended): SRA Rs and SRL Rs interpret Rs[4:0] as the
-// 2's complement of the shift magnitude, so the core's shifter-amount
-// mux negates Rs[4:0] before driving the shifter.
+// Per the individual pages 12-244/12-246, SRA Rs and SRL Rs interpret
+// Rs[4:0] as the 2's complement of the shift magnitude, so the core's
+// shifter-amount mux negates Rs[4:0] before driving the shifter.
 //
 // Scenarios mirror the K-form `tb_shift_k.sv` but read the shift
 // amount from a register:

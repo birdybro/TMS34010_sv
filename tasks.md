@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0129. Task 0118
+The functional implementation is complete through Task 0130. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -14,7 +14,8 @@ further implementation. Task 0125 closed its logical-status, ANDI/ANDNI, CLR,
 and DEC findings. Task 0126 closed the first missing MOVE form.
 Task 0127 closed the second. Task 0128 implemented EMU and closed the last
 unimplemented official instruction-summary row. Task 0129 corrected the
-encoded-zero constant semantics for MOVK, ADDK, and SUBK.
+encoded-zero constant semantics for MOVK, ADDK, and SUBK. Task 0130 corrected
+the complete shift family's encodings, SLA overflow, and status masks.
 
 ## Task index
 
@@ -149,6 +150,7 @@ encoded-zero constant semantics for MOVK, ADDK, and SUBK.
 | 0127 | Implement MOVE absolute-to-postincrement | complete |
 | 0128 | Implement EMU pin handshake and halt state | complete |
 | 0129 | Correct 5-bit constant zero encoding | complete |
+| 0130 | Correct shift encodings and status semantics | complete |
 
 ---
 
@@ -4096,6 +4098,48 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - `23932ec` — Correct 5-bit constant zero encoding (Task 0129)
+
+---
+
+### Task 0130: Correct shift encodings and status semantics
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption and status audit).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 12-234/12-235, RL constant/register.
+- 1988 TI TMS34010 User's Guide pages 12-239 through 12-246,
+  SLA/SLL/SRA/SRL constant/register.
+Acceptance Criteria:
+- Decode the SRA/SRL constant-form opcode field as the two's complement of
+  the architectural right-shift count; keep zero as a zero shift.
+- Retain direct 0..31 counts for left shifts/rotate and the existing
+  two's-complement register-count rule for right shifts.
+- Implement SLA overflow when the new sign or any shifted-out bit differs
+  from the original sign.
+- Apply the individual NCZV masks to both constant and register forms:
+  SLA updates NCZV; SRA updates NCZ; SLL/SRL/RL update CZ.
+- Resolve A0019 with exact encoding, result, flag-value, and unaffected-flag
+  tests based on the individual instruction pages.
+Tests:
+- Update `tb_shift_k` for architectural right-count encoding and K=0.
+- Update `tb_shift_rr` for the documented register right-count convention.
+- Add focused shift status/overflow and unaffected-flag coverage.
+- Run the focused shift benches, strict RTL lint, and the complete
+  self-checking regression.
+- `scripts/sim.sh tb_shifter` — PASS.
+- `scripts/sim.sh tb_shift_k` — PASS.
+- `scripts/sim.sh tb_shift_rr` — PASS.
+- `scripts/sim.sh tb_shift_flags` — PASS.
+- `scripts/lint.sh` — PASS, strict Verilator lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 116/116 self-checking
+  testbenches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

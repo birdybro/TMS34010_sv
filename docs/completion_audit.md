@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0129, with strict RTL
+> Baseline: functional implementation through Task 0130, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -18,9 +18,8 @@ immediate logical form now uses its individual Z-only status mask;
 ANDI/ANDNI implement both extension conventions through their shared
 `Rd & ~extension` hardware operation; and CLR and DEC have exact alias tests.
 A0009 and A0011 remain provisional outside that resolved logical subset.
-Remaining move, immediate, arithmetic, shift, and graphics status rows must
-still be checked against their individual tables before ISA closure is
-claimed.
+Remaining move, immediate, arithmetic, and graphics status rows must still be
+checked against their individual tables before ISA closure is claimed.
 
 Tasks 0126 and 0127 closed both postincrement-destination MOVE rows with
 signed-offset/absolute-address, arbitrary-field, unaligned/straddling,
@@ -33,6 +32,10 @@ pages: their five-bit field encodes constants 1 through 31 directly and
 constant 32 as zero. Exact zero-field result and arithmetic-status cases are
 now regression-locked.
 
+Task 0130 resolved A0019 across all ten shift forms. Right-shift immediate
+encoding, SLA overflow, count zero, and each affected/unaffected status bit
+are now tied to the individual instruction pages and direct tests.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -43,7 +46,6 @@ deviation:
   memory interface.
 - A0009: per-instruction N/C/Z/V write masks.
 - A0011: MOVI status behavior.
-- A0019: K-field interpretation and status behavior for the shift families.
 - A0025: REV value and EXGPC alignment.
 - A0027: SUBXY comparison signedness.
 - A0029: FILL XY DADDR writeback representation.

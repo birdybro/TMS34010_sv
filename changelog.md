@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0130 — shift encodings and status semantics)
+- Corrected SRA/SRL constant decoding: opcode bits 9:5 contain the five-bit
+  two's complement of the architectural right-shift count.
+- Implemented SLA overflow when its new sign or any shifted-out bit differs
+  from the original sign.
+- Applied primary-spec masks to all constant/register forms: SLA updates
+  NCZV, SRA updates NCZ, and SLL/SRL/RL update CZ.
+- Added `tb_shift_flags` for full-ST snapshots after all ten forms; extended
+  K-form encoding/zero coverage and the shifter's direct overflow vectors.
+- Resolved A0019 against pages 12-234/12-235 and 12-239..12-246.
+- Validation: four focused benches PASS; `scripts/lint.sh` clean; full
+  regression 116/116 PASS.
+
 ### Fixed (Task 0129 — 5-bit constant zero encoding)
 - Corrected MOVK, ADDK, and SUBK so an all-zero five-bit K field selects
   architectural constant 32 rather than literal zero, matching the

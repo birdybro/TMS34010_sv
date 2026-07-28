@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0129. The authoritative per-instruction
+// Recognition is current through Task 0130. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -392,10 +392,9 @@ module tms34010_decode
   //   SRL Rs, Rd : 0110 011S SSSR DDDD   (top7 = 7'b0110_011)
   //   RL  Rs, Rd : 0110 100S SSSR DDDD   (top7 = 7'b0110_100)
   //
-  // The shift amount comes from Rs[4:0]. Per A0019 (extended for the
-  // Rs-form): "the SRA Rs, Rd and SRL Rs, Rd use the 2s complement
-  // value of the 5 LSBs in Rs". So the core's shifter-amount mux must
-  // negate Rs[4:0] for the right-shift opcodes.
+  // The shift amount comes from Rs[4:0]. Per pages 12-244/12-246, SRA/SRL
+  // use the 2's complement of those five bits, so the core's amount mux
+  // negates Rs[4:0] for the right-shift opcodes (A0019).
   localparam logic [6:0] SLA_RR_TOP7  = 7'b0110_000;
   localparam logic [6:0] SLL_RR_TOP7  = 7'b0110_001;
   localparam logic [6:0] SRA_RR_TOP7  = 7'b0110_010;
@@ -1158,8 +1157,8 @@ module tms34010_decode
     //
     // All five share the encoding shape:
     //   bits[15:10] = 6-bit shift-op prefix (table below)
-    //   bits[9:5]   = K (5-bit shift amount; per A0019 treated literally —
-    //                    K=0 means no shift, not 32 as some TI ISAs use)
+    //   bits[9:5]   = K for SLA/SLL/RL; 2's complement of K for SRA/SRL.
+    //                  Every architectural count is 0..31, including zero.
     //   bit[4]      = R (file)
     //   bits[3:0]   = Rd index
     //
@@ -1179,6 +1178,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b1};
     end
     if (top6 == SLL_K_TOP6) begin
       decoded.illegal     = 1'b0;
@@ -1190,28 +1190,31 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b1, v: 1'b0};
     end
     if (top6 == SRA_K_TOP6) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_SRA_K;
       decoded.rd_file     = reg_file_from_instr;
       decoded.rd_idx      = reg_idx_from_instr;
-      decoded.k5          = instr[9:5];
+      decoded.k5          = (~instr[9:5]) + 5'd1;
       decoded.shift_op    = SHIFT_OP_SRA;
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b0};
     end
     if (top6 == SRL_K_TOP6) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_SRL_K;
       decoded.rd_file     = reg_file_from_instr;
       decoded.rd_idx      = reg_idx_from_instr;
-      decoded.k5          = instr[9:5];
+      decoded.k5          = (~instr[9:5]) + 5'd1;
       decoded.shift_op    = SHIFT_OP_SRL;
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b1, v: 1'b0};
     end
     if (top6 == RL_K_TOP6) begin
       decoded.illegal     = 1'b0;
@@ -1223,6 +1226,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b1, v: 1'b0};
     end
 
     // -----------------------------------------------------------------------
@@ -1285,7 +1289,7 @@ module tms34010_decode
     //
     // Shift amount comes from rf_rs1_data[4:0]; the core's
     // shifter-amount mux applies the 2's-complement negation for
-    // SRA/SRL per A0019 (extended).
+    // SRA/SRL per pages 12-244/12-246 (A0019).
     // -----------------------------------------------------------------------
     if (top7 == SLA_RR_TOP7) begin
       decoded.illegal     = 1'b0;
@@ -1297,6 +1301,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b1};
     end
     if (top7 == SLL_RR_TOP7) begin
       decoded.illegal     = 1'b0;
@@ -1308,6 +1313,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b1, v: 1'b0};
     end
     if (top7 == SRA_RR_TOP7) begin
       decoded.illegal     = 1'b0;
@@ -1319,6 +1325,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b0};
     end
     if (top7 == SRL_RR_TOP7) begin
       decoded.illegal     = 1'b0;
@@ -1330,6 +1337,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b1, v: 1'b0};
     end
     if (top7 == RL_RR_TOP7) begin
       decoded.illegal     = 1'b0;
@@ -1341,6 +1349,7 @@ module tms34010_decode
       decoded.use_shifter = 1'b1;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b1, z: 1'b1, v: 1'b0};
     end
 
     // -----------------------------------------------------------------------

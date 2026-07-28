@@ -326,33 +326,32 @@ yet individually reconciled.
 
 ---
 
-## A0019 — Shift K-value treatment
-- **Date**: 2026-05-12
-- **Status**: active (encoding confirmed; literal-K behavior implemented; K=0 → 32 hypothesis deferred)
-- **Source**: SPVU001A A-14 chart rows for SLA/SLL/SRA/SRL/RL K-form,
-  plus SPVU001A §12.8 "Shift Instructions" prose ("the shift amount
-  is specified by the value of a 5-bit constant"). Note the related
-  prose for Rs-form shifts: "the SRA Rs, Rd and SRL Rs, Rd use the
-  2s complement value of the 5 LSBs in Rs" (i.e., right-shift Rs-form
-  has a sign-aware shift-count interpretation that doesn't apply to
-  the K-form).
-- **Conclusion (implemented)**: K is treated as a literal 5-bit
-  unsigned shift count in the range 0..31. The shifter module's
-  `amount=0` case is a passthrough — the value is unchanged and C=0.
-- **K=0 hypothesis (NOT implemented)**: TI K-form shift instructions
-  in some related families special-case K=0 to mean K=32, providing
-  efficient "zero out the register" (SLL 32) / "broadcast sign bit"
-  (SRA 32) operations. SPVU001A's chart row and the §12.8 prose do
-  not explicitly state this for the '34010 K-form. Without an
-  explicit chart-side note, the implementation follows the literal
-  interpretation — same policy as ADDK/SUBK (A0018).
-- **How to apply**: If a careful read of SPVU001A §12.8 + Appendix A
-  individual instruction entries documents K=0 → K=32, change the
-  shifter wrapper (or pass an amount of `decoded.k5 == 0 ? 5'd32 :
-  decoded.k5` — note this requires widening `SHIFT_AMOUNT_WIDTH`
-  past 5 to encode the value 32). `tb_shift_k` deliberately
-  avoids K=0; add failing K=0 vectors as the regression once the
-  spec is confirmed.
+## A0019 — Shift count, encoding, overflow, and status treatment
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0130)**.
+- **Status**: **RESOLVED** against every individual shift instruction page.
+- **Source**: 1988 TMS34010 User's Guide pages 12-234/12-235 (RL
+  constant/register) and 12-239 through 12-246 (SLA/SLL/SRA/SRL
+  constant/register).
+- **Count range**: every architectural count is 0..31. Count zero is an
+  identity operation and clears C; it never means 32 for a shift.
+- **Encoding/operand convention**:
+  - SLA/SLL/RL constant forms store the count directly in bits 9:5.
+  - SRA/SRL constant forms store the five-bit two's complement of the
+    architectural right-shift count in bits 9:5.
+  - SLA/SLL/RL register forms use Rs[4:0] directly.
+  - SRA/SRL register forms use the five-bit two's complement of Rs[4:0].
+- **Status**: SLA updates N/C/Z/V and sets V if its new sign or any shifted-
+  out bit differs from the original sign. SRA updates N/C/Z and preserves V.
+  SLL, SRL, and RL update C/Z while preserving N/V. These rules are identical
+  between the constant and register forms.
+- **Correction**: the earlier implementation decoded right-shift constant
+  fields directly, omitted SLA overflow, and used broad N/C/Z/V updates for
+  several instructions. Task 0130 corrects the decoder, shifter, and
+  per-instruction masks.
+- **Tests**: `tb_shift_k` locks exact constant encodings and zero shifts;
+  `tb_shift_rr` locks the register-count convention; `tb_shifter` checks the
+  combinational overflow rule; `tb_shift_flags` snapshots full ST after all
+  ten architectural forms.
 
 ---
 

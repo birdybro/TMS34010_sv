@@ -57,16 +57,16 @@ Required columns:
 | ADDI IW K,Rd | `0000 1011 000R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Rd + sign_extend(K16, 32) → Rd. Reuses MOVI IW IMM_LO fetch. |
 | SUBI IW K,Rd | `0000 1011 111R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Rd - sign_extend(K16, 32) → Rd. C is borrow. |
 | CMPI IW K,Rd | `0000 1011 010R DDDD` + 16-bit imm | SPVU001A A-14 | implemented | tb_immi_iw | N, C, Z, V | none | TBD | Flags from Rd - sign_extend(K16); Rd unchanged. `wb_reg_en = 0`. |
-| SLA K,Rd | `0010 00KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd << K (arithmetic). K=0 → no shift (literal per A0019). |
-| SLL K,Rd | `0010 01KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd << K (logical). |
-| SRA K,Rd | `0010 10KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >>> K (sign-extending arithmetic right shift). |
-| SRL K,Rd | `0010 11KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd >> K (logical right shift; MSB ← 0). |
-| RL  K,Rd | `0011 00KK KKKR DDDD` | SPVU001A A-14 (A0019) | implemented | tb_shift_k | N, C, Z | none | TBD | Rd ROL K (rotate left). |
-| SLA Rs,Rd | `0110 000S SSSR DDDD` (= `0x6000 \| (Rs<<5) \| (R<<4) \| Rd`) | SPVU001A A-15 (A0019 ext.) | implemented | tb_shift_rr | N, C, Z, V | none | TBD | Rd << Rs[4:0] (arithmetic; shift amount from Rs's low 5 bits). |
-| SLL Rs,Rd | `0110 001S SSSR DDDD` | SPVU001A A-15 | implemented | tb_shift_rr | N, C, Z | none | TBD | Rd << Rs[4:0] (logical). |
-| SRA Rs,Rd | `0110 010S SSSR DDDD` | SPVU001A A-15 (A0019 ext.) | implemented | tb_shift_rr | N, C, Z | none | TBD | Rd >>> magnitude(Rs[4:0]) — per spec, the HW uses the **2's complement** of Rs[4:0] as the magnitude (assembler emits `-amount` mod 32). Core's shifter-amount mux applies the negation. |
-| SRL Rs,Rd | `0110 011S SSSR DDDD` | SPVU001A A-15 | implemented | tb_shift_rr | C, Z | none | TBD | Rd >> magnitude(Rs[4:0]) (logical; same 2sCmp convention as SRA). |
-| RL  Rs,Rd | `0110 100S SSSR DDDD` | SPVU001A A-15 | implemented | tb_shift_rr | C, Z | none | TBD | Rd ROL Rs[4:0]. |
+| SLA K,Rd | `0010 00KK KKKR DDDD` | 1988 User's Guide page 12-239 (A0019) | verified | tb_shift_k, tb_shift_flags | **N, C, Z, V** | none | TBD | Rd << K; K=0..31 stored directly. V=1 when the new sign or any shifted-out bit differs from the original sign. |
+| SLL K,Rd | `0010 01KK KKKR DDDD` | 1988 User's Guide page 12-241 (A0019) | verified | tb_shift_k, tb_shift_flags | **C, Z; N/V Unaffected** | none | TBD | Logical Rd << K; K=0..31 stored directly. |
+| SRA K,Rd | `0010 10kk kkkR DDDD`, `k=-K mod 32` | 1988 User's Guide page 12-243 (A0019) | verified | tb_shift_k, tb_shift_flags | **N, C, Z; V Unaffected** | none | TBD | Sign-extending Rd >>> K. Opcode bits 9:5 store the five-bit two's complement of K. |
+| SRL K,Rd | `0010 11kk kkkR DDDD`, `k=-K mod 32` | 1988 User's Guide page 12-245 (A0019) | verified | tb_shift_k, tb_shift_flags | **C, Z; N/V Unaffected** | none | TBD | Logical Rd >> K. Opcode bits 9:5 store the five-bit two's complement of K. |
+| RL  K,Rd | `0011 00KK KKKR DDDD` | 1988 User's Guide page 12-234 (A0019) | verified | tb_shift_k, tb_shift_flags | **C, Z; N/V Unaffected** | none | TBD | Rd ROL K; K=0..31 stored directly. |
+| SLA Rs,Rd | `0110 000S SSSR DDDD` (= `0x6000 \| (Rs<<5) \| (R<<4) \| Rd`) | 1988 User's Guide page 12-240 (A0019) | verified | tb_shift_rr, tb_shift_flags | **N, C, Z, V** | none | TBD | Rd << Rs[4:0], with the same SLA overflow rule as the constant form. |
+| SLL Rs,Rd | `0110 001S SSSR DDDD` | 1988 User's Guide page 12-242 (A0019) | verified | tb_shift_rr, tb_shift_flags | **C, Z; N/V Unaffected** | none | TBD | Logical Rd << Rs[4:0]. |
+| SRA Rs,Rd | `0110 010S SSSR DDDD` | 1988 User's Guide page 12-244 (A0019) | verified | tb_shift_rr, tb_shift_flags | **N, C, Z; V Unaffected** | none | TBD | Sign-extending right shift by the five-bit two's complement of Rs[4:0]. |
+| SRL Rs,Rd | `0110 011S SSSR DDDD` | 1988 User's Guide page 12-246 (A0019) | verified | tb_shift_rr, tb_shift_flags | **C, Z; N/V Unaffected** | none | TBD | Logical right shift by the five-bit two's complement of Rs[4:0]. |
+| RL  Rs,Rd | `0110 100S SSSR DDDD` | 1988 User's Guide page 12-235 (A0019) | verified | tb_shift_rr, tb_shift_flags | **C, Z; N/V Unaffected** | none | TBD | Rd ROL Rs[4:0]. |
 | ADDI IL K,Rd | `0000 1011 001R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Rd + K32 → Rd. |
 | SUBI IL K,Rd | `0000 1101 000R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Rd - K32 → Rd. **Different base prefix from the rest of the IL family.** |
 | CMPI IL K,Rd | `0000 1011 011R DDDD` + 32-bit imm | SPVU001A A-14 | implemented | tb_immi_il | N, C, Z, V | none | TBD | Flags from Rd - K32; Rd unchanged. |

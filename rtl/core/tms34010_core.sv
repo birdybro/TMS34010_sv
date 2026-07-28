@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0129.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0130.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -2364,10 +2364,11 @@ module tms34010_core
   // Shifter datapath. Operand is the Rd register value (via rf_rs2_data,
   // which already reads decoded.rd_idx in the same file as the
   // destination). Shift amount comes from one of two sources:
-  //   - K-form shifts (SLA/SLL/SRA/SRL/RL K, Rd):  decoded.k5 (literal K)
+  //   - K-form shifts: decoded.k5 (left/rotate direct; right forms already
+  //     converted from their two's-complement opcode field by decode)
   //   - Rs-form left/rotate shifts (SLA/SLL/RL Rs, Rd):  Rs[4:0] directly
   //   - Rs-form right shifts (SRA/SRL Rs, Rd):  2's complement of Rs[4:0]
-  //     (per spec page 12-219; "use the 2s complement value of the
+  //     (per spec pages 12-244/12-246; "use the 2s complement value of the
   //     5 LSBs in Rs"). The negation is done here in the amount mux.
   logic [SHIFT_AMOUNT_WIDTH-1:0] shifter_amount;
   always_comb begin
