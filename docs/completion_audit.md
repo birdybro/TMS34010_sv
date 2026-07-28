@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0127, with strict RTL
+> Baseline: functional implementation through Task 0128, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -9,13 +9,9 @@
 The complete instruction-summary tables in the 1988 TMS34010 User's Guide
 §12.3 (pages 12-12 through 12-18) were compared with
 `docs/instruction_coverage.md` and `tms34010_decode.sv`. Every summary-table
-row not listed below has a corresponding implemented coverage entry. This is
-a functional reconciliation; original-silicon cycle counts remain part of the
-physical timing work.
-
-| Official row | Current state | Required closure |
-|--------------|---------------|------------------|
-| `EMU` | Not decoded; the top level has no EMUA or RUN/EMU interface. | Define the FPGA-facing emulation-pin boundary, implement the RUN-as-NOP behavior and emulator-entry handshake, and test both sampled modes. |
+row now has a corresponding implemented coverage entry and named
+self-checking test. This is a functional reconciliation; original-silicon
+cycle counts remain part of the physical timing work.
 
 Task 0125 closed the audited logical findings: every register, unary, and
 immediate logical form now uses its individual Z-only status mask;
@@ -28,8 +24,9 @@ claimed.
 
 Tasks 0126 and 0127 closed both postincrement-destination MOVE rows with
 signed-offset/absolute-address, arbitrary-field, unaligned/straddling,
-pointer, register-file, and status-preservation coverage. EMU is now the only
-unimplemented §12.3 row.
+pointer, register-file, and status-preservation coverage. Task 0128 closed
+EMU with explicit RUN-as-NOP, active-low acknowledge, halt-quiescence, and
+resume coverage. There are no unimplemented §12.3 rows.
 
 ## Active architectural assumptions requiring closure
 
@@ -99,8 +96,9 @@ non-pin-compatible boundary.
 
 1. Resolve all active ISA/status assumptions and correct discovered semantic
    mismatches.
-2. Implement and directly test the two missing MOVE forms and EMU behavior;
-   ensure every §12.3 row has a spec citation and named test.
+2. **Complete (Tasks 0126–0128):** implement and directly test the two missing
+   MOVE forms and EMU behavior; ensure every §12.3 row has a spec citation and
+   named test.
 3. Complete I/O side effects and every interrupt source.
 4. Land the physical memory, refresh, host, and arbitration fabric with
    wait-state/reset tests.

@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0128 — EMU handshake and halt state)
+- Implemented fixed opcode `0x0100` with active-high-RUN
+  `run_emu_n_i` and active-low acknowledge `emua_n_o`, following the 1988
+  User's Guide pages 12-77 and 2-10.
+- RUN selection now retires EMU as a side-effect-free NOP. EMU selection
+  enters a memory-quiescent halt with PC at the following instruction, holds
+  EMUA active, and resumes fetch when RUN returns high.
+- Added `tb_emu` for execute-cycle pulse width, both sampled modes, halt
+  quiescence, PC/ST/register preservation, legal decode, and resume.
+- Recorded the deterministic ST-preservation choice and deferred physical
+  Q1/Q2 plus HLDA/EMUA multiplexing boundary in A0032.
+- Completed the last unimplemented row in the official §12.3 instruction
+  summary.
+- Validation: focused bench PASS; `scripts/lint.sh` clean; full regression
+  115/115 PASS.
+
 ### Added (Task 0127 — MOVE absolute source to postincrement destination)
 - Implemented `MOVE @SAddress,*Rd+ [,F]` (`1101 01F0 000R DDDD` plus
   low/high source-address words) from the 1988 User's Guide page 12-155.

@@ -1,11 +1,12 @@
 # Architecture
 
-> Status: **implemented through Task 0127; audited through Task 0124, with
+> Status: **implemented through Task 0128; audited through Task 0124, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
-> registers, and interrupt entry are integrated. Video timing and refresh
-> exist as standalone modules. The remaining ISA discrepancies and all
-> system-level exit gates are recorded in `completion_audit.md`.
+> registers, interrupt entry, and the abstract RUN/EMU handshake are
+> integrated. Video timing and refresh exist as standalone modules. The
+> remaining ISA verification and all system-level exit gates are recorded in
+> `completion_audit.md`.
 
 ## Specification source
 
@@ -80,13 +81,13 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0127** | multicycle CPU, reset/illegal-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0128** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed**  | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR + N/C/Z flags |
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
-| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0127** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
+| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0128** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
@@ -115,9 +116,10 @@ summary against the decoder, execution paths, tests, and
 the missing EMU interface, incorrect shared ANDI/ANDNI semantics, and
 provisional logical flag behavior. Task 0125 closed the logical findings with
 Z-only masks, both immediate extension conventions, and exact CLR/DEC alias
-tests. Tasks 0126–0127 closed both postincrement-destination MOVE rows; EMU is
-the only unimplemented instruction-summary row. The audit also consolidated
-the I/O, interrupt-source,
+tests. Tasks 0126–0127 closed both postincrement-destination MOVE rows, and
+Task 0128 implemented EMU. Every §12.3 instruction-summary row now has an
+implemented coverage entry and named test. The audit also consolidated the
+I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
 `completion_audit.md`; this architecture document describes the current
@@ -150,6 +152,8 @@ CORE_DECODE ──▶ CORE_EXECUTE
             └─▶ CORE_INT_PUSH_PC    (illegal opcode; vector 30)
 CORE_EXECUTE──▶ CORE_MEMORY         (if instruction touches memory)
             └─▶ CORE_WRITEBACK      (otherwise)
+            └─▶ CORE_EMU_HALT       (EMU samples RUN/EMU low)
+CORE_EMU_HALT ─▶ CORE_FETCH         (RUN returns high)
 CORE_MEMORY ──▶ CORE_WRITEBACK
 CORE_WRITEBACK ─▶ CORE_FETCH
 ```
@@ -182,6 +186,15 @@ The push order (PC high, ST low) matches RETI's pop, so interrupt+RETI
 round-trips. Task 0123 resolved A0030 against the page 8-6 ST diagram: live
 ST is initialized to `ST_RESET_VALUE` for the service context, while the
 exact pre-entry word remains stacked for RETI.
+
+**EMU handshake** (Task 0128): fixed opcode `0x0100` drives `emua_n_o` low
+during `CORE_EXECUTE` and samples `run_emu_n_i`. A high RUN sample retires as
+a side-effect-free NOP. A low EMU sample enters `CORE_EMU_HALT`, holds EMUA
+low, and issues no instruction or memory request; PC already names the
+following instruction. Returning RUN high resumes at `CORE_FETCH`. This is an
+abstract single-clock core boundary. Exact Q1/Q2 pin phasing and the physical
+HLDA/EMUA multiplexing remain responsibilities of the future pin/memory
+wrapper (A0032).
 
 **Illegal-opcode entry** (Task 0122): encodings in the reserved ranges from
 User's Guide Table 8-6 never reach execute. From `CORE_DECODE`, they enter the

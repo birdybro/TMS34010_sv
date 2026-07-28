@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0127. Task 0118
+The functional implementation is complete through Task 0128. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -12,7 +12,8 @@ remaining interrupt-entry status assumption directly against the guide.
 Task 0124 established the primary-spec completion ledger that now drives
 further implementation. Task 0125 closed its logical-status, ANDI/ANDNI, CLR,
 and DEC findings. Task 0126 closed the first missing MOVE form.
-Task 0127 closed the second.
+Task 0127 closed the second. Task 0128 implemented EMU and closed the last
+unimplemented official instruction-summary row.
 
 ## Task index
 
@@ -145,6 +146,7 @@ Task 0127 closed the second.
 | 0125 | Correct logical flags and ANDI/ANDNI semantics | complete |
 | 0126 | Implement MOVE offset-to-postincrement | complete |
 | 0127 | Implement MOVE absolute-to-postincrement | complete |
+| 0128 | Implement EMU pin handshake and halt state | complete |
 
 ---
 
@@ -4022,6 +4024,43 @@ Docs:
   `docs/instruction_coverage.md`, and `docs/timing_notes.md`.
 Commit:
 - `b3ac2e4` — Implement MOVE absolute postincrement (Task 0127)
+
+---
+
+### Task 0128: Implement EMU pin handshake and halt state
+Status: complete
+Dependencies:
+- Task 0124 (official ISA reconciliation).
+- Task 0127 (all other §12.3 rows implemented).
+Spec sources:
+- 1988 TI TMS34010 User's Guide page 12-77, “Initiate Emulation.”
+- 1988 TI TMS34010 User's Guide page 2-10, RUN/EMU and HLDA/EMUA pin
+  descriptions.
+Acceptance Criteria:
+- Decode the fixed EMU opcode `0x0100`.
+- Expose active-high-RUN `run_emu_n_i` and active-low acknowledge
+  `emua_n_o` at the core boundary.
+- Pulse EMUA for one core cycle when EMU executes; sample RUN/EMU there.
+- In RUN state, retire EMU as a NOP. In EMU state, halt instruction and
+  memory activity with PC already pointing after EMU, hold EMUA active,
+  and resume fetch when RUN returns high.
+- Keep deterministic FPGA status behavior explicit even though the
+  original instruction documents N/C/Z/V as indeterminate.
+Tests:
+- Focused `tb_emu` covering RUN and EMU samples, pulse width, halt
+  quiescence, PC, resume, and no illegal-opcode indication.
+- Strict RTL lint and the complete self-checking regression.
+- `scripts/sim.sh tb_emu` — PASS.
+- `scripts/lint.sh` — PASS, strict Verilator lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 115/115 self-checking
+  testbenches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

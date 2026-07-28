@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0127: architectural widths and register layouts,
+// Current through Task 0128: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -101,7 +101,8 @@ package tms34010_pkg;
     CORE_LINE_SETUP_WIN = 6'd36, // LINE (W=3): read WSTART/WEND for per-pixel clip
     CORE_PIXT_SETUP_WIN = 6'd37, // PIXT XY (W!=0): read WSTART/WEND before the RMW
     CORE_FETCH_IMM_EXT_LO = 6'd38, // fourth instruction word (second 32-bit operand low)
-    CORE_FETCH_IMM_EXT_HI = 6'd39  // fifth instruction word (second 32-bit operand high)
+    CORE_FETCH_IMM_EXT_HI = 6'd39, // fifth instruction word (second 32-bit operand high)
+    CORE_EMU_HALT         = 6'd40  // EMU sampled active: quiescent until RUN returns high
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -574,8 +575,9 @@ package tms34010_pkg;
                               //                     8-bit memory-to-memory transfer.
     INSTR_MOVE_OFF_M2M_PI  = 7'd101, // MOVE *Rs(off),*Rd+: signed source offset;
                               //                     destination postincrements by FS.
-    INSTR_MOVE_ABS_M2M_PI  = 7'd102  // MOVE @SAddr,*Rd+: absolute source;
+    INSTR_MOVE_ABS_M2M_PI  = 7'd102, // MOVE @SAddr,*Rd+: absolute source;
                               //                     destination postincrements by FS.
+    INSTR_EMU              = 7'd103  // EMU: pulse EMUA; NOP in RUN or halt in EMU
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

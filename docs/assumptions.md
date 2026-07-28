@@ -576,6 +576,34 @@ yet individually reconciled.
   write (they write the low 16 bits) and 32-bit accesses would span two
   registers — neither is exercised by the implemented instruction set.
 
+## A0032 — Abstract RUN/EMU handshake and deterministic status
+- **Date**: 2026-07-28 (Task 0128).
+- **Status**: deliberate core-boundary choice; physical pin timing remains a
+  system-integration TODO.
+- **Source**: 1988 TMS34010 User's Guide page 12-77 (“Initiate Emulation”)
+  and page 2-10 (RUN/EMU and HLDA/EMUA pin descriptions).
+- **Architectural behavior**: opcode `0x0100` asserts active-low EMUA while
+  sampling RUN/EMU. RUN makes the instruction act as a NOP; EMU halts the
+  processor for emulator control. Returning RUN resumes execution at the
+  instruction following EMU.
+- **FPGA core boundary**: `run_emu_n_i` is sampled during `CORE_EXECUTE`.
+  `emua_n_o` is low for that execute cycle. When EMU is sampled low, the core
+  enters `CORE_EMU_HALT`, holds EMUA low, and issues no memory request until
+  RUN returns high. PC already contains the following instruction address.
+- **Deterministic status choice**: the instruction page marks N/C/Z/V
+  indeterminate. This RTL preserves the complete ST word in both sampled
+  modes, providing deterministic FPGA behavior without software-visible flag
+  writes.
+- **Deferred physical behavior**: the original output is multiplexed as
+  HLDA/EMUA and its pulse is specified in Q1/Q2/LCLK1 terms. The abstract
+  core has neither bus phase clocks nor hold acknowledge, so exact pin
+  phasing and multiplexing belong in the future physical pin/memory wrapper.
+  This implementation also does not claim an external emulator's private
+  state-access protocol; it implements only the documented instruction
+  handshake, halt, and resume boundary.
+- **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
+  memory/PC/register/ST quiescence, legal decode, and resume point.
+
 ## A0031 — Window-checking scope and implementation
 - **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117).
 - **Status**: implemented for every drawing instruction currently present.

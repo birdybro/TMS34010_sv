@@ -68,7 +68,7 @@ module tb_mmfm;
     .state_o         (state_w),
     .pc_o            (pc_w),
     .instr_word_o    (instr_w),
-    .illegal_opcode_o(illegal_w)
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
   );
 
   // Needs to span both the low program/stack region and the PHASE-2

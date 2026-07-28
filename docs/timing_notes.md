@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0127, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0128, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -30,6 +30,12 @@
 - **Interrupt completion** — `CORE_INT_DONE` initializes live ST and loads PC
   in one internal cycle. Context-saving entries also decrement SP there;
   NMIM=1 NMI omits the SP write but retains the ST/PC updates.
+- **EMU** — `CORE_EXECUTE` drives active-low EMUA for one core cycle while
+  sampling RUN/EMU. RUN proceeds through ordinary writeback as a NOP. EMU
+  enters `CORE_EMU_HALT`, holds EMUA low, issues no memory request, and stays
+  halted for an unbounded number of core cycles until RUN returns high.
+  Original Q1/Q2 pulse phasing and HLDA/EMUA pin multiplexing are deferred to
+  the physical wrapper (A0032).
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

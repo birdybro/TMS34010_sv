@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0127. The authoritative per-instruction
+// Recognition is current through Task 0128. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -413,6 +413,7 @@ module tms34010_decode
   // (A0021). Distinct from the unary family at 0000 0011 1xxx xxxx
   // (top9 = 9'b000000111); NOP's top9 = 9'b000000110, so no collision.
   localparam instr_word_t NOP_OPCODE = 16'h0300;
+  localparam instr_word_t EMU_OPCODE = 16'h0100;
 
   // JUMP Rs (register-indirect jump). Per SPVU001A page 12-98 +
   // summary table line 13852: encoding `0000 0001 011R DDDD` —
@@ -2189,6 +2190,15 @@ module tms34010_decode
     if (instr == NOP_OPCODE) begin
       decoded.illegal     = 1'b0;
       decoded.iclass      = INSTR_NOP;
+      decoded.wb_reg_en   = 1'b0;
+      decoded.wb_flags_en = 1'b0;
+    end
+
+    // EMU — pulse EMUA and sample RUN/EMU. The core owns the sampled
+    // run-vs-halt behavior; decode has no architectural writeback.
+    if (instr == EMU_OPCODE) begin
+      decoded.illegal     = 1'b0;
+      decoded.iclass      = INSTR_EMU;
       decoded.wb_reg_en   = 1'b0;
       decoded.wb_flags_en = 1'b0;
     end

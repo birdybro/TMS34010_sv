@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0127.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0128.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -39,6 +39,12 @@ module tms34010_core
   output logic [DATA_WIDTH-1:0]               mem_wdata,
   input  logic [DATA_WIDTH-1:0]               mem_rdata,
   input  logic                                mem_ack,
+
+  // Emulation boundary. RUN/EMU is high for RUN and low for EMU; EMUA is
+  // active low. The physical HLDA/EMUA phase multiplexing belongs in the
+  // future pin/bus wrapper.
+  input  logic                                run_emu_n_i,
+  output logic                                emua_n_o,
 
   // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
@@ -1128,6 +1134,8 @@ module tms34010_core
   //   SETUP3: DADDR(B2)/COLOR1(B9).  All reads are from the B file.
   logic is_line;
   assign is_line    = (decoded.iclass == INSTR_LINE);
+  logic is_emu;
+  assign is_emu     = (decoded.iclass == INSTR_EMU);
   logic line_rd_b;   // LINE is doing B-file setup reads this cycle
   assign line_rd_b  = is_line && ((state_q == CORE_LINE_SETUP1)
                                || (state_q == CORE_LINE_SETUP2)
@@ -2641,7 +2649,9 @@ module tms34010_core
         // CORE_WRITEBACK.
         // Divide instructions hand off to the multi-cycle divider; others
         // go to memory (if any) then writeback.
-        if (is_div)
+        if (is_emu)
+          state_d = run_emu_n_i ? CORE_WRITEBACK : CORE_EMU_HALT;
+        else if (is_div)
           state_d = CORE_DIVIDE;
         else if (is_fill)
           state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
@@ -3103,6 +3113,13 @@ module tms34010_core
         state_d = pair_second_pass ? CORE_WRITEBACK : CORE_FETCH;
       end
 
+      CORE_EMU_HALT: begin
+        // PC already points at the instruction after EMU. No memory or
+        // architectural write occurs while halted. Raising RUN resumes at
+        // the next instruction boundary.
+        state_d = run_emu_n_i ? CORE_FETCH : CORE_EMU_HALT;
+      end
+
       default: begin
         // Defensive: any out-of-range encoding goes back to reset.
         state_d = CORE_RESET;
@@ -3114,6 +3131,8 @@ module tms34010_core
   assign pc_o             = pc_value;
   assign instr_word_o     = instr_word_q;
   assign illegal_opcode_o = illegal_q;
+  assign emua_n_o         = !((state_q == CORE_EXECUTE && is_emu)
+                           || (state_q == CORE_EMU_HALT));
 
 endmodule : tms34010_core
 `default_nettype wire

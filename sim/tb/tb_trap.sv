@@ -73,7 +73,7 @@ module tb_trap;
     .state_o         (state_w),
     .pc_o            (pc_w),
     .instr_word_o    (instr_w),
-    .illegal_opcode_o(illegal_w)
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
   );
 
   // DEPTH_WORDS=1024 → IDX_WIDTH=10 → mem_addr[13:4] selects the word

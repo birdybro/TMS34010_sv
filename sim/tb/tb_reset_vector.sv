@@ -33,7 +33,7 @@ module tb_reset_vector;
     .mem_size(mem_size), .mem_wdata(mem_wdata),
     .mem_rdata(mem_rdata), .mem_ack(mem_ack),
     .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w),
-    .illegal_opcode_o(illegal_w)
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
   );
 
   sim_memory_model #(.DEPTH_WORDS(128)) u_mem (

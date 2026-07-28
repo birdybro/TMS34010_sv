@@ -56,7 +56,7 @@ module tb_jump_rs;
     .state_o         (state_w),
     .pc_o            (pc_w),
     .instr_word_o    (instr_w),
-    .illegal_opcode_o(illegal_w)
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
   );
 
   sim_memory_model #(.DEPTH_WORDS(256)) u_mem (
