@@ -15,16 +15,16 @@
 // the host interface, which this FPGA reimplementation does not yet model;
 // resetting every register to 0 is therefore correct here.
 //
-// Scope (Task 0081 — foundation):
+// Current scope (Tasks 0081–0117):
 //   - Plain read/write storage for all 32 registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
+//   - Dedicated taps drive graphics and interrupt control. Sideband inputs
+//     auto-clear HSTCTLH.NMI after entry and set INTPEND.WV on a window event.
 //   - Registers whose real silicon behavior is read-only or has write side
 //     effects (HCOUNT/VCOUNT/REFCNT/DPYADR are driven by video timing;
 //     INTPEND bits are write-to-clear) are MODELLED AS PLAIN STORAGE for now.
-//     Those side effects arrive with the video-timing and interrupt blocks
-//     (see docs/memory_map.md). No instruction implemented so far depends on
-//     them.
+//     Video/refresh/host integration and remaining side effects are open.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003), all registers -> 0.

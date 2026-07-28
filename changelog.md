@@ -5,6 +5,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-07-28
+
+### Changed (Task 0118 — agent handoff and local validation)
+- Replaced the Claude Code-specific root `CLAUDE.md` with repository-wide
+  `AGENTS.md` guidance. The specification, HDL-style, testing, and
+  documentation contracts are preserved; commit/push actions now require an
+  explicit user request.
+- Reconciled current project summaries with the implementation through Task
+  0117, including the task index, README, architecture/module map, memory map,
+  instruction-coverage header, window-checking assumption, timing notes, and
+  stale current-state comments at the top of key RTL files.
+- Made the three project scripts executable. `lint.sh` and `sim.sh` now prefer
+  Questa/ModelSim when available and otherwise use Verilator, matching the
+  toolchain available in the Linux handoff workspace.
+- Documented the remaining integration backlog and the fact that the Quartus
+  script is still a placeholder rather than a synthesis/timing proof.
+
 ## 2026-06-15
 
 ### Added (Task 0117 — PIXT XY per-pixel window checking)

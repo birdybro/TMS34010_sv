@@ -1,7 +1,10 @@
 # Memory map
 
-> Status: **scaffold**. The bit-addressed model is described; concrete
-> register addresses are filled in as the I/O subsystem lands in Phase 6.
+> Status: **implemented at the architectural/simulation boundary**. The core
+> issues bit-addressed 1–32-bit accesses and the simulation memory model
+> handles unaligned/straddling fields. The on-chip I/O page is decoded and
+> stored in the core. Physical external-bus translation and several I/O side
+> effects remain open.
 
 ## Architectural address space
 
@@ -20,11 +23,11 @@ Field operations specify a **field size** (1–32 bits) and read/write that
 many bits starting at the byte address, crossing word boundaries as needed.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) implements
-this field semantics as of Task 0076: 1..32-bit reads/writes at any bit
-address, straddling 16-bit words, with read-modify-write preservation of
-the surrounding bits. The core itself still issues only aligned 16/32-bit
-accesses; wiring field sizes through the core (`mem_size = FS`, FE-driven
-sign/zero extension, FS-aware pointer stepping) is the remaining work.
+this field semantics as of Task 0076: 1–32-bit reads/writes at any bit address,
+straddling 16-bit words, with read-modify-write preservation of surrounding
+bits. Tasks 0077–0079 wired field size, FE-driven extension, unaligned access,
+and FS-aware pointer stepping through every implemented MOVE form. Pixel
+operations similarly drive `mem_size` from PSIZE.
 
 External memory glue (outside the core) is responsible for translating
 bit addresses to whatever the physical memory expects. The core's memory
@@ -40,14 +43,15 @@ address decodes to I/O space when its two MSBs are `11` and bits[29:9] are
 (UG §6; the only documented exception is the HLT bit's dependence on the
 `HCS` host-interface pin, not yet modelled).
 
-`rtl/io/tms34010_io_regs.sv` (Task 0081) implements the register file as
-plain read/write storage — exactly correct for the control/graphics
-registers the instruction set reads. Registers that are read-only or
-write-to-clear on real silicon (`HCOUNT`/`VCOUNT`/`REFCNT`/`DPYADR` from
-video timing; `INTPEND` write-to-clear) are modelled as plain storage for
-now; their side effects arrive with the video-timing and interrupt blocks.
-The block is not yet wired into the core's memory path — that address-decode
-routing is the next integration step.
+`rtl/io/tms34010_io_regs.sv` implements the register file and is wired into
+the core memory path (Tasks 0081–0082). Graphics-control taps drive PSIZE,
+PMASK, conversion pitch, CONTROL/PPOP, and interrupt behavior. HSTCTLH.NMI is
+auto-cleared on entry and the window engine can set INTPEND.WV.
+
+The remaining register semantics are incomplete: video/refresh counters are
+not driven into HCOUNT/VCOUNT/REFCNT/DPYADR, most read-only/write-to-clear
+rules are still plain storage behavior, and I/O accesses still rely on an
+external request/ack cycle as documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -81,27 +85,29 @@ routing is the next integration step.
 | C00001E0 | 0x1E | DPYADR  | video timing | Display Address (read-only on silicon) |
 | C00001F0 | 0x1F | REFCNT  | refresh      | DRAM Refresh Count (read-only on silicon) |
 
-Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Per-register
-bit fields and reset-value exceptions will be documented as each consuming
-block (graphics, video, interrupts) lands.
+Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
+fields for graphics and interrupt behavior are also named in the package.
+Remaining video, refresh, and host fields must be documented as their
+consuming blocks are integrated.
 
 ## Host-interface-visible registers
 
-A small subset of the I/O space is also visible to the host CPU through
-the host interface. Phase 6 will document which registers are host-visible
-and what restrictions apply (e.g., locked-during-PIXBLT).
+A small subset of the I/O space is also visible to the host CPU on original
+silicon. The host interface and its locking/access restrictions are not
+implemented.
 
 ## Display / video memory behavior
 
-The original device interacts with VRAM through both random-access and
-serial-shift cycles (paired with a TMS34061-class video controller). The
-RTL plan (Phase 9) implements display memory as a single-port BRAM with
-a separate read port for video output; the serial-shift cycle is modeled
-functionally rather than electrically.
+The original device interacts with VRAM through random-access and serial-shift
+cycles. The current repository has timing counters but no display-memory
+fetch, VRAM shift-register model, pixel output, or arbitration with core and
+graphics accesses.
 
-## Uncertain / partially-implemented areas (current)
+## Uncertain / partially implemented areas
 
-- All of it. Phase 0 has no memory map implemented.
-
-This list is replaced with per-register status rows as the I/O subsystem
-is built.
+- Physical 16-bit external-bus phasing and wait-state behavior.
+- The dedicated on-chip ack path for I/O accesses (A0028).
+- Read-only, write-to-clear, and hardware-driven behavior for registers not
+  yet consumed by graphics/interrupt logic.
+- Host-visible register access and locking semantics.
+- Video/display address generation and VRAM shift-register behavior.

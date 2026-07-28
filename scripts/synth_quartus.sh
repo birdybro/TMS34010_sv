@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Cyclone V synthesis check via Quartus quartus_map / quartus_fit.
+# Cyclone V synthesis entry point — currently tool discovery only.
 #
-# This is a placeholder until rtl/ has enough content to make a meaningful
-# synthesis run. It currently elaborates the top entity to confirm Quartus
-# accepts the source set. Real fit + timing reports become useful starting
-# in Phase 1.
+# The RTL is substantial, but no Quartus project, device assignment, pin
+# constraints, SDC, or report flow has been committed. This placeholder does
+# not elaborate, map, fit, or time the design and must not be cited as
+# synthesis evidence.
 #
 # Resolves quartus_sh via env or PATH:
 #   $QUARTUS_SH   — explicit binary
@@ -24,5 +24,5 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "synth_quartus.sh: Quartus integration not yet wired up — placeholder only."
 echo "  Project root: $ROOT"
-echo "  Run again once rtl/ contains a top entity worth synthesizing."
+echo "  Add a reviewed QSF/SDC and map/fit/report flow before claiming synthesis."
 exit 0

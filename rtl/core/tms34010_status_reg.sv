@@ -3,24 +3,13 @@
 //
 // 32-bit status register (ST) for the TMS34010 core.
 //
-// ST holds, per bibliography/hdl-reimplementation/03-registers.md:
-//   - Condition flags N, C, Z, V (from ALU and shifter).
-//   - Field-size mode bits FE0/FE1 + extension bits  (Phase 4-5 work).
-//   - Interrupt enable bits (E, IE)                  (Phase 8 work).
-//   - Other privilege / mode bits                    (deferred).
-//
-// In Phase 2, only the four condition flags are populated by name. Non-flag
-// bits hold whatever was last written via the full ST write port (POPST in
-// Phase 4) — they default to 0 at reset.
-//
-// Bit positions are package parameters (`ST_N_BIT` etc., placeholders per
-// docs/assumptions.md A0010 pending SPVU001A Ch. 2 read). Consumers in the
-// rest of the design reference the named flag outputs (`n_o`, `c_o`,
-// `z_o`, `v_o`), so the bit positions matter only to PUSHST / POPST /
-// MMTM ST / MMFM ST instructions and to debug observability.
+// The package defines the spec-verified layout and reset value (Task 0042):
+// FS0/FE0, FS1/FE1, IE, PBX, and N/C/Z/V. The full-write port supports PUTST,
+// POPST, RETI, traps, interrupts, and field-definition operations; the masked
+// update port changes only the instruction-selected condition flags.
 //
 // Update priority on a given clock edge:
-//   1. Reset → ST = 0.
+//   1. Reset → ST = ST_RESET_VALUE.
 //   2. `st_write_en` → ST takes `st_write_data` (full 32 bits).
 //   3. `flag_update_en` → only the four condition-flag bits change to
 //      `flags_in`; all other bits hold.

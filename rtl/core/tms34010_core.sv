@@ -1,34 +1,18 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level TMS34010 core wrapper. Phase 3 — decode skeleton integrated.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0117.
 //
-// What this module IS, today:
-//   - A clocked top-level entity with explicit synchronous active-high reset.
-//   - A typed-enum core FSM that fully cycles: CORE_RESET → CORE_FETCH →
-//     CORE_DECODE → CORE_EXECUTE → CORE_WRITEBACK → CORE_FETCH (no
-//     instruction touches memory in Phase 3, so CORE_MEMORY is unused).
-//   - Memory IF that drives `mem_addr` from the PC register and asserts a
-//     16-bit fetch in CORE_FETCH. On mem_ack the fetched word is latched
-//     into `instr_word_q` and the PC advances by INSTR_WORD_BITS.
-//   - A tms34010_decode instance evaluates `instr_word_q` combinationally.
-//     Phase 3 skeleton: every encoding is flagged ILLEGAL.
-//   - Sticky `illegal_opcode_o` observability output.
-//   - Register file, ALU, and status register instantiated and connected
-//     into the datapath: ALU result → regfile write-data port, ALU flags
-//     → status-register flag-update port. All "go" signals (rf_wr_en,
-//     st_flag_update_en, st_write_en) are currently tied to 0 — no
-//     instruction is yet decoded into a real datapath action. Task 0012
-//     replaces these tie-offs with decoded-instruction-driven values for
-//     the first real instruction (MOVI).
+// The core integrates instruction fetch/decode/execute, the A/B/SP register
+// file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
+// register routing, trap/interrupt entry, and the implemented PIXT/FILL/
+// PIXBLT/DRAV/LINE graphics engines. Unsupported opcodes raise the sticky
+// `illegal_opcode_o` output.
 //
-// What this module IS NOT, yet:
-//   - No real instruction decoded. EXECUTE / WRITEBACK are pass-through
-//     states; the datapath stays at quiescent values.
-//   - No branches / jumps yet, so the PC `load_en` port is tied 0.
-//   - The PC starts at `RESET_PC` from the package, currently a placeholder
-//     '0 — see docs/assumptions.md A0008 for the architectural reset-vector
-//     fetch sequence that is Phase 8 work.
+// The external request/ack interface is an architectural bit-addressed
+// interface, not the original physical 16-bit bus. Video/refresh, host access,
+// physical bus arbitration, and the architectural reset-vector fetch are not
+// integrated; see docs/architecture.md and docs/assumptions.md A0008.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -48,7 +32,7 @@ module tms34010_core
   input  logic                                clk,
   input  logic                                rst,
 
-  // Memory request/valid interface (stub in Phase 0 skeleton).
+  // Architectural bit-addressed memory request/ack interface.
   output logic                                mem_req,
   output logic                                mem_we,
   output logic [ADDR_WIDTH-1:0]               mem_addr,
@@ -725,7 +709,7 @@ module tms34010_core
   // and latched; Rs/Rd are latched for the advance. CORE_DRAV then runs a
   // 2-step read-dest / write-merged RMW (COLOR1 on port1), reusing the FILL
   // pixel-merge (PPOP / transparency / PMASK). The advance is written back at
-  // CORE_WRITEBACK. Window modes (W=1/2/3) are not yet applied (A0031, W=0).
+  // CORE_WRITEBACK. Task 0112 adds the per-pixel W=1/2/3 behavior below.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] drav_rd_q, drav_rs_q, drav_linear_q, drav_dest_q;
   logic                  drav_substep_q;    // 0 = read dest, 1 = write merged
@@ -796,8 +780,8 @@ module tms34010_core
   // and DADDR (+INC1 when d>0 i.e. the diagonal move, else +INC2) and decrement
   // COUNT. The Z bit (instr_word_q[7]) selects whether d=0 counts as ">0"
   // (Z=1 -> d>=0). At the end d/DADDR/COUNT are written back to B0/B2/B10.
-  // Window modes are not yet applied (W=0; A0031). DADDR/INC adds are XY
-  // (independent 16-bit halves, no carry), matching ADDXY / DRAV.
+  // Tasks 0115–0116 add W=3 clipping and W=1/W=2 abort behavior. DADDR/INC
+  // adds are XY (independent 16-bit halves, no carry), matching ADDXY / DRAV.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] line_d_q, line_count_q, line_inc1_q, line_inc2_q;
   logic [DATA_WIDTH-1:0] line_offset_q, line_daddr_q, line_color_q, line_dest_q;

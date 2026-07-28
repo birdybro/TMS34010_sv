@@ -1,0 +1,198 @@
+# AGENTS.md
+
+Repository-wide instructions for coding agents working on this project.
+
+## Project
+
+This repository is a synthesizable FPGA reimplementation of the Texas
+Instruments TMS34010 Graphics System Processor in SystemVerilog. The initial
+target is Intel/Altera Cyclone V.
+
+This is RTL, not a software emulator. Model explicit hardware structure:
+datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
+translate a software implementation into one large procedural HDL block.
+
+The implementation is complete through Task 0117. It includes the multicycle
+CPU core, the currently tracked instruction set, bit-field memory operations,
+graphics operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking,
+I/O registers, and interrupt entry. Video timing and refresh blocks exist as
+standalone modules. Read `tasks.md` and the current-status sections in
+`docs/architecture.md` before selecting new work.
+
+## Specification source of truth
+
+`third_party/TMS34010_Info/` is a pinned git submodule. Authoritative documents:
+
+- `docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf` — ISA and architecture.
+- `docs/datasheets/SPVS002C_TMS34010_Graphics_System_Processor_199106_altscan.pdf`
+  — electrical and pin-level timing.
+- `docs/ti-official/TMS34061_Users_Guide.pdf` — VRAM/CRTC companion.
+- `emulation/mame/UPSTREAM.md` — behavioral cross-check only; do not copy
+  emulator structure into RTL.
+
+Do not use the older `TMS34010_docs` repository.
+
+Every architectural implementation decision must cite a section, page, or
+file from the submodule. If the specification does not settle a decision,
+record it in `docs/assumptions.md` with `TODO/spec-uncertain`, keep the choice
+isolated, and do not present it as verified compatibility.
+
+The `third_party` submodule is reference material. Do not edit it as part of
+normal core work.
+
+## Start-of-task checklist
+
+1. Run `git status --short --branch` and preserve unrelated user changes.
+2. Read the latest completed task and roadmap in `tasks.md`.
+3. Read the relevant rows in `docs/instruction_coverage.md` and entries in
+   `docs/assumptions.md`.
+4. Read the applicable specification sections in the pinned submodule.
+5. For RTL changes, load the relevant documents from
+   `docs/hdl-coding-guidelines/` as described below.
+6. State a small objective and acceptance criteria before implementing.
+
+Do not select work solely from stale `TODO` comments. Cross-check the current
+RTL, tests, task log, changelog, and specification first.
+
+## Project navigation
+
+- `tasks.md` — task history, acceptance criteria, commit hashes, and roadmap.
+- `changelog.md` — dated implementation history.
+- `docs/architecture.md` — module map, datapath/control strategy, and gaps.
+- `docs/assumptions.md` — non-spec-derived or ambiguous decisions.
+- `docs/instruction_coverage.md` — per-instruction implementation/test status.
+- `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.
+- `docs/memory_map.md` — bit-addressed memory model and I/O register map.
+- `docs/hdl-coding-guidelines/` — authoritative Cyclone V RTL style bundle.
+- `rtl/tms34010_pkg.sv` — sole home for shared architectural constants and
+  typedefs; do not scatter magic architectural values through the RTL.
+- `sim/models/sim_memory_model.sv` — behavioral, nonsynthesizable bit-addressed
+  memory used by integration tests.
+
+## Build, simulation, and lint
+
+The scripts support Questa/ModelSim when `vlog`, `vsim`, and `vlib` are
+available, and otherwise fall back to Verilator when installed:
+
+```sh
+scripts/sim.sh <tb_name>
+scripts/lint.sh
+scripts/synth_quartus.sh
+```
+
+Tool overrides are `VLOG`, `VSIM`, `VLIB`, `VERILATOR`, and `QUARTUS_SH`.
+Testbenches are self-checking and must print `TEST_RESULT: PASS`. A simulator
+exit code alone is not a passing result.
+
+`scripts/synth_quartus.sh` is currently only a placeholder/tool-discovery
+check. Its zero exit status is not evidence of synthesis, fit, timing closure,
+or Cyclone V compatibility. A real Quartus project, constraints, and reports
+remain future work.
+
+At the 2026-07-28 handoff, Verilator elaboration succeeds but reports two
+known width warnings in `tms34010_core.sv` (the short-branch displacement
+assignment and the field sign-bit index). Do not silently suppress new
+warnings or call a warning-bearing run "clean."
+
+## Change workflow
+
+Keep each implementation increment small enough to review and validate:
+
+1. Choose or add one numbered task in `tasks.md`.
+2. Record the specification source and observable acceptance criteria.
+3. Implement the smallest useful synthesizable change.
+4. Add or update self-checking tests under `sim/tb/`.
+5. Run `scripts/lint.sh`, the focused test, and proportionate regressions.
+6. Update affected architecture, assumptions, coverage, timing, or memory-map
+   documentation.
+7. Update `tasks.md` and `changelog.md`.
+8. Recheck `git diff` and `git status`.
+
+Do not commit or push unless the user asks. When the user requests a commit,
+keep one task per commit, stage files explicitly, and record the resulting
+commit hash in `tasks.md`. When the user requests publication, push only after
+the local commit and validation are confirmed. Report any authentication or
+network failure; never claim a push succeeded when it did not.
+
+Historical task entries and changelog entries describe what was true at the
+time. Correct current summaries when they drift, but do not rewrite historical
+acceptance criteria merely to make them read as current documentation.
+
+## HDL coding guidelines
+
+`docs/hdl-coding-guidelines/` is the authoritative Cyclone V bundle (target
+part `5CSEBA6U23I7`, DE10-Nano). Begin at `00-INDEX.md`.
+
+For new RTL, read at least:
+
+- `12-synthesizable-sv-subset.md`
+- `13-registers-and-combinational-blocks.md`
+- `14-finite-state-machines.md` when an FSM is involved
+- `16-resource-and-state-economy.md`
+- `17-era-faithful-microarchitecture.md`
+
+For review, also read `90-anti-patterns.md` and
+`91-core-bringup-checklist.md`. Load the memory, DSP, CDC, handshake, timing,
+and Quartus-report chapters when those topics are in scope.
+
+Two intentional project choices override the bundle's conventions without
+violating its contracts:
+
+- Reset is synchronous active-high `rst` (assumption A0003). Do not convert it
+  to active-low.
+- Every `rtl/` file starts with `` `default_nettype none `` and restores
+  `` `default_nettype wire `` at the end.
+
+## SystemVerilog rules
+
+Use:
+
+- `logic`, explicit widths, and named constants.
+- `always_ff` with nonblocking assignments for sequential state.
+- `always_comb` with blocking assignments and safe defaults.
+- typed enums for FSMs and packed structs for related control/data.
+- explicit reset behavior, default transitions, and a `default:` arm in every
+  `case`; `unique` or `priority` does not replace `default:`.
+- small composable modules with clear, bounded combinational paths.
+
+Forbid in synthesizable RTL:
+
+- `#` delays, `force`/`release`, `fork`/`join`, classes, dynamic arrays,
+  queues, DPI, file I/O, randomization, simulation system tasks, unbounded
+  `while`, runtime-variable loops, and simulation-only `initial` blocks.
+- `/` or `%`, except a compile-time power-of-two operation expressed as a
+  shift/mask or a dedicated, documented, tested multicycle divider.
+- accidental latches, combinational loops, hidden clock-domain crossings,
+  fabric-derived clocks, and magic architectural numbers.
+
+Large FPGA memories belong behind wrappers under `rtl/fpga/`; document read
+latency at each wrapper and do not assume combinational BRAM reads. Any CDC
+belongs in a clearly named CDC module and must be documented in
+`docs/timing_notes.md`.
+
+Graphics operations are hardware datapaths plus FSMs with counters, explicit
+memory transactions, and completion conditions. Never implement them as a
+software-style loop in a combinational block.
+
+## Before adding a module
+
+Write down:
+
+- purpose and specification citation;
+- ports and clock domains;
+- stored state and reset values;
+- combinational paths and FSM states;
+- expected latency and throughput;
+- expected ALM, register, RAM, and DSP use;
+- RAM/ROM inference and read latency, if any;
+- tests that cover normal, boundary, stall, and reset behavior.
+
+After implementation, review for latches, combinational loops, long paths,
+division/modulo, runtime loops, reset omissions, assignment misuse, poor
+memory inference, magic values, missing citations, and missing tests.
+
+## Handoff format
+
+Report the outcome, changed files, exact tests and results, documentation
+updates, known limitations, git state, and the next smallest useful task.
+Distinguish verified behavior from assumptions and from untested claims.

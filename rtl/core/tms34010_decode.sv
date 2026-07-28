@@ -3,15 +3,9 @@
 //
 // Combinational instruction decoder.
 //
-// Currently recognized:
-//   MOVI IW K, Rd  — `0x09C0 | (R<<4) | N`     +16-bit sign-extended imm
-//   MOVI IL K, Rd  — `0x09E0 | (R<<4) | N`     +32-bit imm (LO,HI)
-//   MOVK K, Rd     — `0x1800 | (K<<5) | (R<<4) | N`  (no flag update)
-//   ADD Rs, Rd     — `0100 000S SSSR DDDD`     (7-bit prefix 0x40)
-//                    Rs at bits[8:5], R at bit[4], Rd at bits[3:0].
-//                    Rs and Rd share the same file (architectural
-//                    constraint of TMS34010 reg-reg ops). Operation:
-//                    Rs + Rd → Rd; flags N/C/Z/V from the sum.
+// Recognition is current through Task 0117. The authoritative per-instruction
+// implementation/test ledger is docs/instruction_coverage.md; shared decoded
+// instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
 // Flag policy and encodings cite SPVU001A Appendix A (Instruction Set
 // summary chart, page A-14) and corresponding `docs/assumptions.md`
@@ -26,12 +20,6 @@
 //      `MOVI array_size, A2 → 0x09C2 0x0640`.)
 //   third_party/TMS34010_Info/bibliography/hdl-reimplementation/
 //     02-instruction-set.md  §"Encoding shape" + §"Move and load/store".
-//
-// Encoding layout (MOVI IW / IL share the top-10 prefix):
-//   bits[15:6] = 10'b00_0010_0111   (= 0x027)
-//   bit[5]     = 0 (MOVI IW, 16-bit imm) or 1 (MOVI IL, 32-bit imm)
-//   bit[4]     = R    (file bit: 0 = A file, 1 = B file)
-//   bits[3:0]  = N    (register index 0..15; idx 15 = SP alias)
 //
 // Synthesis notes:
 //   - One `always_comb` block.
@@ -808,7 +796,8 @@ module tms34010_decode
     // to the pixel at Rd's XY address (PSIZE-bit, with PPOP/T/PMASK), then
     // advances Rd by Rs as an XY add (X+X, Y+Y, no carry between halves —
     // reuses the ADDXY datapath). Rd is written back; no flags for W=0 window
-    // mode. Same-file reg-reg layout as ADDXY. Window modes deferred (A0031).
+    // mode. Same-file reg-reg layout as ADDXY. The core applies the Task 0112
+    // per-pixel window behavior when CONTROL.W is nonzero.
     if (top7 == DRAV_TOP7) begin
       decoded.illegal         = 1'b0;
       decoded.iclass          = INSTR_DRAV;
@@ -1476,11 +1465,11 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // PIXT (pixel transfer, LINEAR forms) — Task 0083. A pixel-size field
+    // PIXT (pixel transfer, LINEAR forms) — Tasks 0083 and 0089–0092. A
+    // pixel-size field
     // move: force_pixel makes the core use FS = PSIZE and zero-extend loads.
-    // Reuses the MOVE field store/load/M2M datapaths. Replace mode only:
-    // PMASK / transparency / pixel-processing (PPOP) are not yet applied
-    // (their reset defaults are no-op, so this is correct after reset).
+    // Reuses the MOVE field store/load/M2M datapaths. Store processing
+    // (PPOP, transparency, and PMASK) is applied downstream in the core.
     //   PIXT Rs,*Rd  (0xF800): store — all flags Unaffected.
     //   PIXT *Rs,Rd  (0xFA00): load  — V = (pixel != 0); N/C/Z Undefined
     //                                  (masked off here).
@@ -2051,8 +2040,8 @@ module tms34010_decode
     // (once per FETCH ack), so `pc_value` already equals
     // PC_original + 32 — matching the spec's PC'.
     //
-    // The absolute-form marker (disp8 == 0x80) remains deferred; only
-    // disp8 == 0x00 unlocks the long form here.
+    // Only disp8 == 0x00 unlocks the long form here. The absolute marker
+    // disp8 == 0x80 is decoded by the separate JAcc block below.
     // -----------------------------------------------------------------------
     if (instr[15:12] == JRCC_TOP4 &&
         instr[7:0] == 8'h00 &&
@@ -2107,7 +2096,8 @@ module tms34010_decode
 
     // FILL XY — like FILL L, but DADDR (B2) holds an XY value that the FILL
     // engine converts to a linear start address (CONVDP + OFFSET(B4) + PSIZE)
-    // at CORE_FILL_SETUP. Fixed opcode 0x0FE0. Window checking deferred.
+    // at CORE_FILL_SETUP. Fixed opcode 0x0FE0. The core implements all four
+    // window modes (Tasks 0105, 0107, and 0109).
     if (instr == 16'h0FE0) begin
       decoded.illegal         = 1'b0;
       decoded.iclass          = INSTR_FILL_XY;

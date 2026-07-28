@@ -1,9 +1,11 @@
 # Architecture
 
-> Status: **scaffold**. Nothing in the RTL/ directory is implemented yet beyond
-> a top-level skeleton. This file is the design intent. Each section is marked
-> with implementation status. As modules land, the corresponding section is
-> expanded with concrete signal lists, FSM tables, and timing diagrams.
+> Status: **implemented through Task 0117, with integration gaps**. The core
+> executes the instruction and graphics operations tracked in
+> `instruction_coverage.md`; I/O registers and interrupt entry are integrated.
+> Video timing and refresh exist as standalone modules. The reset-vector fetch,
+> host/memory fabric, bus arbitration, video/refresh integration, and physical
+> FPGA build remain open.
 
 ## Specification source
 
@@ -28,7 +30,7 @@ Every implementation decision must cite a section/page/file from the
 submodule. If it cannot, the assumption goes into `docs/assumptions.md` with
 a `TODO/spec-uncertain` marker.
 
-## Top-level block diagram (planned)
+## Top-level block diagram
 
 ```
                               tms34010_core
@@ -58,38 +60,42 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
                             └────────────────────────────────┘
 ```
 
-Solid blocks belong to Phase 1–2. Dashed (lower) blocks are Phase 3–9.
+The CPU, graphics execution engines, I/O register storage, and interrupt entry
+currently live in or directly under `tms34010_core`. The lower memory/host
+fabric remains planned; video timing and refresh are standalone blocks awaiting
+integration.
 
 ## Test substrate
 
 For tests beyond pure FSM-state checks, a behavioral memory model under
 `sim/models/sim_memory_model.sv` provides a request/ack-handshake-compliant
-16-bit-word store with one-cycle ack latency. The model is **not RTL** —
-it exists only to drive the core's memory interface with predictable
-content in simulation. It is replaced by `rtl/memory/tms34010_mem_if.sv`
-plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
+16-bit-word store with one-cycle ack latency. It supports arbitrary 1–32-bit
+fields at any bit address, including three-word straddles and
+read-modify-write preservation. The model is **not RTL**; it exists only to
+drive the core interface in simulation. A synthesizable external-memory
+fabric/controller has not landed.
 
-## Module map (planned)
+## Module map
 
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
-| `rtl/tms34010_pkg.sv`                   | 0     | **landed (skeleton)** | widths, basic typedefs; expanded each phase |
-| `rtl/core/tms34010_core.sv`             | 0–1   | **landed (skeleton)** | top-level wrapper; FSM scaffold; mem-IF stub |
+| `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0117** | multicycle CPU, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
-| `rtl/core/tms34010_regfile.sv`          | 2     | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 2R/1W; async read |
+| `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed**  | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR + N/C/Z flags |
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
-| `rtl/core/tms34010_decode.sv`           | 3     | **MOVI IW landed** | combinational decoder; recognizes MOVI IW (encoding A0012). Other encodings route to ILLEGAL. |
-| `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv (revisit if it gets large) | top-level control FSM |
+| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0117** | combinational decoder; unsupported encodings route to ILLEGAL |
+| `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
 | `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | not started | core vs. graphics vs. host arbitration |
-| `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not started | bit-addressed pixel address generator |
-| `rtl/graphics/tms34010_pixblt.sv`       | 7     | not started | block transfer FSM |
-| `rtl/graphics/tms34010_window.sv`       | 7     | not started | window clip / hit-test |
-| `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not started | plane mask + transparency |
-| `rtl/graphics/tms34010_line_draw.sv`    | 7     | not started | Bresenham line FSM |
+| `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
+| `rtl/graphics/tms34010_pixblt.sv`       | 7     | not separate | PIXBLT/FILL datapaths and FSM states currently reside in the core |
+| `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
+| `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
+| `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
 | `rtl/io/tms34010_io_regs.sv`            | 6     | **landed + wired** | 32×16-bit memory-mapped I/O register file (1988 UG Fig 6-1); plain R/W storage, I/O-space decode + index. Instantiated inside the core (Task 0082): I/O-space accesses are serviced on-chip — external write gated off, read data muxed/latched in. Side-effect/read-only register behaviors deferred (A0028). |
 | `rtl/video/tms34010_video.sv`           | 9     | **landed (standalone)** | HSYNC/VSYNC/blanking generator: free-running HCOUNT/VCOUNT off VCLK, wraps at HTOTAL/VTOTAL, sync/blank window compares, DPYINT scan-line strobe. Not yet wired to the I/O register timing values or a pixel clock (Task 0097). |
@@ -97,17 +103,17 @@ plus an external Cyclone V BRAM/SDRAM controller in Phase 6.
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
 
-Every module listed will be added as part of its phase's task series. None
-are stubbed silently — if decoded but unimplemented, decode raises an
-illegal-opcode trap (Phase 3 onward).
+Rows without files describe planned integration boundaries or possible
+refactoring, not stub modules. Unsupported instruction encodings route to the
+illegal-opcode path rather than silently doing nothing.
 
-## Datapath strategy (planned, Phase 1–2)
+## Datapath strategy
 
 - **Width**: TMS34010 is a 32-bit architecture with a 16-bit external
   multiplexed bus. Internally, ALU is 32 bits; external bus is 16 bits and
-  cycles are multi-phase. The exact phasing comes from the 1988 User's
-  Guide chapter on bus cycles — captured in `docs/timing_notes.md` once
-  Phase 6 starts.
+  cycles are multiphase. Exact physical phasing is not implemented; it must be
+  taken from the User's Guide bus-cycle chapter and captured in
+  `docs/timing_notes.md` when the memory fabric is designed.
 - **Pipelining**: initial implementation is multi-cycle FSM, not pipelined.
   This keeps the first ISA implementation reviewable. Pipelining is a
   Phase 10 candidate.
@@ -115,9 +121,11 @@ illegal-opcode trap (Phase 3 onward).
   This is the central architectural quirk. Address handling is captured in
   `docs/memory_map.md`.
 
-## Control structure (planned)
+## Control structure
 
-Top-level FSM (Phase 1 skeleton, expanded in Phase 3):
+The top-level FSM began with the sequence below and now includes immediate
+fetch, divide, memory, interrupt-entry, and graphics-engine substates. The
+authoritative state enum is `core_state_t` in `rtl/tms34010_pkg.sv`.
 
 ```
 CORE_RESET  ──▶ CORE_FETCH
@@ -129,8 +137,9 @@ CORE_MEMORY ──▶ CORE_WRITEBACK
 CORE_WRITEBACK ─▶ CORE_FETCH
 ```
 
-Multi-cycle graphics operations are sub-FSMs invoked from `CORE_EXECUTE`
-and return to `CORE_WRITEBACK` only when done.
+Multicycle graphics operations are FSM branches invoked from `CORE_EXECUTE`
+and return to writeback only when their memory loops and architectural
+writebacks complete.
 
 **Maskable-interrupt entry** (Task 0100): `tms34010_int_ctrl` is instantiated
 in the core; `int_req` (ST.IE=1 and an enabled INTPEND bit set, via the
@@ -156,12 +165,13 @@ HSTCTLH.NMI on entry (a one-cycle `nmi_clear` into `tms34010_io_regs`,
 asserted at `CORE_INT_DONE`) — mandatory, since a non-maskable request would
 otherwise re-fire every cycle.
 
-## Memory interface (planned)
+## Memory interface
 
-A single `request/valid/ready` interface from the core to the external
-bus. The on-chip bus arbiter (Phase 6) multiplexes core fetch, core data,
-graphics engine, host interface, and video refresh into the same external
-bus, in priority order matching the User's Guide.
+The core exposes one request/ack interface for instruction fetches, data
+accesses, and graphics transactions. I/O addresses are decoded on-chip, but
+the core still emits an external cycle and uses its ack (A0028). A future bus
+arbiter must add host, video, and refresh clients and reproduce the required
+priority.
 
 | Signal     | Dir   | Width | Purpose                                |
 |------------|-------|-------|----------------------------------------|
@@ -173,36 +183,37 @@ bus, in priority order matching the User's Guide.
 | `mem_rdata`| in    | 32    | read data, aligned to field            |
 | `mem_ack`  | in    | 1     | one-cycle pulse: data valid / write done |
 
-Concrete signal list is provisional. Updated when `rtl/memory/tms34010_mem_if.sv`
-lands in Phase 1.
+This is the current core interface. Its physical 16-bit bus sequencing,
+wait-state behavior, and arbitration remain outside the core.
 
-## Graphics subsystem (planned, Phase 7)
+## Graphics subsystem
 
-Hardware datapath, not software loop. Each high-level operation (PIXBLT,
-FILL, LINE) is its own FSM with explicit:
+PIXT, PIXBLT, FILL, DRAV, and LINE are implemented as hardware datapaths and
+FSM branches with explicit:
 
 - pixel-address generator (bit-addressed)
 - plane mask + transparency stage
 - window-clip stage
 - memory-request issuer
 
-Throughput and latency targets are captured in `docs/timing_notes.md`
-when the modules land.
+These engines currently share implementation inside `tms34010_core`.
+Extraction into dedicated modules is optional refactoring and must not precede
+functional or synthesis evidence that justifies it.
 
-## Host interface (planned, Phase 6)
+## Host interface (not implemented)
 
-The TMS34010 exposes HSTCTL, HSTDATA, HSTADRH/L registers to a host CPU
-for control and shared-memory access. Initial implementation is a
-synchronous slave port; signal-level pin-compat with the original device
-is **not** a goal — the project is an FPGA core, not a drop-in replacement.
+The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control
+and shared-memory access. The intended first implementation is a synchronous
+slave port; signal-level pin compatibility with original silicon is not a
+goal.
 
-## Video / display (planned, Phase 9)
+## Video / display (standalone blocks only)
 
-Video timing is a separate FSM driven by VTIM/HTIM-class registers.
-Initial target is producing HSYNC/VSYNC/BLANK + pixel-clock at standard
-arcade resolutions. VRAM shift-register cycles (the original device's
-TMS34061-style serial output) are reproduced functionally; the exact
-DRAM/VRAM electrical interface is not.
+`tms34010_video` produces counters, sync, blanking, and a display-interrupt
+pulse from explicit timing-register inputs. `tms34010_refresh` produces the
+refresh row and request cadence. Neither block is connected to the core's I/O
+registers, interrupt-pending bits, pixel-memory path, or a memory arbiter.
+VRAM shift-register behavior and pixel output are not implemented.
 
 ## Clock / reset strategy
 
@@ -214,16 +225,29 @@ DRAM/VRAM electrical interface is not.
 
 ## FPGA resource strategy
 
-- All architecturally-sized memories use the `rtl/fpga/bram_*.sv` wrappers
-  so the BRAM inference style is in one place and easy to retarget.
+- Future architecturally-sized memories should use `rtl/fpga/bram_*.sv`
+  wrappers so inference stays localized. Those wrappers do not exist yet.
 - Avoid wide muxes where a small FSM can sequence the choice across
   cycles instead.
 - No vendor-locked primitives in core RTL. Cyclone V-specific primitives
   live only under `rtl/fpga/` and are wrapped.
 
-## What is NOT implemented yet
+## Current implementation gaps
 
-Everything below the FSM scaffold. The current skeleton elaborates and
-clears reset; it does not fetch real instructions, has no register file
-content, and the memory interface is a stub. This is intentional and
-tracked in `tasks.md`.
+- Architectural reset-vector fetch; the core still begins at `RESET_PC = 0`
+  (A0008).
+- Two multiword MOVB forms: offset-to-offset and absolute-to-absolute.
+- A synthesizable memory fabric, physical external-bus sequencing, wait-state
+  validation, cache, and arbitration among CPU/graphics/host/video/refresh.
+- Host interface behavior.
+- Full I/O side effects/read-only semantics and internally completed I/O
+  accesses.
+- Integration of video timing and refresh with I/O registers, interrupts, and
+  memory; display fetch and pixel output.
+- Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
+  Cyclone V resource/Fmax results.
+- A cycle-accuracy contract against original silicon.
+
+The instruction table and assumption log contain narrower semantic
+uncertainties. Treat them as part of the backlog even when the corresponding
+instruction is functionally implemented.

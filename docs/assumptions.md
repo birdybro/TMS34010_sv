@@ -159,7 +159,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0010 — Status-register bit layout placeholder
 - **Date**: 2026-05-12
-- **Status**: active, **TODO/spec-uncertain**
+- **Status**: historical placeholder; **RESOLVED** by the later A0010 entry
+  from Task 0042.
 - **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/03-registers.md`
   §"Status register" ("Read SPVU001A Chapter 2 for the exact bit
   layout").
@@ -382,13 +383,14 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0020 — MOVE family encodings (and a corrected reg-to-reg opcode)
 - **Date**: 2026-05-12; **CORRECTED 2026-05-30 (Task 0058)**.
-- **Status**: reg-to-reg MOVE resolved/implemented at the correct opcode; field-size machinery for the *indirect/field* MOVE variants still deferred.
+- **Status**: MOVE field machinery complete. Seven of nine MOVB forms are
+  implemented; the two multiword memory-to-memory forms remain illegal.
 - **Source**: SPVU001A page 12-126 (MOVE Rs,Rd detail) + the Move-Instructions summary table, cross-checked against BOTH the 1986 first edition (`1986_SPVU001...`) and the 1988 User's Guide. Object-code example Figure 12-3: `MOVE A0,B1 = 0x4E01`.
 - **CORRECTION**: the original A0020 misread the "A-14" chart. It took the row `1001 00FS SSSR DDDD` to be reg-to-reg MOVE; that row is actually **MOVE Rs,\*Rd+** (postincrement register-to-indirect, a memory *store*). Register-to-register MOVE is **`0100 11MS SSSR DDDD`** (base 0x4C00). The decoder and every stack testbench that set SP via "MOVE A0,A15" used the wrong 0x9000 opcode; they "passed" only because decoder + tests shared the same wrong encoding. Task 0058 relocates reg-to-reg MOVE to 0x4C00, adds the M-bit cross-file support, and fixes all affected testbenches.
 - **Reg-to-reg MOVE (now implemented, Task 0058)**: `0100 11MS SSSR DDDD`. NOT a field move — full 32-bit copy, field size has no effect, so there is **no F bit**. M=bit[9]: 0 ⇒ same file, 1 ⇒ cross-file. R=bit[4]: file for both (M=0) or the *source* file (M=1; destination is the other file). This is the only MOVE that crosses register files. Status: N=data[31], Z=(data==0), V=0, C Unaffected. New struct field `rs_file` carries the (possibly different) source file; the core reads it for `rf_rs1_file` only on `INSTR_MOVE_RR`.
-- **Indirect MOVE forms implemented (FS=32 only)**: register↔indirect (plain/postinc/predec, Tasks 0059/0060) and indirect↔indirect (plain Task 0061; postinc/predec Task 0062) are done for field-size 32, word-aligned. The F bit and runtime FS0/FS1 are ignored — at FS=32 the field fills the 32-bit word so FE is a no-op. **Rs==Rd corner (indirect-to-indirect inc/dec):** for postincrement the spec (12-138) defines it — data written to the incremented location, register steps once — and the implementation matches it. For *predecrement* with Rs==Rd the spec is silent; the implementation single-steps the register and the write address ends up doubly-decremented (a documented deviation, pathological case).
-- **Still deferred**: arbitrary field sizes (1..31), unaligned pointers, fields straddling word boundaries, FE sign/zero extension, and the MOVE offset/absolute addressing modes. That hardware (field-extract/insert + a memory model beyond 16/32-bit aligned access) is the real "Phase 6" work; those opcodes fall through to ILLEGAL until built. See [[a0026-mmtm-mmfm-mask-mapping]] for the related multi-register moves (already done).
-- **Field-machinery progress (Task 0076)**: the memory-model half of the deferred field machinery now exists — `sim_memory_model` reads/writes 1..32-bit fields at any bit address, straddling word boundaries, with read-modify-write preservation (tb_mem_field). This is sim-only; the core still issues only aligned 16/32-bit accesses. The remaining core-side work (issue mem_size=FS, FE-driven sign/zero extension on loads, FS-aware ±pointer step) is the next increment of the arc.
+- **Historical state after Task 0062 — indirect MOVE forms, FS=32 only**: register↔indirect (plain/postinc/predec, Tasks 0059/0060) and indirect↔indirect (plain Task 0061; postinc/predec Task 0062) were initially implemented for field-size 32, word-aligned. **Rs==Rd corner (indirect-to-indirect inc/dec):** for postincrement the spec (12-138) defines it — data written to the incremented location, register steps once — and the implementation matches it. For *predecrement* with Rs==Rd the spec is silent; the implementation single-steps the register and the write address ends up doubly-decremented (a documented deviation, pathological case).
+- **Historical backlog after Task 0064 (resolved by Tasks 0076–0079)**: arbitrary field sizes (1..31), unaligned pointers, fields straddling word boundaries, FE sign/zero extension, and the MOVE offset/absolute addressing modes were deferred at this point.
+- **Task 0076 checkpoint**: the memory-model half of the field machinery landed — `sim_memory_model` reads/writes 1..32-bit fields at any bit address, straddling word boundaries, with read-modify-write preservation (`tb_mem_field`). Tasks 0077–0079 then connected this machinery to every MOVE addressing form.
 - **Field-machinery progress (Task 0077)**: the register↔indirect MOVE forms (FIELD_STORE/FIELD_LOAD: plain, postinc, predec) are now **field-size aware**. The core derives `mv_fs`/`mv_fe` from the F-selected ST pair (FS0/FE0 or FS1/FE1; FS=0 ⇒ 32), drives `mem_size = mv_fs`, sign/zero-extends loads (`mv_load_data`) per FE, and steps pointers by ±FS. Unaligned/straddling fields are handled by the Task 0076 memory model. **Consequence**: because MOVE now honors the actual FS, the existing FS=32 round-trip tests (tb_move_indirect, tb_move_indirect_incdec) had to issue `SETF FS0=0` first — the reset ST has FS0=16, so without it those moves would transfer 16 bits. **Still FS=32-only**: the M2M (indirect↔indirect), offset, and absolute MOVE forms — their field-awareness is a later task.
 - **Field-machinery progress (Task 0078)**: the OFFSET (0xB000/0xB400) and ABSOLUTE (0x0580/0x05A0) MOVE forms are now field-size aware too — same `mv_fs`/`mv_load_data` machinery (no pointer step). tb_move_offset / tb_move_abs now SETF FS0=0 up front; new tb_move_offabs_field covers FS=8/16 and an FS=12 straddling absolute field.
 - **Field machinery COMPLETE for MOVE (Task 0079)**: the M2M (indirect↔indirect) forms (0x8800/0x9800/0xA800) are now field-size aware — both steps of the 2-step CORE_MEMORY sequence use `mem_size = mv_fs` (read FS bits into move_data_q, write its low FS bits), and both pointers step by ±FS. No FE extension (mem→mem). tb_move_m2m / tb_move_m2m_incdec now SETF FS0=0; new tb_move_m2m_field covers FS=8 plain/postinc and an FS=12 copy with both src and dst fields straddling word boundaries. **All MOVE addressing forms now honor arbitrary FS 1..31 + FE, unaligned, and word-straddling fields.** The remaining field-related item is **MOVB** (byte move, FS fixed at 8 — a thin decode layer that forces FS=8 over this machinery, independent of ST).
@@ -428,6 +430,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
   Codes not listed (1000, 1100..1111) are V/NV/P/N and the JRYxx XY-compare codes, deferred for a later task.
 - **Implementation**: the package `CC_*` parameters were re-pointed at the correct codes. The decoder accepts the 11 codes above; other JRcc-shape codes still fall through to ILLEGAL (defensive). The core's `branch_taken` evaluator gained four new arms for LT/LE/GT/GE.
+- **Task 0101 update**: the five remaining arithmetic codes were implemented:
+  C/B=`1000`, V=`1100`, NV=`1101`, N=`1110`, and NN=`1111`. JRcc and JAcc now
+  recognize all 16 codes, with `tb_jrcc_arith` covering take/skip behavior.
 - **Tests**: `tb_jrcc_signed.sv` exercises all four signed cc's both directions; `tb_jrcc_short.sv` and `tb_jrcc_unsigned.sv` continue to pass with the corrected EQ/NE constants (their encoding helpers compose the cc by name, so changing the constant value made the assembled instructions match the spec).
 - **Lesson** (also captured in the `pdf-layout-for-charts` memory): always use `pdftotext -layout` for tabular spec material. The original extraction without `-layout` is the root cause of the bug fixed here.
 
@@ -532,8 +537,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   (0..0x10) that don't distinguish signed vs unsigned `>`. XY screen
   coordinates are sometimes treated as signed for clipping.
 - **How to apply**: if a MAME/silicon cross-check shows signed comparison,
-  change the two `<` comparisons in the `subxy_flags` assign (core.sv) to
-  signed (`$signed(...) <`). CMPXY (future task) shares this convention.
+  change the two `<` comparisons in the `subxy_flags` assignment in core.sv
+  to signed comparisons. CMPXY is implemented with its separately specified
+  result-sign flag behavior and does not share this provisional choice.
 
 ## A0028 — I/O register integration into the core memory path
 - **Date**: 2026-05-31 (Task 0082).
@@ -564,54 +570,28 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   write (they write the low 16 bits) and 32-bit accesses would span two
   registers — neither is exercised by the implemented instruction set.
 
-## A0031 — Window checking: only W=3 (clip) implemented for FILL XY
-- **Date**: 2026-06-07 (Task 0105).
-- **Status**: partial implementation, explicitly scoped (NOT a silent stub).
-- **Source**: 1988 UG §7.10 (Window Checking): W=0 off; W=1 hit detection
-  (no draw, WV interrupt on a pixel inside); W=2 miss detection (abort + V-bit +
-  WV interrupt on a pixel outside); W=3 window clipping (draw inside, skip
-  outside). WSTART=B5/WEND=B6 are inclusive XY corners; WVP=INTPEND bit 11.
-- **Implemented**:
-  - **W=3 (clip)** for **FILL XY** (Task 0105) and **PIXBLT with an XY
-    destination** (Task 0106). Each pixel's absolute XY = (DADDR.X + col,
-    DADDR.Y + row); a pixel outside the inclusive [WSTART..WEND] rectangle is
-    left unchanged (write-back of the read destination, the same skip path as
-    transparency). PIXBLT preserves the raw XY DADDR (pblt_dst_xy_raw_q). Per
-    §7.10.3, FILL/PIXBLT in W=3 set NO V-bit and raise no interrupt — matched.
-  - **W=2 (miss detection)** for **FILL XY** (Task 0107) and **PIXBLT XY**
-    (Task 0108). All-or-nothing rectangle containment (the array's corners vs
-    [WSTART..WEND], evaluated at CORE_FILL_SETUP_WIN / CORE_PBLT_SETUP_WIN): if
-    the whole array fits → drawn, V=0; else → NOT drawn (CORE_FILL_WIN_MISS /
-    CORE_PBLT_WIN_MISS), V=1, and INTPEND.WV set (a one-cycle wvp_set side
-    channel into tms34010_io_regs). The V write reuses the status-register
-    flag-update port via the shared fill_win_flag_wb override.
-  - **W=1 (hit detection)** for **FILL XY** (Task 0109) and **PIXBLT XY**
-    (Task 0110). No pixels are ever drawn; the array's overlap with the window
-    is tested (from the latched WSTART/WEND in CORE_FILL_WIN_HIT /
-    CORE_PBLT_WIN_HIT). Overlap → V=0 and INTPEND.WV set (the "pick" found an
-    object); entirely outside → V=1, no interrupt. Same shared V-write /
-    wvp_set mechanism.
-- **NOT implemented (deferred)**:
-  - Window handling for LINE and PIXT (PIXT is per-pixel like DRAV; LINE aborts
-    on a violation). DRAV and LINE are fully windowed: DRAV W=1/2/3 (0111/0112),
-    LINE W=0 (0114) + W=3 clip (0115) + W=1/W=2 abort (0116, abort stops the
-    loop + sets INTPEND.WV; the WVP interrupt is serviced by the maskable
-    interrupt subsystem, whose pushed PC already points past the LINE). PIXT XY
-    is now also windowed (Task 0117 — CORE_PIXT_SETUP_WIN reads WSTART/WEND,
-    gated by pixt_xy_win so the shared MOVE path is otherwise untouched). **All
-    drawing instructions now support window checking.**
-  These behave as W=0 (no window) for the not-yet-covered instructions.
-  **Recorded here, not silently stubbed; see docs/instruction_coverage.md.**
-
-**Window checking is COMPLETE for both array engines**: FILL XY and PIXBLT XY
-each implement all four CONTROL.W modes (W=0 off / W=1 hit / W=2 miss / W=3
-clip), with the V-bit and WV-interrupt (INTPEND bit 11) semantics per §7.10.
-- **How to apply / extend**: the clip predicate (fill_in_window / fill_clip_out)
-  and the WSTART/WEND read (CORE_FILL_SETUP_WIN) in tms34010_core.sv are the
-  template. W=2 adds "any pixel outside ⇒ V=1 + WVP"; W=1 adds "any pixel inside
-  ⇒ WVP, draw nothing"; both tie into the now-complete interrupt subsystem
-  (INTPEND bit 11 = INT_WV_BIT). Replicate the XY tracking for the PIXBLT engine
-  (pblt_* already tracks its own col/row).
+## A0031 — Window-checking scope and implementation
+- **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117).
+- **Status**: implemented for every drawing instruction currently present.
+- **Source**: 1988 UG §7.10 (Window Checking): W=0 off; W=1 hit detection;
+  W=2 miss detection; W=3 clipping. WSTART=B5 and WEND=B6 are inclusive XY
+  corners; the window-violation pending bit is INTPEND.WV (bit 11).
+- **Array engines**: FILL XY and every PIXBLT with an XY destination implement
+  all four modes. W=1 performs no drawing and reports overlap; W=2 requires
+  full rectangle containment; W=3 clips per pixel.
+- **Incremental engines**: DRAV implements its per-pixel W=1/2/3 rules and
+  always performs the XY advance. LINE clips in W=3 and aborts on the first
+  hit/miss condition in W=1/W=2. PIXT XY performs a per-pixel test before its
+  read-modify-write.
+- **Status/interrupt behavior**: the shared V update and `wvp_set` side channel
+  implement the specified V/INTPEND.WV outcomes. The maskable-interrupt path
+  can service WV after the drawing instruction reaches its boundary.
+- **Non-XY forms**: window checking is tied to XY-addressed drawing forms, as
+  represented in the instruction table. Do not extend it to ordinary field
+  MOVE traffic sharing the same memory states.
+- **Tests**: `tb_fill_window`, `tb_fill_w1`, `tb_fill_w2`,
+  `tb_pixblt_window`, `tb_pixblt_w1`, `tb_pixblt_w2`, `tb_drav_win`,
+  `tb_line_win`, `tb_line_abort`, and `tb_pixt_win`.
 
 ## A0030 — Maskable-interrupt entry clears only ST.IE (preserves other ST bits)
 - **Date**: 2026-06-04 (Task 0100).
@@ -656,13 +636,13 @@ clip), with the V-bit and WV-interrupt (INTPEND bit 11) semantics per §7.10.
 
 ## TODO / spec-uncertain (waiting on detailed read)
 
-- Exact register file layout: how A15/B15 alias to SP, and how the B-file
-  graphics control registers map (B0–B14 contents) — needs the User's
-  Guide chapter on registers to be cited per-register.
-- Exact status-register bit layout and flag semantics for arithmetic vs.
-  logical ops — needed before Phase 2 ALU.
-- Reset vector and reset-time register initialization values.
-- Interrupt vector table layout and trap-entry sequence (Phase 8).
-- Field-size 0 semantics (some TI parts treat it as 32, others as illegal).
-- Bus cycle phasing for unaligned field accesses crossing a 16-bit external
-  bus boundary (Phase 6).
+- Architectural reset-vector fetch and reset-time sequencing (A0008).
+- Remaining per-instruction flag nuances still marked provisional in earlier
+  entries; do not rely on the age of an entry as evidence it was resolved.
+- SUBXY unsigned-vs-signed greater-than behavior (A0027).
+- Exact hardware-interrupt post-entry ST behavior beyond clearing IE (A0030).
+- Whether FILL XY writes back DADDR in linear or XY form (A0029).
+- Physical bus-cycle phasing and wait-state behavior for unaligned fields
+  crossing the original 16-bit external bus.
+- I/O side effects, on-chip completion timing, and host-visible semantics not
+  yet implemented by `tms34010_io_regs`.

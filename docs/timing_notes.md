@@ -1,26 +1,29 @@
 # Timing notes
 
-> Status: **scaffold**. Concrete numbers go here as modules land and as
-> Quartus timing reports become available.
+> Status: **functional latency notes only**. RTL is implemented through Task
+> 0117, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> Every path/resource assessment below is therefore a watch item, not measured
+> Cyclone V evidence.
 
 ## Known long paths (planned watchlist)
 
 | Path                                | Phase introduced | Status   | Mitigation if needed |
 |-------------------------------------|------------------|----------|----------------------|
-| Decode → ALU operand mux            | 3                | planned  | pipeline decode/execute boundary if Fmax suffers |
-| Bit-addressed memory IF alignment   | 1 / 6            | planned  | register alignment shifter output if combinational shift is too wide |
-| PIXBLT memory pipeline              | 7                | planned  | natively multi-cycle; register every memory hand-off |
-| Wide barrel shifter (field extract) | 2                | planned  | DSP block or staged shifter on Cyclone V |
+| Decode → ALU operand mux            | 3                | landed, unmeasured | pipeline decode/execute boundary if Fmax suffers |
+| Bit-addressed field/XY address logic| 5 / 7            | landed in core, unmeasured | register conversion/extract paths if combinational logic is too wide |
+| PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
+| Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
 ## Multi-cycle operations
 
-- **DIVU (and future DIVS/MODU/MODS)** — `tms34010_divider` (restoring
+- **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on
   overflow it short-circuits to done in 2 cycles. No memory transactions.
   Done: level-high `done` in the result cycle; the core leaves CORE_DIVIDE
-  for WRITEBACK on it. Not interruptible (no interrupt model yet). The
+  for WRITEBACK on it. Not interruptible; interrupt requests are sampled only
+  at `CORE_FETCH` instruction boundaries. The
   restoring step (33-bit compare/subtract) is the per-iteration critical
   path — short, but pipeline the compare if a wider divisor path ever
   appears.
@@ -55,9 +58,9 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## FPGA timing concerns
 
-- Single core clock; target Fmax is **not** set yet — measured after
-  Phase 1 skeleton synthesizes. Initial sanity target: clear 50 MHz on
-  Cyclone V 5CGXFC6, then ratchet up.
+- Single core clock; target Fmax is **not** set yet. Initial sanity target:
+  clear 50 MHz on the documented Cyclone V `5CSEBA6U23I7`, then set the real
+  target from system requirements and measured reports.
 - Avoid combinational paths longer than ~10 LUT levels. If a path goes
   longer, register it or note the exception here.
 - All clock-domain crossings (host interface, video) must be wrapped in

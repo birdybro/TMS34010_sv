@@ -1,6 +1,10 @@
 # Tasks
 
-## Current Milestone: Phase 3 — Instruction fetch/decode
+## Current Milestone: Agent handoff and cross-phase integration
+
+The implementation is complete through Task 0117. Task 0118 reconciles the
+repository guidance, status summaries, and local validation entry points for
+continued work. No later implementation task has been selected yet.
 
 ## Task index
 
@@ -80,6 +84,50 @@
 | 0072 | DIVU unsigned divide + multi-cycle divider   | complete |
 | 0073 | MODU unsigned modulo (reuses divider)        | complete |
 | 0074 | DIVS / MODS signed divide & modulo           | complete |
+| 0075 | MPYS / MPYU variable multiplier width (FS1 != 32) | complete |
+| 0076 | sim memory arbitrary bit-field read/write | complete |
+| 0077 | field-size-aware MOVE register/indirect | complete |
+| 0078 | field-size-aware MOVE offset and absolute forms | complete |
+| 0079 | field-size-aware MOVE memory-to-memory | complete |
+| 0080 | MOVB (move byte), FS forced to 8 | complete |
+| 0081 | I/O register file foundation | complete |
+| 0082 | Wire I/O registers into the core memory path | complete |
+| 0083 | PIXT linear forms | complete |
+| 0084 | CVXYL conversion | complete |
+| 0085 | XY-addressed PIXT load/store | complete |
+| 0086 | XY-to-XY PIXT memory-to-memory | complete |
+| 0087 | FILL L engine | complete |
+| 0088 | FILL XY engine | complete |
+| 0089 | PIXT transparency | complete |
+| 0090 | PIXT plane masking | complete |
+| 0091 | PIXT Boolean pixel processing | complete |
+| 0092 | PIXT arithmetic pixel processing | complete |
+| 0093 | FILL pixel processing | complete |
+| 0094 | PIXBLT L,L | complete |
+| 0095 | PIXBLT XY variants | complete |
+| 0096 | PIXBLT binary-source color expansion | complete |
+| 0097 | Standalone video timing generator | complete |
+| 0098 | Standalone maskable-interrupt priority encoder | complete |
+| 0099 | Standalone DRAM-refresh generator | complete |
+| 0100 | Maskable-interrupt entry integration | complete |
+| 0101 | Complete JRcc/JAcc arithmetic condition codes | complete |
+| 0102 | Interrupt/RETI round-trip integration test | complete |
+| 0103 | Nonmaskable interrupt via HSTCTLH | complete |
+| 0104 | NMI/maskable-interrupt priority test | complete |
+| 0105 | FILL XY window clipping (W=3) | complete |
+| 0106 | PIXBLT XY window clipping (W=3) | complete |
+| 0107 | FILL XY window miss detection (W=2) | complete |
+| 0108 | PIXBLT XY window miss detection (W=2) | complete |
+| 0109 | FILL XY window hit detection (W=1) | complete |
+| 0110 | PIXBLT XY window hit detection (W=1) | complete |
+| 0111 | DRAV, W=0 | complete |
+| 0112 | DRAV window checking (W=1/2/3) | complete |
+| 0113 | Widen core state enum for LINE | complete |
+| 0114 | LINE Bresenham engine, W=0 | complete |
+| 0115 | LINE window clipping (W=3) | complete |
+| 0116 | LINE window abort modes (W=1/2) | complete |
+| 0117 | PIXT XY per-pixel window checking | complete |
+| 0118 | Migrate agent guidance and restore local validation entry points | complete |
 
 ---
 
@@ -3589,6 +3637,39 @@ Docs: instruction_coverage.md (PIXT XY row), assumptions.md (A0031),
   changelog.md, tasks.md.
 Commit:
 - 5089ca2
+
+---
+
+### Task 0118: Migrate agent guidance and restore local validation entry points
+Status: complete
+Dependencies: none (documentation and developer-tooling handoff).
+Acceptance Criteria:
+- Replace the root `CLAUDE.md` with repository-wide `AGENTS.md` guidance that
+  preserves the specification, HDL-style, testing, and documentation contracts
+  while removing Claude-specific behavior and automatic commit/push assumptions.
+- Reconcile the current milestone and task index with the implementation,
+  which is complete through Task 0117.
+- Make the documented scripts executable and let `scripts/lint.sh` and
+  `scripts/sim.sh` fall back to Verilator when Questa/ModelSim is unavailable.
+- Refresh the current-state summaries in the README and core project docs
+  without rewriting historical task/changelog records.
+- Record a concise, evidence-based implementation map and next-step backlog for
+  the next coding session.
+Tests:
+- `scripts/lint.sh` runs through the available Verilator installation; known
+  width warnings are reported, not hidden.
+- `scripts/sim.sh tb_smoke` prints `TEST_RESULT: PASS`.
+- At least the latest graphics/window test (`tb_pixt_win`) passes through the
+  same script.
+- Shell syntax checks pass for all scripts.
+Docs:
+- `AGENTS.md`, `README.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/instruction_coverage.md`, `docs/memory_map.md`,
+  `docs/timing_notes.md`, plus stale current-state header comments in the
+  package/core/decode/status/I/O RTL files.
+Commit:
+- pending (uncommitted handoff changes)
 
 ---
 

@@ -11,9 +11,9 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Phase 0: skeleton — only the typedefs/widths needed by the core FSM
-// scaffold are defined here. Concrete architectural details (status register
-// layout, register file indices, instruction word fields) land in Phase 1+.
+// Current through Task 0117: architectural widths and register layouts,
+// instruction/control types, I/O fields, interrupt vectors, and the CPU/
+// graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -341,24 +341,22 @@ package tms34010_pkg;
   parameter int unsigned CTRL_PPOP_HI  = 14;
 
   // ---------------------------------------------------------------------------
-  // Instruction word + decoded-instruction skeleton
+  // Instruction word + decoded-instruction control
   //
   // Spec: bibliography/hdl-reimplementation/02-instruction-set.md
   //   §"Encoding shape": "16-bit-aligned half-words ... The decode space is
   //   dense — there is no easy 'top-bits-give-class' partition. Use the
   //   SPVU004 opcode chart ... rather than hand-rolling the decoder."
   //
-  // Phase 3 skeleton: the only field populated by decode is `illegal`. The
-  // rest of `decoded_instr_t` is intentionally absent until specific
-  // instructions are added in Task 0011 onwards (one per task, each citing
-  // the SPVU004 opcode-chart row that defines its encoding).
+  // `decoded_instr_t` carries instruction class, operands, memory/extension
+  // requirements, writeback enables, and the graphics-specific mode flags.
   // ---------------------------------------------------------------------------
   parameter int unsigned INSTR_WORD_WIDTH = 16;
   typedef logic [INSTR_WORD_WIDTH-1:0] instr_word_t;
 
   // Instruction class — used by the core control FSM to pick the
-  // decode/execute/memory/writeback path. Widened to 6 bits in Task
-  // 0029 when ADDC/SUBB pushed the count past 32.
+  // decode/execute/memory/writeback path. It has widened as classes were
+  // added; seven bits currently cover classes through INSTR_LINE.
   typedef enum logic [6:0] {
     INSTR_ILLEGAL    = 7'd0,
     INSTR_MOVI_IW    = 7'd1,  // MOVI IW K, Rd    — 16-bit sign-extended immediate
