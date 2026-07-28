@@ -6,14 +6,13 @@
 // Encoding (SPVU001A A-14):
 //   ADDK K,Rd  = 0001 00KK KKKR DDDD
 //   SUBK K,Rd  = 0001 01KK KKKR DDDD
-//   K in bits[9:5] (5-bit unsigned, zero-extended to 32 bits per A0018).
+//   K in bits[9:5] (1..31 directly; architectural 32 encoded as zero).
 //
 // Operations:
 //   ADDK:   K + Rd → Rd   (flags N/C/Z/V from sum)
 //   SUBK:   Rd - K → Rd   (flags N/C/Z/V from difference; C = borrow)
 //
-// Test does not exercise K=0 — that interpretation is hypothesis-tagged
-// in A0018. Use ADDK 1 / SUBK 1 if you need increment/decrement at K=1.
+// A zero K field is tested directly for both operations.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -106,6 +105,16 @@ module tb_addk_subk;
     end
   endtask
 
+  task automatic check_bit(input string label,
+                           input logic  actual,
+                           input logic  expected);
+    if (actual !== expected) begin
+      $display("TEST_RESULT: FAIL: %s: expected=%0b actual=%0b",
+               label, expected, actual);
+      failures++;
+    end
+  endtask
+
   initial begin : main
     int unsigned p;
     failures = 0;
@@ -135,6 +144,17 @@ module tb_addk_subk;
                addk_enc(5'd7, REG_FILE_B, 4'd5));
       failures++;
     end
+    // A zero opcode field represents architectural constant 32.
+    if (addk_enc(5'd0, REG_FILE_A, 4'd5) !== 16'h1005) begin
+      $display("TEST_RESULT: FAIL: ADDK 32,A5 encoding=%04h, expected 1005",
+               addk_enc(5'd0, REG_FILE_A, 4'd5));
+      failures++;
+    end
+    if (subk_enc(5'd0, REG_FILE_B, 4'd3) !== 16'h1413) begin
+      $display("TEST_RESULT: FAIL: SUBK 32,B3 encoding=%04h, expected 1413",
+               subk_enc(5'd0, REG_FILE_B, 4'd3));
+      failures++;
+    end
 
     // Program:
     //   MOVI 100, A1
@@ -149,6 +169,10 @@ module tb_addk_subk;
     //   SUBK 5, B1     → B1 = 0 (Z=1)
     //   MOVI 0x100, B2
     //   ADDK 16, B2    → B2 = 0x110 (B-file)
+    //   MOVI 0xFFFFFFF0, A5
+    //   ADDK 32, A5    → A5 = 0x10 (K field = 0)
+    //   MOVI 16, B3
+    //   SUBK 32, B3    → B3 = 0xFFFFFFF0, N=1/C=1/Z=0/V=0
     p = 0;
     p = place_movi_il(p, REG_FILE_A, 4'd1, 32'd100);
     u_mem.mem[p] = addk_enc(5'd5, REG_FILE_A, 4'd1);  p = p + 1;
@@ -168,6 +192,12 @@ module tb_addk_subk;
     p = place_movi_il(p, REG_FILE_B, 4'd2, 32'h0000_0100);
     u_mem.mem[p] = addk_enc(5'd16, REG_FILE_B, 4'd2); p = p + 1;
 
+    p = place_movi_il(p, REG_FILE_A, 4'd5, 32'hFFFF_FFF0);
+    u_mem.mem[p] = addk_enc(5'd0, REG_FILE_A, 4'd5);  p = p + 1;
+
+    p = place_movi_il(p, REG_FILE_B, 4'd3, 32'd16);
+    u_mem.mem[p] = subk_enc(5'd0, REG_FILE_B, 4'd3);  p = p + 1;
+
     repeat (3) @(posedge clk);
     rst = 1'b0;
 
@@ -180,9 +210,15 @@ module tb_addk_subk;
     check_reg("ADDK 1 wrap → A4 = 0", u_core.u_regfile.a_regs[4], 32'd0);
     check_reg("SUBK 5 → B1 = 0",    u_core.u_regfile.b_regs[1], 32'd0);
     check_reg("ADDK 16 → B2 = 0x110", u_core.u_regfile.b_regs[2], 32'h0000_0110);
+    check_reg("ADDK 32 → A5 = 0x10", u_core.u_regfile.a_regs[5], 32'h0000_0010);
+    check_reg("SUBK 32 → B3 = -16", u_core.u_regfile.b_regs[3], 32'hFFFF_FFF0);
+    check_bit("SUBK 32 sets N", u_core.u_status_reg.n_o, 1'b1);
+    check_bit("SUBK 32 sets borrow C", u_core.u_status_reg.c_o, 1'b1);
+    check_bit("SUBK 32 clears Z", u_core.u_status_reg.z_o, 1'b0);
+    check_bit("SUBK 32 clears V", u_core.u_status_reg.v_o, 1'b0);
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (6 ADDK/SUBK cases: increment, decrement, max-K, unsigned-wrap, zero-result, B-file)");
+      $display("TEST_RESULT: PASS (ADDK/SUBK constants 1..32, flags, and both files verified)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

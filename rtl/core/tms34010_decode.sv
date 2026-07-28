@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0128. The authoritative per-instruction
+// Recognition is current through Task 0129. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -581,7 +581,7 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // ADDK K, Rd  (K + Rd → Rd; K is 5-bit zero-extended per A0018)
+    // ADDK K, Rd  (K + Rd → Rd; encoded K=0 represents 32 per A0018)
     // -----------------------------------------------------------------------
     if (top6 == ADDK_TOP6) begin
       decoded.illegal         = 1'b0;
@@ -595,7 +595,7 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // SUBK K, Rd  (Rd - K → Rd; K is 5-bit zero-extended per A0018)
+    // SUBK K, Rd  (Rd - K → Rd; encoded K=0 represents 32 per A0018)
     // -----------------------------------------------------------------------
     if (top6 == SUBK_TOP6) begin
       decoded.illegal         = 1'b0;

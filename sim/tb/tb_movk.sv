@@ -12,7 +12,8 @@
 //     sequence, ST is still at its reset value (zeros).
 //
 // Encoding (A0013): MOVK K, Rd = bits[15:10]=6'b000110, bits[9:5]=K
-// (5-bit unsigned, zero-extended), bits[4:0]={file,idx}. Cross-checked
+// (1..31 directly, architectural 32 encoded as zero), bits[4:0]={file,idx}.
+// Cross-checked
 // against SPVU004 listing "MOVK 1, A12 → 0x182C" and "MOVK 8, SPTCH(B1)
 // → 0x1911".
 // -----------------------------------------------------------------------------
@@ -123,11 +124,17 @@ module tb_movk;
                movk_enc(5'd8, REG_FILE_B, 4'd1));
       failures++;
     end
+    // Architectural constant 32 has a zero K field.
+    if (movk_enc(5'd0, REG_FILE_A, 4'd1) !== 16'h1801) begin
+      $display("TEST_RESULT: FAIL: movk_enc(32,A1) = %04h, expected 1801",
+               movk_enc(5'd0, REG_FILE_A, 4'd1));
+      failures++;
+    end
 
     // Program: a few MOVK instructions covering K range edges.
     //   MOVK 1, A0      ← smallest non-zero
     //   MOVK 31, A14    ← largest 5-bit K, zero-extended to 32-bit
-    //   MOVK 0, A1      ← K=0 (literal zero per A0013)
+    //   MOVK 32, A1     ← architectural 32 uses encoded K field 0
     //   MOVK 16, B3     ← bit 4 of K set
     //   MOVK 5, B12     ← arbitrary
     u_mem.mem[0] = movk_enc(5'd1,  REG_FILE_A, 4'd0);
@@ -148,7 +155,7 @@ module tb_movk;
 
     check_reg("A0  after MOVK 1",  u_core.u_regfile.a_regs[0],  32'h0000_0001);
     check_reg("A14 after MOVK 31", u_core.u_regfile.a_regs[14], 32'h0000_001F);
-    check_reg("A1  after MOVK 0",  u_core.u_regfile.a_regs[1],  32'h0000_0000);
+    check_reg("A1  after MOVK 32", u_core.u_regfile.a_regs[1],  32'h0000_0020);
     check_reg("B3  after MOVK 16", u_core.u_regfile.b_regs[3],  32'h0000_0010);
     check_reg("B12 after MOVK 5",  u_core.u_regfile.b_regs[12], 32'h0000_0005);
 

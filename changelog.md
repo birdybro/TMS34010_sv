@@ -7,6 +7,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0129 — 5-bit constant zero encoding)
+- Corrected MOVK, ADDK, and SUBK so an all-zero five-bit K field selects
+  architectural constant 32 rather than literal zero, matching the
+  individual instruction pages.
+- Kept encoded constants 1 through 31, register-file selection, MOVK status
+  preservation, and ADDK/SUBK N/C/Z/V behavior unchanged.
+- Extended `tb_movk` and `tb_addk_subk` with exact zero-field opcodes,
+  constant-32 results, and a SUBK borrow/status case.
+- Resolved A0013 and A0018 and updated their instruction-coverage rows.
+- Validation: both focused benches PASS; `scripts/lint.sh` clean; full
+  regression 115/115 PASS.
+
 ### Added (Task 0128 — EMU handshake and halt state)
 - Implemented fixed opcode `0x0100` with active-high-RUN
   `run_emu_n_i` and active-low acknowledge `emua_n_o`, following the 1988

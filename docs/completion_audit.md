@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0128, with strict RTL
+> Baseline: functional implementation through Task 0129, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -28,6 +28,11 @@ pointer, register-file, and status-preservation coverage. Task 0128 closed
 EMU with explicit RUN-as-NOP, active-low acknowledge, halt-quiescence, and
 resume coverage. There are no unimplemented §12.3 rows.
 
+Task 0129 resolved A0013 and A0018 from the individual MOVK, ADDK, and SUBK
+pages: their five-bit field encodes constants 1 through 31 directly and
+constant 32 as zero. Exact zero-field result and arithmetic-status cases are
+now regression-locked.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -38,7 +43,7 @@ deviation:
   memory interface.
 - A0009: per-instruction N/C/Z/V write masks.
 - A0011: MOVI status behavior.
-- A0013 and A0019: K=0 interpretation for constant and shift families.
+- A0019: K-field interpretation and status behavior for the shift families.
 - A0025: REV value and EXGPC alignment.
 - A0027: SUBXY comparison signedness.
 - A0029: FILL XY DADDR writeback representation.

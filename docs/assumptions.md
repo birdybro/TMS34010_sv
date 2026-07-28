@@ -227,34 +227,22 @@ yet individually reconciled.
 ---
 
 ## A0013 — MOVK K=0 semantics + encoding
-- **Date**: 2026-05-12
-- **Status**: active (encoding confirmed; K=0 semantics is a working hypothesis)
-- **Source**: `third_party/TMS34010_Info/tools/assembler/TMS34010_Assembly_Language_Tools_Users_Guide_SPVU004.pdf`
-  pages containing:
-  - "MOVK K, Rd. Move Constant - 5 Bits. Operation: K → Rd. Move a
-    5-bit constant into the destination register. Note that this
-    instruction does not affect the status register."
-  - Assembler listings: "MOVK 1, A12 → 0x182C" and
-    "MOVK 8, B1 → 0x1911".
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0129)**.
+- **Status**: **RESOLVED** against the individual MOVK instruction page.
+- **Source**: 1988 TMS34010 User's Guide page 12-161. The assembler
+  listings `MOVK 1,A12 → 0x182C` and `MOVK 8,B1 → 0x1911` remain encoding
+  cross-checks.
 - **Conclusion**: `MOVK K, Rd` encodes as:
     bits[15:10] = 6'b000110  (= 0x06)
-    bits[9:5]   = K          (5-bit unsigned)
+    bits[9:5]   = K          (1..31 directly; value 32 encoded as zero)
     bit[4]      = R          (file: 0 = A, 1 = B)
     bits[3:0]   = N          (register index 0..15)
-  Operation: zero-extend K to 32 bits → Rd. Status register
-  unchanged.
-- **K=0 hypothesis**: Per the manual text "Move a 5-bit constant",
-  K=0 is treated as the literal value 0 (clearing the register).
-  Some other K-form instructions in the TMS34010 ISA (notably ADDK
-  and SUBK) special-case K=0 to mean K=32 because adding/subtracting
-  0 would be a no-op; MOVK has no such no-op concern since "move 0"
-  is a useful operation in its own right. SPVU001A Appendix A should
-  be consulted to confirm.
-- **How to apply**: The implementation treats K=0 as literal 0. If
-  SPVU001A documents otherwise, change the K-extension in
-  `tms34010_decode.sv`'s MOVK arm and the alu_b mux for INSTR_MOVK
-  in `tms34010_core.sv`. `tb_movk` includes a `MOVK 0, A1` test
-  case that will catch the regression.
+  The selected constant is zero-extended to 32 bits and written to Rd; ST is
+  unchanged. Opcode-field zero means 32, not literal zero, so MOVK cannot
+  clear a register. The documented CLR alias is used for that purpose.
+- **Implementation/test**: the shared K-constant mux substitutes the named
+  `K_ZERO_VALUE` only for MOVK/ADDK/SUBK with an encoded zero field.
+  `tb_movk` executes word `0x1801` and requires A1=`0x00000020`.
 
 ---
 
@@ -319,31 +307,22 @@ yet individually reconciled.
 ---
 
 ## A0018 — ADDK / SUBK K-value treatment
-- **Date**: 2026-05-12
-- **Status**: active (encoding + literal-K behavior confirmed; K=0 → 32 hypothesis NOT implemented)
-- **Source**: SPVU001A A-14 chart rows:
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0129)**.
+- **Status**: **RESOLVED** against the individual instruction pages.
+- **Source**: 1988 TMS34010 User's Guide pages 12-40 (ADDK) and 12-251
+  (SUBK), plus the Appendix A chart rows:
     `ADDK K,Rd  Add Constant (5 Bits)   0001 00KK KKKR DDDD   NCZV`
     `SUBK K,Rd  Subtract Constant (5)   0001 01KK KKKR DDDD   NCZV`
-  Plus SPVU004 description "Add Constant (5 Bits) ... K + Rd → Rd" (no
-  mention of K=0 special case).
-- **Conclusion (implemented)**:
+- **Conclusion**:
   - Encoding: bits[15:10] = `6'b000100` (ADDK) or `6'b000101` (SUBK);
-    bits[9:5] = K (5-bit unsigned); bit[4] = R; bits[3:0] = Rd idx.
-  - ADDK operation: zero_extend(K, 32) + Rd → Rd.
-  - SUBK operation: Rd - zero_extend(K, 32) → Rd. Flags: standard
+    bits[9:5] encode values 1..31 directly and value 32 as zero; bit[4] = R;
+    bits[3:0] = Rd idx. Literal arithmetic constant zero is not encodable.
+  - ADDK operation: unsigned constant + Rd → Rd.
+  - SUBK operation: Rd - unsigned constant → Rd. Flags: standard
     N/C/Z/V from the result (C is borrow for SUBK).
-- **K=0 hypothesis (NOT implemented)**: Some TI K-form ISAs special-
-  case K=0 to mean K=32 (giving useful "add 32" / "subtract 32"
-  efficiency, since adding/subtracting literal 0 would be a no-op).
-  SPVU004's prose for ADDK/SUBK does not mention this; SPVU001A
-  pages on these instructions specifically would need a careful
-  visual read to confirm. The implementation treats K=0 literally
-  (ADDK 0 = no-op, SUBK 0 = no-op).
-- **How to apply**: If SPVU001A turns out to specify K=0 → K=32 for
-  these instructions, change the decoder K-zero-extension or the
-  alu_b mux entry to substitute 32'd32 for the K=0 case. `tb_addk_subk`
-  deliberately avoids K=0 to keep behavior unambiguous; add a
-  failing K=0 test case as a regression once the spec is confirmed.
+- **Implementation/test**: the core substitutes 32 for encoded zero only in
+  the three constant instructions. `tb_addk_subk` checks the exact zero-field
+  opcodes, both arithmetic results, and the final SUBK borrow/status result.
 
 ---
 

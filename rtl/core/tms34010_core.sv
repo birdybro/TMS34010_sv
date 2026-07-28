@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0128.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0129.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -1957,7 +1957,9 @@ module tms34010_core
       INSTR_XORI_IL: alu_b = imm32;
       INSTR_MOVK,
       INSTR_ADDK,
-      INSTR_SUBK,
+      INSTR_SUBK:   alu_b = (decoded.k5 == 5'd0)
+                          ? K_ZERO_VALUE
+                          : {{(DATA_WIDTH-5){1'b0}}, decoded.k5};
       INSTR_DSJ,
       INSTR_DSJEQ,
       INSTR_DSJNE,

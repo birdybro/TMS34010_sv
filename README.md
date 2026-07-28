@@ -6,14 +6,14 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0128. Task 0124
+Functional implementation work is complete through Task 0129. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
 the two missing memory-to-memory MOVE forms. Task 0128 implemented the EMU
-handshake and completed every row in the official instruction summary. The
-repository currently
-contains:
+handshake and completed every row in the official instruction summary. Task
+0129 corrected the MOVK/ADDK/SUBK encoded-zero constant to the specified
+value 32. The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,

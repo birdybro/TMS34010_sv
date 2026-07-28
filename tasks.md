@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0128. Task 0118
+The functional implementation is complete through Task 0129. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -13,7 +13,8 @@ Task 0124 established the primary-spec completion ledger that now drives
 further implementation. Task 0125 closed its logical-status, ANDI/ANDNI, CLR,
 and DEC findings. Task 0126 closed the first missing MOVE form.
 Task 0127 closed the second. Task 0128 implemented EMU and closed the last
-unimplemented official instruction-summary row.
+unimplemented official instruction-summary row. Task 0129 corrected the
+encoded-zero constant semantics for MOVK, ADDK, and SUBK.
 
 ## Task index
 
@@ -147,6 +148,7 @@ unimplemented official instruction-summary row.
 | 0126 | Implement MOVE offset-to-postincrement | complete |
 | 0127 | Implement MOVE absolute-to-postincrement | complete |
 | 0128 | Implement EMU pin handshake and halt state | complete |
+| 0129 | Correct 5-bit constant zero encoding | complete |
 
 ---
 
@@ -4061,6 +4063,39 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `1a47e5c` — Implement EMU handshake and halt state (Task 0128)
+
+---
+
+### Task 0129: Correct 5-bit constant zero encoding
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption audit).
+Spec sources:
+- 1988 TI TMS34010 User's Guide page 12-40, ADDK.
+- 1988 TI TMS34010 User's Guide page 12-161, MOVK.
+- 1988 TI TMS34010 User's Guide page 12-251, SUBK.
+Acceptance Criteria:
+- Treat a zero `K` opcode field as architectural constant 32 for MOVK,
+  ADDK, and SUBK.
+- Preserve literal encoded values 1 through 31 and keep each instruction's
+  existing register-file and status behavior.
+- Resolve A0013 and A0018 against their individual primary-spec pages.
+Tests:
+- Extend `tb_movk` with the specified MOVK 32 / encoded-zero result.
+- Extend `tb_addk_subk` with encoded-zero ADDK/SUBK result and flag cases.
+- Run both focused benches, strict RTL lint, and the complete self-checking
+  regression.
+- `scripts/sim.sh tb_movk` — PASS.
+- `scripts/sim.sh tb_addk_subk` — PASS.
+- `scripts/lint.sh` — PASS, strict Verilator lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 115/115 self-checking
+  testbenches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

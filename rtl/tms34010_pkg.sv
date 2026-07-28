@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0128: architectural widths and register layouts,
+// Current through Task 0129: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -255,6 +255,8 @@ package tms34010_pkg;
   // REV Rd result — chip-revision constant. The spec calls the value
   // "undefined", but the worked example shows REV → 0x00000008 (A0025).
   parameter logic [DATA_WIDTH-1:0] REV_VALUE = 32'h0000_0008;
+  // MOVK/ADDK/SUBK encode architectural constant 32 with a zero K field.
+  parameter logic [DATA_WIDTH-1:0] K_ZERO_VALUE = DATA_WIDTH'(32);
   // Trap-vector table top. Vector for TRAP N is TRAP_VECTOR_BASE - N*32.
   // Per SPVU001A page 12-252; TRAP 0's vector lives at the base itself.
   parameter logic [DATA_WIDTH-1:0] TRAP_VECTOR_BASE = 32'hFFFF_FFE0;
