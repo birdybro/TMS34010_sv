@@ -6,7 +6,7 @@
 // DDDD (0xE400). Rd is NOT modified; only the status bits are set, as if
 // RdX-RsX and RdY-RsY had been computed:
 //   N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15]
-// (X/Y result sign bits — unlike SUBXY's unsigned-borrow C/V).
+// (X/Y result sign bits — unlike SUBXY's signed greater-than C/V).
 //
 // Cases from TI's example table (Rs=A1=0x00090009, Rd varies); flags via
 // GETST snapshots; Rd checked unchanged.

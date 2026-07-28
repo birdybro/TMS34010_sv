@@ -511,24 +511,24 @@ yet individually reconciled.
   index used to drive `rf_rs1_idx` in core.sv.
 - **Spec source**: SPVU001A pages 12-109..12-112 (MMFM / MMTM).
 
-## A0027 — SUBXY / CMPXY greater-than comparison is unsigned
-- **Date**: 2026-05-31 (Task 0066).
-- **Status**: provisional (pending MAME cross-check).
-- **Source**: SPVU001A page 12-252 (SUBXY) Status Bits: "C: 1 if source
-  Y field > destination Y field", "V: 1 if source X field > destination
-  X field" — plus the worked example table on the same page.
-- **Assumption**: the `>` comparisons are UNSIGNED. SUBXY computes
-  Rd - Rs per 16-bit half; the spec's "(Rs > Rd)" for C/V is then exactly
-  the unsigned borrow out of (Rd - Rs), i.e. `Rd < Rs` unsigned — which is
-  how the core computes them (`xy_rd_x < xy_rs_x`, `xy_rd_y < xy_rs_y`).
-  N/Z are equality (Xres==0 / Yres==0), which is signedness-independent.
-- **Why uncertain**: TI's example table uses only small positive values
-  (0..0x10) that don't distinguish signed vs unsigned `>`. XY screen
-  coordinates are sometimes treated as signed for clipping.
-- **How to apply**: if a MAME/silicon cross-check shows signed comparison,
-  change the two `<` comparisons in the `subxy_flags` assignment in core.sv
-  to signed comparisons. CMPXY is implemented with its separately specified
-  result-sign flag behavior and does not share this provisional choice.
+## A0027 — SUBXY greater-than comparison signedness
+- **Date**: 2026-05-31; **resolved 2026-07-28 (Task 0134)**.
+- **Status**: **RESOLVED; the original unsigned assumption was incorrect.**
+- **Sources**:
+  - 1988 TI TMS34010 User's Guide §4.3 page 4-11 defines both halves of an
+    XY address as 16-bit signed integers with range -32768 through +32767.
+  - Page 12-252 defines SUBXY C/V as source-Y/source-X greater than the
+    corresponding destination field.
+- **Resolution**: Because SUBXY operates on XY fields, its `>` relations use
+  signed 16-bit coordinate ordering. The core now computes
+  `$signed(RsY) > $signed(RdY)` for C and the analogous X comparison for V.
+  N/Z remain field equality, and the subtraction result remains two
+  independent wrapping 16-bit differences. CMPXY retains its separately
+  specified result-sign rules.
+- **Regression evidence**: `tb_addxy_subxy` adds Rd=(X=+1,Y=-1) and
+  Rs=(X=-1,Y=+1). Signed comparison requires C=1/V=0, while unsigned
+  comparison would produce C=0/V=1; the test checks NCZV=`0100` and result
+  `0xFFFE0002`.
 
 ## A0028 — I/O register integration into the core memory path
 - **Date**: 2026-05-31 (Task 0082).
@@ -656,7 +656,6 @@ that ordered ledger before declaring the TMS34010 implementation complete.
 
 - Remaining per-instruction flag nuances still marked provisional in earlier
   entries; do not rely on the age of an entry as evidence it was resolved.
-- SUBXY unsigned-vs-signed greater-than behavior (A0027).
 - Physical bus-cycle phasing and wait-state behavior for unaligned fields
   crossing the original 16-bit external bus.
 - I/O side effects, on-chip completion timing, and host-visible semantics not

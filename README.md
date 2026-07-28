@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0133. Task 0124
+Functional implementation work is complete through Task 0134. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -18,7 +18,8 @@ per-instruction status masks. Task 0131 corrected MOVI C preservation for
 both immediate widths. Task 0132 resolved the REV value and EXGPC alignment
 rules directly against their individual instruction pages. Task 0133 resolved
 FILL XY's final linear DADDR writeback and W=0 status preservation. The
-repository currently contains:
+Task 0134 corrected SUBXY's coordinate comparisons to signed 16-bit
+semantics. The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,

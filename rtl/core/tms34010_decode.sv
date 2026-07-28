@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0133. The authoritative per-instruction
+// Recognition is current through Task 0134. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //

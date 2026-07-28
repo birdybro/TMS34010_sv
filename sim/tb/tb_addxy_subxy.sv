@@ -9,7 +9,8 @@
 //
 // Status bits (graphics clipping):
 //   ADDXY: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
-//   SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY) (unsigned).
+//   SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY).
+//          X/Y are signed 16-bit coordinates per User's Guide page 4-11.
 //
 // Cases taken from TI's example tables; flags captured with GETST.
 // -----------------------------------------------------------------------------
@@ -113,11 +114,19 @@ module tb_addxy_subxy;
     p = place_movi_il(p, 4'd5, 32'h0009_0009);
     p = place_word(p, subxy_enc(4'd5, 4'd4));
     p = place_word(p, getst_enc(4'd10));
-    // SUBXY A7,A6: Rd=0x00090009, Rs=0x00100010 -> 0xFFF9FFF9, NCZV=0101 (V,C borrow).
+    // SUBXY A7,A6: Rd=0x00090009, Rs=0x00100010 -> 0xFFF9FFF9, NCZV=0101.
     p = place_movi_il(p, 4'd6, 32'h0009_0009);
     p = place_movi_il(p, 4'd7, 32'h0010_0010);
     p = place_word(p, subxy_enc(4'd7, 4'd6));
     p = place_word(p, getst_enc(4'd11));
+    // Signedness discriminator:
+    //   X: Rs=-1, Rd=+1 -> source is NOT greater, V=0
+    //   Y: Rs=+1, Rd=-1 -> source IS greater, C=1
+    // Unsigned comparisons would produce the opposite C/V pair.
+    p = place_movi_il(p, 4'd12, 32'hFFFF_0001);
+    p = place_movi_il(p, 4'd13, 32'h0001_FFFF);
+    p = place_word(p, subxy_enc(4'd13, 4'd12));
+    p = place_word(p, getst_enc(4'd14));
 
     p = place_word(p, 16'hC0FF);
 
@@ -134,6 +143,10 @@ module tb_addxy_subxy;
     check_nczv("SUBXY1 NCZV=1010", u_core.u_regfile.a_regs[10], 4'b1010);
     check_reg("SUBXY2: A6 = 0xFFF9FFF9", u_core.u_regfile.a_regs[6], 32'hFFF9_FFF9);
     check_nczv("SUBXY2 NCZV=0101", u_core.u_regfile.a_regs[11], 4'b0101);
+    check_reg("SUBXY signed: A12 = 0xFFFE0002",
+              u_core.u_regfile.a_regs[12], 32'hFFFE_0002);
+    check_nczv("SUBXY signed discriminator NCZV=0100",
+               u_core.u_regfile.a_regs[14], 4'b0100);
     // Sources unchanged.
     check_reg("ADDXY1: A1 (src) unchanged", u_core.u_regfile.a_regs[1], 32'h0000_0000);
     check_reg("SUBXY2: A7 (src) unchanged", u_core.u_regfile.a_regs[7], 32'h0010_0010);

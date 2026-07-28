@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0133, with strict RTL
+> Baseline: functional implementation through Task 0134, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -51,6 +51,11 @@ linear address immediately after the last pixel on the final row. Exact
 address, row-pitch, memory-effect, and W=0 full-status checks are regression
 locked.
 
+Task 0134 resolved A0027 from §4.3's signed 16-bit XY definition and the
+SUBXY status table. C/V use signed source-greater-than comparisons; a direct
+negative/positive vector distinguishes them from the prior unsigned-borrow
+interpretation.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -60,7 +65,6 @@ deviation:
 - A0005: exact field alignment and cross-boundary behavior at the physical
   memory interface.
 - A0009: per-instruction N/C/Z/V write masks.
-- A0027: SUBXY comparison signedness.
 
 A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), and A0006 (functional-first timing) are intentional design choices.

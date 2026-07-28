@@ -7,6 +7,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0134 — SUBXY signed comparison semantics)
+- Resolved A0027 using the §4.3 definition of X/Y as signed 16-bit integers
+  together with page 12-252's source-greater-than status rules.
+- Changed SUBXY C/V from unsigned-borrow comparisons to signed RsY>RdY and
+  RsX>RdX comparisons; independent wrapping subtraction and N/Z equality
+  behavior are unchanged.
+- Extended `tb_addxy_subxy` with mixed-sign X/Y operands for which signed and
+  unsigned comparisons yield opposite C/V values.
+- Validation: focused bench PASS; `scripts/lint.sh` clean; full regression
+  117/117 PASS.
+
 ### Verified (Task 0133 — FILL XY DADDR writeback semantics)
 - Resolved A0029 directly against the FILL XY destination-array description
   on page 12-85: the initial XY DADDR is converted with OFFSET/CONVDP, and
@@ -1043,8 +1054,8 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   `RdX-RsX` / `RdY-RsY` were computed, WITHOUT modifying Rd. SPVU001A
   p.12-55.
 - Status: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15] — i.e. the
-  per-half subtract result sign bits (NOT the unsigned borrow SUBXY
-  uses), so CMPXY is fully unambiguous (no A0027 dependency). Verified
+  per-half subtract result sign bits, distinct from SUBXY's greater-than
+  flags, so CMPXY is fully unambiguous. Verified
   against TI's example table.
 - INSTR_CMPXY = 7'd85. Decoder top7 1110_010; wb_reg_en=0 (nondestructive),
   wb_flags_en=1. Reuses the XY subtract datapath (xy_x_sub/xy_y_sub) with
@@ -1061,15 +1072,15 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 - Status bits encode graphics-clipping info (NOT ordinary arithmetic
   flags):
   - ADDXY: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
-  - SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY); the
-    `>` comparisons are unsigned (= the per-half subtract borrow). All
-    verified against TI's worked example tables.
+  - SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY).
+    Task 0066 originally interpreted `>` as unsigned; Task 0134 corrected
+    it to the primary guide's signed 16-bit XY ordering.
 - INSTR_ADDXY = 7'd83, INSTR_SUBXY = 7'd84. New XY datapath in the core:
   separate 16-bit adders/subtractors for the X and Y halves (blocking
   inter-half carry), feeding the rf_wr_data and flag_input muxes. Pure
   register op — no memory.
-- New assumption A0027: the SUBXY/CMPXY `>` comparison is taken as
-  unsigned (TI's examples don't distinguish; pending MAME cross-check).
+- New assumption A0027 recorded the then-uncertain SUBXY comparison
+  signedness; Task 0134 later resolved it from §4.3.
 - Test: new `sim/tb/tb_addxy_subxy.sv` — ADDXY/SUBXY cases from TI's
   tables checking both the result and the NCZV pattern (GETST snapshots).
 

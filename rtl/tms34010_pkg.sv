@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0133: architectural widths and register layouts,
+// Current through Task 0134: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -519,7 +519,7 @@ package tms34010_pkg;
     INSTR_SUBXY            = 7'd84, // SUBXY Rs,Rd — RdX -= RsX, RdY -= RsY (independent 16-bit).
                               //                     Encoding 1110 001S SSSR DDDD. Status (compare):
                               //                     N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY),
-                              //                     C=(RsY>RdY) (unsigned). Task 0066.
+                              //                     C=(RsY>RdY), signed 16-bit. Tasks 0066/0134.
     INSTR_CMPXY            = 7'd85, // CMPXY Rs,Rd — nondestructive XY compare (Rd unchanged). Sets
                               //                     status as if RdX-RsX / RdY-RsY: N=(Xres==0),
                               //                     V=Xres[15], Z=(Yres==0), C=Yres[15]. Encoding

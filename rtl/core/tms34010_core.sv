@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0133.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0134.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -1526,8 +1526,9 @@ module tms34010_core
   // propagating between them. Rd is both a source and the destination;
   // rf_rs2_data delivers the old Rd, rf_rs1_data the Rs operand.
   //   ADDXY (SPVU001A 12-41):  N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
-  //   SUBXY (SPVU001A 12-252): compare-style flags — N=(RsX==RdX),
-  //     V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY) (unsigned, = subtract borrow).
+  //   SUBXY (User's Guide 4-11/12-252): compare-style flags —
+  //     N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY), with
+  //     signed 16-bit comparisons because X/Y are signed coordinates.
   logic [15:0] xy_rs_x, xy_rs_y, xy_rd_x, xy_rd_y;
   logic [15:0] xy_x_add, xy_y_add, xy_x_sub, xy_y_sub;
   logic [DATA_WIDTH-1:0] addxy_result, subxy_result;
@@ -1544,11 +1545,14 @@ module tms34010_core
   assign subxy_result = {xy_y_sub, xy_x_sub};
   assign addxy_flags = '{n: (xy_x_add == 16'd0), c: xy_y_add[15],
                           z: (xy_y_add == 16'd0), v: xy_x_add[15]};
-  // (RsX>RdX) unsigned == borrow out of (RdX - RsX) == (xy_rd_x < xy_rs_x).
-  assign subxy_flags = '{n: (xy_x_sub == 16'd0), c: (xy_rd_y < xy_rs_y),
-                          z: (xy_y_sub == 16'd0), v: (xy_rd_x < xy_rs_x)};
-  // CMPXY (SPVU001A 12-55): nondestructive; flags use the SIGN bits of the
-  // per-half subtract results (NOT the unsigned borrow SUBXY uses).
+  assign subxy_flags = '{
+      n: (xy_x_sub == 16'd0),
+      c: ($signed(xy_rs_y) > $signed(xy_rd_y)),
+      z: (xy_y_sub == 16'd0),
+      v: ($signed(xy_rs_x) > $signed(xy_rd_x))
+  };
+  // CMPXY (SPVU001A 12-55): nondestructive; flags use the sign bits of the
+  // per-half subtract results, distinct from SUBXY's signed greater-than flags.
   alu_flags_t cmpxy_flags;
   assign cmpxy_flags = '{n: (xy_x_sub == 16'd0), c: xy_y_sub[15],
                           z: (xy_y_sub == 16'd0), v: xy_x_sub[15]};

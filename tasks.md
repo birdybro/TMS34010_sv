@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0133. Task 0118
+The functional implementation is complete through Task 0134. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -20,7 +20,8 @@ Task 0131 corrected both MOVI widths to preserve C while updating N/Z and
 clearing V, and made carry-dependent tests establish their inputs explicitly.
 Task 0132 resolved REV's result and EXGPC's next-PC/alignment behavior against
 their primary instruction pages. Task 0133 resolved FILL XY's final linear
-DADDR representation and W=0 status behavior.
+DADDR representation and W=0 status behavior. Task 0134 corrected SUBXY's
+greater-than flags to signed 16-bit XY comparisons.
 
 ## Task index
 
@@ -159,6 +160,7 @@ DADDR representation and W=0 status behavior.
 | 0131 | Correct MOVI status semantics | complete |
 | 0132 | Resolve REV and EXGPC architectural semantics | complete |
 | 0133 | Resolve FILL XY DADDR writeback semantics | complete |
+| 0134 | Correct SUBXY signed comparison semantics | complete |
 
 ---
 
@@ -2516,9 +2518,8 @@ Acceptance Criteria:
   carry/borrow between halves. Rd is source+dest (rf_rs2), Rs (rf_rs1).
 - Status bits (verified vs TI tables):
     ADDXY: N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15].
-    SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY); the `>`
-      comparisons are UNSIGNED (= per-half subtract borrow) — assumption
-      A0027, pending MAME cross-check.
+    SUBXY: N=(RsX==RdX), V=(RsX>RdX), Z=(RsY==RdY), C=(RsY>RdY); Task
+      0134 resolved the `>` relations as signed 16-bit XY comparisons.
 - rf_wr_data and flag_input muxes route addxy_result/subxy_result and
   addxy_flags/subxy_flags.
 - sim/tb/tb_addxy_subxy.sv: ADDXY/SUBXY cases from TI's example tables
@@ -2539,8 +2540,9 @@ Spec source: SPVU001A page 12-55. Encoding 1110 010S SSSR DDDD (0xE400).
 Acceptance Criteria:
 - INSTR_CMPXY = 7'd85. Decoder top7 1110_010; same-file reg-reg;
   wb_reg_en=0 (NONDESTRUCTIVE — Rd unchanged), wb_flags_en=1.
-- Status bits = sign bits of the per-half subtract results (NOT SUBXY's
-  unsigned borrow): N=(Xres==0), V=Xres[15], Z=(Yres==0), C=Yres[15]
+- Status bits = sign bits of the per-half subtract results (distinct from
+  SUBXY's signed greater-than flags): N=(Xres==0), V=Xres[15],
+  Z=(Yres==0), C=Yres[15]
   where Xres=RdX-RsX, Yres=RdY-RsY. Unambiguous (no A0027 dependency).
 - Core: new cmpxy_flags assign reusing xy_x_sub/xy_y_sub; flag_input mux
   routes it. No rf_wr_data entry (no writeback).
@@ -4231,6 +4233,35 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - bd14d03
+
+---
+
+### Task 0134: Correct SUBXY signed comparison semantics
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption and status audit).
+- Task 0066 (ADDXY/SUBXY implementation).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §4.3 page 4-11, signed XY components.
+- 1988 TI TMS34010 User's Guide page 12-252, SUBXY status rules.
+Acceptance Criteria:
+- Resolve A0027 from the primary guide: evaluate SUBXY's source-X and
+  source-Y greater-than conditions as signed 16-bit XY comparisons.
+- Keep the two independent 16-bit subtraction results plus N/Z equality
+  behavior unchanged.
+- Add a direct vector whose signed and unsigned comparisons disagree for
+  both C and V.
+Tests:
+- Extended `tb_addxy_subxy` PASS with signed-negative comparison coverage;
+  `tb_cmpxy` also PASS with its distinct result-sign rules.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 117/117 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 
