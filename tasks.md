@@ -3988,7 +3988,7 @@ Docs:
   `docs/architecture.md`, `docs/completion_audit.md`,
   `docs/instruction_coverage.md`, and `docs/timing_notes.md`.
 Commit:
-- pending
+- `97c163c` — Implement MOVE offset postincrement (Task 0126)
 
 ---
 
