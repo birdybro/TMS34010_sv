@@ -452,12 +452,24 @@ yet individually reconciled.
 ---
 
 ## A0025 — REV constant and EXGPC bottom-nibble PC alignment
-- **Date**: 2026-05-12
-- **Status**: active (pending a careful spec re-read on a clean PDF)
-- **Source**: SPVU001A page 12-233 (REV) and the corresponding EXGPC page.
-- **REV constant**: The spec's bit-format chart for REV is largely "undefined", but the worked example on page 12-233 explicitly shows `REV A1 → 0x0000_0008`. The implementation emits the constant `32'h0000_0008` (chip revision 8). If a different revision is later required, change the `INSTR_REV` arm in `tms34010_core.sv`'s `rf_wr_data` mux.
-- **EXGPC bottom-nibble mask**: TMS34010 PC values are word-aligned (the low 4 bits of an externally-loaded PC are forced to 0). JUMP Rs and JAcc both do this explicitly per their spec pages. EXGPC is in the same class — when PC is loaded from Rd, the low 4 bits are likewise masked. The implementation does `pc_load_value = {rf_rs2_data[31:4], 4'h0}`. The Rd-receives-PC half of the swap is NOT masked (Rd just holds the full pre-swap PC value).
-- **How to apply**: If a future spec re-read finds a different revision number or a different alignment convention for EXGPC, adjust `tms34010_core.sv` accordingly and update the `tb_pc_ops.sv` checks. The current values are the most defensible read of the 1988 User's Guide.
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0132)**.
+- **Status**: **RESOLVED** against the primary guide.
+- **Sources**:
+  - 1988 TI TMS34010 User's Guide page 12-233, "Store Revision Number".
+  - 1988 TI TMS34010 User's Guide page 12-79, "Exchange Program Counter".
+- **Resolution**:
+  - REV stores the TMS34010 revision format in Rd; the worked example gives
+    the exact observable result `REV A1: 0xFFFFFFFF -> 0x00000008`.
+    `REV_VALUE = 32'h0000_0008` is therefore retained.
+  - EXGPC exchanges Rd with the *next* PC. Its instruction page explicitly
+    states that the processor sets the PC's four LSBs to zero. The existing
+    `pc_load_value = {rf_rs2_data[31:4], 4'h0}` is exact; Rd receives the
+    already word-aligned next-PC value without additional modification.
+  - Both pages specify N, C, Z, and V as Unaffected.
+- **Regression evidence**: `tb_pc_ops` executes REV after NCZV=1111, snapshots
+  the unchanged ST, loads EXGPC's Rd with unaligned target `0x0000064F`, and
+  proves execution lands at `0x00000640`. It also checks the dynamically
+  calculated next PC returned in Rd and another unchanged full-ST snapshot.
 
 ---
 

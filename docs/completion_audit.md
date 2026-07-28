@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0131, with strict RTL
+> Baseline: functional implementation through Task 0132, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -40,6 +40,11 @@ Task 0131 resolved A0011 for both MOVI widths. N/Z and forced-zero V updates,
 C preservation, IW sign extension, and IL word ordering/results now have
 full-status regression evidence.
 
+Task 0132 resolved A0025 directly from the REV and EXGPC pages. REV returns
+the guide's `0x00000008` TMS34010 revision value; EXGPC stores the next PC in
+Rd and clears all four LSBs of the register-sourced PC. A deliberately
+unaligned target and full-status snapshots now lock both rules.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -49,7 +54,6 @@ deviation:
 - A0005: exact field alignment and cross-boundary behavior at the physical
   memory interface.
 - A0009: per-instruction N/C/Z/V write masks.
-- A0025: REV value and EXGPC alignment.
 - A0027: SUBXY comparison signedness.
 - A0029: FILL XY DADDR writeback representation.
 

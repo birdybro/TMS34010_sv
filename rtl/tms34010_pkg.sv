@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0131: architectural widths and register layouts,
+// Current through Task 0132: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -252,8 +252,8 @@ package tms34010_pkg;
   // ---------------------------------------------------------------------------
   // Misc architectural constants (kept here so RTL has no magic numbers).
   // ---------------------------------------------------------------------------
-  // REV Rd result — chip-revision constant. The spec calls the value
-  // "undefined", but the worked example shows REV → 0x00000008 (A0025).
+  // REV Rd result. The defined TMS34010 format and worked example on the
+  // 1988 User's Guide page 12-233 produce 0x00000008 (A0025 resolved).
   parameter logic [DATA_WIDTH-1:0] REV_VALUE = 32'h0000_0008;
   // MOVK/ADDK/SUBK encode architectural constant 32 with a zero K field.
   parameter logic [DATA_WIDTH-1:0] K_ZERO_VALUE = DATA_WIDTH'(32);

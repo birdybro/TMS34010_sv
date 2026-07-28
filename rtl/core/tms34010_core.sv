@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0131.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0132.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -1819,7 +1819,7 @@ module tms34010_core
   //   GETST  → ST value
   //   GETPC  → current PC value
   //   EXGPC  → current PC value (the other half of the swap)
-  //   REV    → chip-revision constant (A0025)
+  //   REV    → chip-revision constant (page 12-233)
   //   LMO_RR → priority-encoder result
   // The default routes the shifter or ALU result per decoded.use_shifter.
   always_comb begin
@@ -2101,8 +2101,8 @@ module tms34010_core
           pc_load_value = {rf_rs1_data[ADDR_WIDTH-1:4], 4'h0};
         end
         INSTR_EXGPC: begin
-          // Atomic swap PC ↔ Rd: PC ← old Rd (with bottom 4 bits forced
-          // to 0 per A0025), Rd ← PC (via the rf_wr_data mux above).
+          // Atomic swap PC ↔ Rd: PC ← old Rd with its bottom 4 bits forced
+          // to 0 per page 12-79, Rd ← next PC via the mux above.
           // rf_rs2_data is the async-read value of decoded.rd_idx in
           // the same file as the destination — i.e., the OLD Rd value.
           pc_load_en    = 1'b1;

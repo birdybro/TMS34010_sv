@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0131. The authoritative per-instruction
+// Recognition is current through Task 0132. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -453,9 +453,8 @@ module tms34010_decode
   //   GETPC Rd  : 0000 0001 010R DDDD  (top11 = 11'b00000001_010 = 0x00A)
   //   EXGPC Rd  : 0000 0001 001R DDDD  (top11 = 11'b00000001_001 = 0x009)
   //   REV   Rd  : 0000 0000 001R DDDD  (top11 = 11'b00000000_001 = 0x001)
-  // REV value: per spec page 12-233, the chart bits are largely
-  // "undefined" but the worked example shows `REV A1 → 0x00000008`
-  // (see A0025). We emit 32'h0000_0008 as the constant.
+  // REV value: the format and worked example on page 12-233 produce
+  // `REV A1 → 0x00000008` (A0025 resolved).
   localparam logic [10:0] GETPC_TOP11   = 11'b0000_0001_010;
   localparam logic [10:0] EXGPC_TOP11   = 11'b0000_0001_001;
   localparam logic [10:0] REV_TOP11     = 11'b0000_0000_001;
@@ -2539,8 +2538,8 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // EXGPC Rd : atomic swap PC ↔ Rd. Per the spec, the low 4 bits of
-    // the new PC are forced to 0 (word alignment, per A0025).
+    // EXGPC Rd : atomic swap next PC ↔ Rd. Page 12-79 explicitly requires
+    // the new PC's low 4 bits to be forced to 0 for word alignment.
     //
     // We use the regfile's rs2 port (which reads decoded.rd_idx) to
     // get the OLD Rd value for the PC-load. The regfile write port
@@ -2558,9 +2557,9 @@ module tms34010_decode
     end
 
     // -----------------------------------------------------------------------
-    // REV Rd : Rd ← chip revision-number constant. Per spec example
-    // (page 12-233), the value is 32'h0000_0008 (A0025). Status bits
-    // unaffected.
+    // REV Rd : Rd ← chip revision-number constant. Per the format and
+    // example on page 12-233, the value is 32'h0000_0008. Status bits
+    // are unaffected.
     // -----------------------------------------------------------------------
     if (top11 == REV_TOP11) begin
       decoded.illegal      = 1'b0;

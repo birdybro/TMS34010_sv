@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0131. Task 0118
+The functional implementation is complete through Task 0132. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -18,6 +18,8 @@ encoded-zero constant semantics for MOVK, ADDK, and SUBK. Task 0130 corrected
 the complete shift family's encodings, SLA overflow, and status masks.
 Task 0131 corrected both MOVI widths to preserve C while updating N/Z and
 clearing V, and made carry-dependent tests establish their inputs explicitly.
+Task 0132 resolved REV's result and EXGPC's next-PC/alignment behavior against
+their primary instruction pages.
 
 ## Task index
 
@@ -154,6 +156,7 @@ clearing V, and made carry-dependent tests establish their inputs explicitly.
 | 0129 | Correct 5-bit constant zero encoding | complete |
 | 0130 | Correct shift encodings and status semantics | complete |
 | 0131 | Correct MOVI status semantics | complete |
+| 0132 | Resolve REV and EXGPC architectural semantics | complete |
 
 ---
 
@@ -4171,6 +4174,34 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - 385f54b
+
+---
+
+### Task 0132: Resolve REV and EXGPC architectural semantics
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption and status audit).
+Spec sources:
+- 1988 TI TMS34010 User's Guide page 12-233, REV.
+- 1988 TI TMS34010 User's Guide page 12-79, EXGPC.
+Acceptance Criteria:
+- Resolve A0025 directly from the primary guide: REV returns the documented
+  TMS34010 revision value `0x00000008`; EXGPC exchanges the next PC with Rd
+  and clears the four least-significant bits of the register-sourced PC.
+- Preserve the existing atomic exchange datapath and prove the alignment
+  behavior with a deliberately unaligned source-register target.
+- Verify that both instructions leave N/C/Z/V unaffected.
+Tests:
+- Extended `tb_pc_ops` PASS with direct REV, unaligned EXGPC target,
+  dynamically calculated return-PC, and full-status preservation checks.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 117/117 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

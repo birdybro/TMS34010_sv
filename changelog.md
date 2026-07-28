@@ -7,6 +7,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Verified (Task 0132 — REV and EXGPC architectural semantics)
+- Resolved A0025 directly against the 1988 User's Guide pages 12-233 and
+  12-79: REV returns `0x00000008`; EXGPC exchanges Rd with the next PC and
+  forces the register-sourced PC's four LSBs to zero.
+- Extended `tb_pc_ops` with an unaligned `0x0000064F` target that must land
+  at `0x00000640`, dynamic next-PC writeback checking, and full-ST snapshots
+  proving REV and EXGPC leave N/C/Z/V unaffected.
+- Retained the existing RTL datapath because it already matches both primary
+  instruction pages; corrected provisional comments and coverage metadata.
+- Validation: focused bench PASS; `scripts/lint.sh` clean; full regression
+  117/117 PASS.
+
 ### Fixed (Task 0131 — MOVI status semantics)
 - Corrected MOVI IW and MOVI IL to preserve ST.C while updating N/Z and
   forcing V to zero, matching pages 12-159 and 12-160.

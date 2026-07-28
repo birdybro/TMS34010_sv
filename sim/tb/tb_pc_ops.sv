@@ -10,19 +10,21 @@
 // Test scenarios:
 //   1. GETPC : capture current PC into A1. Verify A1's value
 //      matches the expected PC at that point in the program.
-//   2. REV   : read the chip-revision constant into A2. Per A0025
-//      and the spec's worked example, the value is 0x00000008.
-//   3. EXGPC : atomic swap. Pre-load A3 with a known target
-//      bit-address (the word-aligned position of a sentinel-write
-//      instruction). After EXGPC: A3 should hold the OLD PC; the
-//      CPU should land at the address that was in A3 before; the
-//      sentinel-write instruction runs, writing A4.
+//   2. REV   : read the chip-revision constant into A2. Per page 12-233
+//      and its worked example, the value is 0x00000008.
+//   3. EXGPC : atomic swap. Pre-load A3 with a deliberately unaligned
+//      target bit address. After EXGPC, A3 should hold the next PC and
+//      the CPU should land at the word address obtained by clearing the
+//      old A3 value's four LSBs, as required by page 12-79.
+//   4. REV and EXGPC both preserve all four arithmetic status bits.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
 
 module tb_pc_ops;
   import tms34010_pkg::*;
+
+  localparam logic [DATA_WIDTH-1:0] ST_SEED = 32'hF000_0010;
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -83,6 +85,12 @@ module tb_pc_ops;
   function automatic instr_word_t rev_enc(input reg_file_t rf, input reg_idx_t rd);
     rev_enc = 16'h0020 | (instr_word_t'(rf) << 4) | (instr_word_t'(rd));
   endfunction
+  function automatic instr_word_t getst_enc(input reg_file_t rf, input reg_idx_t rd);
+    getst_enc = 16'h0180 | (instr_word_t'(rf) << 4) | (instr_word_t'(rd));
+  endfunction
+  function automatic instr_word_t putst_enc(input reg_file_t rf, input reg_idx_t rs);
+    putst_enc = 16'h01A0 | (instr_word_t'(rf) << 4) | (instr_word_t'(rs));
+  endfunction
 
   function automatic instr_word_t movi_il_enc(input reg_file_t rf, input reg_idx_t i);
     movi_il_enc = 16'h09E0 | (instr_word_t'(rf) << 4) | (instr_word_t'(i));
@@ -108,11 +116,19 @@ module tb_pc_ops;
       failures++;
     end
   endtask
+  task automatic check_bit(input string label, input logic actual, input logic expected);
+    if (actual !== expected) begin
+      $display("TEST_RESULT: FAIL: %s: expected=%0b actual=%0b",
+               label, expected, actual);
+      failures++;
+    end
+  endtask
 
   initial begin : main
     int unsigned p;
     int unsigned i;
     int unsigned getpc_word_index;
+    int unsigned exgpc_word_index;
     int unsigned exgpc_target_word;
     failures = 0;
 
@@ -151,36 +167,44 @@ module tb_pc_ops;
     u_mem.mem[p] = getpc_enc(REG_FILE_A, 4'd1); p = p + 1;
     // expected_A1 = (getpc_word_index + 1) * 16 bits.
 
+    // Load a stable full-status seed into A14. PUTST immediately before each
+    // instruction under test makes any status modification observable.
+    p = place_movi_il(p, REG_FILE_A, 4'd14, ST_SEED);
+
     // ---- Scenario 2: REV A2 -----------------------------------------------
-    //   After REV: A2 = 0x00000008 (A0025).
+    //   After REV: A2 = 0x00000008 and NCZV remains 1111.
+    u_mem.mem[p] = putst_enc(REG_FILE_A, 4'd14); p = p + 1;
     u_mem.mem[p] = rev_enc(REG_FILE_A, 4'd2); p = p + 1;
+    u_mem.mem[p] = getst_enc(REG_FILE_B, 4'd1); p = p + 1;
 
     // ---- Scenario 3: EXGPC A3 ---------------------------------------------
-    //   Pre-load A3 with the bit-address of word index 100. The
+    //   Pre-load A3 with word 100's bit address plus 0xF. The
     //   EXGPC swaps PC ↔ A3. After EXGPC:
     //     A3 ← old PC (= (exgpc_word_index + 1) * 16)
-    //     PC ← old A3 (= 100 * 16 = 1600 = 0x640) with bottom 4 bits cleared
+    //     PC ← old A3 with its bottom 4 bits cleared
+    //        = (100 * 16 + 15) & ~15 = 1600 = 0x640
     //   We pre-place a "landing-site" instruction at word 100 that
     //   writes A4 with a marker, so we can verify EXGPC took us
-    //   there. After the landing-site MOVI, place a HALT.
+    //   there. GETST snapshots status before that marker can change it.
     exgpc_target_word = 100;
-    p = place_movi_il(p, REG_FILE_A, 4'd3, 32'(exgpc_target_word * 16));
+    p = place_movi_il(p, REG_FILE_A, 4'd3,
+                      32'(exgpc_target_word * 16 + 15));
+    u_mem.mem[p] = putst_enc(REG_FILE_A, 4'd14); p = p + 1;
+    exgpc_word_index = p;
     u_mem.mem[p] = exgpc_enc(REG_FILE_A, 4'd3); p = p + 1;
-    // EXGPC at this word; pc_value at WB = (p) * 16 ... actually p
-    // got incremented; so the EXGPC's word index was (p-1). At WB,
-    // pc_value = p * 16. Save that as expected_A3.
 
     // Pre-place a "should never run" sentinel at the words right after
     // EXGPC, in case the swap fails: write A4 ← 0xBAD.
     p = place_movi_il(p, REG_FILE_A, 4'd4, 32'h0000_0BAD);
 
-    // Pre-place the actual landing site at word 100:
-    u_mem.mem[100] = movi_il_enc(REG_FILE_A, 4'd4);
-    u_mem.mem[101] = 16'hFACE;
-    u_mem.mem[102] = 16'hCAFE;
+    // Pre-place the actual landing site at word 100. Snapshot ST first.
+    u_mem.mem[100] = getst_enc(REG_FILE_B, 4'd2);
+    u_mem.mem[101] = movi_il_enc(REG_FILE_A, 4'd4);
+    u_mem.mem[102] = 16'hFACE;
+    u_mem.mem[103] = 16'hCAFE;
     // After landing MOVI: A4 = 0xCAFE_FACE.
-    // Then a halt at word 103.
-    u_mem.mem[103] = 16'hC0FF;
+    // Then a halt at word 104.
+    u_mem.mem[104] = 16'hC0FF;
 
     repeat (3) @(posedge clk);
     rst = 1'b0;
@@ -195,22 +219,21 @@ module tb_pc_ops;
               u_core.u_regfile.a_regs[1],
               32'((getpc_word_index + 1) * 16));
 
-    // REV: A2 = 0x00000008 (A0025).
+    // REV: A2 = 0x00000008 and ST was unaffected.
     check_reg("REV: A2 = 0x00000008",
               u_core.u_regfile.a_regs[2], 32'h0000_0008);
+    check_reg("REV: ST preserved",
+              u_core.u_regfile.b_regs[1], ST_SEED);
 
-    // EXGPC: A4 should hold 0xCAFE_FACE (landing MOVI at word 100 ran).
+    // EXGPC: the unaligned 0x64F target must be masked to word 100 (0x640).
     check_reg("EXGPC: landing site executed → A4 = 0xCAFE_FACE",
               u_core.u_regfile.a_regs[4], 32'hCAFE_FACE);
-    // EXGPC: A3 should hold the OLD PC (the pc_value at the EXGPC's
-    // WRITEBACK). pc_value = (exgpc_word_index + 1) * 16, where
-    // exgpc_word_index is the word slot the EXGPC opcode occupied.
-    // That index is (post-EXGPC p value - 1) before the trap-sentinel
-    // MOVI was placed. We saved it implicitly; recompute below.
-    //   Layout: GETPC at word 0; REV at word 1; MOVI A3 at words 2,3,4;
-    //   EXGPC at word 5. PC at WB after EXGPC = 6*16 = 96 = 0x60.
     check_reg("EXGPC: A3 = old PC (pc_value at WRITEBACK)",
-              u_core.u_regfile.a_regs[3], 32'h0000_0060);
+              u_core.u_regfile.a_regs[3],
+              32'((exgpc_word_index + 1) * 16));
+    check_reg("EXGPC: ST preserved",
+              u_core.u_regfile.b_regs[2], ST_SEED);
+    check_bit("illegal_opcode_o stayed low", illegal_w, 1'b0);
 
     if (failures == 0) begin
       $display("TEST_RESULT: PASS (GETPC + REV + EXGPC)");
