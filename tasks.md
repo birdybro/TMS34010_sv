@@ -3669,7 +3669,7 @@ Docs:
   `docs/timing_notes.md`, plus stale current-state header comments in the
   package/core/decode/status/I/O RTL files.
 Commit:
-- pending (uncommitted handoff changes)
+- 509f670
 
 ---
 
