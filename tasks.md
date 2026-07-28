@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0126. Task 0118
+The functional implementation is complete through Task 0127. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -12,6 +12,7 @@ remaining interrupt-entry status assumption directly against the guide.
 Task 0124 established the primary-spec completion ledger that now drives
 further implementation. Task 0125 closed its logical-status, ANDI/ANDNI, CLR,
 and DEC findings. Task 0126 closed the first missing MOVE form.
+Task 0127 closed the second.
 
 ## Task index
 
@@ -143,6 +144,7 @@ and DEC findings. Task 0126 closed the first missing MOVE form.
 | 0124 | Audit the remaining ISA and system completion gaps | complete |
 | 0125 | Correct logical flags and ANDI/ANDNI semantics | complete |
 | 0126 | Implement MOVE offset-to-postincrement | complete |
+| 0127 | Implement MOVE absolute-to-postincrement | complete |
 
 ---
 
@@ -3989,6 +3991,37 @@ Docs:
   `docs/instruction_coverage.md`, and `docs/timing_notes.md`.
 Commit:
 - `97c163c` — Implement MOVE offset postincrement (Task 0126)
+
+---
+
+### Task 0127: Implement MOVE absolute-to-postincrement
+Status: complete
+Dependencies:
+- Task 0079 (field-aware memory-to-memory sequencing).
+- Task 0126 (destination-only M2M postincrement pattern).
+Spec sources:
+- 1988 TI TMS34010 User's Guide page 12-155, “Move Field — Absolute to
+  Indirect (Postincrement).”
+Acceptance Criteria:
+- Decode `MOVE @SAddress,*Rd+ [,F]` at `1101 01F0 000R DDDD` plus the
+  32-bit source bit address, low word first.
+- Read an FS-bit field at the absolute source, write it through the
+  original Rd, and postincrement Rd by FS.
+- Support both F-selected field definitions, FS=32, and
+  unaligned/straddling fields without changing N/C/Z/V.
+- Directly verify opcode/address word order, memory results, pointer
+  results, and status preservation.
+Tests:
+- `scripts/sim.sh tb_move_abs_m2m_postinc` — PASS.
+- `scripts/lint.sh` — PASS; Verilator lint clean with zero diagnostics.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 114/114 self-checking
+  testbenches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/completion_audit.md`,
+  `docs/instruction_coverage.md`, and `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

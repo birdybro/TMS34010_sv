@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0126. The authoritative per-instruction
+// Recognition is current through Task 0127. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -139,6 +139,9 @@ module tms34010_decode
   // Offset source to postincrement destination (Task 0126):
   //   MOVE *Rs(off),*Rd+ : 1101 00FS (top6 = 110100, 0xD000)
   localparam logic [5:0] MOVE_OFF_M2M_PI_TOP6 = 6'b110100;
+  // Absolute source to postincrement destination (Task 0127):
+  //   MOVE @SAddr,*Rd+ : 1101 01F0 000R DDDD + source address LO/HI
+  localparam logic [5:0] MOVE_ABS_M2M_PI_TOP6 = 6'b110101;
 
   // Auto inc/dec indirect MOVE (Task 0060). Same field semantics as the
   // plain forms; the pointer register steps by the field size (±32 at
@@ -1045,6 +1048,26 @@ module tms34010_decode
       decoded.rs_idx          = rs_idx_from_instr;
       decoded.needs_imm16     = 1'b1;
       decoded.imm_sign_extend = 1'b1;
+      decoded.move_mode       = MV_ADDR_POSTINC;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE @SAddress,*Rd+ — absolute source to postincrement destination
+    // (1988 User's Guide page 12-155).
+    //
+    // The two following words hold the 32-bit source bit address, low word
+    // first. Read one F-selected field there, write through the original Rd,
+    // then advance Rd by FS. FE and all status bits are irrelevant.
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_ABS_M2M_PI_TOP6 && instr[8:5] == 4'b0000) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_ABS_M2M_PI;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.needs_imm32     = 1'b1;
       decoded.move_mode       = MV_ADDR_POSTINC;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b0;

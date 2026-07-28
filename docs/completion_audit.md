@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0126, with strict RTL
+> Baseline: functional implementation through Task 0127, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -15,7 +15,6 @@ physical timing work.
 
 | Official row | Current state | Required closure |
 |--------------|---------------|------------------|
-| `MOVE @SAddress,*Rd+ [,F]` | Not decoded or executed. | Add the three-word absolute-source memory-to-memory form and postincrement Rd by FS. |
 | `EMU` | Not decoded; the top level has no EMUA or RUN/EMU interface. | Define the FPGA-facing emulation-pin boundary, implement the RUN-as-NOP behavior and emulator-entry handshake, and test both sampled modes. |
 
 Task 0125 closed the audited logical findings: every register, unary, and
@@ -27,10 +26,10 @@ Remaining move, immediate, arithmetic, shift, and graphics status rows must
 still be checked against their individual tables before ISA closure is
 claimed.
 
-Task 0126 closed `MOVE *Rs(offset),*Rd+ [,F]` with signed-offset,
-arbitrary-field, unaligned/straddling, pointer, and status-preservation
-coverage. The absolute-source postincrement form and EMU are the remaining
-unimplemented §12.3 rows.
+Tasks 0126 and 0127 closed both postincrement-destination MOVE rows with
+signed-offset/absolute-address, arbitrary-field, unaligned/straddling,
+pointer, register-file, and status-preservation coverage. EMU is now the only
+unimplemented §12.3 row.
 
 ## Active architectural assumptions requiring closure
 

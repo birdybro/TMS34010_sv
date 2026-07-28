@@ -7,6 +7,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0127 — MOVE absolute source to postincrement destination)
+- Implemented `MOVE @SAddress,*Rd+ [,F]` (`1101 01F0 000R DDDD` plus
+  low/high source-address words) from the 1988 User's Guide page 12-155.
+- Reused the two-step field M2M path with a destination-only postincrement
+  class: absolute FS-bit source read, write through original Rd, then Rd +=
+  FS. The reserved operand bits are required to be zero.
+- Added `tb_move_abs_m2m_postinc` covering F0/F1, A/B destinations,
+  FS=32/8/12, nonzero address high word and LO/HI reconstruction,
+  unaligned/straddling fields, outside-field preservation, and unchanged ST.
+- Retired the last missing MOVE row from the completion audit; EMU is now the
+  only unimplemented official instruction-summary row.
+- Validation: focused bench PASS; `scripts/lint.sh` clean; full regression
+  114/114 PASS.
+
 ### Added (Task 0126 — MOVE offset source to postincrement destination)
 - Implemented `MOVE *Rs(offset),*Rd+ [,F]` (`1101 00FS SSSR DDDD` plus a
   signed 16-bit bit offset) from the 1988 User's Guide page 12-149.

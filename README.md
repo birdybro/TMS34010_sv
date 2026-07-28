@@ -6,11 +6,12 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0126. Task 0124
+Functional implementation work is complete through Task 0127. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
-logical-status and ANDI/ANDNI semantic findings, and Task 0126 landed the
-signed-offset memory-to-memory MOVE form. The repository currently contains:
+logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
+the two missing memory-to-memory MOVE forms. The repository currently
+contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -22,7 +23,7 @@ signed-offset memory-to-memory MOVE form. The repository currently contains:
 - on-chip I/O-register storage plus maskable and nonmaskable interrupt entry;
 - architectural reset and illegal-opcode vector entry;
 - standalone video-timing and DRAM-refresh modules;
-- 113 self-checking SystemVerilog testbenches.
+- 114 self-checking SystemVerilog testbenches.
 
 This is not yet a complete FPGA system. The audit records the remaining ISA
 forms/verification work plus the host/memory fabric, bus arbitration, I/O

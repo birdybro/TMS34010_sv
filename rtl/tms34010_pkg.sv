@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0126: architectural widths and register layouts,
+// Current through Task 0127: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -572,7 +572,9 @@ package tms34010_pkg;
                               //                     8-bit memory-to-memory transfer.
     INSTR_MOVB_ABS_M2M     = 7'd100, // MOVB @SAddr,@DAddr: two 32-bit bit addresses;
                               //                     8-bit memory-to-memory transfer.
-    INSTR_MOVE_OFF_M2M_PI  = 7'd101  // MOVE *Rs(off),*Rd+: signed source offset;
+    INSTR_MOVE_OFF_M2M_PI  = 7'd101, // MOVE *Rs(off),*Rd+: signed source offset;
+                              //                     destination postincrements by FS.
+    INSTR_MOVE_ABS_M2M_PI  = 7'd102  // MOVE @SAddr,*Rd+: absolute source;
                               //                     destination postincrements by FS.
   } instr_class_t;
 

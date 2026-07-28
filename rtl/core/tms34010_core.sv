@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0126.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0127.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -259,6 +259,7 @@ module tms34010_core
       // can write it to the destination.
       if (((decoded.iclass == INSTR_MOVE_FIELD_M2M)
         || (decoded.iclass == INSTR_MOVE_OFF_M2M_PI)
+        || (decoded.iclass == INSTR_MOVE_ABS_M2M_PI)
         || (decoded.iclass == INSTR_MOVB_OFF_M2M)
         || (decoded.iclass == INSTR_MOVB_ABS_M2M))
        && mem_op_step == 2'd0) begin
@@ -293,6 +294,7 @@ module tms34010_core
                                  : mem_op_step + 2'd1;
         INSTR_MOVE_FIELD_M2M,
         INSTR_MOVE_OFF_M2M_PI,
+        INSTR_MOVE_ABS_M2M_PI,
         INSTR_MOVB_OFF_M2M,
         INSTR_MOVB_ABS_M2M:
                     mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
@@ -1404,6 +1406,7 @@ module tms34010_core
   // location (SPVU001A 12-138). To avoid double-stepping that one register,
   // the WRITEBACK Rd write is suppressed when Rs==Rd.
   logic                  is_mv_m2m, is_move_off_m2m_pi;
+  logic                  is_move_abs_m2m_pi, is_m2m_dst_only_pi;
   logic                  is_movb_off_m2m, is_movb_abs_m2m;
   logic                  m2m_same_reg, m2m_src_wr;
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
@@ -1411,8 +1414,10 @@ module tms34010_core
   assign is_movb_off_m2m = (decoded.iclass == INSTR_MOVB_OFF_M2M);
   assign is_movb_abs_m2m = (decoded.iclass == INSTR_MOVB_ABS_M2M);
   assign is_move_off_m2m_pi = (decoded.iclass == INSTR_MOVE_OFF_M2M_PI);
+  assign is_move_abs_m2m_pi = (decoded.iclass == INSTR_MOVE_ABS_M2M_PI);
+  assign is_m2m_dst_only_pi = is_move_off_m2m_pi || is_move_abs_m2m_pi;
   assign is_mv_m2m       = (decoded.iclass == INSTR_MOVE_FIELD_M2M)
-                        || is_move_off_m2m_pi
+                        || is_m2m_dst_only_pi
                         || is_movb_off_m2m || is_movb_abs_m2m;
   assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
   assign m2m_src_offset =
@@ -1423,6 +1428,7 @@ module tms34010_core
   // M2M (Task 0086): the pointers hold XY values — convert the source with
   // CONVSP (pix_xy_linear) and the destination with CONVDP (pix_xy_dst_linear).
   assign m2m_src_addr = is_movb_abs_m2m ? {imm_hi_q, imm_lo_q}
+                      : is_move_abs_m2m_pi ? {imm_hi_q, imm_lo_q}
                       : is_movb_off_m2m ? (rf_rs1_data + m2m_src_offset)
                       : is_move_off_m2m_pi ? (rf_rs1_data + m2m_src_offset)
                       : decoded.xy_addr ? pix_xy_linear
@@ -1435,7 +1441,7 @@ module tms34010_core
   assign m2m_dst_new  = mv_predec ? (rf_rs2_data - mv_fs_ext) : (rf_rs2_data + mv_fs_ext);
   // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
-                     && !is_move_off_m2m_pi
+                     && !is_m2m_dst_only_pi
                      && (mem_op_step == 2'd0) && mem_ack;
 
   // FILL writes the final DADDR back to B2 in CORE_FILL_WB; PIXBLT writes the
@@ -1460,8 +1466,8 @@ module tms34010_core
                        && decoded.wb_reg_en
                        && dsj_precondition
                        // Dual-inc/dec Rs==Rd was already written at step 0.
-                       // The offset-to-postinc form never writes Rs.
-                       && !(is_mv_m2m && !is_move_off_m2m_pi && m2m_same_reg)
+                       // Destination-only postincrement forms never write Rs.
+                       && !(is_mv_m2m && !is_m2m_dst_only_pi && m2m_same_reg)
                        && !(is_div && div_v))            // divide overflow: leave Rd unchanged
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
@@ -1854,7 +1860,8 @@ module tms34010_core
       // Indirect-to-indirect inc/dec: source pointer Rs (step-0 ack) or
       // destination pointer Rd (WRITEBACK).
       INSTR_MOVE_FIELD_M2M,
-      INSTR_MOVE_OFF_M2M_PI:
+      INSTR_MOVE_OFF_M2M_PI,
+      INSTR_MOVE_ABS_M2M_PI:
           rf_wr_data = m2m_src_wr ? m2m_src_new : m2m_dst_new;
       // MOVE @SAddr,Rd: Rd <- the field-extended value read from the
       // absolute address. MOVE *Rs(off),Rd: same, from the offset address.
@@ -3044,6 +3051,7 @@ module tms34010_core
           end
           INSTR_MOVE_FIELD_M2M,
           INSTR_MOVE_OFF_M2M_PI,
+          INSTR_MOVE_ABS_M2M_PI,
           INSTR_MOVB_OFF_M2M,
           INSTR_MOVB_ABS_M2M: begin
             // Two-step indirect-to-indirect: step 0 reads an FS-bit field at
@@ -3077,6 +3085,7 @@ module tms34010_core
             INSTR_MMFM: if (mm_mask_will_be_empty) state_d = CORE_WRITEBACK;
             INSTR_MOVE_FIELD_M2M,
             INSTR_MOVE_OFF_M2M_PI,
+            INSTR_MOVE_ABS_M2M_PI,
             INSTR_MOVB_OFF_M2M,
             INSTR_MOVB_ABS_M2M:
                         if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;

@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented through Task 0126; audited through Task 0124, with
+> Status: **implemented through Task 0127; audited through Task 0124, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, and interrupt entry are integrated. Video timing and refresh
@@ -80,13 +80,13 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0126** | multicycle CPU, reset/illegal-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0127** | multicycle CPU, reset/illegal-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed**  | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR + N/C/Z flags |
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
-| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0126** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
+| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0127** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
@@ -115,9 +115,9 @@ summary against the decoder, execution paths, tests, and
 the missing EMU interface, incorrect shared ANDI/ANDNI semantics, and
 provisional logical flag behavior. Task 0125 closed the logical findings with
 Z-only masks, both immediate extension conventions, and exact CLR/DEC alias
-tests. Task 0126 closed the signed-offset-source, postincrement-destination
-MOVE row; the absolute-source variant and EMU remain. The audit also
-consolidated the I/O, interrupt-source,
+tests. Tasks 0126–0127 closed both postincrement-destination MOVE rows; EMU is
+the only unimplemented instruction-summary row. The audit also consolidated
+the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
 `completion_audit.md`; this architecture document describes the current

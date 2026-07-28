@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0126, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0127, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -37,6 +37,10 @@
   treats an unaligned/straddling field as one transaction, while the future
   physical 16-bit controller must expand it into the specification-derived
   bus phases.
+- **MOVE @SAddress,*Rd+** — opcode and two source-address fetches are
+  followed by the same two acknowledged FS-bit source-read/destination-write
+  transactions and destination writeback. Absolute-address fetch order is
+  low word then high word.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on
