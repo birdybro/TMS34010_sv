@@ -3837,7 +3837,7 @@ Docs:
   `docs/architecture.md`, `docs/instruction_coverage.md`,
   `docs/memory_map.md`, `docs/timing_notes.md`.
 Commit:
-- pending (record after commit)
+- 1ede2ba
 
 ---
 
