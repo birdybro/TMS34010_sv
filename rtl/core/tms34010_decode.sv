@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0120. The authoritative per-instruction
+// Recognition is current through Task 0122. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -42,6 +42,24 @@ module tms34010_decode
   assign top10 = instr[INSTR_WORD_WIDTH-1:6];
   assign top7  = instr[INSTR_WORD_WIDTH-1:9];
   assign top6  = instr[INSTR_WORD_WIDTH-1:10];
+
+  // User's Guide §8.7/Table 8-6 reserved ranges. Keep architectural illegal
+  // detection separate from `decoded.illegal`: the latter also marks valid
+  // ISA encodings whose implementation has not landed yet.
+  logic architectural_illegal;
+  assign architectural_illegal =
+       (instr[15:8] == 8'h02)
+    || (instr[15:8] == 8'h04)
+    || (instr[15:8] == 8'h08)
+    || (instr[15:8] == 8'h0A)
+    || (instr[15:8] == 8'h0C)
+    || (instr[15:8] == 8'h0E)
+    || (instr[15:10] == 6'b00_1101) // 0x3400 through 0x37FF
+    || (instr[15:12] == 4'h7)
+    || (instr[15:9] == 7'b100_1111) // 0x9E00 through 0x9FFF
+    || (instr[15:9] == 7'b101_1111) // 0xBE00 through 0xBFFF
+    || ((instr[15:11] == 5'b110_11) && (instr[10:8] != 3'b111))
+    || (instr[15:9] == 7'b111_1111); // 0xFE00 through 0xFFFF
 
   // Opcode prefixes (each cited from SPVU001A Appendix A page A-14).
   localparam logic [9:0] MOVI_TOP10   = 10'b00_0010_0111;
@@ -474,6 +492,7 @@ module tms34010_decode
     // Safe defaults: report ILLEGAL with all execution metadata cleared.
     // -----------------------------------------------------------------------
     decoded.illegal         = 1'b1;
+    decoded.illegal_trap    = architectural_illegal;
     decoded.iclass          = INSTR_ILLEGAL;
     decoded.rd_file         = REG_FILE_A;
     decoded.rd_idx          = '0;

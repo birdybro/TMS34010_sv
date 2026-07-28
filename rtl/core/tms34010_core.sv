@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0121.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0122.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -146,8 +146,9 @@ module tms34010_core
     .decoded(decoded)
   );
 
-  // Sticky illegal-opcode latch. Set on the cycle we are in CORE_DECODE
-  // with an illegal `decoded`. Cleared only by reset.
+  // Sticky illegal-opcode diagnostic latch. Set when CORE_DECODE encounters
+  // an unrecognized encoding and cleared only by reset. The §8.7-reserved
+  // subset also enters the architectural trap-30 sequence below.
   logic illegal_q;
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -1997,10 +1998,13 @@ module tms34010_core
                     || ((state_q == CORE_INT_DONE) && int_push_q);
   always_comb begin
     if (state_q == CORE_INT_DONE) begin
-      // Interrupt entry: clear ST.IE so nested maskable interrupts are masked
-      // until RETI restores the pushed ST. Other ST bits are preserved (the
-      // full ST was saved on the stack). A0030.
-      st_write_data = st_value & ~(32'd1 << ST_IE_BIT);
+      // Illegal opcode entry is architecturally equivalent to TRAP 30 and
+      // therefore installs the same fresh-context ST value. Existing
+      // maskable/NMI entry retains the Task-0100 A0030 behavior until that
+      // separately tracked status-entry assumption is resolved.
+      st_write_data = int_reset_st_q
+                    ? ST_RESET_VALUE
+                    : (st_value & ~(32'd1 << ST_IE_BIT));
     end else
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
@@ -2267,21 +2271,33 @@ module tms34010_core
 
   // Latched state for the entry sequence (captured when leaving CORE_FETCH):
   //   int_vec_q    — the trap-vector address to fetch.
-  //   int_is_nmi_q — this entry is an NMI (drives the auto-clear).
-  //   int_push_q   — context is pushed (always for maskable; NMIM=0 for NMI).
+  //   int_is_nmi_q  — this entry is an NMI (drives the auto-clear).
+  //   int_push_q    — context is pushed (always for maskable/illegal;
+  //                   NMIM=0 for NMI).
+  //   int_reset_st_q— replace ST with the trap entry value (illegal opcode).
   // nmi_clear pulses in CORE_INT_DONE when the latched entry was an NMI.
   logic [ADDR_WIDTH-1:0] int_vec_q;
   logic                  int_is_nmi_q;
   logic                  int_push_q;
+  logic                  int_reset_st_q;
   always_ff @(posedge clk) begin
     if (rst) begin
-      int_vec_q    <= '0;
-      int_is_nmi_q <= 1'b0;
-      int_push_q   <= 1'b0;
+      int_vec_q      <= '0;
+      int_is_nmi_q   <= 1'b0;
+      int_push_q     <= 1'b0;
+      int_reset_st_q <= 1'b0;
     end else if (state_q == CORE_FETCH && int_take) begin
-      int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
-      int_is_nmi_q <= nmi_req;
-      int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
+      int_vec_q      <= nmi_req ? INT_VEC_NMI : int_vector;
+      int_is_nmi_q   <= nmi_req;
+      int_push_q     <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
+      int_reset_st_q <= 1'b0;
+    end else if (state_q == CORE_DECODE && decoded.illegal_trap) begin
+      // 1988 User's Guide §8.7: an illegal opcode is an unmaskable
+      // TRAP-30-equivalent event. PC already points past the illegal word.
+      int_vec_q      <= INT_VEC_ILLOP;
+      int_is_nmi_q   <= 1'b0;
+      int_push_q     <= 1'b1;
+      int_reset_st_q <= 1'b1;
     end
   end
   assign nmi_clear = (state_q == CORE_INT_DONE) && int_is_nmi_q;
@@ -2543,9 +2559,11 @@ module tms34010_core
       end
 
       CORE_DECODE: begin
-        // Branch based on how many immediate words the decoded
-        // instruction needs.
-        if (decoded.needs_imm64) begin
+        // Reserved encodings trap immediately to vector 30. PC was advanced
+        // by the opcode fetch, so the pushed PC matches TRAP 30's PC'.
+        if (decoded.illegal_trap) begin
+          state_d = CORE_INT_PUSH_PC;
+        end else if (decoded.needs_imm64) begin
           state_d = CORE_FETCH_IMM_LO;
         end else if (decoded.needs_imm32) begin
           state_d = CORE_FETCH_IMM_LO;

@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented through Task 0121, with integration gaps**. The core
+> Status: **implemented through Task 0122, with integration gaps**. The core
 > executes the instruction and graphics operations tracked in
 > `instruction_coverage.md`; reset-vector fetch, I/O registers, and interrupt
 > entry are integrated. Video timing and refresh exist as standalone modules.
@@ -80,7 +80,7 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0121** | multicycle CPU, reset-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0122** | multicycle CPU, reset/illegal-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -131,6 +131,7 @@ authoritative state enum is `core_state_t` in `rtl/tms34010_pkg.sv`.
 CORE_RESET  ──▶ CORE_FETCH          (after level-0 vector read/PC load)
 CORE_FETCH  ──▶ CORE_DECODE         (when mem returns instruction word)
 CORE_DECODE ──▶ CORE_EXECUTE
+            └─▶ CORE_INT_PUSH_PC    (illegal opcode; vector 30)
 CORE_EXECUTE──▶ CORE_MEMORY         (if instruction touches memory)
             └─▶ CORE_WRITEBACK      (otherwise)
 CORE_MEMORY ──▶ CORE_WRITEBACK
@@ -163,6 +164,15 @@ CORE_FETCH (int_req) ─▶ CORE_INT_PUSH_PC  (mem[SP-32] ← PC)
 
 The push order (PC high, ST low) matches RETI's pop, so interrupt+RETI
 round-trips. Only ST.IE is cleared (A0030); the saved ST carries the rest.
+
+**Illegal-opcode entry** (Task 0122): encodings in the reserved ranges from
+User's Guide Table 8-6 never reach execute. From `CORE_DECODE`, they enter the
+same push/vector states with an unmaskable request fixed at vector 30
+(`0xFFFF_FC20`). Because opcode fetch already advanced PC, the stacked PC is
+the following word, matching TRAP 30. The old ST is stacked, SP decreases by
+64 bits, and live ST becomes `ST_RESET_VALUE`. The broader
+`illegal_opcode_o` decoder-miss diagnostic remains sticky until reset while
+valid-but-unimplemented encodings retain their existing placeholder path.
 
 **NMI** (Task 0103): a nonmaskable interrupt (host sets HSTCTLH.NMI) is sampled
 at the same `CORE_FETCH` boundary with priority over maskable requests and

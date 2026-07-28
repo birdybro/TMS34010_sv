@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0121, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0122, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -23,6 +23,10 @@
   write. The abstract core adds no fixed wait beyond the memory transaction.
   The eight original-silicon RAS-only initialization cycles precede this
   transaction in the future physical memory controller.
+- **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
+  issues three acknowledged 32-bit transactions through the shared interrupt
+  states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
+  updates SP/ST/PC before handler fetch. ST.IE and INTENB do not gate entry.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on

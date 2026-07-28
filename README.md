@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0121, and the strict
+Functional implementation work is complete through Task 0122, and the strict
 whole-repository validation baseline is complete through Task 0119. The
 repository currently contains:
 
@@ -18,6 +18,7 @@ repository currently contains:
 - PIXT, FILL, PIXBLT, DRAV, and LINE graphics datapaths with pixel processing,
   plane masking, transparency, and all window modes;
 - on-chip I/O-register storage plus maskable and nonmaskable interrupt entry;
+- architectural reset and illegal-opcode vector entry;
 - standalone video-timing and DRAM-refresh modules;
 - 111 self-checking SystemVerilog testbenches.
 

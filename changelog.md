@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0122 — architectural illegal-opcode interrupt)
+- Classified all reserved ranges in User's Guide Table 8-6 separately from
+  other unimplemented encodings and routed that architectural-illegal subset
+  directly from `CORE_DECODE` into the shared interrupt-entry FSM.
+- Added the architectural vector-30 constant `0xFFFF_FC20`. Illegal entry is
+  unmaskable, pushes the post-opcode PC and old ST, decrements SP by 64 bits,
+  fetches the handler PC from vector 30, and installs `ST_RESET_VALUE`, making
+  it equivalent to the implemented TRAP 30 path.
+- Preserved the reset-cleared, sticky `illegal_opcode_o` diagnostic while
+  separating illegal-entry ST replacement from the still-tracked A0030
+  hardware-interrupt status policy.
+- Reworked `tb_illegal_opcode` around reserved word `0x0200` from User's Guide
+  Table 8-6. It checks every reserved range boundary and adjacent exclusions,
+  both stack writes, exact vector address and read size, stacked data, SP/ST
+  results, skipped fall-through code, handler execution, execute-state
+  exclusion, and sticky diagnostics.
+- Validation: strict RTL lint completed with zero diagnostics, all focused
+  illegal/TRAP/interrupt-entry and compatibility benches passed, and the
+  complete Verilator regression reported `111/111 PASS`.
+
 ### Added (Task 0121 — architectural level-0 reset vector)
 - Resolved A0008 against the 1988 User's Guide pages 8-10 and 8-12: reset
   reads the same level-0 vector as TRAP 0 at bit address `0xFFFF_FFE0`.

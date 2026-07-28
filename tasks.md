@@ -1,12 +1,13 @@
 # Tasks
 
-## Current Milestone: Complete architectural reset and system integration
+## Current Milestone: Complete interrupt/trap and system integration
 
-The functional implementation is complete through Task 0121. Task 0118
+The functional implementation is complete through Task 0122. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
-cross-phase integration with the architectural reset-vector fetch.
+cross-phase integration with the architectural reset-vector fetch. Task 0122
+closes the deferred illegal-opcode interrupt path.
 
 ## Task index
 
@@ -133,6 +134,7 @@ cross-phase integration with the architectural reset-vector fetch.
 | 0119 | Establish strict full-regression gate | complete |
 | 0120 | Complete multiword MOVB memory-to-memory forms | complete |
 | 0121 | Fetch the architectural level-0 reset vector | complete |
+| 0122 | Trap illegal opcodes through architectural vector 30 | complete |
 
 ---
 
@@ -3789,6 +3791,53 @@ Docs:
   `docs/timing_notes.md`, `docs/instruction_coverage.md`.
 Commit:
 - f087ece
+
+---
+
+### Task 0122: Trap illegal opcodes through architectural vector 30
+Status: complete
+Dependencies:
+- Task 0010 (decoder illegal classification and sticky observability).
+- Task 0053 (TRAP 30 architectural behavior).
+- Task 0100 (shared interrupt-entry state sequence).
+- Task 0119 (strict full-regression gate).
+Spec source:
+- 1988 TI TMS34010 User's Guide §8.1 and §8.7, pages 8-2 and 8-9:
+  reserved opcodes generate an unmaskable interrupt equivalent to TRAP 30;
+  vector 30 is the 32-bit word at bit address `0xFFFF_FC20`.
+- User's Guide Table 8-6, page 8-9: `0x0200` is in an explicitly reserved
+  illegal-opcode range.
+Acceptance Criteria:
+- Classify the complete User's Guide Table 8-6 reserved ranges separately
+  from other not-yet-implemented valid encodings, and redirect that
+  architectural-illegal subset from `CORE_DECODE` into interrupt entry.
+- Push the already advanced PC at `SP-32`, push the pre-entry ST at `SP-64`,
+  fetch the handler PC from `0xFFFF_FC20`, decrement SP by 64 bits, and install
+  `ST_RESET_VALUE`, matching the existing TRAP 30 behavior.
+- Ignore ST.IE and the interrupt-enable mask for illegal-opcode recognition.
+- Preserve the sticky `illegal_opcode_o` diagnostic until reset.
+- Leave the existing maskable/NMI entry policy unchanged; resolving A0030's
+  post-entry ST assumption is a separate task.
+Tests:
+- Replace the Phase-3 visibility-only `tb_illegal_opcode` scenario with a
+  complete reserved-opcode/vector-30 integration test covering every reserved
+  range boundary, adjacent non-reserved values, bus direction, address, size,
+  pushed data, SP/ST/PC results, skipped fall-through code, handler execution,
+  and sticky diagnostics.
+- Retain the broader regression's existing unsupported-encoding fall-through
+  behavior until those valid ISA encodings are implemented.
+- Run strict RTL lint, focused illegal/TRAP/interrupt-entry tests, and the
+  complete regression.
+- `scripts/lint.sh` completed with zero diagnostics under Verilator 5.048;
+  `tb_illegal_opcode`, `tb_add_rr`, `tb_trap`, `tb_int_entry`, `tb_int_reti`,
+  `tb_nmi`, and `tb_nmi_nopush` passed.
+- `REGRESS_JOBS=4 scripts/regress.sh` reported `111/111 PASS`.
+Docs:
+- `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/instruction_coverage.md`,
+  `docs/memory_map.md`, `docs/timing_notes.md`.
+Commit:
+- pending (record after commit)
 
 ---
 

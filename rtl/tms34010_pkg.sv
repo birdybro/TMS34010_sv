@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0121: architectural widths and register layouts,
+// Current through Task 0122: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -327,6 +327,7 @@ package tms34010_pkg;
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_HI = 32'hFFFF_FEC0; // trap 9
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_DI = 32'hFFFF_FEA0; // trap 10
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_WV = 32'hFFFF_FE80; // trap 11
+  parameter logic [ADDR_WIDTH-1:0] INT_VEC_ILLOP = 32'hFFFF_FC20; // trap 30
 
   // Nonmaskable interrupt (NMI): host sets HSTCTLH.NMI; the device vectors
   // through trap 8 and (if NMIM=0) pushes PC+ST. 1988 UG §8 (Table 8-2,
@@ -457,8 +458,8 @@ package tms34010_pkg;
                               //                     SP -= 32; mem[SP] <- ST;
                               //                     ST <- 0x00000010; PC <- mem[vec].
                               //                     vec = 0xFFFFFFE0 - N*32. N at instr[4:0]
-                              //                     (range 1..31; TRAP 0 deferred).
-                              //                     Three-step memory: write, write, read.
+                              //                     (range 0..31). N>0 uses write/write/read;
+                              //                     TRAP 0 performs only the vector read.
     INSTR_MMTM       = 7'd72, // MMTM Rp, list     — For each register Rn in the list
                               //                     (lowest-order first): Rp -= 32; mem[Rp] <- Rn.
                               //                     Second word = 16-bit mask (bit N = Rn). Up
@@ -613,8 +614,9 @@ package tms34010_pkg;
   // defaults (REG_FILE_A, idx 0, ALU_OP_PASS_A, etc.) so an undriven path
   // never mis-writes the register file.
   typedef struct packed {
-    logic          illegal;     // 1 if the encoding is not recognized
-    instr_class_t  iclass;      // dispatch class for the control FSM
+    logic          illegal;      // 1 if the encoding is not recognized
+    logic          illegal_trap; // 1 for a silicon-reserved §8.7 opcode
+    instr_class_t  iclass;       // dispatch class for the control FSM
     reg_file_t     rd_file;     // destination register file (A or B); also
                                 // governs Rs file for MOST reg-reg ops because
                                 // they constrain Rs and Rd to the same file

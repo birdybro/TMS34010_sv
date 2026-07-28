@@ -33,7 +33,7 @@ External memory glue (outside the core) is responsible for translating
 bit addresses to whatever the physical memory expects. The core's memory
 interface (see `docs/architecture.md`) exposes the bit address directly.
 
-## Reset and level-0 vector
+## Architectural vector words
 
 Reset and TRAP 0 read the same 32-bit level-0 vector at bit address
 `0xFFFF_FFE0` (1988 User's Guide pages 8-10 and 8-12). Task 0121 makes
@@ -45,6 +45,12 @@ instead of folding `0xFFFF_FFE0` through its low index bits and aliasing an
 ordinary program/data word. The word defaults to zero for focused programs
 that begin at word zero; `tb_reset_vector` assigns a nonzero value, and
 `tb_trap0` retargets it after boot for the later software trap.
+
+Illegal opcodes use the 32-bit vector-30 word at bit address `0xFFFF_FC20`
+(1988 User's Guide §8.7). Unlike the dedicated level-0 test-model word, this
+and other nonzero trap vectors currently fold through the bounded backing
+store's low address-index bits. `tb_illegal_opcode` verifies the full
+architectural bus address before the model applies that simulation alias.
 
 ## I/O register space
 
