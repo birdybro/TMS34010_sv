@@ -3702,7 +3702,7 @@ Tests:
 Docs:
 - `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`.
 Commit:
-- pending
+- be793d7
 
 ---
 
