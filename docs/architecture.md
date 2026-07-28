@@ -1,11 +1,11 @@
 # Architecture
 
-> Status: **implemented through Task 0123, with integration gaps**. The core
-> executes the instruction and graphics operations tracked in
-> `instruction_coverage.md`; reset-vector fetch, I/O registers, and interrupt
-> entry are integrated. Video timing and refresh exist as standalone modules.
-> The host/memory fabric, bus arbitration, video/refresh integration, and
-> physical FPGA build remain open.
+> Status: **implemented through Task 0123; audited through Task 0124, with
+> integration gaps**. The core executes the instruction and graphics
+> operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
+> registers, and interrupt entry are integrated. Video timing and refresh
+> exist as standalone modules. The remaining ISA discrepancies and all
+> system-level exit gates are recorded in `completion_audit.md`.
 
 ## Specification source
 
@@ -106,6 +106,18 @@ fabric/controller has not landed.
 Rows without files describe planned integration boundaries or possible
 refactoring, not stub modules. Unsupported instruction encodings route to the
 illegal-opcode path rather than silently doing nothing.
+
+## Completion ledger
+
+Task 0124 compared every row in the 1988 User's Guide §12.3 instruction
+summary against the decoder, execution paths, tests, and
+`instruction_coverage.md`. That reconciliation found two missing MOVE forms,
+the missing EMU interface, incorrect shared ANDI/ANDNI semantics, and
+provisional logical flag behavior that requires correction. It also
+consolidated the I/O, interrupt-source, physical-memory, host, refresh, video,
+CDC, and Quartus work into seven ordered exit gates. The authoritative
+remaining-work ledger is `completion_audit.md`; this architecture document
+describes the current structure rather than claiming project completion.
 
 ## Datapath strategy
 

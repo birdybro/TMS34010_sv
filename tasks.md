@@ -1,14 +1,16 @@
 # Tasks
 
-## Current Milestone: Complete interrupt/trap and system integration
+## Current Milestone: Reconcile and complete the remaining architecture
 
 The functional implementation is complete through Task 0123. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
 cross-phase integration with the architectural reset-vector fetch. Task 0122
-closed the deferred illegal-opcode interrupt path. Task 0123 resolves the
+closed the deferred illegal-opcode interrupt path. Task 0123 resolved the
 remaining interrupt-entry status assumption directly against the guide.
+Task 0124 established the primary-spec completion ledger that now drives
+further implementation.
 
 ## Task index
 
@@ -137,6 +139,7 @@ remaining interrupt-entry status assumption directly against the guide.
 | 0121 | Fetch the architectural level-0 reset vector | complete |
 | 0122 | Trap illegal opcodes through architectural vector 30 | complete |
 | 0123 | Initialize architectural ST on every interrupt entry | complete |
+| 0124 | Audit the remaining ISA and system completion gaps | complete |
 
 ---
 
@@ -3881,6 +3884,43 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`, `docs/timing_notes.md`.
 Commit:
 - e4768a1
+
+---
+
+### Task 0124: Audit the remaining ISA and system completion gaps
+Status: complete
+Dependencies:
+- Task 0118 (repository handoff/reconciliation).
+- Task 0123 (clean architectural interrupt baseline).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §12.3, pages 12-12 through 12-18
+  (complete TMS34010 instruction summary).
+- Individual instruction pages 12-43/12-45 (ANDI/ANDNI), 12-51 (CLR),
+  12-61 (DEC), 12-77 (EMU), 12-149 (MOVE offset-to-postincrement), and
+  12-155 (MOVE absolute-to-postincrement).
+- SPVS002C datasheet and User's Guide bus/host/video chapters for the
+  physical integration boundaries already named in the architecture docs.
+Acceptance Criteria:
+- Reconcile every row of the official instruction-summary tables against
+  `docs/instruction_coverage.md` and the decoder.
+- Record every missing instruction/form, every implemented alias that lacks
+  direct verification, and every discovered noncompliant implementation
+  without presenting it as complete.
+- Reconcile current architecture/module-map gaps, active assumptions, and
+  Quartus-flow limitations into one ordered completion ledger with objective
+  exit gates.
+- Keep historical task/changelog statements intact; update only current
+  status summaries.
+Tests:
+- `scripts/lint.sh` — PASS; Verilator lint clean with zero diagnostics.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 111/111 self-checking
+  testbenches.
+Docs:
+- Add `docs/completion_audit.md`; update `README.md`, `AGENTS.md`, `tasks.md`,
+  `changelog.md`, `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

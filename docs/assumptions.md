@@ -112,6 +112,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 ---
 
 ## A0009 — ALU flag-update convention before per-instruction read
+
+**Task 0124 audit finding:** this provisional family-wide policy is known to
+be architecturally wrong for at least ANDI/ANDNI and the CLR alias. Their
+individual pages specify Z-only updates with N/C/V unaffected. The historical
+assumption below is retained to explain the current RTL, but it is an active
+noncompliance item in `completion_audit.md`, not a compatibility claim.
 - **Date**: 2026-05-12
 - **Status**: active, **TODO/spec-uncertain** (per-instruction nuances)
 - **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
@@ -628,6 +634,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   reverse (linear→XY) conversion in CORE_FILL_WB for INSTR_FILL_XY.
 
 ## TODO / spec-uncertain (waiting on detailed read)
+
+Task 0124 consolidates the assumptions that still affect observable
+compatibility and all system-level work into `completion_audit.md`. Resolve
+that ordered ledger before declaring the TMS34010 implementation complete.
 
 - Remaining per-instruction flag nuances still marked provisional in earlier
   entries; do not rely on the age of an entry as evidence it was resolved.

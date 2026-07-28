@@ -12,13 +12,16 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The implementation is complete through Task 0123. It includes the multicycle
-CPU core, the currently tracked instruction set, bit-field memory operations,
-graphics operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking,
-I/O registers, reset-vector fetch, maskable/NMI entry with architectural
-service-context ST initialization, and the illegal-opcode trap. Video timing
-and refresh blocks exist as standalone modules. Read `tasks.md` and the
-current-status sections in `docs/architecture.md` before selecting new work.
+The functional implementation is complete through Task 0123. Task 0124
+audited the complete official instruction summary and system integration
+scope. The implementation includes the multicycle CPU core, the currently
+tracked instruction set, bit-field memory operations, graphics operations
+through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers,
+reset-vector fetch, maskable/NMI entry with architectural service-context ST
+initialization, and the illegal-opcode trap. Video timing and refresh blocks
+exist as standalone modules. Read `tasks.md`, `docs/completion_audit.md`, and
+the current-status sections in `docs/architecture.md` before selecting new
+work.
 
 ## Specification source of truth
 
@@ -62,6 +65,8 @@ RTL, tests, task log, changelog, and specification first.
 - `docs/architecture.md` — module map, datapath/control strategy, and gaps.
 - `docs/assumptions.md` — non-spec-derived or ambiguous decisions.
 - `docs/instruction_coverage.md` — per-instruction implementation/test status.
+- `docs/completion_audit.md` — complete ISA reconciliation and ordered
+  project-level exit gates.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.
 - `docs/memory_map.md` — bit-addressed memory model and I/O register map.
 - `docs/hdl-coding-guidelines/` — authoritative Cyclone V RTL style bundle.

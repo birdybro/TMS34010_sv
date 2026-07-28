@@ -7,6 +7,18 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Documentation (Task 0124 — completion audit)
+- Reconciled every row of the 1988 User's Guide §12.3 TMS34010 instruction
+  summary against the decoder and instruction-coverage ledger.
+- Recorded the two missing MOVE forms and EMU interface, the noncompliant
+  ANDI/ANDNI extension semantics, and the CLR/logical flag discrepancy.
+- Added `docs/completion_audit.md` with active compatibility assumptions,
+  system-integration gaps, and seven ordered exit gates through FPGA timing
+  closure.
+- Updated the current repository, architecture, agent, assumption, and
+  coverage summaries without rewriting historical task claims.
+- Validation: `scripts/lint.sh` clean; full regression 111/111 PASS.
+
 ### Fixed (Task 0123 — architectural interrupt-entry status)
 - Resolved A0030 using the status-register transition diagram in the 1988
   User's Guide §8.5 page 8-6. Every interrupt service context now starts with
