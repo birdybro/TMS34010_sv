@@ -4021,7 +4021,7 @@ Docs:
   `docs/architecture.md`, `docs/completion_audit.md`,
   `docs/instruction_coverage.md`, and `docs/timing_notes.md`.
 Commit:
-- pending
+- `b3ac2e4` — Implement MOVE absolute postincrement (Task 0127)
 
 ---
 
