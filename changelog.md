@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0136 — architectural field-to-word sequencing)
+- Resolved A0005 from the 1988 User's Guide §§3.1, 4.1, and 11.3 and added
+  `tms34010_field_sequencer`, which expands one bit-addressed 1–32-bit request
+  into the specified ascending aligned 16-bit word sequence.
+- Implemented one/two/three-word reads, direct fully covered writes,
+  partial-word read/modify/write preservation, and an explicit per-word RMW
+  lock. Word requests and payload remain stable through arbitrary stalls.
+- Routed `sim_memory_model` through the synthesizable sequencer so every
+  core integration bench now exercises physical word splitting.
+- Added `tb_field_sequencer` for all write cases A–G, read alignment cases,
+  exact transaction order/count/data, wait states, payload stability, and
+  reset recovery; retained `tb_mem_field` as the core-side boundary test.
+- Kept original-pin RAS/CAS/LCLK/LRDY timing, reset initialization, and bus
+  arbitration as explicit integration work.
+- Validation: focused benches PASS; `scripts/lint.sh` clean; full regression
+  121/121 PASS.
+
 ### Fixed (Task 0135 — complete instruction status audit)
 - Reconciled every implemented instruction family's individual N/C/Z/V table
   and resolved A0009; added `docs/status_audit.md` plus an exhaustive

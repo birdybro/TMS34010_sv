@@ -1,12 +1,12 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0135, with
+> Status: **implemented and ISA/status-audited through Task 0136, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
-> integrated. Video timing and refresh exist as standalone modules. The
-> remaining system-level exit gates are recorded in
-> `completion_audit.md`.
+> integrated. Architectural fields are sequenced onto aligned 16-bit words.
+> Video timing and refresh exist as standalone modules. The remaining
+> system-level exit gates are recorded in `completion_audit.md`.
 
 ## Specification source
 
@@ -54,27 +54,31 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
         │                  └─────────┘                 │       │
         └─────────────────────────────────────────────│───────┘
                                                        │
-                            ┌──────────────────────────┴────┐
-                            │   bus_arbiter / cache /        │
-                            │   pixel_addr / pixblt / line   │
-                            │   host_if / video_timing       │
+                                     ┌─────────────────▼───────────────┐
+                                     │ field_sequencer (1–32 → 16-bit)│
+                                     └─────────────────┬───────────────┘
+                                                       │
+                            ┌──────────────────────────▼────┐
+                            │ future arbiter / local bus /   │
+                            │ host / video / refresh fabric  │
                             └────────────────────────────────┘
 ```
 
 The CPU, graphics execution engines, I/O register storage, and interrupt entry
-currently live in or directly under `tms34010_core`. The lower memory/host
-fabric remains planned; video timing and refresh are standalone blocks awaiting
+currently live in or directly under `tms34010_core`. The field-to-word
+sequencer has landed below that core boundary. The lower local-bus/host fabric
+remains planned; video timing and refresh are standalone blocks awaiting
 integration.
 
 ## Test substrate
 
 For tests beyond pure FSM-state checks, a behavioral memory model under
-`sim/models/sim_memory_model.sv` provides a request/ack-handshake-compliant
-16-bit-word store with one-cycle ack latency. It supports arbitrary 1–32-bit
-fields at any bit address, including three-word straddles and
-read-modify-write preservation. The model is **not RTL**; it exists only to
-drive the core interface in simulation. A synthesizable external-memory
-fabric/controller has not landed.
+`sim/models/sim_memory_model.sv` retains the core request/ack boundary and a
+one-cycle 16-bit backing store. Every arbitrary 1–32-bit request passes
+through the synthesizable `tms34010_field_sequencer`, including three-word
+straddles and partial-word read/modify/write preservation. Only the backing
+target is simulation-specific. An original-pin external-memory controller
+has not landed.
 
 ## Module map
 
@@ -89,7 +93,8 @@ fabric/controller has not landed.
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
 | `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0135** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
-| `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
+| `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
+| `rtl/memory/tms34010_local_bus.sv`      | 6     | not started | original-pin row/column/data phases, LRDY waits, and reset initialization |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
 | `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | not started | core vs. graphics vs. host arbitration |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
@@ -135,8 +140,10 @@ individual-instruction status audit and resolved A0009. The static policy is
 exhaustively checked across all 65,536 opcodes, while focused tests cover
 runtime divide/modulo, multiply-result-width, W=3 preclipping, and PIXT
 XY-destination distinctions. `status_audit.md` records the complete matrix
-and the deterministic handling of Undefined flags. The audit also
-consolidated the I/O, interrupt-source,
+and the deterministic handling of Undefined flags. Task 0136 then resolved
+A0005 and landed exact §4.1 field-to-word sequencing, including all seven
+alignment cases, stalls, reset recovery, and per-word RMW indivisibility.
+The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
 `completion_audit.md`; this architecture document describes the current
@@ -146,9 +153,9 @@ structure rather than claiming project completion.
 
 - **Width**: TMS34010 is a 32-bit architecture with a 16-bit external
   multiplexed bus. Internally, ALU is 32 bits; external bus is 16 bits and
-  cycles are multiphase. Exact physical phasing is not implemented; it must be
-  taken from the User's Guide bus-cycle chapter and captured in
-  `docs/timing_notes.md` when the memory fabric is designed.
+  cycles are multiphase. Field-to-word splitting is implemented; exact
+  original-pin phasing is not and must be taken from the User's Guide
+  bus-cycle chapter when the local-bus controller is designed.
 - **Pipelining**: initial implementation is multi-cycle FSM, not pipelined.
   This keeps the first ISA implementation reviewable. Pipelining is a
   Phase 10 candidate.
@@ -235,9 +242,7 @@ non-maskable request would otherwise re-fire every cycle.
 
 The core exposes one request/ack interface for instruction fetches, data
 accesses, and graphics transactions. I/O addresses are decoded on-chip, but
-the core still emits an external cycle and uses its ack (A0028). A future bus
-arbiter must add host, video, and refresh clients and reproduce the required
-priority.
+the core still emits an external cycle and uses its ack (A0028).
 
 | Signal     | Dir   | Width | Purpose                                |
 |------------|-------|-------|----------------------------------------|
@@ -249,8 +254,14 @@ priority.
 | `mem_rdata`| in    | 32    | read data, aligned to field            |
 | `mem_ack`  | in    | 1     | one-cycle pulse: data valid / write done |
 
-This is the current core interface. Its physical 16-bit bus sequencing,
-wait-state behavior, and arbitration remain outside the core.
+`tms34010_field_sequencer` accepts this core boundary and presents aligned
+16-bit `word_req_o`, `word_we_o`, `word_addr_o`, `word_wdata_o`,
+`word_rdata_i`, and `word_ack_i` signals. It sequences one/two/three-word
+reads, direct full-word writes, and partial-word RMW pairs while holding
+payload stable through stalls. `word_rmw_lock_o` identifies the indivisible
+interval required by §11.3. A future arbiter adds host, video, and refresh
+clients; a later local-bus controller converts each aligned word request into
+RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY.
 
 ## Graphics subsystem
 
@@ -300,8 +311,8 @@ VRAM shift-register behavior and pixel output are not implemented.
 
 ## Current implementation gaps
 
-- A synthesizable memory fabric, physical external-bus sequencing, wait-state
-  validation, cache, and arbitration among CPU/graphics/host/video/refresh.
+- Original-pin external-bus phase generation, LRDY validation, reset
+  initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
 - Host interface behavior.
 - Full I/O side effects/read-only semantics and internally completed I/O
   accesses.

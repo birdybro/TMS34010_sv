@@ -52,19 +52,30 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   documented CDC boundary.
 
 ## A0005 — Bit-addressed memory exposed at the interface boundary
-- **Date**: 2026-05-12
-- **Status**: active, **TODO/spec-uncertain** for exact field alignment rules
-- **Source**: TMS34010 User's Guide bit-addressing chapter (to be cited by
-  page once Phase 1 lands).
-- **Assumption**: The core's external memory interface uses **bit addresses**
-  (32-bit address, low bits select a bit within a word), plus a 6-bit field
-  size (1–32 bits). External RAM glue is responsible for translating to
-  byte/word addresses and handling unaligned access.
-- **Rationale**: This matches the device's architectural model. Doing the
-  bit-alignment outside the core keeps the core RTL clean and lets the
-  external glue (and tests) take any shape.
-- **Open question**: exact behavior on field reads that cross a 32-bit
-  natural word boundary — needs a spec-cited resolution before Phase 5.
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0136)**.
+- **Status**: **RESOLVED** against the primary memory-organization and
+  arbitration text.
+- **Source**: 1988 TI TMS34010 User's Guide §3.1, pages 3-2 through 3-3;
+  §4.1, pages 4-2 through 4-5; and §11.3, page 11-4.
+- **Resolution**: The core retains its 32-bit bit-address plus 1–32-bit field
+  boundary. `tms34010_field_sequencer` translates each request into ascending
+  aligned 16-bit physical-word cycles. The field's least-significant bit is
+  at the requested bit address. Reads use one, two, or three word reads and
+  return a masked, right-justified field. Writes directly replace every
+  fully covered word and use read/modify/write only for partial first or last
+  words, giving the guide's exact seven alignment cases A–G.
+- **Atomicity**: Each partial-word read/modify/write pair exposes one
+  indivisible `word_rmw_lock_o` interval. The lock may drop between different
+  words of a multiword field, as §11.3 permits arbitration there.
+- **Regression evidence**: `tb_field_sequencer` verifies all A–G write
+  sequences, one/two/three-word reads, arbitrary word-side stalls, stable
+  request payload, and reset recovery. `tb_mem_field` verifies the retained
+  core-side abstraction through the same sequencer. The complete Task 0136
+  regression passes 121/121 benches.
+- **Boundary**: This resolution covers architectural field alignment and
+  physical-word sequencing. Original pin-level RAS/CAS/LCLK/LRDY phases,
+  post-reset initialization, and arbitration remain system-integration work,
+  not an unresolved field-semantics assumption.
 
 ## A0006 — No cycle-accuracy contract in Phase 0–4
 - **Date**: 2026-05-12
@@ -644,7 +655,7 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Physical bus-cycle phasing and wait-state behavior for unaligned fields
-  crossing the original 16-bit external bus.
+- Pin-level LCLK/RAS/CAS/LAL/DEN/DDOUT/W/LRDY phase generation, eight
+  post-reset RAS-only initialization cycles, and memory-client arbitration.
 - I/O side effects, on-chip completion timing, and host-visible semantics not
   yet implemented by `tms34010_io_regs`.

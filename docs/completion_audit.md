@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0135, with strict RTL
+> Baseline: functional implementation through Task 0136, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -61,14 +61,20 @@ The audit distinguishes Undefined/Indeterminate flags—preserved
 deterministically by this RTL—from architecturally Unaffected flags. No
 active ISA/status assumption remains.
 
+Task 0136 resolved A0005 from §§3.1, 4.1, and 11.3. A synthesizable field
+sequencer now expands the core's bit-addressed 1–32-bit requests into the
+specified ascending 16-bit word reads, direct full-word writes, and
+partial-word read/modify/write pairs for alignment cases A–G. Tests lock
+exact word order/count/data, per-word RMW indivisibility, arbitrary word-side
+stalls, and reset recovery. Pin-level local-bus phases remain an integration
+gate, not an architectural field-alignment uncertainty.
+
 ## Active architectural assumptions requiring closure
 
-These assumptions affect observable compatibility and must be resolved by
-primary-spec evidence plus tests, or retained as an explicit project-level
-deviation:
-
-- A0005: exact field alignment and cross-boundary behavior at the physical
-  memory interface.
+No active architectural compatibility assumption remains. New uncertainty
+found during the remaining system integration must still be resolved by
+primary-spec evidence plus tests or retained as an explicit project-level
+deviation.
 
 A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), and A0006 (functional-first timing) are intentional design choices.
@@ -92,9 +98,9 @@ non-pin-compatible boundary.
 
 ### Memory, refresh, and host fabric
 
-- Implement the original 16-bit physical memory-cycle controller, including
-  bit-address translation, unaligned field phasing, wait states, and the eight
-  post-reset RAS-only initialization cycles.
+- Connect the landed field sequencer to an original-pin local memory-cycle
+  controller: row/column/address/data phases, LRDY-controlled waits, and the
+  eight post-reset RAS-only initialization cycles.
 - Add arbitration among CPU/graphics, display, refresh, and host clients with
   specification-derived priority and request-hold rules.
 - Integrate the standalone DRAM-refresh generator and expose REFCNT behavior.
@@ -127,8 +133,9 @@ non-pin-compatible boundary.
    MOVE forms and EMU behavior; ensure every §12.3 row has a spec citation and
    named test.
 3. Complete I/O side effects and every interrupt source.
-4. Land the physical memory, refresh, host, and arbitration fabric with
-   wait-state/reset tests.
+4. Land the pin-level local memory controller, refresh, host, and arbitration
+   fabric with LRDY/reset tests. Task 0136 has completed its field-to-word
+   sequencing prerequisite.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

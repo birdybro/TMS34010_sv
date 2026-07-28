@@ -1,10 +1,10 @@
 # Memory map
 
-> Status: **implemented at the architectural/simulation boundary**. The core
-> issues bit-addressed 1–32-bit accesses and the simulation memory model
-> handles unaligned/straddling fields. The on-chip I/O page is decoded and
-> stored in the core. Physical external-bus translation and several I/O side
-> effects remain open.
+> Status: **field-to-word translation implemented through Task 0136**. The
+> core issues bit-addressed 1–32-bit accesses, and a synthesizable sequencer
+> expands them into aligned 16-bit word cycles. The on-chip I/O page is
+> decoded and stored in the core. Original-pin local-bus timing and several
+> I/O side effects remain open.
 
 ## Architectural address space
 
@@ -20,18 +20,29 @@ a bit within that word.
 ```
 
 Field operations specify a **field size** (1–32 bits) and read/write that
-many bits starting at the byte address, crossing word boundaries as needed.
+many bits starting at the bit address, crossing word boundaries as needed.
 
-The simulation memory model (`sim/models/sim_memory_model.sv`) implements
-this field semantics as of Task 0076: 1–32-bit reads/writes at any bit address,
-straddling 16-bit words, with read-modify-write preservation of surrounding
-bits. Tasks 0077–0079 wired field size, FE-driven extension, unaligned access,
-and FS-aware pointer stepping through every implemented MOVE form. Pixel
-operations similarly drive `mem_size` from PSIZE.
+`rtl/memory/tms34010_field_sequencer.sv` implements the §4.1 field semantics
+as of Task 0136. It issues aligned 16-bit words in ascending address order:
+one, two, or three reads; direct writes for every fully covered word; and
+read/modify/write for a partial first or last word. These combinations give
+the guide's exact seven cases A–G. Read results are masked and right
+justified. `word_rmw_lock_o` covers each partial-word read through its
+matching write acknowledge, without incorrectly locking the gaps between
+different words.
 
-External memory glue (outside the core) is responsible for translating
-bit addresses to whatever the physical memory expects. The core's memory
-interface (see `docs/architecture.md`) exposes the bit address directly.
+The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
+public core-side interface and backing `mem[]`, but now routes every request
+through the synthesizable sequencer into a one-cycle aligned 16-bit target.
+Thus all integration benches exercise physical word splitting. Tasks
+0077–0079 remain responsible for FS, FE, pointer stepping, and MOVE addressing;
+pixel operations similarly drive `mem_size` from PSIZE.
+
+Future external-memory glue consumes the sequencer's aligned word requests
+and translates them into original local-bus pin phases. The architectural
+address is 32 bits; the original multiplexed physical address output uses
+bits [29:4] (§4.1), with upper address-space bits also participating in
+region/I/O interpretation at the later controller boundary.
 
 ## Architectural vector words
 
@@ -124,7 +135,7 @@ graphics accesses.
 
 ## Uncertain / partially implemented areas
 
-- Physical 16-bit external-bus phasing and wait-state behavior.
+- Original-pin 16-bit local-bus phasing and LRDY wait-state behavior.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by graphics/interrupt logic.

@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0135. Task 0124
+Functional implementation work is complete through Task 0136. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -21,8 +21,10 @@ FILL XY's final linear DADDR writeback and W=0 status preservation. Task
 0134 corrected SUBXY's coordinate comparisons to signed 16-bit
 semantics. Task 0135 completed the primary-page instruction status audit,
 resolved A0009, corrected divide/modulo and odd-result multiply edge cases,
-and completed W=3/PIXT graphics-window status behavior. The repository
-currently contains:
+and completed W=3/PIXT graphics-window status behavior. Task 0136 resolved
+the remaining field-alignment assumption and added exact
+specification-derived sequencing from 1–32-bit architectural fields onto
+aligned 16-bit physical words. The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -34,15 +36,16 @@ currently contains:
 - on-chip I/O-register storage plus maskable and nonmaskable interrupt entry;
 - architectural reset and illegal-opcode vector entry;
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
+- a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
+  partial-word RMW locking, and arbitrary word-side stalls;
 - standalone video-timing and DRAM-refresh modules;
-- 120 self-checking SystemVerilog testbenches, including an exhaustive
+- 121 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining physical memory interface, host/memory
-fabric, bus arbitration, I/O side-effect completion, video/refresh
-integration, real Quartus project/constraints, and timing/resource
-validation.
+the audit records the remaining pin-level local-bus controller, host/memory
+fabric, bus arbitration, I/O side-effect completion, video/refresh integration,
+real Quartus project/constraints, and timing/resource validation.
 
 ## Getting started
 
@@ -66,7 +69,8 @@ pinned `third_party/TMS34010_Info` submodule.
 
 ## Repository map
 
-- `rtl/` — synthesizable package, core, I/O, video, and refresh RTL.
+- `rtl/` — synthesizable package, core, memory sequencing, I/O, video, and
+  refresh RTL.
 - `sim/models/` — nonsynthesizable behavioral memory model.
 - `sim/tb/` — focused self-checking testbenches.
 - `docs/` — architecture, assumptions, coverage, memory/timing notes, and the

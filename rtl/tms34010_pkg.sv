@@ -11,9 +11,9 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0135: architectural widths and register layouts,
+// Current through Task 0136: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
-// graphics FSM states are defined here.
+// graphics FSM states plus physical-memory word geometry are defined here.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -33,6 +33,15 @@ package tms34010_pkg;
   // Field-size operands are 1..32 bits, encoded in 6 bits.
   // Spec: 1988 User's Guide, field-move/field-addressing chapter.
   parameter int unsigned FIELD_SIZE_WIDTH = 6;
+
+  // Original local memory is transferred as aligned 16-bit words. A maximum
+  // 32-bit field beginning at bit offset 15 occupies at most three words.
+  // Spec: 1988 User's Guide §3.1 pages 3-2/3-3 and §4.1 pages 4-2 through 4-5.
+  parameter int unsigned LOCAL_WORD_WIDTH     = 16;
+  parameter int unsigned LOCAL_WORD_ADDR_LSB  = 4;
+  parameter int unsigned FIELD_WINDOW_WIDTH   = 3 * LOCAL_WORD_WIDTH;
+  parameter int unsigned FIELD_MAX_WORDS      = 3;
+  typedef logic [LOCAL_WORD_WIDTH-1:0] local_word_t;
 
   // ---------------------------------------------------------------------------
   // Instruction-stream constants

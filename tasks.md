@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0135. Task 0118
+The functional implementation is complete through Task 0136. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -24,7 +24,8 @@ DADDR representation and W=0 status behavior. Task 0134 corrected SUBXY's
 greater-than flags to signed 16-bit XY comparisons. Task 0135 completed the
 individual-page N/C/Z/V audit, corrected divide/modulo and odd-result multiply
 semantics, completed graphics W=3 V reporting and PIXT XY-to-XY window
-handling, and resolved A0009.
+handling, and resolved A0009. Task 0136 resolved A0005 by sequencing every
+architectural field onto the exact required ascending 16-bit word operations.
 
 ## Task index
 
@@ -165,6 +166,7 @@ handling, and resolved A0009.
 | 0133 | Resolve FILL XY DADDR writeback semantics | complete |
 | 0134 | Correct SUBXY signed comparison semantics | complete |
 | 0135 | Complete the instruction status audit | complete |
+| 0136 | Sequence architectural fields onto 16-bit memory words | complete |
 
 ---
 
@@ -4305,6 +4307,50 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - 6916227
+
+---
+
+### Task 0136: Sequence architectural fields onto 16-bit memory words
+Status: complete
+Dependencies:
+- Task 0076 (abstract arbitrary-field simulation semantics).
+- Task 0135 (complete ISA/status exit gate).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §3.1, pages 3-2 through 3-3
+  (bit-addressed logical memory and 16-bit physical words).
+- 1988 TI TMS34010 User's Guide §4.1, pages 4-2 through 4-5
+  (the seven minimum-cycle field-alignment cases).
+- 1988 TI TMS34010 User's Guide §11.3, page 11-4
+  (word-level read/modify/write indivisibility and arbitration boundaries).
+Acceptance Criteria:
+- Add a synthesizable field sequencer that translates one bit-addressed
+  1–32-bit request into the specified minimum sequence of aligned 16-bit
+  word reads and writes.
+- Preserve bits outside partial-word writes, directly write every fully
+  covered word, return reads right-justified, and handle one-, two-, and
+  three-word fields in ascending address order.
+- Hold every physical-word request and payload stable through arbitrary
+  wait states and expose the indivisible partial-word RMW interval.
+- Route the shared simulation memory model through the sequencer so all
+  core-level tests exercise physical word splitting instead of an atomic
+  behavioral 48-bit splice.
+- Resolve A0005 with primary-spec evidence and retain pin-level RAS/CAS
+  timing as the next memory-controller task rather than conflating it with
+  field alignment.
+Tests:
+- `tb_field_sequencer` PASS for all seven write cases, 1/2/3-word reads,
+  exact transaction order/count/data, stalls, payload stability, and reset.
+- `tb_mem_field`, `tb_smoke`, and `tb_move_field` focused integration
+  regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 121/121 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

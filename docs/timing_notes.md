@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0130, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0136, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -13,6 +13,7 @@
 | Bit-addressed field/XY address logic| 5 / 7            | landed in core, unmeasured | register conversion/extract paths if combinational logic is too wide |
 | PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
 | Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
+| Field-window shift/mask and word merge | Task 0136      | landed, sequenced, unmeasured | preserve the registered word boundary; pipeline only if TimeQuest identifies this path |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -21,9 +22,10 @@
 - **Architectural reset** — after `rst` releases, `CORE_RESET` holds one
   32-bit read request at `0xFFFF_FFE0` until `mem_ack`. PC loads on that
   acknowledge and the next state is `CORE_FETCH`; there is no stack or data
-  write. The abstract core adds no fixed wait beyond the memory transaction.
-  The eight original-silicon RAS-only initialization cycles precede this
-  transaction in the future physical memory controller.
+  write. The field sequencer expands that abstract request into two ascending
+  16-bit word reads and holds each request through `word_ack_i`. The eight
+  original-silicon RAS-only initialization cycles still precede this
+  transaction in the future pin-level memory controller.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
@@ -40,14 +42,34 @@
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
-  destination pointer advances in `CORE_WRITEBACK`. The abstract interface
-  treats an unaligned/straddling field as one transaction, while the future
-  physical 16-bit controller must expand it into the specification-derived
-  bus phases.
+  destination pointer advances in `CORE_WRITEBACK`. Each abstract field
+  transaction is expanded by `tms34010_field_sequencer` into the §4.1
+  minimum aligned-word sequence and can stall independently on each
+  `word_ack_i`.
 - **MOVE @SAddress,*Rd+** — opcode and two source-address fetches are
   followed by the same two acknowledged FS-bit source-read/destination-write
   transactions and destination writeback. Absolute-address fetch order is
   low word then high word.
+- **Physical field sequencing** — one accepted 1–32-bit request remains
+  active internally until all required ascending 16-bit word operations have
+  completed. Minimum physical-word counts are:
+
+  | §4.1 case | Read words | Write words |
+  |-----------|------------|-------------|
+  | A         | 1          | 1 direct    |
+  | B         | 1          | 2 (read/modify/write) |
+  | C         | 2          | 2 (partial RMW + direct) |
+  | D         | 2          | 3 (partial RMW + direct) |
+  | E         | 2          | 3 (direct + partial RMW) |
+  | F         | 2          | 4 (two partial RMW pairs) |
+  | G         | 3          | 5 (partial RMW + direct + partial RMW) |
+
+  Controller select/response states are implementation latency, not claimed
+  original-pin phases. Each asserted word request and its payload remain
+  stable until acknowledge. `word_rmw_lock_o` is asserted from a partial-word
+  read through the matching write acknowledge; §11.3 permits arbitration
+  between different words of a multiword field, so the lock does not span
+  the complete field.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on

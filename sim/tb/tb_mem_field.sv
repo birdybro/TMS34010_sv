@@ -1,12 +1,11 @@
 // -----------------------------------------------------------------------------
 // tb_mem_field.sv
 //
-// Unit test for the generalized bit-field path in sim_memory_model: reads and
-// writes of 1..32 bits at arbitrary bit addresses, including fields that
-// straddle 16-bit word boundaries, with read-modify-write preservation of the
-// surrounding bits. This is the memory-model foundation for the TMS34010
-// field-size (FS/FE) machinery; the core's existing aligned 16/32-bit accesses
-// are the boff=0 special cases.
+// Boundary test for the generalized bit-field path in sim_memory_model:
+// reads and writes of 1..32 bits at arbitrary bit addresses, including fields
+// that straddle 16-bit word boundaries, with preservation of surrounding
+// bits. The model routes this public core-side protocol through the
+// synthesizable tms34010_field_sequencer and its aligned 16-bit word target.
 //
 // Drives the request/ack protocol directly (no core): assert mem_req with the
 // access fields, wait for the one-cycle mem_ack, sample mem_rdata on reads.
@@ -141,7 +140,7 @@ module tb_mem_field;
     check_read("7: read bit87", 32'd87, 6'd1, 32'h0000_0001);
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (sim_memory_model bit-field RMW: aligned, sub-word, straddling, single-bit)");
+      $display("TEST_RESULT: PASS (field sequencer boundary: aligned, sub-word, straddling, single-bit)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0135. Task 0124
+The functional implementation is complete through Task 0136. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -29,8 +29,11 @@ linear DADDR writeback and W=0 status preservation. Task 0134 corrected
 SUBXY's greater-than flags to signed XY comparisons. Task 0135 completed the
 individual-page N/C/Z/V audit, resolved A0009, corrected DIVS/MODS and
 odd-result multiply edge cases, and completed array W=3 plus PIXT XY-to-XY
-window status behavior. The implementation includes the multicycle CPU core,
-the currently tracked instruction set, bit-field memory operations, graphics
+window status behavior. Task 0136 resolved A0005 and added synthesizable
+sequencing from architectural fields onto aligned 16-bit words, including
+all seven specification cases, partial-word RMW locking, and word-side wait
+states. The implementation includes the multicycle CPU core, the currently
+tracked instruction set, bit-field memory operations, graphics
 operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O
 registers, reset-vector fetch, maskable/NMI entry with architectural
 service-context ST initialization, and the illegal-opcode trap. Video timing
@@ -89,8 +92,11 @@ RTL, tests, task log, changelog, and specification first.
 - `docs/hdl-coding-guidelines/` — authoritative Cyclone V RTL style bundle.
 - `rtl/tms34010_pkg.sv` — sole home for shared architectural constants and
   typedefs; do not scatter magic architectural values through the RTL.
+- `rtl/memory/tms34010_field_sequencer.sv` — synthesizable translation from
+  core bit fields to aligned 16-bit physical-word requests.
 - `sim/models/sim_memory_model.sv` — behavioral, nonsynthesizable bit-addressed
-  memory used by integration tests.
+  memory target used by integration tests; its public requests route through
+  the field sequencer.
 
 ## Build, simulation, and lint
 
