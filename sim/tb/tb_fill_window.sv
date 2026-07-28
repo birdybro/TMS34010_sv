@@ -15,14 +15,16 @@
 // (X=0x21, outside) keeps its initial 0. Expected words = 0x00AA (vs 0xAAAA
 // without the window).
 //
-// W=1 (hit detect) and W=2 (miss detect / abort) — including the WV interrupt
-// and V-bit semantics — are NOT implemented yet (A0031); this covers W=3 only.
+// W=3 also sets V when any preclipping is required. A seeded full-status
+// snapshot verifies that this operation changes V and leaves N/C/Z untouched.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
 
 module tb_fill_window;
   import tms34010_pkg::*;
+
+  localparam logic [DATA_WIDTH-1:0] ST_SEED = 32'hE000_0010;
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -59,6 +61,12 @@ module tb_fill_window;
     setf_enc = 16'b0000_0100_0000_0000
              | (instr_word_t'(f_sel) << 9) | 16'b0000_0001_0000_0000
              | 16'b0000_0000_0100_0000 | (instr_word_t'(fe) << 5) | instr_word_t'(fs);
+  endfunction
+  function automatic instr_word_t putst_enc(input reg_idx_t rs);
+    putst_enc = 16'h01A0 | instr_word_t'(rs);
+  endfunction
+  function automatic instr_word_t getst_enc(input reg_idx_t rd);
+    getst_enc = 16'h0180 | instr_word_t'(rd);
   endfunction
   function automatic int unsigned place_movi_il(input int unsigned p, input reg_idx_t i,
                                                 input logic [DATA_WIDTH-1:0] imm);
@@ -114,7 +122,10 @@ module tb_fill_window;
     p = place_movi_il_b(p, 4'd6, 32'h0002_0020);         // WEND   XY (X=0x20,Y=2)
     p = place_movi_il_b(p, 4'd7, 32'h0002_0002);         // DYDX (DY=2,DX=2)
     p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1
+    p = place_movi_il  (p, 4'd14, ST_SEED);
+    p = place_word(p, putst_enc(4'd14));                 // NCZ=111, V=0
     p = place_word(p, 16'h0FE0);                         // FILL XY
+    p = place_word(p, getst_enc(4'd8));                  // preclipping sets V only
     p = place_word(p, 16'hC0FF);
 
     repeat (3) @(posedge clk);
@@ -134,12 +145,17 @@ module tb_fill_window;
                u_core.u_regfile.b_regs[2]);
       failures++;
     end
+    if (u_core.u_regfile.a_regs[8] !== 32'hF000_0010) begin
+      $display("TEST_RESULT: FAIL: W=3 clipped ST expected=F0000010 actual=%08h",
+               u_core.u_regfile.a_regs[8]);
+      failures++;
+    end
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set"); failures++;
     end
 
     if (failures == 0)
-      $display("TEST_RESULT: PASS (FILL XY W=3 clip: in-window pixels drawn, out-of-window pixels skipped)");
+      $display("TEST_RESULT: PASS (FILL XY W=3 clip and V-only preclipping status)");
     else
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     $finish;

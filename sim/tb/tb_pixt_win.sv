@@ -2,16 +2,17 @@
 // tb_pixt_win.sv
 //
 // PIXT (XY) per-pixel window checking, CONTROL.W (Task 0117). Mirrors the DRAV
-// window for the single-pixel PIXT store (1988 UG §7.10): the pointer's XY is
-// tested; W=2/W=3 draw inside, W=1 never draws; V (W!=0) = NOT inside; WVP on a
-// W=1 hit (inside) or W=2 miss (outside). The store path is shared with regular
-// MOVE — the window logic is gated by pixt_xy_win (force_pixel & xy_addr & W!=0).
+// window for PIXT operations with an XY destination (1988 UG §7.10): the
+// destination point is tested; W=2/W=3 draw inside, W=1 never draws; V
+// (W!=0) = NOT inside; WVP on a W=1 hit (inside) or W=2 miss (outside).
 //
 // PIXT A1,*A0.XY (encoding 0xF020): A0 = XY pointer, A1 = COLOR pixel.
 // PSIZE=8, CONVDP=0x1B, OFFSET(B4)=0x800, window (0x20,1)..(0x21,2).
 //   #1 W=3, A0=(0x20,1) inside  -> word145 low = 0xAA, V=0.
 //   #2 W=3, A0=(0x20,5) outside -> word149 stays 0,    V=1.
-//   #3 W=2, A0=(0x20,5) outside -> not drawn, V=1, INTPEND.WV set.
+//   #3/#4 W=3 XY-to-XY copy to inside/outside destinations -> draw/skip,
+//          V=0/1.
+//   #5 W=2, A0=(0x20,5) outside -> not drawn, V=1, INTPEND.WV set.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -61,6 +62,9 @@ module tb_pixt_win;
   function automatic instr_word_t pixt_xy_store_enc(input reg_idx_t rs, rd);
     pixt_xy_store_enc = 16'hF000 | (instr_word_t'(rs) << 5) | instr_word_t'(rd);
   endfunction
+  function automatic instr_word_t pixt_xy_m2m_enc(input reg_idx_t rs, rd);
+    pixt_xy_m2m_enc = 16'hF400 | (instr_word_t'(rs) << 5) | instr_word_t'(rd);
+  endfunction
   function automatic int unsigned place_movi_il(input int unsigned p, input reg_idx_t i,
                                                 input logic [DATA_WIDTH-1:0] imm);
     u_mem.mem[p]=movi_il_enc(i); u_mem.mem[p+1]=imm[15:0]; u_mem.mem[p+2]=imm[31:16];
@@ -97,6 +101,7 @@ module tb_pixt_win;
   endtask
 
   localparam logic [31:0] A_PSIZE   = IO_BASE_ADDR + (IO_IDX_PSIZE   << 4);
+  localparam logic [31:0] A_CONVSP  = IO_BASE_ADDR + (IO_IDX_CONVSP  << 4);
   localparam logic [31:0] A_CONVDP  = IO_BASE_ADDR + (IO_IDX_CONVDP  << 4);
   localparam logic [31:0] A_CONTROL = IO_BASE_ADDR + (IO_IDX_CONTROL << 4);
   function automatic logic [15:0] ctrl_w(input logic [1:0] w);
@@ -108,11 +113,14 @@ module tb_pixt_win;
     failures = 0;
     for (i = 0; i < 256; i++) u_mem.mem[i] = 16'h0300;
     for (i = 120; i < 200; i++) u_mem.mem[i] = 16'h0000;
+    u_mem.mem[128] = 16'h0055;                            // XY source (0,0)
 
     p = 0;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));
     p = place_movi_il  (p, 4'd2, 32'h0000_0008);
     p = place_store_abs(p, 4'd2, A_PSIZE);               // PSIZE = 8
+    p = place_movi_il  (p, 4'd2, 32'h0000_001B);
+    p = place_store_abs(p, 4'd2, A_CONVSP);              // CONVSP = 0x1B
     p = place_movi_il  (p, 4'd2, 32'h0000_001B);
     p = place_store_abs(p, 4'd2, A_CONVDP);              // CONVDP = 0x1B
     p = place_movi_il_b(p, 4'd4, 32'h0000_0800);         // OFFSET (B4)
@@ -130,7 +138,17 @@ module tb_pixt_win;
     p = place_movi_il  (p, 4'd0, 32'h0005_0020);         // A0 = XY (0x20,5) outside
     p = place_word(p, pixt_xy_store_enc(4'd1, 4'd0));
     p = place_word(p, getst_enc(4'd5));                  // A5 <- ST (V=1)
-    // #3: W=2, pointer outside -> not drawn, V=1, WVP.
+
+    // #3/#4: XY-to-XY uses the same destination-window behavior.
+    p = place_movi_il  (p, 4'd2, 32'h0000_0000);         // A2 = source XY (0,0)
+    p = place_movi_il  (p, 4'd3, 32'h0002_0020);         // A3 = dest inside
+    p = place_word(p, pixt_xy_m2m_enc(4'd2, 4'd3));
+    p = place_word(p, getst_enc(4'd7));                  // A7 <- ST (V=0)
+    p = place_movi_il  (p, 4'd3, 32'h0005_0020);         // A3 = dest outside
+    p = place_word(p, pixt_xy_m2m_enc(4'd2, 4'd3));
+    p = place_word(p, getst_enc(4'd8));                  // A8 <- ST (V=1)
+
+    // #5: W=2, pointer outside -> not drawn, V=1, WVP.
     p = place_movi_il  (p, 4'd2, {16'h0, ctrl_w(2'd2)});
     p = place_store_abs(p, 4'd2, A_CONTROL);
     p = place_movi_il  (p, 4'd0, 32'h0005_0020);         // A0 = XY (0x20,5) outside
@@ -145,9 +163,13 @@ module tb_pixt_win;
 
     check_word("PIXT W=3 inside: word145 = 0x00AA",  145, 16'h00AA);
     check_word("PIXT W=3 outside: word149 = 0",      149, 16'h0000);
+    check_word("PIXT XY,XY W=3 inside: word146 = 0x0055", 146, 16'h0055);
+    check_word("PIXT XY,XY W=3 outside: word149 stays 0",  149, 16'h0000);
     check_v("#1 W=3 inside  V=0", 4'd4, 1'b0);
     check_v("#2 W=3 outside V=1", 4'd5, 1'b1);
-    check_v("#3 W=2 outside V=1", 4'd6, 1'b1);
+    check_v("#3 XY,XY W=3 inside V=0", 4'd7, 1'b0);
+    check_v("#4 XY,XY W=3 outside V=1", 4'd8, 1'b1);
+    check_v("#5 W=2 outside V=1", 4'd6, 1'b1);
     if (u_core.u_io_regs.io_reg[IO_IDX_INTPEND][INT_WV_BIT] !== 1'b1) begin
       $display("TEST_RESULT: FAIL: INTPEND.WV not set after W=2 miss: %04h",
                u_core.u_io_regs.io_reg[IO_IDX_INTPEND]);
@@ -158,7 +180,7 @@ module tb_pixt_win;
     end
 
     if (failures == 0)
-      $display("TEST_RESULT: PASS (PIXT XY window: per-pixel draw/skip, V, INTPEND.WV)");
+      $display("TEST_RESULT: PASS (PIXT XY destination window: store/M2M draw/skip, V, WVP)");
     else
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     $finish;

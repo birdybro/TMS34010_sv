@@ -12,12 +12,16 @@
 // Window WSTART=WEND=(0x20,0): includes only X=0x20, excludes X=0x21. So the
 // low source pixel (0x11) is written; the high dest byte (X=0x21, outside) keeps
 // its initial 0. Expected dest word144 = 0x0011 (vs 0x2211 without the window).
+// A full-status seed also verifies that W=3 reports the required preclipping
+// through V while leaving N/C/Z untouched.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
 
 module tb_pixblt_window;
   import tms34010_pkg::*;
+
+  localparam logic [DATA_WIDTH-1:0] ST_SEED = 32'hE000_0010;
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -54,6 +58,12 @@ module tb_pixblt_window;
     setf_enc = 16'b0000_0100_0000_0000
              | (instr_word_t'(f_sel) << 9) | 16'b0000_0001_0000_0000
              | 16'b0000_0000_0100_0000 | (instr_word_t'(fe) << 5) | instr_word_t'(fs);
+  endfunction
+  function automatic instr_word_t putst_enc(input reg_idx_t rs);
+    putst_enc = 16'h01A0 | instr_word_t'(rs);
+  endfunction
+  function automatic instr_word_t getst_enc(input reg_idx_t rd);
+    getst_enc = 16'h0180 | instr_word_t'(rd);
   endfunction
   function automatic int unsigned place_movi_il(input int unsigned p, input reg_idx_t i,
                                                 input logic [DATA_WIDTH-1:0] imm);
@@ -122,7 +132,10 @@ module tb_pixblt_window;
     p = place_movi_il_b(p, 4'd5, 32'h0000_0020);         // WSTART XY (0x20,0)
     p = place_movi_il_b(p, 4'd6, 32'h0000_0020);         // WEND   XY (0x20,0)
     p = place_movi_il_b(p, 4'd7, 32'h0001_0002);         // DYDX (DY=1,DX=2)
+    p = place_movi_il  (p, 4'd14, ST_SEED);
+    p = place_word(p, putst_enc(4'd14));                 // NCZ=111, V=0
     p = place_word(p, 16'h0F60);                         // PIXBLT XY,XY
+    p = place_word(p, getst_enc(4'd8));                  // preclipping sets V only
     p = place_word(p, 16'hC0FF);
 
     repeat (3) @(posedge clk);
@@ -136,12 +149,17 @@ module tb_pixblt_window;
     // SADDR / DADDR still advance over the full array (clip doesn't change them).
     check_breg("SADDR (B0) = 0x810", 0, 32'h0000_0810);
     check_breg("DADDR (B2) = 0x910", 2, 32'h0000_0910);
+    if (u_core.u_regfile.a_regs[8] !== 32'hF000_0010) begin
+      $display("TEST_RESULT: FAIL: W=3 clipped ST expected=F0000010 actual=%08h",
+               u_core.u_regfile.a_regs[8]);
+      failures++;
+    end
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set"); failures++;
     end
 
     if (failures == 0)
-      $display("TEST_RESULT: PASS (PIXBLT XY W=3 clip: in-window pixel drawn, out-of-window skipped)");
+      $display("TEST_RESULT: PASS (PIXBLT XY W=3 clip and V-only preclipping status)");
     else
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     $finish;

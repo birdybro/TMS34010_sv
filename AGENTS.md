@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0134. Task 0124
+The functional implementation is complete through Task 0135. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -25,17 +25,18 @@ SLA overflow, and individual status masks. Task 0131 corrected and verified
 MOVI status behavior for both immediate widths. Task 0132 primary-spec
 verified REV's revision value, EXGPC's low-nibble PC alignment, and both
 instructions' status preservation. Task 0133 primary-spec verified FILL XY's
-linear DADDR writeback and W=0 status preservation. The implementation
-Task 0134 corrected SUBXY's greater-than flags to signed XY comparisons. The
-implementation includes the
-multicycle CPU core, the currently tracked instruction set, bit-field memory
-operations, graphics operations
-through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers,
-reset-vector fetch, maskable/NMI entry with architectural service-context ST
-initialization, and the illegal-opcode trap. Video timing and refresh blocks
-exist as standalone modules. Read `tasks.md`, `docs/completion_audit.md`, and
-the current-status sections in `docs/architecture.md` before selecting new
-work.
+linear DADDR writeback and W=0 status preservation. Task 0134 corrected
+SUBXY's greater-than flags to signed XY comparisons. Task 0135 completed the
+individual-page N/C/Z/V audit, resolved A0009, corrected DIVS/MODS and
+odd-result multiply edge cases, and completed array W=3 plus PIXT XY-to-XY
+window status behavior. The implementation includes the multicycle CPU core,
+the currently tracked instruction set, bit-field memory operations, graphics
+operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O
+registers, reset-vector fetch, maskable/NMI entry with architectural
+service-context ST initialization, and the illegal-opcode trap. Video timing
+and refresh blocks exist as standalone modules. Read `tasks.md`,
+`docs/completion_audit.md`, and the current-status sections in
+`docs/architecture.md` before selecting new work.
 
 ## Specification source of truth
 
@@ -79,6 +80,8 @@ RTL, tests, task log, changelog, and specification first.
 - `docs/architecture.md` — module map, datapath/control strategy, and gaps.
 - `docs/assumptions.md` — non-spec-derived or ambiguous decisions.
 - `docs/instruction_coverage.md` — per-instruction implementation/test status.
+- `docs/status_audit.md` — primary-page N/C/Z/V matrix and undefined-bit
+  policy.
 - `docs/completion_audit.md` — complete ISA reconciliation and ordered
   project-level exit gates.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.

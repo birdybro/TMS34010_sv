@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0134. The authoritative per-instruction
+// Recognition is current through Task 0135. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -920,7 +920,8 @@ module tms34010_decode
       decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b1};  // Z, V
     end
 
-    // DIVS — signed divide. Like DIVU but N is also set (= quotient sign).
+    // DIVS — signed divide. Like DIVU but N is also defined by the quotient
+    // sign and the instruction page's 0x80000000 result rule.
     if (top7 == DIVS_TOP7) begin
       decoded.illegal      = 1'b0;
       decoded.iclass       = INSTR_DIVS;
@@ -932,7 +933,9 @@ module tms34010_decode
       decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};  // N, Z, V
     end
 
-    // MODS — signed modulo. N = remainder sign; Z off on Rs=0 (like MODU).
+    // MODS — signed modulo. The result is the signed remainder, but unlike
+    // DIVS the instruction page defines N as Unaffected. Z is updated from
+    // the remainder except when Rs=0; V reports quotient overflow.
     if (top7 == MODS_TOP7) begin
       decoded.illegal      = 1'b0;
       decoded.iclass       = INSTR_MODS;
@@ -941,7 +944,7 @@ module tms34010_decode
       decoded.rs_idx       = rs_idx_from_instr;
       decoded.wb_reg_en    = 1'b1;
       decoded.wb_flags_en  = 1'b1;
-      decoded.wb_flag_mask = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};  // N, Z, V
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b1};  // Z, V
     end
 
     // CPW: write the out-of-window code to Rd; set only V (point outside

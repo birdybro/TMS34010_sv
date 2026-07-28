@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0135 — complete instruction status audit)
+- Reconciled every implemented instruction family's individual N/C/Z/V table
+  and resolved A0009; added `docs/status_audit.md` plus an exhaustive
+  65,536-opcode static decoder-policy test.
+- Corrected MODS to preserve N/C, qualify Z only on divisor zero, and write
+  valid remainders on nonzero-divisor signed quotient overflow; corrected
+  DIVS N handling for signed-range overflow.
+- Corrected odd-destination MPYS/MPYU flags to use the stored low 32-bit
+  result instead of the discarded full product.
+- Added W=3 preclipping V writeback for FILL XY and XY-destination PIXBLT,
+  preserving N/C/Z, and extended the PIXT destination-window path to
+  XY-to-XY transfers.
+- Recorded Undefined/Indeterminate status bits separately from architecturally
+  Unaffected bits; this RTL preserves undefined bits deterministically without
+  claiming original-silicon preservation.
+- Added `tb_div_flags`, `tb_mpy_flags`, and `tb_status_decode`; strengthened
+  FILL, PIXBLT, and PIXT window benches.
+- Validation: all focused benches PASS; `scripts/lint.sh` clean; full
+  regression 120/120 PASS.
+
 ### Fixed (Task 0134 — SUBXY signed comparison semantics)
 - Resolved A0027 using the §4.3 definition of X/Y as signed 16-bit integers
   together with page 12-252's source-greater-than status rules.

@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0134. Task 0118
+The functional implementation is complete through Task 0135. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -21,7 +21,10 @@ clearing V, and made carry-dependent tests establish their inputs explicitly.
 Task 0132 resolved REV's result and EXGPC's next-PC/alignment behavior against
 their primary instruction pages. Task 0133 resolved FILL XY's final linear
 DADDR representation and W=0 status behavior. Task 0134 corrected SUBXY's
-greater-than flags to signed 16-bit XY comparisons.
+greater-than flags to signed 16-bit XY comparisons. Task 0135 completed the
+individual-page N/C/Z/V audit, corrected divide/modulo and odd-result multiply
+semantics, completed graphics W=3 V reporting and PIXT XY-to-XY window
+handling, and resolved A0009.
 
 ## Task index
 
@@ -161,6 +164,7 @@ greater-than flags to signed 16-bit XY comparisons.
 | 0132 | Resolve REV and EXGPC architectural semantics | complete |
 | 0133 | Resolve FILL XY DADDR writeback semantics | complete |
 | 0134 | Correct SUBXY signed comparison semantics | complete |
+| 0135 | Complete the instruction status audit | complete |
 
 ---
 
@@ -4262,6 +4266,45 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - fc5001d
+
+---
+
+### Task 0135: Complete the instruction status audit
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption and status audit).
+- Tasks 0125 and 0129–0134 (previous individual-family corrections).
+Spec sources:
+- 1988 TI TMS34010 User's Guide chapter 12, every implemented
+  instruction family's individual `Status Bits` table.
+- 1988 TI TMS34010 User's Guide §7.10, window-checking modes.
+Acceptance Criteria:
+- Reconcile every implemented instruction family's N/C/Z/V writers,
+  unaffected bits, undefined bits, runtime qualifications, and full-ST
+  transitions against the primary pages; resolve A0009.
+- Exhaustively enforce the static decoder policy for all 65,536 opcode words.
+- Correct MODS/DIVS overflow status and MODS valid-remainder writeback.
+- Derive odd-destination MPYS/MPYU N/Z from the stored low 32-bit result.
+- Report W=3 preclipping in V for FILL XY and XY-destination PIXBLT while
+  preserving N/C/Z.
+- Apply PIXT window draw/skip, V, and WV behavior to XY-to-XY as well as
+  register-to-XY writes.
+- Distinguish architecturally Unaffected flags from Undefined/Indeterminate
+  flags retained only as a deterministic FPGA choice.
+Tests:
+- New `tb_status_decode`, `tb_div_flags`, and `tb_mpy_flags` PASS.
+- Strengthened `tb_fill_window`, `tb_pixblt_window`, and `tb_pixt_win` PASS.
+- Existing `tb_divs_mods`, `tb_mpy`, `tb_mpy_fs1`, and related graphics
+  regressions remain PASS.
+- `scripts/lint.sh` PASS, strict Verilator lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 120/120 self-checking benches.
+Docs:
+- Add `docs/status_audit.md`.
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

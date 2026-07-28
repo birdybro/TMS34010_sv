@@ -33,9 +33,9 @@
 //   - Logical ops (AND/ANDN/OR/XOR/NOT/PASS_A/PASS_B):
 //       N = r[31], Z = (r == 0), C = 0, V = 0.
 //
-// Per-instruction nuances (e.g., whether MOVE clears or preserves flags;
-// the V-on-MIN-NEG behavior of ABS that we don't implement here) live in
-// docs/assumptions.md A0009 until SPVU001A Appendix A is read in detail.
+// Per-instruction masks and non-ALU flag sources are selected by the decoder
+// and core. Task 0135's complete primary-page matrix is in
+// docs/status_audit.md.
 //
 // Synthesis notes:
 //   - One `always_comb` block, with a safe default at the top.

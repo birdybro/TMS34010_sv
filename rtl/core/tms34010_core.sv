@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0134.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0135.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -368,8 +368,7 @@ module tms34010_core
   // Window clipping (CONTROL.W = 3, FILL XY only — Task 0105). WSTART/WEND are
   // XY (X in [15:0], Y in [31:16]). A pixel outside the inclusive window
   // rectangle is left unchanged (write-back of the read dest, the same skip
-  // mechanism as transparency). W=1/W=2 (hit/miss detection, WV interrupt,
-  // abort) are NOT implemented yet (A0031) — only W=3 clips.
+  // mechanism as transparency). W=1/W=2 implement hit/miss detection and WV.
   logic [DATA_WIDTH-1:0] fill_wstart_q, fill_wend_q;
   logic                  fill_win_en_q;    // W=3 clipping active for this FILL
   logic                  fill_w2_q;        // W=2 (miss detection) active for this FILL
@@ -385,7 +384,7 @@ module tms34010_core
   // within the window. Containment is a single rectangle test on the array's
   // corners, evaluated combinationally at CORE_FILL_SETUP_WIN from the live
   // WSTART(port1)/WEND(port2) reads (X=[15:0], Y=[31:16]).
-  logic                  fill_array_inside;
+  logic                  fill_array_inside, fill_array_inside_latched;
   logic [15:0]           fill_arr_x0, fill_arr_y0, fill_arr_x1, fill_arr_y1;
   assign fill_arr_x0 = fill_daddr_raw_q[15:0];
   assign fill_arr_y0 = fill_daddr_raw_q[DATA_WIDTH-1:16];
@@ -394,6 +393,9 @@ module tms34010_core
   assign fill_array_inside =
         (fill_arr_x0 >= rf_rs1_data[15:0]) && (fill_arr_x1 <= rf_rs2_data[15:0])
      && (fill_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (fill_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
+  assign fill_array_inside_latched =
+        (fill_arr_x0 >= fill_wstart_q[15:0]) && (fill_arr_x1 <= fill_wend_q[15:0])
+     && (fill_arr_y0 >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_arr_y1 <= fill_wend_q[DATA_WIDTH-1:16]);
   // W=1 (hit detection): no pixels are drawn. The array "hits" the window if it
   // overlaps at all; computed from the LATCHED WSTART/WEND (valid in
   // CORE_FILL_WIN_HIT, after the SETUP_WIN latch). Overlap = NOT fully to one
@@ -402,13 +404,14 @@ module tms34010_core
   assign fill_array_hit = !(
         (fill_arr_x1 < fill_wstart_q[15:0]) || (fill_arr_x0 > fill_wend_q[15:0])
      || (fill_arr_y1 < fill_wstart_q[DATA_WIDTH-1:16]) || (fill_arr_y0 > fill_wend_q[DATA_WIDTH-1:16]));
-  // Window-violation flag write (sets V; the miss path also pulses wvp_set):
+  // Window-violation flag write (sets V; detection paths may also pulse
+  // wvp_set):
   //   CORE_FILL_WIN_MISS — array outside the window → V=1, request WVP.
   //   CORE_FILL_WB with W=2 (array was inside) → V=0, no interrupt.
-  // Shared window-violation flag write for FILL and PIXBLT W=2 (declared here;
-  // pblt_w2_q is assigned later — order-independent for these continuous
-  // assigns). win_flag_wb enables the V write; win_violation is the V value
-  // (1 = a miss); wvp_set pulses INTPEND.WV on a miss.
+  //   CORE_FILL_WB with W=3 → V=1 iff any preclipping was required.
+  // Shared window-violation flag write for FILL and PIXBLT. The PIXBLT signals
+  // are assigned later; module-item ordering does not affect these continuous
+  // assignments. win_flag_wb enables the V write; win_violation is its value.
   logic fill_win_flag_wb, fill_win_violation;
   // V value written: W=2 miss → 1; W=2 inside (at WB) → 0; W=1 hit → V = NOT
   // overlapped (1 if the array is entirely outside the window, else 0).
@@ -425,13 +428,19 @@ module tms34010_core
                             || (state_q == CORE_PBLT_WIN_MISS)
                             || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit)
                             || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit)
+                            || ((state_q == CORE_FILL_WB) && fill_win_en_q
+                                && !fill_array_inside_latched)
+                            || ((state_q == CORE_PBLT_WB2) && pblt_win_en_q
+                                && !pblt_array_inside_latched)
                             || (drav_win_wb && !drav_inside_q)
                             || (line_win_wb && !line_last_inside_q)
                             || (pixt_win_wb && !pixt_inside_q);
   assign fill_win_flag_wb   = (state_q == CORE_FILL_WIN_MISS)
-                            || ((state_q == CORE_FILL_WB) && fill_w2_q)
+                            || ((state_q == CORE_FILL_WB)
+                                && (fill_w2_q || fill_win_en_q))
                             || (state_q == CORE_PBLT_WIN_MISS)
-                            || ((state_q == CORE_PBLT_WB2) && pblt_w2_q)
+                            || ((state_q == CORE_PBLT_WB2)
+                                && (pblt_w2_q || pblt_win_en_q))
                             || (state_q == CORE_FILL_WIN_HIT)
                             || (state_q == CORE_PBLT_WIN_HIT)
                             || drav_win_wb
@@ -576,8 +585,7 @@ module tms34010_core
   // DADDR is preserved (pblt_dst_xy_raw_q) because pblt_dst_addr_q is converted
   // to linear at SETUP; each pixel's absolute XY = (rawX+col, rawY+row) is
   // tested against the inclusive [WSTART..WEND] rectangle and out-of-window
-  // pixels are left unchanged (same skip path as transparency). W=1/W=2 and the
-  // WV interrupt are not implemented (A0031).
+  // pixels are left unchanged (same skip path as transparency).
   logic [DATA_WIDTH-1:0] pblt_dst_xy_raw_q, pblt_wstart_q, pblt_wend_q;
   logic                  pblt_win_en_q;    // W=3 per-pixel clip active
   logic                  pblt_w2_q;        // W=2 (miss detection) active
@@ -592,7 +600,7 @@ module tms34010_core
   // W=2 (miss detection): array containment test on the dest corners, evaluated
   // combinationally at CORE_PBLT_SETUP_WIN from the live WSTART(port1)/WEND
   // (port2) reads (mirrors the FILL W=2 path).
-  logic        pblt_array_inside;
+  logic        pblt_array_inside, pblt_array_inside_latched;
   logic [15:0] pblt_arr_x0, pblt_arr_y0, pblt_arr_x1, pblt_arr_y1;
   assign pblt_arr_x0 = pblt_dst_xy_raw_q[15:0];
   assign pblt_arr_y0 = pblt_dst_xy_raw_q[DATA_WIDTH-1:16];
@@ -601,6 +609,9 @@ module tms34010_core
   assign pblt_array_inside =
         (pblt_arr_x0 >= rf_rs1_data[15:0]) && (pblt_arr_x1 <= rf_rs2_data[15:0])
      && (pblt_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
+  assign pblt_array_inside_latched =
+        (pblt_arr_x0 >= pblt_wstart_q[15:0]) && (pblt_arr_x1 <= pblt_wend_q[15:0])
+     && (pblt_arr_y0 >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= pblt_wend_q[DATA_WIDTH-1:16]);
   // W=1 (hit detection): never draws; overlap test from the LATCHED WSTART/WEND
   // (valid in CORE_PBLT_WIN_HIT). Mirrors the FILL W=1 path.
   logic pblt_w1_q, pblt_array_hit;
@@ -1069,6 +1080,7 @@ module tms34010_core
   reg_idx_t               rf_wr_idx;
   logic [DATA_WIDTH-1:0]  rf_wr_data;
   logic [DATA_WIDTH-1:0]  rf_sp;
+  logic                   div_suppress_wb;
 
   // ALU ports.
   alu_op_t                alu_op;
@@ -1305,9 +1317,8 @@ module tms34010_core
   // (pix_dest_q), step 1 writes the result. The result combines three CONTROL
   // features, all confined to the PSIZE-bit pixel by mv_fmask:
   //   1. Pixel processing (PPOP, CONTROL[14:10]): processed = f(src, dest).
-  //      The 16 Boolean codes are implemented (pixel-size-independent); the 6
-  //      arithmetic codes (0x10-0x15) are not yet implemented and fall back to
-  //      replace (documented limitation).
+  //      All 16 Boolean and 6 arithmetic codes are implemented within the
+  //      selected pixel width.
   //   2. Transparency (CONTROL.T, bit 5): if enabled and the PROCESSED pixel
   //      is 0, the destination is left unchanged (write the old value back —
   //      memory cycles still occur, per the spec).
@@ -1330,21 +1341,30 @@ module tms34010_core
   assign pixt_processed   = ppop_apply(rf_rs1_data, pix_dest_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], mv_fmask);
   assign pixt_transp  = io_control[CTRL_T_BIT] && ((pixt_processed & mv_fmask) == '0);
-  // Per-pixel window check for an XY PIXT store (Task 0117), mirroring DRAV.
-  // WSTART/WEND are read at CORE_PIXT_SETUP_WIN; the pointer's XY (mv_ptr) is
-  // tested. Drawn for W=0, or W=2/W=3 when inside; W=1 never draws. V (W!=0) =
-  // NOT inside; WVP on a W=1 hit (inside) or W=2 miss (outside). Gated by
-  // pixt_xy_win so a regular MOVE / non-XY PIXT / W=0 PIXT is unaffected.
-  logic                  pixt_xy_win;
+  // Per-pixel window check for PIXT operations with an XY destination,
+  // mirroring DRAV. This includes register-to-XY and XY-to-XY forms.
+  // WSTART/WEND are read at CORE_PIXT_SETUP_WIN; the destination point is
+  // latched before those read ports are repurposed. W=2/W=3 draw inside;
+  // W=1 never draws. V (W!=0) = NOT inside; WVP on W=1 hit or W=2 miss.
+  logic                  pixt_xy_win, pixt_xy_m2m;
   logic [DATA_WIDTH-1:0] pixt_wstart_q, pixt_wend_q;
+  logic [DATA_WIDTH-1:0] pixt_point_q;
   logic                  pixt_inside_q;     // latched at the RMW write step
-  logic                  pixt_in_window, pixt_clip_out;
-  assign pixt_xy_win  = pixt_rmw && decoded.xy_addr
+  logic                  pixt_in_window, pixt_in_window_live, pixt_clip_out;
+  assign pixt_xy_m2m = decoded.force_pixel && decoded.xy_addr
+                     && (decoded.iclass == INSTR_MOVE_FIELD_M2M);
+  assign pixt_xy_win  = decoded.xy_addr && (pixt_rmw || pixt_xy_m2m)
                      && (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0);
   assign pixt_in_window =
-        (mv_ptr[15:0] >= pixt_wstart_q[15:0]) && (mv_ptr[15:0] <= pixt_wend_q[15:0])
-     && (mv_ptr[DATA_WIDTH-1:16] >= pixt_wstart_q[DATA_WIDTH-1:16])
-     && (mv_ptr[DATA_WIDTH-1:16] <= pixt_wend_q[DATA_WIDTH-1:16]);
+        (pixt_point_q[15:0] >= pixt_wstart_q[15:0])
+     && (pixt_point_q[15:0] <= pixt_wend_q[15:0])
+     && (pixt_point_q[DATA_WIDTH-1:16] >= pixt_wstart_q[DATA_WIDTH-1:16])
+     && (pixt_point_q[DATA_WIDTH-1:16] <= pixt_wend_q[DATA_WIDTH-1:16]);
+  assign pixt_in_window_live =
+        (pixt_point_q[15:0] >= rf_rs1_data[15:0])
+     && (pixt_point_q[15:0] <= rf_rs2_data[15:0])
+     && (pixt_point_q[DATA_WIDTH-1:16] >= rf_rs1_data[DATA_WIDTH-1:16])
+     && (pixt_point_q[DATA_WIDTH-1:16] <= rf_rs2_data[DATA_WIDTH-1:16]);
   // W=1 never draws; W=2/W=3 draw inside.
   assign pixt_clip_out = pixt_xy_win &&
                          ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) || !pixt_in_window);
@@ -1355,14 +1375,18 @@ module tms34010_core
     if (rst) begin
       pixt_wstart_q <= '0;
       pixt_wend_q   <= '0;
+      pixt_point_q  <= '0;
       pixt_inside_q <= 1'b0;
     end else begin
+      if ((state_q == CORE_EXECUTE) && pixt_xy_win)
+        pixt_point_q <= rf_rs2_data;
       if (state_q == CORE_PIXT_SETUP_WIN) begin
         pixt_wstart_q <= rf_rs1_data;   // WSTART (B5)
         pixt_wend_q   <= rf_rs2_data;   // WEND (B6)
+        pixt_inside_q <= pixt_in_window_live;
       end
-      // Latch the pointer's window status at the RMW write step (for the
-      // final V / WVP written at CORE_WRITEBACK).
+      // Refresh the store form's result at its RMW write step. The M2M form
+      // either proceeds or skips directly from SETUP_WIN using the live test.
       if ((state_q == CORE_MEMORY) && pixt_rmw && (mem_op_step == 2'd1) && mem_ack)
         pixt_inside_q <= pixt_in_window;
     end
@@ -1477,7 +1501,7 @@ module tms34010_core
                        // Dual-inc/dec Rs==Rd was already written at step 0.
                        // Destination-only postincrement forms never write Rs.
                        && !(is_mv_m2m && !is_m2m_dst_only_pi && m2m_same_reg)
-                       && !(is_div && div_v))            // divide overflow: leave Rd unchanged
+                       && !div_suppress_wb)
                    || mmfm_pop_wr
                    || mv_load_ptr_wr
                    || m2m_src_wr
@@ -1741,6 +1765,13 @@ module tms34010_core
         (div_result_neg ? (div_quotient[DATA_WIDTH-1] && (div_quotient[DATA_WIDTH-2:0] != '0))
                         :  div_quotient[DATA_WIDTH-1]));
   assign div_v = is_signed_div ? div_signed_ovf : div_overflow;
+  // DIV leaves its destination unchanged on overflow. MODU can overflow only
+  // on divide-by-zero and is likewise suppressed. MODS is different: page
+  // 12-112 says Rd is always overwritten, and a nonzero-divisor signed
+  // quotient overflow still leaves a valid remainder. Only its divide-by-zero
+  // case (reported by the divider's raw overflow) suppresses writeback.
+  assign div_suppress_wb = is_div && div_v
+                         && !(is_mods && !div_overflow);
 
   // ---- Pair writeback step (shared MPY-even / DIVU-even) ------------------
   // Ops that write the {Rd, Rd+1} register pair over two WRITEBACK cycles.
@@ -1993,7 +2024,7 @@ module tms34010_core
   // Status-register inputs. Flag-update is gated by FSM state, like the
   // regfile write. Full ST write port is unused until POPST lands.
   assign st_flag_update_en = ((state_q == CORE_WRITEBACK) && decoded.wb_flags_en)
-                           || fill_win_flag_wb;   // FILL W=2 writes V
+                           || fill_win_flag_wb;
   // ST-write data + enable. Two instructions drive the full ST-write
   // path:
   //   PUTST Rs: ST ← Rs (full copy).
@@ -2405,7 +2436,7 @@ module tms34010_core
   alu_flags_t  flag_input;
   always_comb begin
     if (fill_win_flag_wb) begin
-      // FILL W=2 window result: only V is written (mask below is V-only).
+      // Window result: only V is written (mask below is V-only).
       flag_input = '{n: 1'b0, c: 1'b0, z: 1'b0, v: fill_win_violation};
     end else
     unique case (decoded.iclass)
@@ -2439,36 +2470,49 @@ module tms34010_core
       INSTR_SUBXY:  flag_input = subxy_flags;
       INSTR_CMPXY:  flag_input = cmpxy_flags;
       INSTR_CPW:    flag_input = cpw_flags;
-      // MPYS: N/Z from the 64-bit product. MPYU: Z only (N masked off).
+      // Multiply status follows the architecturally stored result. Even Rd
+      // stores all 64 bits, while odd Rd discards the upper 32 bits; therefore
+      // odd-form N/Z must use product[31:0], not the untruncated product.
+      // MPYU masks N off and uses the same even/odd Z selection.
       INSTR_MPYS,
-      INSTR_MPYU:   flag_input = '{n: mpy_product_q[63], c: 1'b0,
-                                    z: (mpy_product_q == 64'd0), v: 1'b0};
-      // Divide family (DIVU/DIVS/MODU/MODS): V = overflow; Z = (result==0);
-      // N = result sign (signed variants only — masked off for unsigned by
-      // wb_flag_mask). The result is the quotient (DIV) or remainder (MOD),
-      // already sign-conditioned. On overflow N/Z read 0; for the MOD ops
-      // the Z mask is cleared on overflow (effective_flag_mask) so Z stays
-      // Unaffected when Rs=0.
+      INSTR_MPYU:   flag_input = '{
+          n: mpy_rd_even ? mpy_product_q[63] : mpy_product_q[DATA_WIDTH-1],
+          c: 1'b0,
+          z: mpy_rd_even ? (mpy_product_q == 64'd0)
+                         : (mpy_product_q[DATA_WIDTH-1:0] == '0),
+          v: 1'b0
+      };
+      // Divide family: V reports quotient overflow. DIVS N follows a negative
+      // quotient except for the divider's early-overflow cases (Rs=0 or an
+      // even-Rd high half >= divisor), exactly as page 12-63 specifies. MODS
+      // leaves N unaffected. Z follows the stored quotient/remainder; DIV
+      // forces it low on overflow, while MOD masks it only for Rs=0.
       INSTR_DIVU,
       INSTR_DIVS,
       INSTR_MODU,
-      INSTR_MODS:   flag_input = '{n: (is_signed_div && !div_v && div_result_main[DATA_WIDTH-1]),
-                                    c: 1'b0,
-                                    z: (!div_v && (div_result_main == '0)),
-                                    v: div_v};
+      INSTR_MODS:   flag_input = '{
+          n: is_divs && !div_overflow
+             && ((div_quot_out == 32'h8000_0000)
+                 || (div_result_neg && (div_quotient != '0))),
+          c: 1'b0,
+          z: (div_result_main == '0)
+             && (is_div_mod ? !div_overflow : !div_v),
+          v: div_v
+      };
       default:      flag_input = decoded.use_shifter ? shifter_flags : alu_flags;
     endcase
   end
 
-  // Effective per-flag update mask. Normally the decoded mask, but MODU
-  // (and the future MODS) leave Z "Unaffected" when Rs=0 (overflow), which
-  // is a runtime condition the static decode mask can't express.
+  // Effective per-flag update mask. MODU/MODS leave Z Unaffected only when
+  // Rs=0. `div_overflow` is the divider's raw early-overflow indication and
+  // distinguishes that case from MODS signed-quotient overflow, where Z is
+  // still defined from the valid remainder.
   alu_flags_t effective_flag_mask;
   always_comb begin
     effective_flag_mask = decoded.wb_flag_mask;
-    if (is_div_mod && div_v) effective_flag_mask.z = 1'b0;  // MODU/MODS: Z unaffected on Rs=0
+    if (is_div_mod && div_overflow) effective_flag_mask.z = 1'b0;
     if (fill_win_flag_wb)
-      effective_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};  // FILL W=2: V only
+      effective_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b1};
   end
 
   tms34010_status_reg u_status_reg (
@@ -2723,9 +2767,13 @@ module tms34010_core
       end
 
       CORE_PIXT_SETUP_WIN: begin
-        // One cycle to read WSTART(B5)/WEND(B6); then the normal PIXT-store RMW
-        // runs in CORE_MEMORY (the window inhibits the write per pixel).
-        state_d = CORE_MEMORY;
+        // Read WSTART/WEND. A register-to-XY store runs its RMW and inhibits
+        // the write there. XY-to-XY has no destination-read phase, so modes
+        // that suppress drawing skip directly to writeback.
+        state_d = (pixt_xy_m2m
+                   && ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1)
+                       || !pixt_in_window_live))
+                ? CORE_WRITEBACK : CORE_MEMORY;
       end
 
       CORE_DRAV: begin

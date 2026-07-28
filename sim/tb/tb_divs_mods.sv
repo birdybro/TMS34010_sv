@@ -9,7 +9,9 @@
 //   remainder sign = dividend.sign
 // DIVS even Rd: 64-bit {Rd, Rd+1} dividend -> quotient in Rd, remainder in
 // Rd+1; odd Rd: 32-bit -> quotient in Rd. MODS: remainder -> Rd.
-// N = result sign; Z = result==0 (Unaffected if Rs=0 for MODS); V = overflow.
+// DIVS defines N from the quotient/0x80000000 rules. MODS leaves N and C
+// Unaffected. Z follows the stored result (Unaffected if Rs=0 for MODS), and
+// V reports quotient overflow.
 //
 // Cases from TI's DIVS/MODS example tables.
 // -----------------------------------------------------------------------------
@@ -121,7 +123,8 @@ module tb_divs_mods;
     p = place_movi_il(p, 4'd7, 32'h1234_5678);
     p = place_word(p, divs_enc(4'd7, 4'd3));
     p = place_word(p, getst_b_enc(4'd3));
-    // 5) MODS neg: A12=-7 (0xFFFFFFF9) mod A11=4 -> -3 (0xFFFFFFFD). N=1, Z=0.
+    // 5) MODS neg: A12=-7 (0xFFFFFFF9) mod A11=4 -> -3 (0xFFFFFFFD).
+    //    N remains 1 from case 4; Z becomes 0.
     p = place_movi_il(p, 4'd11, 32'd4);
     p = place_movi_il(p, 4'd12, 32'hFFFF_FFF9);
     p = place_word(p, mods_enc(4'd11, 4'd12));
@@ -156,7 +159,7 @@ module tb_divs_mods;
     check_nzv("4: NZV=1,0,0", u_core.u_regfile.b_regs[3], 1'b1, 1'b0, 1'b0);
     // 5) MODS neg.
     check_reg("5: A12 remainder 0xFFFFFFFD (-3)", u_core.u_regfile.a_regs[12], 32'hFFFF_FFFD);
-    check_nzv("5: NZV=1,0,0", u_core.u_regfile.b_regs[4], 1'b1, 1'b0, 1'b0);
+    check_nzv("5: NZV=1,0,0 (N preserved)", u_core.u_regfile.b_regs[4], 1'b1, 1'b0, 1'b0);
     // 6) MODS Rs=0.
     check_reg("6: A13 unchanged (=7)", u_core.u_regfile.a_regs[13], 32'd7);
     check_nzv("6: V=1, Z unaffected (=0)", u_core.u_regfile.b_regs[5], 1'b0, 1'b0, 1'b1);
@@ -167,7 +170,7 @@ module tb_divs_mods;
     end
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (DIVS/MODS: signed quotient/remainder + N/Z/V per TI tables)");
+      $display("TEST_RESULT: PASS (DIVS/MODS signed results and documented status behavior)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

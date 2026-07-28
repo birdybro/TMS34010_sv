@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0134. Task 0124
+Functional implementation work is complete through Task 0135. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -17,9 +17,12 @@ value 32. Task 0130 corrected all shift encodings, SLA overflow, and
 per-instruction status masks. Task 0131 corrected MOVI C preservation for
 both immediate widths. Task 0132 resolved the REV value and EXGPC alignment
 rules directly against their individual instruction pages. Task 0133 resolved
-FILL XY's final linear DADDR writeback and W=0 status preservation. The
-Task 0134 corrected SUBXY's coordinate comparisons to signed 16-bit
-semantics. The repository currently contains:
+FILL XY's final linear DADDR writeback and W=0 status preservation. Task
+0134 corrected SUBXY's coordinate comparisons to signed 16-bit
+semantics. Task 0135 completed the primary-page instruction status audit,
+resolved A0009, corrected divide/modulo and odd-result multiply edge cases,
+and completed W=3/PIXT graphics-window status behavior. The repository
+currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -32,12 +35,14 @@ semantics. The repository currently contains:
 - architectural reset and illegal-opcode vector entry;
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
 - standalone video-timing and DRAM-refresh modules;
-- 117 self-checking SystemVerilog testbenches.
+- 120 self-checking SystemVerilog testbenches, including an exhaustive
+  65,536-opcode static status-policy sweep.
 
-This is not yet a complete FPGA system. The audit records the remaining ISA
-verification work plus the host/memory fabric, bus arbitration, I/O side-
-effect completion, video/refresh integration, real Quartus project/
-constraints, and timing/resource validation.
+This is not yet a complete FPGA system. ISA/status reconciliation is complete;
+the audit records the remaining physical memory interface, host/memory
+fabric, bus arbitration, I/O side-effect completion, video/refresh
+integration, real Quartus project/constraints, and timing/resource
+validation.
 
 ## Getting started
 
@@ -68,6 +73,8 @@ pinned `third_party/TMS34010_Info` submodule.
   authoritative Cyclone V HDL coding-guideline bundle.
 - `docs/completion_audit.md` — primary-spec reconciliation and ordered exit
   gates for project completion.
+- `docs/status_audit.md` — complete individual-instruction N/C/Z/V policy,
+  undefined-bit handling, and regression evidence.
 - `scripts/` — lint, simulation, and Quartus entry points.
 - `tasks.md` / `changelog.md` — task-level design and implementation history.
 - `third_party/TMS34010_Info/` — pinned primary/reference documentation.

@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0134: architectural widths and register layouts,
+// Current through Task 0135: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -154,11 +154,9 @@ package tms34010_pkg;
   //     ... all live in the ST register".
   //   - bibliography/hdl-reimplementation/03-registers.md §"Status register".
   //
-  // Concrete per-instruction flag semantics (TI's exact carry-vs-borrow
-  // convention, V on NEG / ABS minimum-negative, etc.) are captured in
-  // docs/assumptions.md as A0009 until SPVU001A Appendix A is read in
-  // detail. The ALU implements the "obvious" two's-complement /
-  // carry-out-of-MSB convention and matches the standard:
+  // Concrete per-instruction flag semantics and write masks were reconciled
+  // against every implemented instruction page in Task 0135; see
+  // docs/status_audit.md. The ALU provides the standard arithmetic values:
   //   C = unsigned overflow (carry from MSB on ADD; "borrow" output on SUB,
   //       which here equals NOT carry-out-of-(a + ~b + 1)).
   //   V = signed overflow.
@@ -198,13 +196,13 @@ package tms34010_pkg;
   //   for field operations and pixel shifts"; 02-instruction-set.md lists
   //   SLA, SLL, SRA, SRL, RL as the shift/rotate primitives.
   //
-  // SLA vs SLL is per-spec: same shifted output, may differ on V flag (V on
-  // sign-change during left shift). Tracked in docs/assumptions.md A0009;
-  // both treated identically here until SPVU001A Appendix A is read.
+  // SLA vs SLL is per-spec: the shifted output is the same, but SLA reports
+  // overflow when the new sign or any shifted-out bit differs from the old
+  // sign. Task 0130 resolved the complete shift-family status policy.
   // ---------------------------------------------------------------------------
   typedef enum logic [2:0] {
     SHIFT_OP_SLL = 3'd0,  // shift left, logical (fill 0)
-    SHIFT_OP_SLA = 3'd1,  // shift left, arithmetic (alias of SLL; V flag TBD)
+    SHIFT_OP_SLA = 3'd1,  // shift left, arithmetic (SLL result + SLA overflow)
     SHIFT_OP_SRL = 3'd2,  // shift right, logical (fill 0)
     SHIFT_OP_SRA = 3'd3,  // shift right, arithmetic (sign-extend)
     SHIFT_OP_RL  = 3'd4,  // rotate left
@@ -529,11 +527,11 @@ package tms34010_pkg;
                               //                     out-of-window code into Rd[8:5]. V=outside-window.
                               //                     Encoding 1110 011S SSSR DDDD. Task 0070.
     INSTR_MPYS             = 7'd87, // MPYS Rs,Rd — signed 32x32 -> 64-bit. Even Rd: {Rd=hi32,
-                              //                     Rd+1=lo32}; odd Rd: lo32 in Rd. N=result<0,
-                              //                     Z=result==0. Encoding 0101 110S SSSR DDDD.
+                              //                     Rd+1=lo32}; odd Rd: lo32 in Rd. N/Z follow
+                              //                     the stored 64- or 32-bit result respectively.
                               //                     Task 0071 implements FS1=32 (full 32-bit Rs).
     INSTR_MPYU             = 7'd88, // MPYU Rs,Rd — unsigned 32x32 -> 64-bit (same writeback as
-                              //                     MPYS). Z=result==0 (N Unaffected). Encoding
+                              //                     MPYS). Z follows stored result width; N U.
                               //                     0101 111S SSSR DDDD. Task 0071 (FS1=32).
     INSTR_DIVU             = 7'd89, // DIVU Rs,Rd — unsigned divide. Even Rd: {Rd:Rd+1}/Rs ->
                               //                     quotient in Rd, remainder in Rd+1. Odd Rd:
@@ -545,13 +543,11 @@ package tms34010_pkg;
                               //                     ==0 (unaffected if Rs==0), N Unaffected. Encoding
                               //                     0110 111S SSSR DDDD. Reuses the divider.
     INSTR_DIVS             = 7'd91, // DIVS Rs,Rd — signed divide (even Rd: 64-bit {Rd:Rd+1}).
-                              //                     Quotient->Rd (+remainder->Rd+1 even); sign-
-                              //                     conditioned. N=result sign, Z=quotient==0,
-                              //                     V=overflow. Encoding 0101 100S SSSR DDDD.
+                              //                     Quotient->Rd (+remainder->Rd+1 even); N follows
+                              //                     quotient/0x80000000 rules, Z=zero, V=overflow.
     INSTR_MODS             = 7'd92, // MODS Rs,Rd — signed 32-bit modulo: Rd mod Rs -> Rd
-                              //                     (remainder has dividend's sign). N=remainder
-                              //                     sign, Z=remainder==0 (unaffected if Rs=0),
-                              //                     V=overflow. Encoding 0110 110S SSSR DDDD.
+                              //                     (remainder has dividend's sign). N/C U;
+                              //                     Z=remainder zero except Rs=0; V=quot overflow.
     INSTR_CVXYL            = 7'd93, // CVXYL Rs,Rd — convert the XY address in Rs to a linear
                               //                     address in Rd: ((Y<<(31-CONVDP)) | (X<<log2
                               //                     PSIZE)) + OFFSET(B4). Flags Unaffected.

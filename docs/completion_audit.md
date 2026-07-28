@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0134, with strict RTL
+> Baseline: functional implementation through Task 0135, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -17,9 +17,6 @@ Task 0125 closed the audited logical findings: every register, unary, and
 immediate logical form now uses its individual Z-only status mask;
 ANDI/ANDNI implement both extension conventions through their shared
 `Rd & ~extension` hardware operation; and CLR and DEC have exact alias tests.
-A0009 and A0011 remain provisional outside that resolved logical subset.
-Remaining move, immediate, arithmetic, and graphics status rows must still be
-checked against their individual tables before ISA closure is claimed.
 
 Tasks 0126 and 0127 closed both postincrement-destination MOVE rows with
 signed-offset/absolute-address, arbitrary-field, unaligned/straddling,
@@ -56,6 +53,14 @@ SUBXY status table. C/V use signed source-greater-than comparisons; a direct
 negative/positive vector distinguishes them from the prior unsigned-borrow
 interpretation.
 
+Task 0135 completed the individual-page N/C/Z/V sweep and resolved A0009.
+The static decoder policy is exhaustively checked over all 65,536 opcodes,
+while focused runtime tests lock divide/modulo overflow, even/odd multiply
+result widths, array preclipping V, and PIXT XY-destination window behavior.
+The audit distinguishes Undefined/Indeterminate flags—preserved
+deterministically by this RTL—from architecturally Unaffected flags. No
+active ISA/status assumption remains.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -64,7 +69,6 @@ deviation:
 
 - A0005: exact field alignment and cross-boundary behavior at the physical
   memory interface.
-- A0009: per-instruction N/C/Z/V write masks.
 
 A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), and A0006 (functional-first timing) are intentional design choices.
@@ -117,8 +121,8 @@ non-pin-compatible boundary.
 
 ## Ordered exit gates
 
-1. Resolve all active ISA/status assumptions and correct discovered semantic
-   mismatches.
+1. **Complete (Task 0135):** resolve all active ISA/status assumptions and
+   correct discovered semantic mismatches.
 2. **Complete (Tasks 0126–0128):** implement and directly test the two missing
    MOVE forms and EMU behavior; ensure every §12.3 row has a spec citation and
    named test.

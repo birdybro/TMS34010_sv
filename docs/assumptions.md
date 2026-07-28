@@ -113,43 +113,30 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0009 — ALU flag-update convention before per-instruction read
 
-**Task 0125 partial resolution:** the Task 0124 audit proved the historical
-logical-family policy below wrong. Pages 12-42 through 12-45, 12-51, 12-171
-through 12-173, and 12-255 through 12-256 specify Z-only updates with N/C/V
-unaffected. Task 0125 applied that mask to AND/ANDN/OR/XOR/NOT and all IL
-logical forms, with direct preservation tests. The historical assumption is
-retained for context; A0009 remains active only for instruction families not
-yet individually reconciled.
-- **Date**: 2026-05-12
-- **Status**: active, **TODO/spec-uncertain** (per-instruction nuances)
-- **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
-  ("Instructions document which flags they affect; some pixel ops set
-  flags based on the last pixel transferred or the comparison result
-  against the window rather than on a regular ALU outcome — read
-  SPVU001A entries individually."); 03-registers.md ("Condition flags
-  N, C, Z, V from the ALU").
-- **Assumption**: Until each instruction's flag entry in SPVU001A
-  Appendix A is read individually, the ALU computes flags using the
-  obvious two's-complement convention:
-  - Arithmetic: N = result[31], Z = (result == 0), C = unsigned overflow
-    (carry out of bit 31 for ADD; *borrow* = `!carry-out-of-(a + ~b + 1)`
-    for SUB), V = signed overflow (operand-sign agreement-disagreement
-    rule).
-  - Logical: historical default was N/Z with C/V cleared; **superseded by
-    Task 0125** with the architectural Z-only mask.
-  - PASS: N = src[31], Z = (src == 0), C = 0, V = 0.
-- **Rationale**: This is the convention SPVU001A almost certainly
-  documents (it's the convention shared by every contemporary CPU TI
-  had on staff), and any per-instruction quirks (MOVE's flag policy,
-  ABS's V-on-MIN-NEG, CPW's window-relative flag semantics, etc.) are
-  per-instruction concerns that surface in Phases 4+ when those
-  instructions land.
-- **How to apply**: When implementing each instruction in decode, cite
-  the SPVU001A appendix entry and update `docs/instruction_coverage.md`
-  with the exact flag list. If the spec disagrees with this ALU's
-  default flag-update, either (a) update the ALU op enum to add a
-  variant that matches, or (b) override flags in the surrounding
-  control logic.
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0135)**.
+- **Status**: **RESOLVED** against every implemented instruction family's
+  individual `Status Bits` table.
+- **Source**: 1988 TI TMS34010 User's Guide chapter 12. The complete review
+  matrix, primary-page groups, Undefined-versus-Unaffected distinction, and
+  test mapping are retained in `docs/status_audit.md`.
+- **Resolution**:
+  - Ordinary arithmetic uses the ALU's standard N/C/Z/V values, including the
+    guide's borrow convention for subtract-family C.
+  - Every partial writer uses a decoder `wb_flag_mask`; runtime-qualified
+    MOD and graphics cases narrow or replace that mask in the core.
+  - Undefined or indeterminate flags are deliberately preserved for
+    deterministic FPGA behavior. This is not described as an
+    original-silicon preservation guarantee.
+  - Full-status operations (PUTST, POPST, RETI, TRAP, and interrupt entry)
+    continue through the explicit full-ST write path rather than an ALU mask.
+- **Corrections found by the final sweep**: MODS N/Z/writeback and DIVS N
+  overflow behavior; odd-Rd MPYS/MPYU N/Z source width; W=3 V reporting for
+  FILL/PIXBLT; and XY-to-XY PIXT window/V handling.
+- **Regression evidence**: `tb_status_decode` exhaustively checks all 65,536
+  opcode words against the static family matrix. `tb_div_flags`,
+  `tb_mpy_flags`, `tb_fill_window`, `tb_pixblt_window`, and `tb_pixt_win`
+  exercise the newly corrected runtime distinctions; the complete regression
+  retains all prior per-family tests.
 
 ---
 
@@ -588,18 +575,20 @@ yet individually reconciled.
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
 ## A0031 — Window-checking scope and implementation
-- **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117).
+- **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117), audited
+  2026-07-28 (Task 0135).
 - **Status**: implemented for every drawing instruction currently present.
 - **Source**: 1988 UG §7.10 (Window Checking): W=0 off; W=1 hit detection;
   W=2 miss detection; W=3 clipping. WSTART=B5 and WEND=B6 are inclusive XY
   corners; the window-violation pending bit is INTPEND.WV (bit 11).
 - **Array engines**: FILL XY and every PIXBLT with an XY destination implement
   all four modes. W=1 performs no drawing and reports overlap; W=2 requires
-  full rectangle containment; W=3 clips per pixel.
+  full rectangle containment; W=3 clips per pixel and reports V=1 when any
+  preclipping was required.
 - **Incremental engines**: DRAV implements its per-pixel W=1/2/3 rules and
   always performs the XY advance. LINE clips in W=3 and aborts on the first
-  hit/miss condition in W=1/W=2. PIXT XY performs a per-pixel test before its
-  read-modify-write.
+  hit/miss condition in W=1/W=2. PIXT operations with an XY destination
+  perform a per-pixel test before register-to-XY or XY-to-XY writes.
 - **Status/interrupt behavior**: the shared V update and `wvp_set` side channel
   implement the specified V/INTPEND.WV outcomes. The maskable-interrupt path
   can service WV after the drawing instruction reaches its boundary.
@@ -608,7 +597,8 @@ yet individually reconciled.
   MOVE traffic sharing the same memory states.
 - **Tests**: `tb_fill_window`, `tb_fill_w1`, `tb_fill_w2`,
   `tb_pixblt_window`, `tb_pixblt_w1`, `tb_pixblt_w2`, `tb_drav_win`,
-  `tb_line_win`, `tb_line_abort`, and `tb_pixt_win`.
+  `tb_line_win`, `tb_line_abort`, and `tb_pixt_win`. Task 0135 strengthened
+  W=3 V coverage and added XY-to-XY PIXT draw/skip/status cases.
 
 ## A0030 — RESOLVED: every interrupt initializes the live ST service context
 - **Date**: 2026-06-04 (Task 0100); **resolved 2026-07-28 (Task 0123)**.
@@ -654,8 +644,6 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Remaining per-instruction flag nuances still marked provisional in earlier
-  entries; do not rely on the age of an entry as evidence it was resolved.
 - Physical bus-cycle phasing and wait-state behavior for unaligned fields
   crossing the original 16-bit external bus.
 - I/O side effects, on-chip completion timing, and host-visible semantics not
