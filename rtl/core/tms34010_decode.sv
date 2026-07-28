@@ -90,7 +90,7 @@ module tms34010_decode
   // 32-bit immediate follows in two 16-bit words (LO, HI).
   localparam logic [10:0] ADDI_IL_TOP11 = 11'b0000_1011_001;  // ADDI IL
   localparam logic [10:0] CMPI_IL_TOP11 = 11'b0000_1011_011;  // CMPI IL
-  localparam logic [10:0] ANDI_IL_TOP11 = 11'b0000_1011_100;  // ANDI IL
+  localparam logic [10:0] ANDI_IL_TOP11 = 11'b0000_1011_100;  // ANDI/ANDNI IL
   localparam logic [10:0] ORI_IL_TOP11  = 11'b0000_1011_101;  // ORI  IL
   localparam logic [10:0] XORI_IL_TOP11 = 11'b0000_1011_110;  // XORI IL
   localparam logic [10:0] SUBI_IL_TOP11 = 11'b0000_1101_000;  // SUBI IL (different base!)
@@ -655,12 +655,12 @@ module tms34010_decode
     //   ADDI IL  =  0000 1011 001R DDDD + 32-bit imm
     //   SUBI IL  =  0000 1101 000R DDDD + 32-bit imm   (different base prefix!)
     //   CMPI IL  =  0000 1011 011R DDDD + 32-bit imm   (wb_reg_en = 0)
-    //   ANDI IL  =  0000 1011 100R DDDD + 32-bit imm
+    //   ANDI/ANDNI IL = 0000 1011 100R DDDD + 32-bit extension
     //   ORI  IL  =  0000 1011 101R DDDD + 32-bit imm
     //   XORI IL  =  0000 1011 110R DDDD + 32-bit imm
     //
     // All reuse MOVI IL's CORE_FETCH_IMM_LO/HI path (needs_imm32=1,
-    // imm_sign_extend=0). 32-bit immediate is already full-width.
+    // imm_sign_extend=0). The 32-bit extension is already full-width.
     // -----------------------------------------------------------------------
     if (top11 == ADDI_IL_TOP11) begin
       decoded.illegal     = 1'b0;
@@ -698,9 +698,13 @@ module tms34010_decode
       decoded.rd_file     = reg_file_from_instr;
       decoded.rd_idx      = reg_idx_from_instr;
       decoded.needs_imm32 = 1'b1;
-      decoded.alu_op      = ALU_OP_AND;
+      // ANDI and ANDNI share this hardware opcode. The extension words are
+      // complemented by the assembler for source-level ANDI and direct for
+      // ANDNI; silicon always computes Rd & ~extension.
+      decoded.alu_op      = ALU_OP_ANDN;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
     if (top11 == ORI_IL_TOP11) begin
       decoded.illegal     = 1'b0;
@@ -711,6 +715,7 @@ module tms34010_decode
       decoded.alu_op      = ALU_OP_OR;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
     if (top11 == XORI_IL_TOP11) begin
       decoded.illegal     = 1'b0;
@@ -721,6 +726,7 @@ module tms34010_decode
       decoded.alu_op      = ALU_OP_XOR;
       decoded.wb_reg_en   = 1'b1;
       decoded.wb_flags_en = 1'b1;
+      decoded.wb_flag_mask = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
 
     // -----------------------------------------------------------------------
@@ -1214,6 +1220,7 @@ module tms34010_decode
           decoded.alu_op          = ALU_OP_NOT;
           decoded.wb_reg_en       = 1'b1;
           decoded.wb_flags_en     = 1'b1;
+          decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
         end
         // The 2-bit selector is fully enumerated above; the default keeps
         // the per-instruction defaults (set at the top of this always_comb)
@@ -1969,7 +1976,8 @@ module tms34010_decode
     // All share the same encoding shape with a different 7-bit prefix.
     // Operand routing: alu_a = Rs (default), alu_b = Rd. Operations are
     // commutative (or via ANDN's complement-of-b form) so no swap is
-    // needed.
+    // needed. Every logical form updates Z only; N, C, and V are
+    // architecturally Unaffected.
     // -----------------------------------------------------------------------
     if (top7 == AND_RR_TOP7) begin
       decoded.illegal         = 1'b0;
@@ -1980,6 +1988,7 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_AND;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
 
     if (top7 == ANDN_RR_TOP7) begin
@@ -1993,6 +2002,7 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_ANDN;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
 
     if (top7 == OR_RR_TOP7) begin
@@ -2004,6 +2014,7 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_OR;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
 
     if (top7 == XOR_RR_TOP7) begin
@@ -2015,6 +2026,7 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_XOR;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b0, c: 1'b0, z: 1'b1, v: 1'b0};
     end
 
     // -----------------------------------------------------------------------

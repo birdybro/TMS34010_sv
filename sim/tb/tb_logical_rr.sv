@@ -10,7 +10,8 @@
 // All four are reg-reg ops with the same encoding shape. Both registers
 // must be in the same file (TMS34010 architectural constraint, A0014).
 //
-// Flag policy (A0009): N = result[31], Z = (result == 0), C = 0, V = 0.
+// Per the individual instruction pages, only Z is updated; N/C/V are
+// unaffected. Dedicated preservation coverage is in tb_logical_flags.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -172,12 +173,12 @@ module tb_logical_rr;
     check_reg("XOR B2 = AAAAAAAA ^ 55555555 = FFFFFFFF",
               u_core.u_regfile.b_regs[2], 32'hFFFF_FFFF);
 
-    // Final ST reflects the last instruction (XOR B1, B2 = 0xFFFF_FFFF).
-    // N=1 (MSB set), Z=0, C=0, V=0.
-    check_bit("ST.N after XOR -> FFFFFFFF", u_core.u_status_reg.n_o, 1'b1);
+    // XOR updates Z only. The preceding MOVI left N/C/V clear, so they stay
+    // clear even though the XOR result has its sign bit set.
+    check_bit("ST.N preserved across XOR", u_core.u_status_reg.n_o, 1'b0);
     check_bit("ST.Z after XOR -> FFFFFFFF", u_core.u_status_reg.z_o, 1'b0);
-    check_bit("ST.C (logical clears C)",     u_core.u_status_reg.c_o, 1'b0);
-    check_bit("ST.V (logical clears V)",     u_core.u_status_reg.v_o, 1'b0);
+    check_bit("ST.C preserved across XOR",  u_core.u_status_reg.c_o, 1'b0);
+    check_bit("ST.V preserved across XOR",  u_core.u_status_reg.v_o, 1'b0);
 
     if (failures == 0) begin
       $display("TEST_RESULT: PASS (4 logical RR cases verified; encoding helper matches XOR A0,A0=0x5600)");

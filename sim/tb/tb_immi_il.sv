@@ -5,12 +5,15 @@
 //   ADDI IL K, Rd     Rd + K32 → Rd     (N/C/Z/V)
 //   SUBI IL K, Rd     Rd - K32 → Rd     (N/C/Z/V)
 //   CMPI IL K, Rd     flags from Rd - K32; Rd unchanged
-//   ANDI IL K, Rd     Rd & K32 → Rd     (N, Z)
-//   ORI  IL K, Rd     Rd | K32 → Rd     (N, Z)
-//   XORI IL K, Rd     Rd ^ K32 → Rd     (N, Z)
+//   ANDI/ANDNI IL,Rd  Rd & ~extension → Rd (Z only)
+//   ORI  IL K, Rd     Rd | K32 → Rd     (Z only)
+//   XORI IL K, Rd     Rd ^ K32 → Rd     (Z only)
 //
 // All six reuse MOVI IL's CORE_FETCH_IMM_LO/HI path.
 // SUBI IL has a different base prefix (0000_1101 instead of 0000_1011).
+// Source-level ANDI stores the complement of IL in the extension words;
+// source-level ANDNI stores IL directly. tb_logical_flags checks both
+// conventions and N/C/V preservation explicitly.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -134,6 +137,7 @@ module tb_immi_il;
     //   MOVI 0x01000000, A2; SUBI IL 0x00010000, A2   → A2 = 0x00FF0000
     //   MOVI 0xCAFE_BABE, A3; CMPI IL 0xCAFE_BABE, A3 → A3 unchanged; Z=1
     //   MOVI 0xF0F0F0F0, A4; ANDI IL 0x0FF0FF0F, A4   → A4 = 0x00F0F000
+    //     (the instruction extension is ~0x0FF0FF0F = 0xF00F00F0)
     //   MOVI 0x0F0F0F0F, A5; ORI  IL 0xF0F0F0F0, A5   → A5 = 0xFFFFFFFF
     //   MOVI 0xAAAA_AAAA, B1; XORI IL 0xFFFF_FFFF, B1 → B1 = 0x55555555
     p = 0;
@@ -147,7 +151,7 @@ module tb_immi_il;
     p = place_imm_il (p, CMPI_IL_TOP11, REG_FILE_A, 4'd3, 32'hCAFE_BABE);
 
     p = place_movi_il(p, REG_FILE_A, 4'd4, 32'hF0F0_F0F0);
-    p = place_imm_il (p, ANDI_IL_TOP11, REG_FILE_A, 4'd4, 32'h0FF0_FF0F);
+    p = place_imm_il (p, ANDI_IL_TOP11, REG_FILE_A, 4'd4, 32'hF00F_00F0);
 
     p = place_movi_il(p, REG_FILE_A, 4'd5, 32'h0F0F_0F0F);
     p = place_imm_il (p, ORI_IL_TOP11, REG_FILE_A, 4'd5, 32'hF0F0_F0F0);

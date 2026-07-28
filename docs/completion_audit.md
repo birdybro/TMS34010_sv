@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: Task 0123, 111/111 self-checking benches passing with strict RTL
+> Baseline: functional implementation through Task 0125, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -15,18 +15,18 @@ physical timing work.
 
 | Official row | Current state | Required closure |
 |--------------|---------------|------------------|
-| `ANDI IL,Rd` / `ANDNI IL,Rd` | One shared opcode is decoded, but the extension-word complement convention and Z-only flag behavior on pages 12-43/12-45 are not implemented correctly. | Correct the shared hardware operation, encode both source-level interpretations in tests, and resolve the affected part of A0009. |
-| `CLR Rd` | The word is the `XOR Rd,Rd` alias and reaches the XOR datapath, but the current logical flag policy writes N/C/V contrary to page 12-51. | Correct logical flag masks and add an exact CLR alias test. |
-| `DEC Rd` | The word is the `SUBK 1,Rd` alias and already executes through the tested SUBK datapath. | Add an explicit alias/encoding assertion and coverage row; no new execution datapath is expected. |
 | `MOVE *Rs(offset),*Rd+ [,F]` | Not decoded or executed. | Add the two-word signed-offset memory-to-memory form and postincrement Rd by FS. |
 | `MOVE @SAddress,*Rd+ [,F]` | Not decoded or executed. | Add the three-word absolute-source memory-to-memory form and postincrement Rd by FS. |
 | `EMU` | Not decoded; the top level has no EMUA or RUN/EMU interface. | Define the FPGA-facing emulation-pin boundary, implement the RUN-as-NOP behavior and emulator-entry handshake, and test both sampled modes. |
 
-The summary also exposed that “implemented” does not yet mean
-spec-verified for every flag. A0009 and A0011 still describe provisional
-policies; the ANDI/ANDNI and CLR pages already prove concrete discrepancies.
-The remaining logical, move, immediate, and unary rows must be checked against
-their individual status-bit tables before ISA closure is claimed.
+Task 0125 closed the audited logical findings: every register, unary, and
+immediate logical form now uses its individual Z-only status mask;
+ANDI/ANDNI implement both extension conventions through their shared
+`Rd & ~extension` hardware operation; and CLR and DEC have exact alias tests.
+A0009 and A0011 remain provisional outside that resolved logical subset.
+Remaining move, immediate, arithmetic, shift, and graphics status rows must
+still be checked against their individual tables before ISA closure is
+claimed.
 
 ## Active architectural assumptions requiring closure
 

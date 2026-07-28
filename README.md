@@ -6,10 +6,10 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0123. Task 0124
+Functional implementation work is complete through Task 0125. Task 0124
 reconciled the official instruction summary and all remaining system
-integration work into `docs/completion_audit.md`; the strict whole-repository
-validation baseline is complete through Task 0119. The repository currently
+integration work into `docs/completion_audit.md`; Task 0125 closed the
+logical-status and ANDI/ANDNI semantic findings. The repository currently
 contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -22,10 +22,10 @@ contains:
 - on-chip I/O-register storage plus maskable and nonmaskable interrupt entry;
 - architectural reset and illegal-opcode vector entry;
 - standalone video-timing and DRAM-refresh modules;
-- 111 self-checking SystemVerilog testbenches.
+- 112 self-checking SystemVerilog testbenches.
 
-This is not yet a complete FPGA system. The audit records a small set of ISA
-semantic/form gaps plus the host/memory fabric, bus arbitration, I/O
+This is not yet a complete FPGA system. The audit records the remaining ISA
+forms/verification work plus the host/memory fabric, bus arbitration, I/O
 side-effect completion, video/refresh integration, real Quartus
 project/constraints, and timing/resource validation.
 

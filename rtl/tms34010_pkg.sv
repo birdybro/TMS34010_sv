@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0123: architectural widths and register layouts,
+// Current through Task 0125: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -379,7 +379,7 @@ package tms34010_pkg;
     INSTR_ADDK       = 7'd12, // ADDK K, Rd       — K + Rd → Rd  (K = 5-bit, zext)
     INSTR_SUBK       = 7'd13, // SUBK K, Rd       — Rd - K → Rd  (K = 5-bit, zext)
     INSTR_NEG        = 7'd14, // NEG Rd           — 0 - Rd → Rd
-    INSTR_NOT        = 7'd15, // NOT Rd           — ~Rd → Rd     (C, V cleared)
+    INSTR_NOT        = 7'd15, // NOT Rd           — ~Rd → Rd     (Z only)
     INSTR_ADDI_IW    = 7'd16, // ADDI IW K, Rd    — Rd + sext(K16) → Rd
     INSTR_SUBI_IW    = 7'd17, // SUBI IW K, Rd    — Rd - sext(K16) → Rd
     INSTR_CMPI_IW    = 7'd18, // CMPI IW K, Rd    — flags from Rd - sext(K16); Rd unchanged
@@ -391,7 +391,7 @@ package tms34010_pkg;
     INSTR_ADDI_IL    = 7'd24, // ADDI IL K, Rd    — Rd + K32 → Rd
     INSTR_SUBI_IL    = 7'd25, // SUBI IL K, Rd    — Rd - K32 → Rd
     INSTR_CMPI_IL    = 7'd26, // CMPI IL K, Rd    — flags from Rd - K32; Rd unchanged
-    INSTR_ANDI_IL    = 7'd27, // ANDI IL K, Rd    — Rd & K32 → Rd
+    INSTR_ANDI_IL    = 7'd27, // ANDI/ANDNI IL,Rd — Rd & ~extension → Rd
     INSTR_ORI_IL     = 7'd28, // ORI  IL K, Rd    — Rd | K32 → Rd
     INSTR_XORI_IL    = 7'd29, // XORI IL K, Rd    — Rd ^ K32 → Rd
     INSTR_MOVE_RR    = 7'd30, // MOVE Rs, Rd      — Rs → Rd (same-file reg-reg)

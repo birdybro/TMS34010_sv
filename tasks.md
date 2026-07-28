@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0123. Task 0118
+The functional implementation is complete through Task 0125. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -10,7 +10,8 @@ cross-phase integration with the architectural reset-vector fetch. Task 0122
 closed the deferred illegal-opcode interrupt path. Task 0123 resolved the
 remaining interrupt-entry status assumption directly against the guide.
 Task 0124 established the primary-spec completion ledger that now drives
-further implementation.
+further implementation. Task 0125 closed its logical-status, ANDI/ANDNI, CLR,
+and DEC findings.
 
 ## Task index
 
@@ -140,6 +141,7 @@ further implementation.
 | 0122 | Trap illegal opcodes through architectural vector 30 | complete |
 | 0123 | Initialize architectural ST on every interrupt entry | complete |
 | 0124 | Audit the remaining ISA and system completion gaps | complete |
+| 0125 | Correct logical flags and ANDI/ANDNI semantics | complete |
 
 ---
 
@@ -3921,6 +3923,40 @@ Docs:
   `docs/instruction_coverage.md`.
 Commit:
 - `ee74bef` — Audit remaining completion gaps (Task 0124)
+
+---
+
+### Task 0125: Correct logical flags and ANDI/ANDNI semantics
+Status: complete
+Dependencies:
+- Task 0124 (official ISA reconciliation).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 12-42 through 12-45
+  (AND/ANDI/ANDN/ANDNI).
+- 1988 TI TMS34010 User's Guide pages 12-51 and 12-61 (CLR and DEC
+  aliases).
+- 1988 TI TMS34010 User's Guide pages 12-171 through 12-173 and 12-255
+  through 12-256 (NOT, OR/ORI, and XOR/XORI).
+Acceptance Criteria:
+- Make AND, ANDN, OR, XOR, NOT, ANDI/ANDNI, ORI, and XORI update only Z
+  while preserving N, C, and V.
+- Implement the shared ANDI/ANDNI hardware opcode as `Rd & ~extension`;
+  verify ANDI's complemented extension and ANDNI's direct extension.
+- Directly verify the exact CLR=`XOR Rd,Rd` and DEC=`SUBK 1,Rd` aliases.
+- Update the official coverage ledger and retire the corresponding Task
+  0124 audit findings.
+Tests:
+- `scripts/sim.sh tb_logical_flags`, `tb_logical_rr`, `tb_immi_il`,
+  `tb_neg_not`, and `tb_addk_subk` — PASS.
+- `scripts/lint.sh` — PASS; Verilator lint clean with zero diagnostics.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 112/112 self-checking
+  testbenches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

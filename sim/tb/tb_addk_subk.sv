@@ -124,6 +124,12 @@ module tb_addk_subk;
                subk_enc(5'd31, REG_FILE_A, 4'd0));
       failures++;
     end
+    // DEC Rd is the exact source-level alias for SUBK 1,Rd.
+    if (subk_enc(5'd1, REG_FILE_A, 4'd0) !== 16'h1420) begin
+      $display("TEST_RESULT: FAIL: DEC A0 alias=%04h, expected 1420",
+               subk_enc(5'd1, REG_FILE_A, 4'd0));
+      failures++;
+    end
     if (addk_enc(5'd7, REG_FILE_B, 4'd5) !== 16'h10F5) begin
       $display("TEST_RESULT: FAIL: addk(7,B5)=%04h, expected 10F5",
                addk_enc(5'd7, REG_FILE_B, 4'd5));

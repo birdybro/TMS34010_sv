@@ -11,8 +11,8 @@
 //   NEG:  0 - Rd → Rd      Flags: N, C, Z, V from the negation.
 //                          V = 1 only when Rd was 0x8000_0000 (MIN_INT)
 //                          since -MIN = MIN (per A0009 / SPVU001A).
-//   NOT:  ~Rd → Rd         Flags: N, Z from result; C and V cleared
-//                          (logical ops convention, A0009).
+//   NOT:  ~Rd → Rd         Flags: Z only; N, C, and V unaffected.
+//                          Preservation is checked in tb_logical_flags.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps

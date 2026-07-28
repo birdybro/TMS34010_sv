@@ -113,11 +113,13 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0009 — ALU flag-update convention before per-instruction read
 
-**Task 0124 audit finding:** this provisional family-wide policy is known to
-be architecturally wrong for at least ANDI/ANDNI and the CLR alias. Their
-individual pages specify Z-only updates with N/C/V unaffected. The historical
-assumption below is retained to explain the current RTL, but it is an active
-noncompliance item in `completion_audit.md`, not a compatibility claim.
+**Task 0125 partial resolution:** the Task 0124 audit proved the historical
+logical-family policy below wrong. Pages 12-42 through 12-45, 12-51, 12-171
+through 12-173, and 12-255 through 12-256 specify Z-only updates with N/C/V
+unaffected. Task 0125 applied that mask to AND/ANDN/OR/XOR/NOT and all IL
+logical forms, with direct preservation tests. The historical assumption is
+retained for context; A0009 remains active only for instruction families not
+yet individually reconciled.
 - **Date**: 2026-05-12
 - **Status**: active, **TODO/spec-uncertain** (per-instruction nuances)
 - **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/02-instruction-set.md`
@@ -133,7 +135,8 @@ noncompliance item in `completion_audit.md`, not a compatibility claim.
     (carry out of bit 31 for ADD; *borrow* = `!carry-out-of-(a + ~b + 1)`
     for SUB), V = signed overflow (operand-sign agreement-disagreement
     rule).
-  - Logical: N = result[31], Z = (result == 0), C = 0, V = 0.
+  - Logical: historical default was N/Z with C/V cleared; **superseded by
+    Task 0125** with the architectural Z-only mask.
   - PASS: N = src[31], Z = (src == 0), C = 0, V = 0.
 - **Rationale**: This is the convention SPVU001A almost certainly
   documents (it's the convention shared by every contemporary CPU TI

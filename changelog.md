@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0125 — logical status and ANDI/ANDNI semantics)
+- Changed AND, ANDN, OR, XOR, NOT, ANDI/ANDNI, ORI, and XORI to update only
+  ST.Z while preserving ST.N, ST.C, and ST.V, matching each individual
+  instruction page in the 1988 User's Guide.
+- Changed the shared ANDI/ANDNI opcode to compute `Rd & ~extension`.
+  Source-level ANDI is verified with complemented extension words and ANDNI
+  with direct extension words.
+- Added `tb_logical_flags`, which snapshots the full status register after
+  every logical form and directly executes CLR as `XOR Rd,Rd`.
+- Added the exact `DEC A0 = SUBK 1,A0 = 0x1420` alias assertion to
+  `tb_addk_subk`; updated existing logical/immediate expectations.
+- Retired the corresponding completion-audit findings and reconciled A0009
+  plus the instruction-coverage ledger to primary-spec evidence.
+- Validation: five focused benches PASS; `scripts/lint.sh` clean; full
+  regression 112/112 PASS.
+
 ### Documentation (Task 0124 — completion audit)
 - Reconciled every row of the 1988 User's Guide §12.3 TMS34010 instruction
   summary against the decoder and instruction-coverage ledger.
