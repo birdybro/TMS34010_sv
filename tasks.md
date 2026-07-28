@@ -3788,7 +3788,7 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`, `docs/memory_map.md`,
   `docs/timing_notes.md`, `docs/instruction_coverage.md`.
 Commit:
-- pending (record after commit)
+- f087ece
 
 ---
 
