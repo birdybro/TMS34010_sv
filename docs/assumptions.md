@@ -383,8 +383,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0020 — MOVE family encodings (and a corrected reg-to-reg opcode)
 - **Date**: 2026-05-12; **CORRECTED 2026-05-30 (Task 0058)**.
-- **Status**: MOVE field machinery complete. Seven of nine MOVB forms are
-  implemented; the two multiword memory-to-memory forms remain illegal.
+- **Status**: MOVE field machinery and all nine documented MOVB forms are
+  implemented.
 - **Source**: SPVU001A page 12-126 (MOVE Rs,Rd detail) + the Move-Instructions summary table, cross-checked against BOTH the 1986 first edition (`1986_SPVU001...`) and the 1988 User's Guide. Object-code example Figure 12-3: `MOVE A0,B1 = 0x4E01`.
 - **CORRECTION**: the original A0020 misread the "A-14" chart. It took the row `1001 00FS SSSR DDDD` to be reg-to-reg MOVE; that row is actually **MOVE Rs,\*Rd+** (postincrement register-to-indirect, a memory *store*). Register-to-register MOVE is **`0100 11MS SSSR DDDD`** (base 0x4C00). The decoder and every stack testbench that set SP via "MOVE A0,A15" used the wrong 0x9000 opcode; they "passed" only because decoder + tests shared the same wrong encoding. Task 0058 relocates reg-to-reg MOVE to 0x4C00, adds the M-bit cross-file support, and fixes all affected testbenches.
 - **Reg-to-reg MOVE (now implemented, Task 0058)**: `0100 11MS SSSR DDDD`. NOT a field move — full 32-bit copy, field size has no effect, so there is **no F bit**. M=bit[9]: 0 ⇒ same file, 1 ⇒ cross-file. R=bit[4]: file for both (M=0) or the *source* file (M=1; destination is the other file). This is the only MOVE that crosses register files. Status: N=data[31], Z=(data==0), V=0, C Unaffected. New struct field `rs_file` carries the (possibly different) source file; the core reads it for `rf_rs1_file` only on `INSTR_MOVE_RR`.
@@ -394,7 +394,17 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Field-machinery progress (Task 0077)**: the register↔indirect MOVE forms (FIELD_STORE/FIELD_LOAD: plain, postinc, predec) are now **field-size aware**. The core derives `mv_fs`/`mv_fe` from the F-selected ST pair (FS0/FE0 or FS1/FE1; FS=0 ⇒ 32), drives `mem_size = mv_fs`, sign/zero-extends loads (`mv_load_data`) per FE, and steps pointers by ±FS. Unaligned/straddling fields are handled by the Task 0076 memory model. **Consequence**: because MOVE now honors the actual FS, the existing FS=32 round-trip tests (tb_move_indirect, tb_move_indirect_incdec) had to issue `SETF FS0=0` first — the reset ST has FS0=16, so without it those moves would transfer 16 bits. **Still FS=32-only**: the M2M (indirect↔indirect), offset, and absolute MOVE forms — their field-awareness is a later task.
 - **Field-machinery progress (Task 0078)**: the OFFSET (0xB000/0xB400) and ABSOLUTE (0x0580/0x05A0) MOVE forms are now field-size aware too — same `mv_fs`/`mv_load_data` machinery (no pointer step). tb_move_offset / tb_move_abs now SETF FS0=0 up front; new tb_move_offabs_field covers FS=8/16 and an FS=12 straddling absolute field.
 - **Field machinery COMPLETE for MOVE (Task 0079)**: the M2M (indirect↔indirect) forms (0x8800/0x9800/0xA800) are now field-size aware — both steps of the 2-step CORE_MEMORY sequence use `mem_size = mv_fs` (read FS bits into move_data_q, write its low FS bits), and both pointers step by ±FS. No FE extension (mem→mem). tb_move_m2m / tb_move_m2m_incdec now SETF FS0=0; new tb_move_m2m_field covers FS=8 plain/postinc and an FS=12 copy with both src and dst fields straddling word boundaries. **All MOVE addressing forms now honor arbitrary FS 1..31 + FE, unaligned, and word-straddling fields.** The remaining field-related item is **MOVB** (byte move, FS fixed at 8 — a thin decode layer that forces FS=8 over this machinery, independent of ST).
-- **MOVB implemented (Task 0080)**: a new `decoded.force_byte` flag forces FS=8 (`mv_fs`) and, for loads, FE=sign-extend (`mv_fe=1`) regardless of ST — MOVB loads are always right-justified and sign-extended with implicit compare-to-0 (SPVU001A 12-120). 7 of MOVB's 9 forms reuse the MOVE field/offset/absolute datapaths: Rs,*Rd (0x8C00) / *Rs,Rd (0x8E00) / *Rs,*Rd (0x9C00) / Rs,*Rd(off) (0xAC00) / *Rs(off),Rd (0xAE00) / Rs,@DAddr (0x05E0) / @SAddr,Rd (0x07E0). MOVB has no auto inc/dec. The store/load indirect forms differ in bit9 so they decode on top7; the absolute forms live in the 0000-01.. family at sub-op instr[7:5]=111 (store bit9=0 / load bit9=1). **Deferred** (need new multi-word datapaths, like the niche MOVE forms): MOVB *Rs(SOff),*Rd(DOff) (0xBC00, offset-to-offset) and MOVB @SAddr,@DAddr (0x0340, abs-to-abs) — both currently trap as illegal.
+- **MOVB implementation (Tasks 0080 and 0120)**: `decoded.force_byte`
+  forces FS=8 (`mv_fs`) and, for loads, FE=sign-extend (`mv_fe=1`)
+  regardless of ST. Task 0080 mapped seven forms onto the existing MOVE
+  field/offset/absolute datapaths: Rs,*Rd (0x8C00), *Rs,Rd (0x8E00),
+  *Rs,*Rd (0x9C00), Rs,*Rd(off) (0xAC00), *Rs(off),Rd (0xAE00),
+  Rs,@DAddr (0x05E0), and @SAddr,Rd (0x07E0). Task 0120 completed the
+  remaining memory-to-memory forms: *Rs(SOff),*Rd(DOff) (0xBC00) fetches two
+  independent signed 16-bit offsets, while @SAddr,@DAddr (0x0340) fetches
+  two low-word-first 32-bit bit addresses. Both reuse the two-step M2M engine,
+  transfer exactly eight bits, preserve the base registers, and leave all
+  flags unaffected. MOVB has no auto increment/decrement forms.
 
 ---
 

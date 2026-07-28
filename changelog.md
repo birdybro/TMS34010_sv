@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0120 — multiword MOVB memory-to-memory forms)
+- Completed the three-word `MOVB *Rs(SOffset),*Rd(DOffset)` form (`0xBC00`
+  family): source and destination offsets are fetched in instruction order,
+  independently sign-extended, and added to unchanged base registers.
+- Completed the five-word `MOVB @SAddress,@DAddress` form (`0x0340`): the
+  source low/high address pair is followed by the destination low/high pair.
+  Two additional immediate-fetch states retain the second 32-bit operand.
+- Both instructions reuse the existing two-step field memory-to-memory engine
+  with FS forced to eight bits. They perform no register or status writeback
+  and support unaligned bytes that cross 16-bit memory words.
+- Added `tb_movb_multiword`, which covers negative and positive offsets,
+  operand ordering, straddling source/destination fields, register and NCZV
+  preservation, five-word PC advancement, and illegal-opcode detection.
+- Validation: strict RTL lint completed with zero diagnostics, both MOVB
+  focused benches passed, and the complete Verilator regression reported
+  `110/110 PASS`.
+
 ### Changed (Task 0119 — strict full-regression gate)
 - Added `scripts/regress.sh`, which discovers every tracked SystemVerilog
   testbench, requires each self-checking PASS marker, records per-test logs,

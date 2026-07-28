@@ -188,6 +188,8 @@ module tms34010_core
   // CORE_FETCH_IMM_LO / CORE_FETCH_IMM_HI).
   instr_word_t imm_lo_q;
   instr_word_t imm_hi_q;
+  instr_word_t imm_ext_lo_q;
+  instr_word_t imm_ext_hi_q;
 
   // Long-form JRcc target: PC_after_both_fetches + sign_extend(disp16) × 16.
   // By the time the FSM hits CORE_WRITEBACK, pc_value already equals
@@ -255,7 +257,10 @@ module tms34010_core
     end else if (state_q == CORE_MEMORY && mem_ack) begin
       // MOVE *Rs,*Rd: step 0 reads the source field; latch it so step 1
       // can write it to the destination.
-      if (decoded.iclass == INSTR_MOVE_FIELD_M2M && mem_op_step == 2'd0) begin
+      if (((decoded.iclass == INSTR_MOVE_FIELD_M2M)
+        || (decoded.iclass == INSTR_MOVB_OFF_M2M)
+        || (decoded.iclass == INSTR_MOVB_ABS_M2M))
+       && mem_op_step == 2'd0) begin
         move_data_q <= mem_rdata_eff;
       end
       // PIXT store plane-mask RMW: step 0 reads the destination pixel; latch
@@ -285,7 +290,9 @@ module tms34010_core
         INSTR_TRAP: mem_op_step <= (trap_skip_push || mem_op_step == 2'd2)
                                  ? 2'd0
                                  : mem_op_step + 2'd1;
-        INSTR_MOVE_FIELD_M2M:
+        INSTR_MOVE_FIELD_M2M,
+        INSTR_MOVB_OFF_M2M,
+        INSTR_MOVB_ABS_M2M:
                     mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
         // PIXT store RMW: step 0 (read) -> step 1 (write) -> 0. Regular MOVE
         // store (no force_pixel) is single-step and falls through to default.
@@ -1009,12 +1016,20 @@ module tms34010_core
     if (rst) begin
       imm_lo_q <= '0;
       imm_hi_q <= '0;
+      imm_ext_lo_q <= '0;
+      imm_ext_hi_q <= '0;
     end else begin
       if (state_q == CORE_FETCH_IMM_LO && mem_ack) begin
         imm_lo_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
       if (state_q == CORE_FETCH_IMM_HI && mem_ack) begin
         imm_hi_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
+      end
+      if (state_q == CORE_FETCH_IMM_EXT_LO && mem_ack) begin
+        imm_ext_lo_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
+      end
+      if (state_q == CORE_FETCH_IMM_EXT_HI && mem_ack) begin
+        imm_ext_hi_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
     end
   end
@@ -1069,7 +1084,7 @@ module tms34010_core
   // 0013): concatenate {imm_hi_q, imm_lo_q}.
   logic [DATA_WIDTH-1:0] imm32;
   always_comb begin
-    if (decoded.needs_imm32) begin
+    if (decoded.needs_imm32 || decoded.needs_imm64) begin
       imm32 = {imm_hi_q, imm_lo_q};
     end else if (decoded.imm_sign_extend) begin
       imm32 = {{(DATA_WIDTH-INSTR_WORD_WIDTH){imm_lo_q[INSTR_WORD_WIDTH-1]}}, imm_lo_q};
@@ -1386,16 +1401,29 @@ module tms34010_core
   // step-0 Rs update, so a postincrement Rs==Rd writes to the incremented
   // location (SPVU001A 12-138). To avoid double-stepping that one register,
   // the WRITEBACK Rd write is suppressed when Rs==Rd.
-  logic                  is_mv_m2m, m2m_same_reg, m2m_src_wr;
+  logic                  is_mv_m2m, is_movb_off_m2m, is_movb_abs_m2m;
+  logic                  m2m_same_reg, m2m_src_wr;
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
-  assign is_mv_m2m    = (decoded.iclass == INSTR_MOVE_FIELD_M2M);
+  logic [DATA_WIDTH-1:0] m2m_src_offset, m2m_dst_offset;
+  assign is_movb_off_m2m = (decoded.iclass == INSTR_MOVB_OFF_M2M);
+  assign is_movb_abs_m2m = (decoded.iclass == INSTR_MOVB_ABS_M2M);
+  assign is_mv_m2m       = (decoded.iclass == INSTR_MOVE_FIELD_M2M)
+                        || is_movb_off_m2m || is_movb_abs_m2m;
   assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
+  assign m2m_src_offset =
+      {{(DATA_WIDTH-INSTR_WORD_WIDTH){imm_lo_q[INSTR_WORD_WIDTH-1]}}, imm_lo_q};
+  assign m2m_dst_offset =
+      {{(DATA_WIDTH-INSTR_WORD_WIDTH){imm_hi_q[INSTR_WORD_WIDTH-1]}}, imm_hi_q};
   // Field-size aware (Task 0079): both pointers step by ±FS, not ±32. XY PIXT
   // M2M (Task 0086): the pointers hold XY values — convert the source with
   // CONVSP (pix_xy_linear) and the destination with CONVDP (pix_xy_dst_linear).
-  assign m2m_src_addr = decoded.xy_addr ? pix_xy_linear
+  assign m2m_src_addr = is_movb_abs_m2m ? {imm_hi_q, imm_lo_q}
+                      : is_movb_off_m2m ? (rf_rs1_data + m2m_src_offset)
+                      : decoded.xy_addr ? pix_xy_linear
                       : mv_predec       ? (rf_rs1_data - mv_fs_ext) : rf_rs1_data;
-  assign m2m_dst_addr = decoded.xy_addr ? pix_xy_dst_linear
+  assign m2m_dst_addr = is_movb_abs_m2m ? {imm_ext_hi_q, imm_ext_lo_q}
+                      : is_movb_off_m2m ? (rf_rs2_data + m2m_dst_offset)
+                      : decoded.xy_addr ? pix_xy_dst_linear
                       : mv_predec       ? (rf_rs2_data - mv_fs_ext) : rf_rs2_data;
   assign m2m_src_new  = mv_predec ? (rf_rs1_data - mv_fs_ext) : (rf_rs1_data + mv_fs_ext);
   assign m2m_dst_new  = mv_predec ? (rf_rs2_data - mv_fs_ext) : (rf_rs2_data + mv_fs_ext);
@@ -2503,7 +2531,9 @@ module tms34010_core
       CORE_DECODE: begin
         // Branch based on how many immediate words the decoded
         // instruction needs.
-        if (decoded.needs_imm32) begin
+        if (decoded.needs_imm64) begin
+          state_d = CORE_FETCH_IMM_LO;
+        end else if (decoded.needs_imm32) begin
           state_d = CORE_FETCH_IMM_LO;
         end else if (decoded.needs_imm16) begin
           state_d = CORE_FETCH_IMM_LO;
@@ -2521,13 +2551,36 @@ module tms34010_core
         mem_size = INSTR_WORD_BITS;
         if (mem_ack) begin
           pc_advance_en = 1'b1;
-          state_d = decoded.needs_imm32 ? CORE_FETCH_IMM_HI : CORE_EXECUTE;
+          state_d = (decoded.needs_imm32 || decoded.needs_imm64)
+                  ? CORE_FETCH_IMM_HI : CORE_EXECUTE;
         end
       end
 
       CORE_FETCH_IMM_HI: begin
         mem_req  = 1'b1;
         mem_we_int   = 1'b0;
+        mem_addr = pc_value;
+        mem_size = INSTR_WORD_BITS;
+        if (mem_ack) begin
+          pc_advance_en = 1'b1;
+          state_d = decoded.needs_imm64 ? CORE_FETCH_IMM_EXT_LO : CORE_EXECUTE;
+        end
+      end
+
+      CORE_FETCH_IMM_EXT_LO: begin
+        mem_req  = 1'b1;
+        mem_we_int = 1'b0;
+        mem_addr = pc_value;
+        mem_size = INSTR_WORD_BITS;
+        if (mem_ack) begin
+          pc_advance_en = 1'b1;
+          state_d = CORE_FETCH_IMM_EXT_HI;
+        end
+      end
+
+      CORE_FETCH_IMM_EXT_HI: begin
+        mem_req  = 1'b1;
+        mem_we_int = 1'b0;
         mem_addr = pc_value;
         mem_size = INSTR_WORD_BITS;
         if (mem_ack) begin
@@ -2953,7 +3006,9 @@ module tms34010_core
             mem_addr  = imm32;
             mem_size  = mv_fs;             // field size (1..32)
           end
-          INSTR_MOVE_FIELD_M2M: begin
+          INSTR_MOVE_FIELD_M2M,
+          INSTR_MOVB_OFF_M2M,
+          INSTR_MOVB_ABS_M2M: begin
             // Two-step indirect-to-indirect: step 0 reads an FS-bit field at
             // mem[*Rs] into move_data_q, step 1 writes its low FS bits to
             // mem[*Rd]. Field-size aware (Task 0079): both transactions use
@@ -2983,7 +3038,10 @@ module tms34010_core
                           state_d = CORE_WRITEBACK;
             INSTR_MMTM,
             INSTR_MMFM: if (mm_mask_will_be_empty) state_d = CORE_WRITEBACK;
-            INSTR_MOVE_FIELD_M2M: if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
+            INSTR_MOVE_FIELD_M2M,
+            INSTR_MOVB_OFF_M2M,
+            INSTR_MOVB_ABS_M2M:
+                        if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
             // PIXT store RMW stays for its write step; single-step store exits.
             INSTR_MOVE_FIELD_STORE:
                         if (!pixt_rmw || mem_op_step == 2'd1) state_d = CORE_WRITEBACK;

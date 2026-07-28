@@ -1,11 +1,11 @@
 # Tasks
 
-## Current Milestone: Strict regression baseline and cross-phase integration
+## Current Milestone: Close explicit ISA gaps
 
-The functional implementation is complete through Task 0117. Task 0118
-reconciled the repository for continued work; Task 0119 makes every tracked
-testbench part of one strict, reproducible local validation gate before the
-remaining cross-phase integration work proceeds.
+The functional implementation is complete through Task 0120. Task 0118
+reconciled the repository for continued work, Task 0119 made every tracked
+testbench part of one strict local validation gate, and Task 0120 closed the
+two explicitly tracked multiword MOVB gaps. Cross-phase integration is next.
 
 ## Task index
 
@@ -130,6 +130,7 @@ remaining cross-phase integration work proceeds.
 | 0117 | PIXT XY per-pixel window checking | complete |
 | 0118 | Migrate agent guidance and restore local validation entry points | complete |
 | 0119 | Establish strict full-regression gate | complete |
+| 0120 | Complete multiword MOVB memory-to-memory forms | complete |
 
 ---
 
@@ -3703,6 +3704,44 @@ Docs:
 - `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`.
 Commit:
 - be793d7
+
+---
+
+### Task 0120: Complete multiword MOVB memory-to-memory forms
+Status: complete
+Dependencies:
+- Task 0080 (seven existing MOVB forms and forced 8-bit field machinery).
+- Task 0119 (strict 109-test regression gate).
+Spec source:
+- 1988 TI TMS34010 User's Guide pages 12-120/12-121: MOVB
+  `*Rs(SOffset),*Rd(DOffset)`.
+- 1988 TI TMS34010 User's Guide pages 12-123/12-124: MOVB
+  `@SAddress,@DAddress`.
+Acceptance Criteria:
+- Decode the three-word offset-to-offset form (`0xBC00` family), fetch source
+  offset followed by destination offset, sign-extend each independently, and
+  copy exactly eight bits from `Rs+SOffset` to `Rd+DOffset`.
+- Decode the fixed five-word absolute-to-absolute form (`0x0340`), fetch source
+  low/high followed by destination low/high, and copy exactly eight bits
+  between the two bit addresses.
+- Reuse the existing two-step memory-to-memory byte-copy path, with no
+  register writeback and N/C/Z/V all unaffected.
+- Preserve instruction-word PC advancement and support unaligned,
+  16-bit-word-straddling source and destination bytes.
+Tests:
+- Add `tb_movb_multiword` covering signed offsets, operand-word order,
+  unaligned/straddling copies, register preservation, flags unaffected,
+  post-instruction execution, and no illegal-opcode latch.
+- Run strict RTL lint, the existing `tb_movb`, the new focused test, and the
+  complete regression.
+- `scripts/lint.sh` completed with zero diagnostics under Verilator 5.048;
+  `tb_movb` and `tb_movb_multiword` both passed.
+- `REGRESS_JOBS=4 scripts/regress.sh` reported `110/110 PASS`.
+Docs:
+- `README.md`, `tasks.md`, `changelog.md`, `docs/assumptions.md`,
+  `docs/architecture.md`, `docs/instruction_coverage.md`, `AGENTS.md`.
+Commit:
+- pending
 
 ---
 

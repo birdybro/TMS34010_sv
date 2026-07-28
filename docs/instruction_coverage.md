@@ -1,8 +1,7 @@
 # Instruction coverage
 
-> Status: **populated through Task 0117**. Implemented rows are backed by named
-> self-checking tests. The two explicitly recognized but unsupported MOVB
-> multiword forms remain illegal.
+> Status: **populated through Task 0120**. Implemented rows are backed by named
+> self-checking tests. All nine documented MOVB forms are implemented.
 
 ## How this table is maintained
 
@@ -103,8 +102,8 @@ Required columns:
 | MOVB *Rs(off), Rd | `1010 111S SSSR DDDD` + off16 (base 0xAE00) | SPVU001A page 12-121 | implemented | tb_movb | N = result[31], Z = (result==0), V = 0, C Unaffected | **read** (8-bit) | TBD | Byte load with signed offset: `Rd <- sign_extend(mem[Rs + sext(off16)])`. Reuses INSTR_MOVE_OFF_LOAD with FS=8 (sign-extended). Task 0080. |
 | MOVB Rs, @DAddr | `0000 0101 111R SSSS` + 32-bit addr (base 0x05E0) | SPVU001A page 12-122 | implemented | tb_movb | **none** (all Unaffected) | **write** (8-bit) | TBD | Byte store to absolute address: `mem[DAddr] <- low 8 bits of Rs`. In the `0000 01..` field-op family, sub-op `instr[7:5]=111`, store = bit9 0. Reuses INSTR_MOVE_ABS_STORE with FS=8. Task 0080. |
 | MOVB @SAddr, Rd | `0000 0111 111R DDDD` + 32-bit addr (base 0x07E0) | SPVU001A page 12-123 | implemented | tb_movb | N = result[31], Z = (result==0), V = 0, C Unaffected | **read** (8-bit) | TBD | Byte load from absolute address: `Rd <- sign_extend(mem[SAddr])`. Sub-op `instr[7:5]=111`, load = bit9 1. Reuses INSTR_MOVE_ABS_LOAD with FS=8 (sign-extended). Task 0080. |
-| MOVB *Rs(SOff), *Rd(DOff) | `1011 110S SSSR DDDD` + 2 off16 (base 0xBC00) | SPVU001A page 12-124 | **not implemented** (decoded, traps as illegal) | — | — | — | TBD | Byte offset-to-offset (3-word). Needs a new offset-to-offset datapath (also deferred for MOVE). Falls through to ILLEGAL. |
-| MOVB @SAddr, @DAddr | `0000 0011 0100 0000` + 2 addr (base 0x0340) | SPVU001A page 12-125 | **not implemented** (decoded, traps as illegal) | — | — | — | TBD | Byte absolute-to-absolute (5-word). Needs a new abs-to-abs datapath (also deferred for MOVE). Falls through to ILLEGAL. |
+| MOVB *Rs(SOff), *Rd(DOff) | `1011 110S SSSR DDDD` + source off16 + destination off16 (base 0xBC00) | 1988 User's Guide pages 12-120/12-121 | implemented | tb_movb_multiword | **none** (all Unaffected) | **read + write** (8-bit ×2) | TBD | Three-word byte offset-to-offset copy. Source and destination offsets are independently sign-extended and added to their unchanged base registers. Reuses the two-step M2M path with FS forced to 8. Task 0120. |
+| MOVB @SAddr, @DAddr | `0000 0011 0100 0000` + source addr32 + destination addr32 (base 0x0340) | 1988 User's Guide pages 12-123/12-124 | implemented | tb_movb_multiword | **none** (all Unaffected) | **read + write** (8-bit ×2) | TBD | Five-word byte absolute-to-absolute copy. Each address is fetched low word then high word; the source pair precedes the destination pair. Reuses the two-step M2M path with FS forced to 8. Task 0120. |
 | PIXBLT L,L | `0000 1111 0000 0000` (= `0x0F00`) | SPVU001A page 12-? (PIXBLT L,L) | implemented | tb_pixblt_ll | **none** (all Unaffected) | **read×2 + write** (PSIZE-bit × DX·DY) | TBD | Transfer a DY×DX (DYDX=B7) source array (SADDR=B0, rows SPTCH=B1 apart) to a destination array (DADDR=B2, rows DPTCH=B3 apart), processing each pixel: `written = PPOP(src pixel, dest pixel)` plane-masked + transparency-checked. New CORE_PBLT states; per-pixel 3-step loop (read src / read dst / write); both pointers advance ±PSIZE and row-step by their pitch; SADDR/DADDR updated to the pixel following their last (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2). No corner adjust (top-left→bottom-right) or window checking yet. Task 0094. |
 | PIXBLT L,XY / XY,L / XY,XY | `0x0F20 / 0x0F40 / 0x0F60` | SPVU001A | implemented | tb_pixblt_xy | **none** (all Unaffected) | **read×2 + write** (PSIZE-bit × DX·DY) | TBD | PIXBLT variants where SADDR (XY,*) and/or DADDR (*,XY) hold XY values. The PIXBLT engine converts them to linear at PBLT_SETUP — source via CONVSP, destination via CONVDP, + OFFSET(B4) + PSIZE (`blt_src_xy`/`blt_dst_xy` flags; port 3 reads OFFSET at SETUP). Rest of the engine is shared with PIXBLT L,L; the updated SADDR/DADDR are written back as linear addresses. **Window CONTROL.W=2 + W=3 implemented for XY destinations** (Tasks 0106/0108): WSTART/WEND read at CORE_PBLT_SETUP_WIN, raw XY DADDR preserved. W=3 clip: out-of-window dest pixels skipped. W=2 miss-detection: transferred only if fully inside (V=0) else not drawn + V=1 + INTPEND.WV (CORE_PBLT_WIN_MISS). W=1 hit-detection (Task 0110): never draws; overlap→V=0+INTPEND.WV, outside→V=1 (CORE_PBLT_WIN_HIT). **All four W modes implemented for PIXBLT XY** (A0031). Task 0095. |
 | DRAV Rs,Rd | `1111 011S SSSR DDDD` (= `0xF600`) | SPVU001A page 12-67 | **implemented (all W modes)** | tb_drav, tb_drav_win | **V** (window modes; W=0 leaves V unaffected) | **read + write** (PSIZE-bit RMW) | TBD | Draw and Advance: writes COLOR1 (B9) to the pixel at Rd's XY (converted via CONVDP+OFFSET(B4)+PSIZE at EXECUTE → CORE_DRAV 2-step RMW with PPOP/T/PMASK), then Rd ← Rd+Rs as an XY add (X+X, Y+Y, no carry; reuses the ADDXY datapath) at CORE_WRITEBACK. Rs/Rd same file. **Per-pixel window CONTROL.W=1/2/3 implemented** (Task 0112): WSTART/WEND read at CORE_DRAV_SETUP_WIN, Rd's pixel tested. W=1 never draws (V=!inside, WVP if inside); W=2 draws iff inside (else V=1+WVP); W=3 draws iff inside (else V=1). The advance always happens; V/WVP via the shared fill_win_flag_wb/wvp_set path at CORE_WRITEBACK. Tasks 0111/0112. |
@@ -166,6 +165,6 @@ and named test for every newly recognized instruction.
 - Graphics (PIXT, PIXBLT, FILL, LINE, DRAV, ...)
 - Control (NOP, EMU, EINT, DINT, RETI, TRAP, ...)
 
-Known explicit decode gaps are the two multiword MOVB forms in the table. The
-table is an implementation ledger, not proof that the complete TMS34010 ISA or
-all original-silicon timing behavior is covered.
+No explicit decode gap remains in the MOVB family. The table is an
+implementation ledger, not proof that the complete TMS34010 ISA or all
+original-silicon timing behavior is covered.

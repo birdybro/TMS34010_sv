@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented through Task 0117, with integration gaps**. The core
+> Status: **implemented through Task 0120, with integration gaps**. The core
 > executes the instruction and graphics operations tracked in
 > `instruction_coverage.md`; I/O registers and interrupt entry are integrated.
 > Video timing and refresh exist as standalone modules. The reset-vector fetch,
@@ -80,13 +80,13 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0117** | multicycle CPU, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0120** | multicycle CPU, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed**  | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR + N/C/Z flags |
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
-| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0117** | combinational decoder; unsupported encodings route to ILLEGAL |
+| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0120** | combinational decoder; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
@@ -236,7 +236,6 @@ VRAM shift-register behavior and pixel output are not implemented.
 
 - Architectural reset-vector fetch; the core still begins at `RESET_PC = 0`
   (A0008).
-- Two multiword MOVB forms: offset-to-offset and absolute-to-absolute.
 - A synthesizable memory fabric, physical external-bus sequencing, wait-state
   validation, cache, and arbitration among CPU/graphics/host/video/refresh.
 - Host interface behavior.

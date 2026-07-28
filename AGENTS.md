@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The implementation is complete through Task 0117. It includes the multicycle
+The implementation is complete through Task 0120. It includes the multicycle
 CPU core, the currently tracked instruction set, bit-field memory operations,
 graphics operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking,
 I/O registers, and interrupt entry. Video timing and refresh blocks exist as

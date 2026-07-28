@@ -135,9 +135,10 @@ module tms34010_decode
   // MOVB (move byte) — a special form of MOVE with the field size fixed at 8
   // (SPVU001A 12-118ff). No FS field in the encoding; loads always
   // sign-extend the byte to 32 bits. MOVB has no auto inc/dec forms. These
-  // 7 forms map directly onto the existing MOVE field datapaths with FS
-  // forced to 8 (decoded.force_byte). The store/load indirect forms differ
-  // in bit[9], so they are matched on top7 (bits[15:9]).
+  // The first 7 forms map directly onto the existing MOVE field datapaths
+  // with FS forced to 8 (decoded.force_byte). The store/load indirect forms
+  // differ in bit[9], so they are matched on top7 (bits[15:9]). The remaining
+  // two forms use the shared multiword M2M path added in Task 0120.
   //   MOVB Rs,*Rd          : 1000 110S  (top7 = 1000110, 0x8C00) store
   //   MOVB *Rs,Rd          : 1000 111S  (top7 = 1000111, 0x8E00) load
   //   MOVB *Rs,*Rd         : 1001 110S  (top7 = 1001110, 0x9C00) ind->ind
@@ -147,7 +148,6 @@ module tms34010_decode
   // instr[7:5]=111), distinguished from each other by bit[9]:
   //   MOVB Rs,@DAddr       : 0000 0101 111R SSSS (0x05E0) abs store (bit9=0)
   //   MOVB @SAddr,Rd       : 0000 0111 111R DDDD (0x07E0) abs load  (bit9=1)
-  // Deferred (need new multi-word datapaths, like the niche MOVE forms):
   //   MOVB *Rs(SOff),*Rd(DOff)  : 1011 110S (0xBC00) offset-to-offset
   //   MOVB @SAddr,@DAddr        : 0000 0011 0100 0000 (0x0340) abs-to-abs
   localparam logic [6:0] MOVB_STORE_TOP7    = 7'b1000_110;
@@ -155,6 +155,8 @@ module tms34010_decode
   localparam logic [6:0] MOVB_M2M_TOP7      = 7'b1001_110;
   localparam logic [6:0] MOVB_OFF_STORE_TOP7 = 7'b1010_110;
   localparam logic [6:0] MOVB_OFF_LOAD_TOP7  = 7'b1010_111;
+  localparam logic [6:0] MOVB_OFF_M2M_TOP7   = 7'b1011_110;
+  localparam instr_word_t MOVB_ABS_M2M_OPCODE = 16'h0340;
 
   // PIXT (pixel transfer), LINEAR forms — a pixel-size (PSIZE) field move
   // (SPVU001A 12-? / encoding table). The XY forms (1111 000S/001S/010S) need
@@ -478,6 +480,7 @@ module tms34010_decode
     decoded.rs_idx          = '0;
     decoded.needs_imm16     = 1'b0;
     decoded.needs_imm32     = 1'b0;
+    decoded.needs_imm64     = 1'b0;
     decoded.imm_sign_extend = 1'b0;
     decoded.alu_op          = ALU_OP_PASS_A;
     // rs_file defaults to the same file as rd_file (R bit). Only MOVE Rs,Rd
@@ -1435,6 +1438,34 @@ module tms34010_decode
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // MOVB *Rs(SOffset),*Rd(DOffset): opcode, signed source offset, signed
+    // destination offset. The two operand words use the existing two-word
+    // immediate fetch path but are interpreted independently by the core.
+    if (top7 == MOVB_OFF_M2M_TOP7) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVB_OFF_M2M;
+      decoded.force_byte      = 1'b1;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.needs_imm32     = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+    end
+
+    // MOVB @SAddress,@DAddress: fixed opcode followed by source low/high,
+    // then destination low/high. No register operand or writeback.
+    if (instr == MOVB_ABS_M2M_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVB_ABS_M2M;
+      decoded.force_byte      = 1'b1;
+      decoded.needs_imm64     = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
     end
 
     // MOVB absolute forms: 0000 01.. family, sub-op instr[7:5]=111,

@@ -100,7 +100,9 @@ package tms34010_pkg;
     CORE_LINE_WB_DADDR  = 6'd34, // LINE: write back DADDR -> B2
     CORE_LINE_WB_COUNT  = 6'd35, // LINE: write back COUNT (=0) -> B10
     CORE_LINE_SETUP_WIN = 6'd36, // LINE (W=3): read WSTART/WEND for per-pixel clip
-    CORE_PIXT_SETUP_WIN = 6'd37  // PIXT XY (W!=0): read WSTART/WEND before the RMW
+    CORE_PIXT_SETUP_WIN = 6'd37, // PIXT XY (W!=0): read WSTART/WEND before the RMW
+    CORE_FETCH_IMM_EXT_LO = 6'd38, // fourth instruction word (second 32-bit operand low)
+    CORE_FETCH_IMM_EXT_HI = 6'd39  // fifth instruction word (second 32-bit operand high)
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -560,9 +562,13 @@ package tms34010_pkg;
     INSTR_DRAV             = 7'd97, // DRAV Rs,Rd — draw COLOR1 at Rd's XY (PSIZE pixel, with
                               //                     PPOP/T/PMASK), then Rd += Rs as an XY add
                               //                     (no carry X->Y). Encoding 0xF600.
-    INSTR_LINE             = 7'd98  // LINE Z — Bresenham inner loop: draw COUNT pixels of
+    INSTR_LINE             = 7'd98, // LINE Z — Bresenham inner loop: draw COUNT pixels of
                               //                     COLOR1 along a line. B-file: d/DADDR/DYDX
                               //                     (b:a)/COUNT/INC1/INC2. Enc 0xDF1A/0xDF9A.
+    INSTR_MOVB_OFF_M2M     = 7'd99, // MOVB *Rs(SOff),*Rd(DOff): two signed offsets;
+                              //                     8-bit memory-to-memory transfer.
+    INSTR_MOVB_ABS_M2M     = 7'd100 // MOVB @SAddr,@DAddr: two 32-bit bit addresses;
+                              //                     8-bit memory-to-memory transfer.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).
@@ -620,6 +626,7 @@ package tms34010_pkg;
                                 // reads this for rf_rs1_file only on MOVE_RR.
     logic          needs_imm16; // fetch one extra 16-bit word for immediate
     logic          needs_imm32; // fetch two extra 16-bit words; LO first then HI
+    logic          needs_imm64; // fetch four extra words; two LO/HI 32-bit operands
     logic          imm_sign_extend; // if 1, sign-extend imm16 to 32 bits
     alu_op_t       alu_op;      // ALU op to use in CORE_EXECUTE
     shift_op_t     shift_op;    // shifter op (used when result_source = SHIFTER)
