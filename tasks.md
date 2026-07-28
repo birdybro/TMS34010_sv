@@ -4060,7 +4060,7 @@ Docs:
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
 Commit:
-- pending
+- `1a47e5c` — Implement EMU handshake and halt state (Task 0128)
 
 ---
 
