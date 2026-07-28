@@ -3956,7 +3956,7 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
-- pending
+- `97794d9` — Correct logical instruction semantics (Task 0125)
 
 ---
 
