@@ -6,7 +6,9 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Work is complete through Task 0117. The repository currently contains:
+Functional implementation work is complete through Task 0117, and the strict
+whole-repository validation baseline is complete through Task 0119. The
+repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -29,14 +31,16 @@ remain open. Two multiword MOVB addressing forms are explicitly unimplemented.
 ```sh
 git submodule update --init --recursive
 scripts/lint.sh
+scripts/regress.sh
 scripts/sim.sh tb_smoke
 scripts/sim.sh tb_pixt_win
 ```
 
 The scripts prefer Questa/ModelSim and fall back to Verilator. Testbenches must
 print `TEST_RESULT: PASS`; the simulator exit code alone is not treated as a
-pass. `scripts/synth_quartus.sh` is still a placeholder and does not perform a
-real synthesis or timing run.
+pass. `scripts/regress.sh` discovers and runs all testbenches; set
+`REGRESS_JOBS` to parallelize the Verilator flow. `scripts/synth_quartus.sh` is
+still a placeholder and does not perform a real synthesis or timing run.
 
 Before changing RTL, read [AGENTS.md](AGENTS.md), [tasks.md](tasks.md),
 [architecture.md](docs/architecture.md), and the relevant specification in the

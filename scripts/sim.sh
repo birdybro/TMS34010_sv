@@ -80,12 +80,14 @@ fi
 SRCS+=("$TB_FILE")
 
 LOG="$WORK/sim_${TB}.log"
+BUILD_DIR=""
 
 if [ "$QUESTA_AVAILABLE" -eq 1 ]; then
   cd "$WORK"
 
   # Reset the Questa/ModelSim work library for determinism.
-  rm -rf work
+  BUILD_DIR="$WORK/work"
+  rm -rf "$BUILD_DIR"
   "$VLIB_BIN" work >/dev/null
   "$VLOG_BIN" -sv -quiet "${SRCS[@]}"
   # vsim's batch exit code is not a reliable test-status signal, so the
@@ -93,6 +95,7 @@ if [ "$QUESTA_AVAILABLE" -eq 1 ]; then
   "$VSIM_BIN" -c -do "run -all; quit -f" "work.$TB" 2>&1 | tee "$LOG"
 else
   VLT_WORK="$WORK/verilator_${TB}"
+  BUILD_DIR="$VLT_WORK"
   rm -rf "$VLT_WORK"
   mkdir -p "$VLT_WORK"
   "$VERILATOR_BIN" \
@@ -107,9 +110,13 @@ else
   "$VLT_WORK/V${TB}" 2>&1 | tee "$LOG"
 fi
 
-if grep -q "TEST_RESULT: PASS" "$LOG"; then
+if grep -q "TEST_RESULT: PASS" "$LOG" &&
+   ! grep -q "TEST_RESULT: FAIL" "$LOG"; then
+  if [ "${SIM_CLEAN_BUILD:-0}" = "1" ]; then
+    rm -rf "$BUILD_DIR"
+  fi
   echo "sim.sh: $TB PASS"
   exit 0
 fi
-echo "sim.sh: $TB did not print 'TEST_RESULT: PASS'. See $LOG." >&2
+echo "sim.sh: $TB did not produce an unambiguous PASS result. See $LOG." >&2
 exit 1

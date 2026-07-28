@@ -40,7 +40,7 @@ if [ -n "$VLOG_BIN" ] && [ -n "$VLIB_BIN" ]; then
 fi
 
 # Multiple top modules are intentional: the core, video timing, and refresh
-# blocks are independently instantiable. Keep other Verilator diagnostics
-# visible, but do not make an existing warning fatal.
-"$VERILATOR_BIN" --lint-only -Wno-fatal -Wno-MULTITOP "${SRCS[@]}"
-echo "lint.sh: Verilator lint completed (review warnings above)."
+# blocks are independently instantiable. Every other Verilator diagnostic is
+# fatal so a successful invocation is an unambiguous clean-lint result.
+"$VERILATOR_BIN" --lint-only -Wno-MULTITOP "${SRCS[@]}"
+echo "lint.sh: Verilator lint clean."

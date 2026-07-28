@@ -76,23 +76,24 @@ available, and otherwise fall back to Verilator when installed:
 
 ```sh
 scripts/sim.sh <tb_name>
+scripts/regress.sh
 scripts/lint.sh
 scripts/synth_quartus.sh
 ```
 
 Tool overrides are `VLOG`, `VSIM`, `VLIB`, `VERILATOR`, and `QUARTUS_SH`.
 Testbenches are self-checking and must print `TEST_RESULT: PASS`. A simulator
-exit code alone is not a passing result.
+exit code alone is not a passing result. `scripts/regress.sh` discovers every
+`sim/tb/tb_*.sv` bench, retains per-test logs under `work/regression/`, and
+accepts `REGRESS_JOBS=<N>` for parallel Verilator builds.
 
 `scripts/synth_quartus.sh` is currently only a placeholder/tool-discovery
 check. Its zero exit status is not evidence of synthesis, fit, timing closure,
 or Cyclone V compatibility. A real Quartus project, constraints, and reports
 remain future work.
 
-At the 2026-07-28 handoff, Verilator elaboration succeeds but reports two
-known width warnings in `tms34010_core.sv` (the short-branch displacement
-assignment and the field sign-bit index). Do not silently suppress new
-warnings or call a warning-bearing run "clean."
+RTL lint is a zero-diagnostic gate. Do not silently suppress new warnings or
+call a warning-bearing run "clean."
 
 ## Change workflow
 

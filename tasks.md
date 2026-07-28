@@ -1,10 +1,11 @@
 # Tasks
 
-## Current Milestone: Agent handoff and cross-phase integration
+## Current Milestone: Strict regression baseline and cross-phase integration
 
-The implementation is complete through Task 0117. Task 0118 reconciles the
-repository guidance, status summaries, and local validation entry points for
-continued work. No later implementation task has been selected yet.
+The functional implementation is complete through Task 0117. Task 0118
+reconciled the repository for continued work; Task 0119 makes every tracked
+testbench part of one strict, reproducible local validation gate before the
+remaining cross-phase integration work proceeds.
 
 ## Task index
 
@@ -128,6 +129,7 @@ continued work. No later implementation task has been selected yet.
 | 0116 | LINE window abort modes (W=1/2) | complete |
 | 0117 | PIXT XY per-pixel window checking | complete |
 | 0118 | Migrate agent guidance and restore local validation entry points | complete |
+| 0119 | Establish strict full-regression gate | complete |
 
 ---
 
@@ -3670,6 +3672,37 @@ Docs:
   package/core/decode/status/I/O RTL files.
 Commit:
 - 509f670
+
+---
+
+### Task 0119: Establish strict full-regression gate
+Status: complete
+Dependencies:
+- Task 0118 (portable local validation entry points).
+Acceptance Criteria:
+- Add one repository command that discovers every `sim/tb/tb_*.sv` bench,
+  requires each bench's authoritative `TEST_RESULT: PASS` marker, writes
+  per-test logs, reports an aggregate count, and supports bounded parallel
+  Verilator execution without racing Questa's shared work library.
+- Successful regression workers remove their generated simulator build
+  directories; failed workers retain logs and builds for diagnosis.
+- Make RTL lint a zero-diagnostic gate and resolve the two known core width
+  diagnostics with explicit, behavior-preserving sizing.
+- Remove simulator scheduling races from the three module-level benches
+  (`tb_pc`, `tb_regfile`, and `tb_status_reg`) and preserve the architectural
+  `ST_RESET_VALUE` through masked flag-update expectations.
+- No architectural behavior, instruction encoding, or external cycle count
+  changes.
+Tests:
+- Shell syntax checks pass for every script.
+- `scripts/lint.sh` completes with zero RTL diagnostics under Verilator 5.048.
+- `tb_pc`, `tb_regfile`, and `tb_status_reg` print `TEST_RESULT: PASS` under
+  Verilator.
+- `REGRESS_JOBS=4 scripts/regress.sh` reports `109/109 PASS` under Verilator.
+Docs:
+- `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`.
+Commit:
+- pending
 
 ---
 

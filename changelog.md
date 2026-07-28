@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Changed (Task 0119 — strict full-regression gate)
+- Added `scripts/regress.sh`, which discovers every tracked SystemVerilog
+  testbench, requires each self-checking PASS marker, records per-test logs,
+  supports parallel Verilator execution, and reports an aggregate result.
+- Made Verilator RTL lint warning-fatal and replaced the two implicit-width
+  operations in the core with explicit sign extension and a correctly sized
+  field sign-bit index.
+- Removed active-region scheduling races from the PC, register-file, and
+  status-register unit benches so the historical three Questa-only tests run
+  deterministically under Verilator too. The status-register expectations now
+  retain the architectural FS0 reset field during masked flag writes.
+- Successful regression workers clean their generated simulator build and
+  duplicate single-test log while retaining the aggregate per-test log.
+- Validation: strict RTL lint completed with zero diagnostics and the complete
+  Verilator regression reported `109/109 PASS`.
+
 ### Changed (Task 0118 — agent handoff and local validation)
 - Replaced the Claude Code-specific root `CLAUDE.md` with repository-wide
   `AGENTS.md` guidance. The specification, HDL-style, testing, and

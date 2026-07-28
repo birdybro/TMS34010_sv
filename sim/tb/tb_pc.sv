@@ -74,8 +74,8 @@ module tb_pc;
     advance_amount = amount;
     load_en        = 1'b0;
     @(posedge clk);
-    advance_en     = 1'b0;
     #1;
+    advance_en     = 1'b0;
   endtask
 
   task automatic do_load(input logic [ADDR_WIDTH-1:0] value);
@@ -83,8 +83,8 @@ module tb_pc;
     load_value     = value;
     advance_en     = 1'b0;
     @(posedge clk);
-    load_en        = 1'b0;
     #1;
+    load_en        = 1'b0;
   endtask
 
   task automatic do_load_and_advance(
@@ -96,9 +96,9 @@ module tb_pc;
     advance_en     = 1'b1;
     advance_amount = amount;
     @(posedge clk);
+    #1;
     load_en        = 1'b0;
     advance_en     = 1'b0;
-    #1;
   endtask
 
   int unsigned failures;

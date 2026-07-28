@@ -97,24 +97,25 @@ module tb_status_reg;
     rst = 1'b0;
     #1;
 
-    // 2. Selective flag update: n=1, c=0, z=1, v=0. Other ST bits remain 0.
+    // 2. Selective flag update: n=1, c=0, z=1, v=0. Other ST bits retain
+    // their reset state (including FS0=16).
     flags_in       = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b0};
     flag_update_en = 1'b1;
     @(posedge clk);
-    flag_update_en = 1'b0;
     #1;
+    flag_update_en = 1'b0;
     check("flag update n=1 z=1",
-          build_st(32'd0, 1'b1, 1'b0, 1'b1, 1'b0),
+          build_st(ST_RESET_VALUE, 1'b1, 1'b0, 1'b1, 1'b0),
           1'b1, 1'b0, 1'b1, 1'b0);
 
     // 3. Another flag update: all set.
     flags_in       = '{n: 1'b1, c: 1'b1, z: 1'b1, v: 1'b1};
     flag_update_en = 1'b1;
     @(posedge clk);
-    flag_update_en = 1'b0;
     #1;
+    flag_update_en = 1'b0;
     check("flag update all-1",
-          build_st(32'd0, 1'b1, 1'b1, 1'b1, 1'b1),
+          build_st(ST_RESET_VALUE, 1'b1, 1'b1, 1'b1, 1'b1),
           1'b1, 1'b1, 1'b1, 1'b1);
 
     // 4. Full ST write (POPST style).
@@ -124,8 +125,8 @@ module tb_status_reg;
       st_write_data = full_val;
       st_write_en   = 1'b1;
       @(posedge clk);
-      st_write_en   = 1'b0;
       #1;
+      st_write_en   = 1'b0;
       check("full ST write 1234_ABCD",
             full_val,
             full_val[ST_N_BIT],
@@ -138,8 +139,8 @@ module tb_status_reg;
     flags_in       = '{n: 1'b0, c: 1'b0, z: 1'b0, v: 1'b0};
     flag_update_en = 1'b1;
     @(posedge clk);
-    flag_update_en = 1'b0;
     #1;
+    flag_update_en = 1'b0;
     // ST should be 32'h1234_ABCD with the four flag bits cleared.
     check("non-flag bits preserved",
           build_st(32'h1234_ABCD & ~((32'd1 << ST_N_BIT) |
@@ -158,9 +159,9 @@ module tb_status_reg;
       st_write_data  = full_val;
       st_write_en    = 1'b1;
       @(posedge clk);
+      #1;
       flag_update_en = 1'b0;
       st_write_en    = 1'b0;
-      #1;
       check("st_write wins over flag_update",
             full_val,
             full_val[ST_N_BIT],

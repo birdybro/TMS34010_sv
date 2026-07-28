@@ -172,10 +172,12 @@ module tms34010_core
   // the FSM is in CORE_WRITEBACK with a taken-branch decoded class.
   // ---------------------------------------------------------------------------
   logic [ADDR_WIDTH-1:0] branch_target_short;
-  logic signed [INSTR_WORD_WIDTH-1:0] disp_signed_12;
-  // {disp8, 4'h0} = disp * 16 expressed in 12 bits, sign-bit at [11].
-  assign disp_signed_12   = $signed({instr_word_q[7:0], 4'h0});
-  assign branch_target_short = pc_value + ADDR_WIDTH'(disp_signed_12);
+  logic signed [INSTR_WORD_WIDTH-1:0] disp_signed_short;
+  // {disp8, 4'h0} = disp * 16. Explicitly extend its bit 11 sign through
+  // the 16-bit intermediate before the address-width cast below.
+  assign disp_signed_short = $signed({{4{instr_word_q[7]}},
+                                      instr_word_q[7:0], 4'h0});
+  assign branch_target_short = pc_value + ADDR_WIDTH'(disp_signed_short);
 
   // Immediate latches — declared up here (before their first use in
   // the branch_target_long / branch_target_jacc combinational
@@ -1241,6 +1243,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] mv_fs_ext;         // FS zero-extended to the pointer width
   logic [DATA_WIDTH-1:0] mv_fmask;
   logic [DATA_WIDTH-1:0] mv_load_data;      // field-extended load result
+  logic [4:0]            mv_sign_bit_idx;   // FS-1 for a 32-bit field source
   assign mv_fs_raw = instr_word_q[9] ? st_value[ST_FS1_HI:ST_FS1_LO]
                                      : st_value[ST_FS0_HI:ST_FS0_LO];
   // MOVB (decoded.force_byte) forces an 8-bit field and sign-extension on
@@ -1256,10 +1259,13 @@ module tms34010_core
   assign mv_fs_ext = DATA_WIDTH'(mv_fs);
   assign mv_fmask  = (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH))
                    ? '1 : ((32'd1 << mv_fs) - 32'd1);
+  // The FS=32 arm below bypasses this index; for FS=1..31, five bits address
+  // the selected sign bit without an implicit 6-to-5-bit truncation.
+  assign mv_sign_bit_idx = mv_fs[4:0] - 5'd1;
   always_comb begin
     if (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH)) begin
       mv_load_data = mem_rdata_eff;                         // FS = 32: identity
-    end else if (mv_fe && mem_rdata_eff[mv_fs - 6'd1]) begin
+    end else if (mv_fe && mem_rdata_eff[mv_sign_bit_idx]) begin
       mv_load_data = mem_rdata_eff | ~mv_fmask;             // sign-extend
     end else begin
       mv_load_data = mem_rdata_eff & mv_fmask;              // zero-extend

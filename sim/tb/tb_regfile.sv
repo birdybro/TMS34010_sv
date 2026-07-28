@@ -91,8 +91,8 @@ module tb_regfile;
     wr_idx  = i;
     wr_data = data;
     @(posedge clk);
-    wr_en   = 1'b0;
     #1;  // slip past NBA so the next read observes the new value
+    wr_en   = 1'b0;
   endtask
 
   task automatic read_port1(input reg_file_t f,
@@ -135,8 +135,8 @@ module tb_regfile;
 
     // Reset.
     repeat (3) @(posedge clk);
-    rst = 1'b0;
     #1;
+    rst = 1'b0;
 
     // 1. Reset clears every entry, observed via rs1.
     for (int unsigned i = 0; i < 15; i++) begin
@@ -206,8 +206,8 @@ module tb_regfile;
     // Pre-edge: rs1_data should still be the OLD value.
     check_eq(rs1_data, 32'hAAAA_5555, "same-cycle read sees OLD value");
     @(posedge clk);
-    wr_en = 1'b0;
     #1;
+    wr_en = 1'b0;
     // Post-edge: rs1_data is the new value.
     check_eq(rs1_data, 32'h1234_5678, "next-cycle read sees NEW value");
 
