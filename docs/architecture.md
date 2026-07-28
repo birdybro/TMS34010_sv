@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented through Task 0130; audited through Task 0124, with
+> Status: **implemented through Task 0131; audited through Task 0124, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -81,13 +81,13 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0130** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0131** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
 | `rtl/core/tms34010_shifter.sv`          | 2     | **landed through Task 0130** | 32-bit barrel shifter: SLL/SLA/SRL/SRA/RL/RR, carry, zero/sign, and SLA overflow |
 | `rtl/core/tms34010_status_reg.sv`       | 2     | **landed**  | 32-bit ST: selective N/C/Z/V update vs full POPST-style write; named flag outputs |
-| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0130** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
+| `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0131** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_mem_if.sv`         | 1, 6  | not started | request/valid memory interface |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
@@ -122,7 +122,8 @@ implemented coverage entry and named test. Task 0129 corrected the zero-field
 constant used by MOVK/ADDK/SUBK to the specified value 32, resolving A0013
 and A0018. Task 0130 resolved the shift-family encoding and status
 assumptions, including right-count two's-complement fields and SLA overflow.
-The audit also consolidated the I/O, interrupt-source,
+Task 0131 resolved MOVI's C-preservation mask for both immediate widths. The
+audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
 `completion_audit.md`; this architecture document describes the current

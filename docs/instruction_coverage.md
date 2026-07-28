@@ -28,8 +28,8 @@ Required columns:
 
 | Mnemonic | Encoding | Source | Status      | Test | Flags | Memory | Cycles  | Notes |
 |----------|----------|--------|-------------|------|-------|--------|---------|-------|
-| MOVI IW  | `0x09C0 \| (R<<4) \| N`, +16-bit imm | SPVU004 assembler listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi | N, Z (per A0011) | none | TBD | 16-bit immediate sign-extended to 32 bits → Rd. C, V cleared per A0011 / A0009. |
-| MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm (LO,HI) | SPVU004 listings (A0012); SPVU001A §"Move Immediate" | implemented | tb_movi_il | N, Z (per A0011) | none | TBD | 32-bit immediate stored as two 16-bit words (low first, high second) → Rd. C, V cleared per A0011. |
+| MOVI IW  | `0x09C0 \| (R<<4) \| N`, +16-bit imm | 1988 User's Guide page 12-159 (A0011/A0012) | verified | tb_movi, tb_movi_flags | **N, Z, V=0; C Unaffected** | none | TBD | Sign-extend the 16-bit immediate to 32 bits → Rd, then update N/Z, preserve C, and clear V. |
+| MOVI IL  | `0x09E0 \| (R<<4) \| N`, +32-bit imm (LO,HI) | 1988 User's Guide page 12-160 (A0011/A0012) | verified | tb_movi_il, tb_movi_flags | **N, Z, V=0; C Unaffected** | none | TBD | Low-word-first 32-bit immediate → Rd, then update N/Z, preserve C, and clear V. |
 | MOVK     | `0x1800 \| (K<<5) \| (R<<4) \| N`, single word | 1988 User's Guide page 12-161 (A0013) | verified | tb_movk | **none** (all Unaffected) | none | TBD | Unsigned constant 1..32 → Rd; opcode K field zero represents 32, so literal zero is not encodable. Exact zero-field result is tested. |
 | ADD Rs,Rd | `0100 000S SSSR DDDD` (= `0x4000 \| (S<<5) \| (R<<4) \| D`) | SPVU001A A-14 (A0014, A0015) | implemented | tb_add_rr | N, C, Z, V | none | TBD | Rs + Rd → Rd. First reg-reg arithmetic. Rs and Rd share file (single R bit). |
 | ADDC Rs,Rd | `0100 001S SSSR DDDD` (= `0x4200 \| (S<<5) \| (R<<4) \| D`) | SPVU001A page 12-37 + summary table | implemented | tb_addc_subb | N, C, Z, V | none | TBD | Rs + Rd + C → Rd (carry-in from ST.C). Used for extended-precision chains with ADD/ADDI/ADDK. Default operand routing (alu_a=Rs, alu_b=Rd); commutative so no swap. |

@@ -19,8 +19,7 @@
 //   - Per spec table, N is the sign of `0 - Rd` (NOT the sign of |Rd|).
 //   - V=1 only when Rd was 0x80000000 (the overflow case where |Rd|
 //     can't be represented; spec returns Rd unchanged).
-//   - C is "Unaffected" per spec, but our all-or-nothing wb_flags_en
-//     forces C update — we clear it (documented in A0024).
+//   - C is "Unaffected" per spec and is preserved by the per-flag write mask.
 //
 // NEGB notes:
 //   - Rd = -Rd - C. Uses ALU_OP_SUBB with alu_a=0, alu_b=Rd, cin=ST.C.
@@ -195,12 +194,11 @@ module tb_abs_negb;
     // NEGB tests — uses A7..A10 as destination registers.
     //
     // NEGB depends on ST.C. We seed C=0 or C=1 before each NEGB
-    // via either MOVI (which clears C) or an overflowing ADD (which
-    // sets C=1 from carry-out).
+    // via either CLRC or an overflowing ADD (which sets C=1 from
+    // carry-out). MOVI preserves C per the architectural MOVI rule.
     //
     // Setup pattern:
-    //   To NEGB Rd with C=0 :  MOVI Rd ← <value> ; NEGB Rd
-    //                          (MOVI clears C)
+    //   To NEGB Rd with C=0 :  MOVI Rd ← <value> ; CLRC ; NEGB Rd
     //   To NEGB Rd with C=1 :  MOVI <value>, A11
     //                          MOVI 1, A12
     //                          ADD A11, A12  (= -1+1 → 0, C=1)
@@ -216,13 +214,13 @@ module tb_abs_negb;
     // NEGB scenario A: C=0, Rd=0x55555555 → expected 0xAAAAAAAB, NCZV=1100
     // (spec row 3 in the NEGB table: page 12-168)
     p = place_movi_il(p, REG_FILE_A, 4'd7, 32'h5555_5555);
-    // MOVI cleared C, so C=0 going into the NEGB.
+    u_mem.mem[p] = 16'h0320; p = p + 1; // CLRC: establish C=0 explicitly.
     u_mem.mem[p] = negb_enc(REG_FILE_A, 4'd7); p = p + 1;
 
     // NEGB scenario B: C=1, Rd=0x80000000 → expected 0x7FFFFFFF, NCZV=0100
     // (spec row 8 of the NEGB table: shows NEGB of MIN_INT with C=1
     // gives 7FFFFFFF and NCZV = 0100).
-    //   Setup: MOVI A8 = 0x80000000  (clears C); set C=1 via overflow.
+    //   Setup: MOVI A8 = 0x80000000; set C=1 via overflow.
     p = place_movi_il(p, REG_FILE_A, 4'd8, 32'h8000_0000);
     p = place_movi_il(p, REG_FILE_A, 4'd13, 32'hFFFF_FFFF);
     p = place_movi_il(p, REG_FILE_A, 4'd14, 32'h0000_0001);
@@ -231,15 +229,13 @@ module tb_abs_negb;
     u_mem.mem[p] = negb_enc(REG_FILE_A, 4'd8); p = p + 1;
 
     // NEGB scenario C: C=0, Rd=0xFFFFFFFF → expected 0x00000001, NCZV=0100
-    // (NEGB of -1 with C=0 → +1). C is cleared by MOVI A9.
+    // (NEGB of -1 with C=0 → +1). CLRC establishes the carry input.
     p = place_movi_il(p, REG_FILE_A, 4'd9, 32'hFFFF_FFFF);
+    u_mem.mem[p] = 16'h0320; p = p + 1; // CLRC
     u_mem.mem[p] = negb_enc(REG_FILE_A, 4'd9); p = p + 1;
 
     // NEGB scenario D: C=1, Rd=0xFFFFFFFF → expected 0x00000000, NCZV=0110
-    //   Set C=1 first via overflow, then MOVK A10 = ... wait MOVK only does
-    //   5-bit zero-extend. We need a 32-bit Rd. So MOVI clears C.
-    //   Instead: seed Rd via MOVI BEFORE the carry-setup, then ADD overflow,
-    //   then NEGB.
+    //   Seed Rd via MOVI before the carry setup, then ADD overflow and NEGB.
     p = place_movi_il(p, REG_FILE_A, 4'd10, 32'hFFFF_FFFF);
     // Reuse A13/A14 = 0xFFFFFFFF and 0x00000001 from scenario B's setup;
     // they're still in place. ADD A13, A14 again → A14=0, C=1.

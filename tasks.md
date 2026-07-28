@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0130. Task 0118
+The functional implementation is complete through Task 0131. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -16,6 +16,8 @@ Task 0127 closed the second. Task 0128 implemented EMU and closed the last
 unimplemented official instruction-summary row. Task 0129 corrected the
 encoded-zero constant semantics for MOVK, ADDK, and SUBK. Task 0130 corrected
 the complete shift family's encodings, SLA overflow, and status masks.
+Task 0131 corrected both MOVI widths to preserve C while updating N/Z and
+clearing V, and made carry-dependent tests establish their inputs explicitly.
 
 ## Task index
 
@@ -151,6 +153,7 @@ the complete shift family's encodings, SLA overflow, and status masks.
 | 0128 | Implement EMU pin handshake and halt state | complete |
 | 0129 | Correct 5-bit constant zero encoding | complete |
 | 0130 | Correct shift encodings and status semantics | complete |
+| 0131 | Correct MOVI status semantics | complete |
 
 ---
 
@@ -4140,6 +4143,34 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `39ccb9b` — Correct shift encodings and status semantics (Task 0130)
+
+---
+
+### Task 0131: Correct MOVI status semantics
+Status: complete
+Dependencies:
+- Task 0124 (active-assumption and status audit).
+Spec sources:
+- 1988 TI TMS34010 User's Guide page 12-159, MOVI 16-bit.
+- 1988 TI TMS34010 User's Guide page 12-160, MOVI 32-bit.
+Acceptance Criteria:
+- Make both MOVI widths update N from the moved sign and Z from a zero
+  result, preserve C, and force V to zero.
+- Keep the existing IW sign extension, IL low/high word order, destination
+  selection, and register writeback behavior unchanged.
+- Resolve A0011 with full-ST tests that seed C/V independently of reset.
+Tests:
+- `tb_movi`, `tb_movi_il`, and new `tb_movi_flags` PASS for IW/IL positive,
+  negative, zero, C-preservation, V-clear, and unchanged data semantics.
+- `tb_abs_negb` and `tb_addc_subb` PASS after replacing their obsolete
+  MOVI-clears-C fixture assumption with explicit CLRC setup.
+- Strict RTL lint clean; complete regression PASS (117/117).
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
+Commit:
+- pending
 
 ---
 

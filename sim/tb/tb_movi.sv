@@ -10,8 +10,8 @@
 //   2. Let the core run, looking at u_regfile.a_regs[] / .b_regs[] / sp_q
 //      via hierarchical reference (sim-only) to check that each write
 //      landed.
-//   3. Verify ST flag bits (N, Z, C, V) match the spec convention per
-//      assumption A0011: N = sign of result, Z = result == 0, C = V = 0.
+//   3. Verify ST flag bits match the page 12-159 convention: N = sign of
+//      result, Z = result == 0, C preserved, and V = 0.
 //   4. Verify `illegal_opcode_o` stayed low throughout (every encoding
 //      preloaded is a valid MOVI IW).
 //
@@ -159,7 +159,8 @@ module tb_movi;
 
     // Final ST should reflect the LAST committed flag-affecting MOVI in
     // the valid window — the 5th one (MOVI 0x8000, B9), which sign-
-    // extends to 0xFFFF_8000. That value has N=1, Z=0, C=0, V=0.
+    // extends to 0xFFFF_8000. That value has N=1, Z=0, V=0; C remains at
+    // its reset value 0. tb_movi_flags proves preservation from C=1.
     //
     // However, after the valid window the core continues fetching from
     // unprogrammed memory (zeros), decode flags ILLEGAL, the FSM walks

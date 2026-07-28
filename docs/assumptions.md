@@ -180,27 +180,20 @@ yet individually reconciled.
 ---
 
 ## A0011 — MOVI flag-update convention
-- **Date**: 2026-05-12
-- **Status**: active, **TODO/spec-uncertain**
-- **Source**: `third_party/TMS34010_Info/tools/assembler/TMS34010_Assembly_Language_Tools_Users_Guide_SPVU004.pdf`
-  page describing MOVI ("Move Immediate - Short or Long"). The text
-  documents the operation but does not explicitly enumerate flag
-  effects; the closely-paired MOVK entry explicitly notes "this
-  instruction does not affect the status register", suggesting by
-  contrast that MOVI DOES.
-- **Assumption**: MOVI IW updates flags from the moved value: N =
-  result[31], Z = (result == 0), C = 0, V = 0. This matches the
-  default ALU PASS_B flag behavior in `tms34010_alu.sv`.
-- **Rationale**: The spec strongly hints at flag effects via the MOVK
-  contrast. Common convention for "move" instructions across CPU
-  families with separate K-class encodings is "K instructions don't
-  affect flags; I instructions do". Until SPVU001A Appendix A is
-  read, this is the working convention.
-- **How to apply**: When SPVU001A's MOVI entry is read, if it
-  documents different flag behavior, only `decoded_instr_t.wb_flags_en`
-  for `INSTR_MOVI_IW` in the decoder needs to change (and any
-  per-flag suppression added). `tb_movi` already checks all four
-  flags so a regression will catch any update.
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0131)**.
+- **Status**: **RESOLVED** against both individual MOVI pages.
+- **Source**: 1988 TMS34010 User's Guide pages 12-159 (16-bit form) and
+  12-160 (32-bit form).
+- **Conclusion**: both forms set N from the moved value's sign, set Z when
+  the moved value is zero, preserve C, and force V to zero. The IW form first
+  sign-extends its 16-bit value; the IL form uses the complete 32-bit value.
+- **Correction**: the former all-flags write mask fed PASS_B's zero carry
+  into ST and therefore cleared C. Task 0131 changes both forms to an N/Z/V
+  mask so the ALU's V=0 is written while C is retained.
+- **Tests**: `tb_movi_flags` restores NCZV=1111 before positive, negative,
+  and zero IW/IL operations, snapshots the complete ST word, and separately
+  verifies IW sign extension and IL results. The original `tb_movi` and
+  `tb_movi_il` result suites remain in the regression.
 
 ## A0012 — MOVI IW encoding extracted from SPVU004 listings
 - **Date**: 2026-05-12

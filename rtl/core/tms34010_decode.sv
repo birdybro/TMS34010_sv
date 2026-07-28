@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0130. The authoritative per-instruction
+// Recognition is current through Task 0131. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -544,6 +544,7 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_PASS_B;   // pass the immediate through
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
     end
 
     // -----------------------------------------------------------------------
@@ -560,6 +561,7 @@ module tms34010_decode
       decoded.alu_op          = ALU_OP_PASS_B;
       decoded.wb_reg_en       = 1'b1;
       decoded.wb_flags_en     = 1'b1;
+      decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
     end
 
     // -----------------------------------------------------------------------

@@ -13,7 +13,7 @@
 //
 // Encoding (A0012): `MOVI IL K, Rd` = `0x09E0 | (R<<4) | N`, followed by
 // the 32-bit immediate stored as two 16-bit words: low half first, then
-// high half. Flag effects per A0011: N/Z from result, C/V cleared.
+// high half. Page 12-160 specifies N/Z from the result, C unaffected, V=0.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps

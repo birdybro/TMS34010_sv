@@ -7,6 +7,17 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0131 — MOVI status semantics)
+- Corrected MOVI IW and MOVI IL to preserve ST.C while updating N/Z and
+  forcing V to zero, matching pages 12-159 and 12-160.
+- Added `tb_movi_flags`, which seeds NCZV=1111 and snapshots full ST after
+  positive, negative, and zero values across both widths.
+- Kept IW sign extension, IL low/high word ordering, register-file selection,
+  and data writeback unchanged.
+- Resolved A0011 and promoted both MOVI coverage rows to verified.
+- Validation: three focused benches PASS; `scripts/lint.sh` clean; full
+  regression 117/117 PASS.
+
 ### Fixed (Task 0130 — shift encodings and status semantics)
 - Corrected SRA/SRL constant decoding: opcode bits 9:5 contain the five-bit
   two's complement of the architectural right-shift count.

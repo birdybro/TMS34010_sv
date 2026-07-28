@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0130. Task 0124
+Functional implementation work is complete through Task 0131. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -14,7 +14,8 @@ the two missing memory-to-memory MOVE forms. Task 0128 implemented the EMU
 handshake and completed every row in the official instruction summary. Task
 0129 corrected the MOVK/ADDK/SUBK encoded-zero constant to the specified
 value 32. Task 0130 corrected all shift encodings, SLA overflow, and
-per-instruction status masks. The repository currently contains:
+per-instruction status masks. Task 0131 corrected MOVI C preservation for
+both immediate widths. The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -27,7 +28,7 @@ per-instruction status masks. The repository currently contains:
 - architectural reset and illegal-opcode vector entry;
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
 - standalone video-timing and DRAM-refresh modules;
-- 116 self-checking SystemVerilog testbenches.
+- 117 self-checking SystemVerilog testbenches.
 
 This is not yet a complete FPGA system. The audit records the remaining ISA
 verification work plus the host/memory fabric, bus arbitration, I/O side-

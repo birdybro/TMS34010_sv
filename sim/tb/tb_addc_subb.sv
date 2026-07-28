@@ -16,12 +16,9 @@
 // Two structural challenges for an end-to-end test of carry-chain ops:
 //
 //   1. ST.C must be at a known value before the ADDC/SUBB under test.
-//      MOVI / MOVK / MOVE set ST.C = 0 (per A0009/A0011 — logical and
-//      PASS-through ops clear C). MOVK doesn't touch ST at all.
-//      ADD / SUB / ADDC / SUBB / ADDK / SUBK / CMP set C from the
-//      arithmetic. So:
-//         - to enter ADDC/SUBB with C=0, follow a MOVI (or another op
-//           that leaves C=0) before it;
+//      MOVI preserves ST.C, and MOVK doesn't touch ST at all. ADD / SUB /
+//      ADDC / SUBB / ADDK / SUBK / CMP set C from the arithmetic. So:
+//         - to enter ADDC/SUBB with C=0, execute CLRC explicitly;
 //         - to enter ADDC/SUBB with C=1, use a deliberately-overflowing
 //           ADD (or borrow-producing SUB) to set C=1, then load Rd via
 //           MOVK (which preserves ST) before the ADDC/SUBB.
@@ -242,14 +239,14 @@ module tb_addc_subb;
     //     We use A10 (= "A0_under_test") and A11 (= "A1_source") so it
     //     doesn't collide with earlier tests' A0/A1.
     //
-    //     ST.C is 1 from prior SUBB. Need to clear it before this SUBB
-    //     so cin matches the spec row. MOVI clears C.
+    //     ST.C is 1 from prior SUBB. Clear it explicitly before this SUBB
+    //     so cin matches the spec row.
     u_mem.mem[13] = movi_iw_enc(REG_FILE_A, 4'd11);      // MOVI ... A11
     u_mem.mem[14] = 16'hFFFE;                            //   sign-ext → A11 = 0xFFFFFFFE
-                                                          //   ST: N=1, C=0, Z=0, V=0
+                                                          //   ST: N=1, C preserved, Z=0, V=0
     u_mem.mem[15] = movi_iw_enc(REG_FILE_A, 4'd12);      // MOVI ... A12 (scratch:
     u_mem.mem[16] = 16'h7FFE;                            //   A12 = 0x00007FFE;
-                                                          //   ST.C still 0)
+                                                          //   ST.C preserved)
     // A10 needs to hold 0x7FFFFFFE. Use MOVI with imm 0x7FFE — sign-extends
     // to 0x00007FFE, NOT 0x7FFFFFFE. So we can't use MOVI IW. Use a
     // 32-bit-load sequence (MOVI IL would have been cleanest but we have
@@ -262,15 +259,14 @@ module tb_addc_subb;
     // SUBK 1 to make it 0x00007FFD, ... no. None of these fit cleanly.
     //
     // The simplest is two arithmetic ops to build 0x7FFFFFFE in A10:
-    //   MOVI 0xFFFF, A10    → A10 = 0xFFFFFFFF; ST.N=1, C=0, Z=0, V=0
+    //   MOVI 0xFFFF, A10    → A10 = 0xFFFFFFFF; ST.N=1, C preserved, Z=0, V=0
     //   SRL  1, A10         → A10 = 0x7FFFFFFF; ST.C=1 (from LSB shifted
     //                          out!) — that disturbs C!
     // SRL in this core *does* update ST. Bad.
     //
     // Try yet another path: use MOVI IL with imm 0x7FFFFFFE. MOVI IL is
     // already wired (Task 0013). Its flag policy is N/Z from the loaded
-    // value; C is cleared (PASS_B in the ALU sets c=0). So MOVI IL of
-    // 0x7FFFFFFE sets ST.N=0, Z=0, C=0, V=0. Perfect.
+    // value, C preserved, and V cleared. CLRC then establishes C=0.
     //
     // MOVI IL encoding (per A0012): bits[15:6]=10'b00_0010_0111,
     //   bit[5]=1 (long), bit[4]=R, bits[3:0]=Rd.
@@ -281,14 +277,14 @@ module tb_addc_subb;
     u_mem.mem[13] = 16'h09EB;     // MOVI IL ..., A11  (R=A, idx=11=0xB)
     u_mem.mem[14] = 16'hFFFE;     //   imm low  = 0xFFFE
     u_mem.mem[15] = 16'hFFFF;     //   imm high = 0xFFFF  →  A11 = 0xFFFFFFFE
-                                  //   ST.N=1, C=0, Z=0, V=0
+                                  //   ST.N=1, C preserved, Z=0, V=0
     u_mem.mem[16] = 16'h09EA;     // MOVI IL ..., A10  (idx=10=0xA)
     u_mem.mem[17] = 16'hFFFE;     //   imm low  = 0xFFFE
     u_mem.mem[18] = 16'h7FFF;     //   imm high = 0x7FFF  →  A10 = 0x7FFFFFFE
-                                  //   ST.N=0, C=0, Z=0, V=0   (this is the C=0
-                                  //   we need before the final SUBB)
+                                  //   ST.N=0, C preserved, Z=0, V=0
+    u_mem.mem[19] = 16'h0320;     // CLRC: required C=0 before final SUBB
     // Now do the spec-vector SUBB.
-    u_mem.mem[19] = subb_rr_enc(4'd11, REG_FILE_A, 4'd10);
+    u_mem.mem[20] = subb_rr_enc(4'd11, REG_FILE_A, 4'd10);
                                   // A10 = 0x7FFFFFFE - 0xFFFFFFFE - 0
                                   //     = 0x80000000
                                   // ST.N=1, C=1 (borrow), Z=0, V=1

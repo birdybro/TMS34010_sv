@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0130, with strict RTL
+> Baseline: functional implementation through Task 0131, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -36,6 +36,10 @@ Task 0130 resolved A0019 across all ten shift forms. Right-shift immediate
 encoding, SLA overflow, count zero, and each affected/unaffected status bit
 are now tied to the individual instruction pages and direct tests.
 
+Task 0131 resolved A0011 for both MOVI widths. N/Z and forced-zero V updates,
+C preservation, IW sign extension, and IL word ordering/results now have
+full-status regression evidence.
+
 ## Active architectural assumptions requiring closure
 
 These assumptions affect observable compatibility and must be resolved by
@@ -45,7 +49,6 @@ deviation:
 - A0005: exact field alignment and cross-boundary behavior at the physical
   memory interface.
 - A0009: per-instruction N/C/Z/V write masks.
-- A0011: MOVI status behavior.
 - A0025: REV value and EXGPC alignment.
 - A0027: SUBXY comparison signedness.
 - A0029: FILL XY DADDR writeback representation.
