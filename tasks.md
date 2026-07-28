@@ -3880,7 +3880,7 @@ Docs:
 - `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
   `docs/architecture.md`, `docs/assumptions.md`, `docs/timing_notes.md`.
 Commit:
-- pending (record after commit)
+- e4768a1
 
 ---
 
