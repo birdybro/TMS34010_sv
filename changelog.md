@@ -7,6 +7,20 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0126 — MOVE offset source to postincrement destination)
+- Implemented `MOVE *Rs(offset),*Rd+ [,F]` (`1101 00FS SSSR DDDD` plus a
+  signed 16-bit bit offset) from the 1988 User's Guide page 12-149.
+- Added a dedicated decode class over the existing two-step field M2M path:
+  the source read uses `Rs + sign_extend(offset)`, Rs remains unchanged, the
+  write uses the original Rd, and only Rd advances by FS at writeback.
+- Added `tb_move_off_m2m_postinc` covering F0/F1, FS=32/8/12, positive and
+  negative offsets, unaligned and straddling fields, outside-field
+  preservation, exact pointer updates, encoding words, and unchanged ST.
+- Documented its abstract two-transaction latency and retired the matching
+  completion-audit row.
+- Validation: focused bench PASS; `scripts/lint.sh` clean; full regression
+  113/113 PASS.
+
 ### Fixed (Task 0125 — logical status and ANDI/ANDNI semantics)
 - Changed AND, ANDN, OR, XOR, NOT, ANDI/ANDNI, ORI, and XORI to update only
   ST.Z while preserving ST.N, ST.C, and ST.V, matching each individual

@@ -3,7 +3,7 @@
 //
 // Combinational instruction decoder.
 //
-// Recognition is current through Task 0122. The authoritative per-instruction
+// Recognition is current through Task 0126. The authoritative per-instruction
 // implementation/test ledger is docs/instruction_coverage.md; shared decoded
 // instruction classes and control fields are in rtl/tms34010_pkg.sv.
 //
@@ -136,6 +136,9 @@ module tms34010_decode
   //   MOVE *Rs(off),Rd : 1011 01FS  (top6 = 101101, 0xB400) load
   localparam logic [5:0] MOVE_OFF_STORE_TOP6 = 6'b101100;
   localparam logic [5:0] MOVE_OFF_LOAD_TOP6  = 6'b101101;
+  // Offset source to postincrement destination (Task 0126):
+  //   MOVE *Rs(off),*Rd+ : 1101 00FS (top6 = 110100, 0xD000)
+  localparam logic [5:0] MOVE_OFF_M2M_PI_TOP6 = 6'b110100;
 
   // Auto inc/dec indirect MOVE (Task 0060). Same field semantics as the
   // plain forms; the pointer register steps by the field size (±32 at
@@ -1023,6 +1026,29 @@ module tms34010_decode
       decoded.wb_reg_en       = 1'b1;                  // Rd <- loaded data
       decoded.wb_flags_en     = 1'b1;
       decoded.wb_flag_mask    = '{n: 1'b1, c: 1'b0, z: 1'b1, v: 1'b1};
+    end
+
+    // -----------------------------------------------------------------------
+    // MOVE *Rs(offset),*Rd+ — signed-offset source to postincrement
+    // destination (1988 User's Guide page 12-149).
+    //
+    // Read at Rs + sext(offset16), write through the original Rd, leave Rs
+    // unchanged, then advance Rd by the F-selected field size. This is a
+    // memory-to-memory transfer, so FE is irrelevant and all flags are
+    // Unaffected.
+    // -----------------------------------------------------------------------
+    if (top6 == MOVE_OFF_M2M_PI_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_OFF_M2M_PI;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.needs_imm16     = 1'b1;
+      decoded.imm_sign_extend = 1'b1;
+      decoded.move_mode       = MV_ADDR_POSTINC;
+      decoded.wb_reg_en       = 1'b1;
+      decoded.wb_flags_en     = 1'b0;
+      decoded.needs_memory_op = 1'b1;
     end
 
     // -----------------------------------------------------------------------

@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0125: architectural widths and register layouts,
+// Current through Task 0126: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -570,8 +570,10 @@ package tms34010_pkg;
                               //                     (b:a)/COUNT/INC1/INC2. Enc 0xDF1A/0xDF9A.
     INSTR_MOVB_OFF_M2M     = 7'd99, // MOVB *Rs(SOff),*Rd(DOff): two signed offsets;
                               //                     8-bit memory-to-memory transfer.
-    INSTR_MOVB_ABS_M2M     = 7'd100 // MOVB @SAddr,@DAddr: two 32-bit bit addresses;
+    INSTR_MOVB_ABS_M2M     = 7'd100, // MOVB @SAddr,@DAddr: two 32-bit bit addresses;
                               //                     8-bit memory-to-memory transfer.
+    INSTR_MOVE_OFF_M2M_PI  = 7'd101  // MOVE *Rs(off),*Rd+: signed source offset;
+                              //                     destination postincrements by FS.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

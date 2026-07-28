@@ -2,7 +2,7 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0125. Task 0118
+The functional implementation is complete through Task 0126. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -11,7 +11,7 @@ closed the deferred illegal-opcode interrupt path. Task 0123 resolved the
 remaining interrupt-entry status assumption directly against the guide.
 Task 0124 established the primary-spec completion ledger that now drives
 further implementation. Task 0125 closed its logical-status, ANDI/ANDNI, CLR,
-and DEC findings.
+and DEC findings. Task 0126 closed the first missing MOVE form.
 
 ## Task index
 
@@ -142,6 +142,7 @@ and DEC findings.
 | 0123 | Initialize architectural ST on every interrupt entry | complete |
 | 0124 | Audit the remaining ISA and system completion gaps | complete |
 | 0125 | Correct logical flags and ANDI/ANDNI semantics | complete |
+| 0126 | Implement MOVE offset-to-postincrement | complete |
 
 ---
 
@@ -3957,6 +3958,37 @@ Docs:
   `docs/completion_audit.md`, and `docs/instruction_coverage.md`.
 Commit:
 - `97794d9` — Correct logical instruction semantics (Task 0125)
+
+---
+
+### Task 0126: Implement MOVE offset-to-postincrement
+Status: complete
+Dependencies:
+- Task 0079 (field-aware memory-to-memory sequencing).
+- Task 0124 (official ISA reconciliation).
+Spec sources:
+- 1988 TI TMS34010 User's Guide page 12-149, “Move Field — Indirect
+  with Offset to Indirect (Postincrement).”
+Acceptance Criteria:
+- Decode `MOVE *Rs(offset),*Rd+ [,F]` at `1101 00FS SSSR DDDD` plus a
+  signed 16-bit bit offset.
+- Read an FS-bit field at `Rs + sign_extend(offset)`, write it through
+  the original Rd, leave Rs unchanged, and postincrement Rd by FS.
+- Support both F-selected field definitions, FS=32, signed offsets, and
+  unaligned/straddling fields without changing N/C/Z/V.
+- Directly verify the encoding, memory results, pointer results, and
+  status preservation.
+Tests:
+- `scripts/sim.sh tb_move_off_m2m_postinc` — PASS.
+- `scripts/lint.sh` — PASS; Verilator lint clean with zero diagnostics.
+- `REGRESS_JOBS=4 scripts/regress.sh` — PASS, 113/113 self-checking
+  testbenches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/completion_audit.md`,
+  `docs/instruction_coverage.md`, and `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 
