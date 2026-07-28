@@ -3920,7 +3920,7 @@ Docs:
   `changelog.md`, `docs/architecture.md`, `docs/assumptions.md`,
   `docs/instruction_coverage.md`.
 Commit:
-- pending
+- `ee74bef` — Audit remaining completion gaps (Task 0124)
 
 ---
 
