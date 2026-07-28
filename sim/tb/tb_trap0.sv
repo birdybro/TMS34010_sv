@@ -17,9 +17,8 @@
 //     place sentinel values at SP-32 and SP-64 in memory. After
 //     TRAP 0, the sentinels MUST be untouched — that proves the
 //     pushes were genuinely skipped (not just landed elsewhere).
-//   - Pre-place the TRAP 0 vector at the aliased slot for
-//     bit-address 0xFFFFFFE0 (= word indices 1022/1023 in
-//     DEPTH=1024).
+//   - After reset has used the level-0 vector to boot at zero, replace the
+//     memory model's dedicated level-0 vector with the service address.
 //   - Pre-place a service routine at word 100 that writes A6 and
 //     halts.
 //   - Execute TRAP 0.
@@ -111,13 +110,6 @@ module tb_trap0;
   localparam logic [DATA_WIDTH-1:0] SP_INIT    = 32'h0000_0800;
   localparam logic [DATA_WIDTH-1:0] SERVICE_PC = 32'h0000_0640;  // word 100
 
-  // TRAP 0 vector at bit-addr 0xFFFFFFE0. In DEPTH=1024, slice
-  // [13:4] = (0xFFFFFFE0 >> 4) & 0x3FF = 0xFFFFFFE & 0x3FF = 0x3FE
-  // = 1022. So the 32-bit vector lives in words 1022 (low) and
-  // 1023 (high).
-  localparam int unsigned VEC_WORD_LO = 1022;
-  localparam int unsigned VEC_WORD_HI = 1023;
-
   // Sentinel pattern words pre-placed at the would-be push slots
   // (mem[SP-32 ..SP-1] and mem[SP-64..SP-33]). If TRAP 0 wrongly
   // pushed, these would be overwritten.
@@ -144,10 +136,6 @@ module tb_trap0;
     p = place_movi_il(p, 4'd6, 32'h0BAD_C0DE);
     u_mem.mem[p] = 16'hC0FF;
 
-    // ---- Pre-place TRAP 0 vector --------------------------------------
-    u_mem.mem[VEC_WORD_LO] = SERVICE_PC[15:0];
-    u_mem.mem[VEC_WORD_HI] = SERVICE_PC[31:16];
-
     // ---- Pre-place sentinels at the would-be push slots ---------------
     // SP_INIT = bit-addr 0x0800 = word 128.
     // SP-32 = bit-addr 0x07E0 = word 126 (low) + word 127 (high).
@@ -173,7 +161,15 @@ module tb_trap0;
     u_mem.mem[p] = 16'h0900; p = p + 1;
 
     repeat (3) @(posedge clk);
+    #1;
     rst = 1'b0;
+
+    // The reset transaction used the default vector (0) to reach this
+    // program. Once CORE_FETCH begins at zero, retarget the same level-0
+    // storage for the later TRAP 0 instruction.
+    wait (state_w == CORE_FETCH && pc_w == 32'h0000_0000);
+    #1;
+    u_mem.level0_vector = SERVICE_PC;
 
     repeat (2000) @(posedge clk);
     #1;

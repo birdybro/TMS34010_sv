@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0117.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0121.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -11,8 +11,7 @@
 //
 // The external request/ack interface is an architectural bit-addressed
 // interface, not the original physical 16-bit bus. Video/refresh, host access,
-// physical bus arbitration, and the architectural reset-vector fetch are not
-// integrated; see docs/architecture.md and docs/assumptions.md A0008.
+// and physical bus arbitration are not integrated; see docs/architecture.md.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -2160,6 +2159,12 @@ module tms34010_core
         end
         default: ; // no branch
       endcase
+    end else if (state_q == CORE_RESET && !rst && mem_ack) begin
+      // Load the level-0 vector on the same acknowledged transaction that
+      // retires CORE_RESET. The first CORE_FETCH therefore observes the
+      // architectural reset-service-routine address.
+      pc_load_en    = 1'b1;
+      pc_load_value = mem_rdata_eff;
     end else if (state_q == CORE_INT_DONE) begin
       // Interrupt entry: load PC with the trap vector (ISR entry address),
       // latched into popped_pc_q on the CORE_INT_VECTOR ack. Already word-
@@ -2466,8 +2471,17 @@ module tms34010_core
 
     unique case (state_q)
       CORE_RESET: begin
-        // Unconditional one-cycle transition out of reset.
-        state_d = CORE_FETCH;
+        // Architectural reset (1988 UG 8-10/8-12): after rst releases, fetch
+        // the 32-bit level-0 vector through the normal memory interface. The
+        // request remains inactive while rst is asserted and is otherwise
+        // held until ack. Reset does not push PC/ST or touch SP.
+        if (!rst) begin
+          mem_req    = 1'b1;
+          mem_we_int = 1'b0;
+          mem_addr   = RESET_VECTOR_ADDR;
+          mem_size   = MEM_SIZE_32;
+          if (mem_ack) state_d = CORE_FETCH;
+        end
       end
 
       CORE_FETCH: begin

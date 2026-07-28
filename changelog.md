@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0121 — architectural level-0 reset vector)
+- Resolved A0008 against the 1988 User's Guide pages 8-10 and 8-12: reset
+  reads the same level-0 vector as TRAP 0 at bit address `0xFFFF_FFE0`.
+- `CORE_RESET` now keeps the memory request inactive while `rst` is asserted,
+  then holds one 32-bit read at the level-0 vector until acknowledge, loads PC
+  from the returned word, and begins instruction fetch at that address. It
+  performs no PC/ST push, memory write, PC advance, or SP update.
+- Added a dedicated `level0_vector` word to the bounded simulation memory so
+  the high architectural address does not alias low program/data storage.
+  Updated TRAP 0 to retarget that shared vector after its reset-time boot.
+- Added `tb_reset_vector` with a nonzero boot target and checks for the reset
+  request address/size/direction, held payload, PC timing, absence of writes,
+  unchanged SP, and execution of the first target instruction. Updated smoke
+  and fetch-walk coverage for the new reset transaction.
+- The eight specified RAS-only initialization cycles and HCS/HLT host-present
+  mode remain at the future physical memory-controller/host boundary.
+- Validation: strict RTL lint completed with zero diagnostics, all focused
+  reset/fetch/TRAP 0 and memory-model benches passed, and the complete
+  Verilator regression reported `111/111 PASS`.
+
 ### Added (Task 0120 — multiword MOVB memory-to-memory forms)
 - Completed the three-word `MOVB *Rs(SOffset),*Rd(DOffset)` form (`0xBC00`
   family): source and destination offsets are fetched in instruction order,

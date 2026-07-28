@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0117, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0121, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -17,6 +17,12 @@
 
 ## Multi-cycle operations
 
+- **Architectural reset** — after `rst` releases, `CORE_RESET` holds one
+  32-bit read request at `0xFFFF_FFE0` until `mem_ack`. PC loads on that
+  acknowledge and the next state is `CORE_FETCH`; there is no stack or data
+  write. The abstract core adds no fixed wait beyond the memory transaction.
+  The eight original-silicon RAS-only initialization cycles precede this
+  transaction in the future physical memory controller.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on

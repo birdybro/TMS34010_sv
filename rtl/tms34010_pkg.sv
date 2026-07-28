@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0117: architectural widths and register layouts,
+// Current through Task 0121: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states are defined here.
 // -----------------------------------------------------------------------------
@@ -48,10 +48,9 @@ package tms34010_pkg;
   // 3 words (48 bits) for instructions with a 32-bit immediate.
   parameter int unsigned PC_ADVANCE_WIDTH = 8;
 
-  // Reset PC value. Placeholder — the architectural reset sequence fetches
-  // PC from the trap table near the top of address space (see
-  // docs/assumptions.md entry A0008). Until Phase 8 implements the
-  // reset-fetch sequence, the core boots at this constant.
+  // Internal PC-register reset value. The architectural reset sequence
+  // overwrites this value from RESET_VECTOR_ADDR before the first instruction
+  // fetch; keeping the flop reset explicit makes its reset-time state defined.
   parameter logic [ADDR_WIDTH-1:0] RESET_PC = '0;
 
   // ---------------------------------------------------------------------------
@@ -258,6 +257,9 @@ package tms34010_pkg;
   // Trap-vector table top. Vector for TRAP N is TRAP_VECTOR_BASE - N*32.
   // Per SPVU001A page 12-252; TRAP 0's vector lives at the base itself.
   parameter logic [DATA_WIDTH-1:0] TRAP_VECTOR_BASE = 32'hFFFF_FFE0;
+  // Reset reads the same level-0 vector as TRAP 0 (1988 User's Guide
+  // pages 8-10 and 8-12).
+  parameter logic [ADDR_WIDTH-1:0] RESET_VECTOR_ADDR = TRAP_VECTOR_BASE;
 
   // One architectural word is DATA_WIDTH bits. Stack push/pop and the
   // field-move pointers (at field-size 32) step the bit-address SP /

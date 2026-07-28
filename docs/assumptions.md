@@ -89,38 +89,25 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ---
 
-## A0008 — Reset PC and reset-vector fetch sequence deferred to Phase 8
-- **Date**: 2026-05-12
-- **Status**: active, **TODO/spec-uncertain**
-- **Source**: `third_party/TMS34010_Info/bibliography/hdl-reimplementation/11-interrupts-reset.md`
-  §"Reset" — "PC = reset vector (fixed bit address — see SPVU001A Ch. 13)"
-  and "Vector-fetch is a normal local-bus read. No special path. The
-  reset and interrupt sequences just program PC = vector value, then
-  resume normal fetch."
-- **Assumption**: The TMS34010's architectural reset sequence is:
-  1. Set internal PC to the reset-vector trap-table slot (near
-     `0xFFFFFFC0` per the bibliography file; exact value pending a read
-     of SPVU001A Ch. 13).
-  2. Fetch a 32-bit value from that slot via the normal local-bus read.
-  3. Load PC with that fetched value.
-  4. Resume normal fetch.
-  In Phase 1, the core does **not** perform this sequence. Instead, the
-  PC register starts at the package's `RESET_PC` parameter (currently
-  `'0`), and the core's `CORE_RESET → CORE_FETCH` transition is the
-  full reset behavior. The architecturally-correct sequence is a
-  Phase 8 deliverable along with the rest of the trap/interrupt
-  subsystem.
-- **Rationale**: The reset-fetch sequence depends on the trap-table
-  layout, the I/O register page address, and the bus-cycle ordering
-  rules, all of which are Phase 6+ work. Implementing it now would
-  pin in dependencies that don't yet exist. The parameterized
-  `RESET_PC` keeps the test surface easy to reason about.
-- **How to apply**: When Phase 8 lands, replace `RESET_PC` with the
-  vector-table address and add a `CORE_RESET → CORE_FETCH_VECTOR →
-  CORE_LOAD_VECTOR → CORE_FETCH` sub-sequence in the core FSM. Any
-  test that relied on `RESET_PC = '0` must be updated. Open question
-  in this entry until then: the exact address of the reset slot
-  (`0xFFFFFFC0`, `0xFFFFFFE0`, or other — the bibliography is unsure).
+## A0008 — Reset PC and level-0 vector fetch
+- **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0121)**.
+- **Status**: **RESOLVED** against the primary specification.
+- **Source**: 1988 TI TMS34010 User's Guide §8.8, pages 8-10 and 8-12.
+  Both self-bootstrap and host-present descriptions identify the level-0
+  vector location as `0xFFFF_FFE0`; the initial-state description says PC
+  contains the 32-bit value fetched there. Reset and TRAP 0 share this vector
+  and neither saves the old PC or ST.
+- **Implementation**: the PC flop still resets to `RESET_PC = 0` so its state
+  is defined while synchronous `rst` is active. Once reset releases,
+  `CORE_RESET` holds a normal 32-bit read at `RESET_VECTOR_ADDR` until
+  `mem_ack`; the acknowledged data loads PC and the FSM enters `CORE_FETCH`.
+  No PC advance, stack write, or SP update occurs. The bounded simulation
+  memory provides a dedicated `level0_vector` word (default zero) so the high
+  architectural address does not alias an ordinary low-memory program word.
+- **Integration boundary**: the guide requires eight RAS-only cycles before
+  the vector fetch and allows HCS to select a halted host-present mode. Those
+  are external-memory-controller and host-interface behaviors, not functions
+  of the abstract CPU request/ack port, and remain explicitly tracked there.
 
 ---
 
@@ -646,7 +633,6 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## TODO / spec-uncertain (waiting on detailed read)
 
-- Architectural reset-vector fetch and reset-time sequencing (A0008).
 - Remaining per-instruction flag nuances still marked provisional in earlier
   entries; do not rely on the age of an entry as evidence it was resolved.
 - SUBXY unsigned-vs-signed greater-than behavior (A0027).

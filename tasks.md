@@ -1,11 +1,12 @@
 # Tasks
 
-## Current Milestone: Close explicit ISA gaps
+## Current Milestone: Complete architectural reset and system integration
 
-The functional implementation is complete through Task 0120. Task 0118
+The functional implementation is complete through Task 0121. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
-two explicitly tracked multiword MOVB gaps. Cross-phase integration is next.
+two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
+cross-phase integration with the architectural reset-vector fetch.
 
 ## Task index
 
@@ -131,6 +132,7 @@ two explicitly tracked multiword MOVB gaps. Cross-phase integration is next.
 | 0118 | Migrate agent guidance and restore local validation entry points | complete |
 | 0119 | Establish strict full-regression gate | complete |
 | 0120 | Complete multiword MOVB memory-to-memory forms | complete |
+| 0121 | Fetch the architectural level-0 reset vector | complete |
 
 ---
 
@@ -3742,6 +3744,51 @@ Docs:
   `docs/architecture.md`, `docs/instruction_coverage.md`, `AGENTS.md`.
 Commit:
 - 704840e
+
+---
+
+### Task 0121: Fetch the architectural level-0 reset vector
+Status: complete
+Dependencies:
+- Task 0004 (bit-addressed PC and the original reset-sequence deferral).
+- Task 0049 (TRAP 0 vector constant and no-push behavior).
+- Task 0119 (strict full-regression gate).
+Spec source:
+- 1988 TI TMS34010 User's Guide pages 8-10 and 8-12: after reset, fetch the
+  level-0 vector from bit address `0xFFFF_FFE0`; reset saves neither PC nor ST.
+Acceptance Criteria:
+- While synchronous `rst` is asserted, keep the external memory request
+  inactive and hold the FSM in `CORE_RESET`.
+- After release, hold one 32-bit read request at `TRAP_VECTOR_BASE` until
+  `mem_ack`, load PC from the returned vector only on that acknowledge, and
+  begin the first instruction fetch at the loaded bit address.
+- Do not advance PC, write memory, push PC/ST, or modify SP during the reset
+  vector transaction.
+- Give the bounded simulation memory a dedicated public level-0 vector word,
+  defaulting to zero so focused programs can continue to start at word zero
+  while still exercising the architectural bus transaction. Use the same
+  word for later TRAP 0 accesses instead of low-address aliasing.
+- Leave the specified eight post-reset RAS-only initialization cycles and
+  HCS/HLT host-present mode to the memory-controller and host-interface tasks;
+  document that boundary explicitly.
+Tests:
+- Add `tb_reset_vector` with a nonzero vector, request/address/size/write
+  checks, PC hold/load checks, no reset-time writes, and execution at the
+  vector target.
+- Update `tb_smoke`, `tb_fetch_walk`, and `tb_trap0` for the architectural
+  reset transaction and dedicated level-0 vector storage.
+- Run strict RTL lint, all focused reset/fetch/TRAP 0 tests, and the complete
+  regression.
+- `scripts/lint.sh` completed with zero diagnostics under Verilator 5.048;
+  `tb_reset_vector`, `tb_smoke`, `tb_fetch_walk`, `tb_trap0`, and
+  `tb_mem_field` passed.
+- `REGRESS_JOBS=4 scripts/regress.sh` reported `111/111 PASS`.
+Docs:
+- `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`, `docs/memory_map.md`,
+  `docs/timing_notes.md`, `docs/instruction_coverage.md`.
+Commit:
+- pending (record after commit)
 
 ---
 

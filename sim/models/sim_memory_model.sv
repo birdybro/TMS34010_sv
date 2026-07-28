@@ -19,6 +19,10 @@
 //   - The internal `mem[0:DEPTH_WORDS-1]` array is exposed (no SV access
 //     modifier hides it) and can be poked via hierarchical reference, e.g.
 //       u_mem.mem[0] = 16'hF000;
+//   - `level0_vector` models the full-address word at RESET_VECTOR_ADDR
+//     without aliasing it into the bounded low-address backing store. It
+//     defaults to LEVEL0_VECTOR_INIT and may be changed hierarchically after
+//     boot when a test needs a different later TRAP 0 target.
 //
 // Protocol (must match `tms34010_core` memory IF):
 //
@@ -31,7 +35,8 @@
 module sim_memory_model
   import tms34010_pkg::*;
 #(
-  parameter int unsigned DEPTH_WORDS = 1024  // 1024 x 16-bit = 16 Kbits
+  parameter int unsigned DEPTH_WORDS = 1024, // 1024 x 16-bit = 16 Kbits
+  parameter logic [DATA_WIDTH-1:0] LEVEL0_VECTOR_INIT = '0
 )(
   input  logic                              clk,
   input  logic                              rst,
@@ -50,6 +55,9 @@ module sim_memory_model
 
   // Physical backing store.
   logic [15:0] mem [0:DEPTH_WORDS-1];
+  // Dedicated full-address storage for the reset/TRAP 0 vector. The bounded
+  // test memory otherwise aliases high architectural addresses into mem[].
+  logic [DATA_WIDTH-1:0] level0_vector;
 
   // Mini-FSM: accept one request, drive one ack pulse, then idle.
   typedef enum logic [0:0] {
@@ -67,6 +75,7 @@ module sim_memory_model
   // hasn't preloaded read back as 0 rather than X. The memory model is
   // not synthesizable, so `initial` is fine here.
   initial begin
+    level0_vector = LEVEL0_VECTOR_INIT;
     for (int unsigned i = 0; i < DEPTH_WORDS; i++) begin
       mem[i] = '0;
     end
@@ -135,7 +144,17 @@ module sim_memory_model
           automatic int unsigned last  = boff + sz - 1;                  // top bit, <= 46
           automatic logic [47:0] merged;
           mem_ack <= 1'b1;
-          if (latched_we) begin
+          if (latched_addr == RESET_VECTOR_ADDR && latched_size == MEM_SIZE_32) begin
+            // Reset and TRAP 0 share this architectural full-address word.
+            // Keeping it separate prevents a small test memory's index slice
+            // from aliasing 0xFFFF_FFE0 onto an ordinary program/data word.
+            if (latched_we) begin
+              level0_vector <= latched_wdata;
+              mem_rdata <= '0;
+            end else begin
+              mem_rdata <= level0_vector;
+            end
+          end else if (latched_we) begin
             merged = (win & ~smask) | (({16'h0, latched_wdata} << boff) & smask);
             if (widx     < DEPTH_WORDS)              mem[widx]     <= merged[15:0];
             if (last >= 16 && widx + 1 < DEPTH_WORDS) mem[widx + 1] <= merged[31:16];

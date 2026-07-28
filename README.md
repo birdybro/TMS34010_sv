@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0120, and the strict
+Functional implementation work is complete through Task 0121, and the strict
 whole-repository validation baseline is complete through Task 0119. The
 repository currently contains:
 
@@ -19,12 +19,11 @@ repository currently contains:
   plane masking, transparency, and all window modes;
 - on-chip I/O-register storage plus maskable and nonmaskable interrupt entry;
 - standalone video-timing and DRAM-refresh modules;
-- 110 self-checking SystemVerilog testbenches.
+- 111 self-checking SystemVerilog testbenches.
 
-This is not yet a complete FPGA system. The architectural reset-vector fetch,
-host/memory fabric, bus arbitration, I/O side-effect completion, video/refresh
-integration, real Quartus project/constraints, and timing/resource validation
-remain open.
+This is not yet a complete FPGA system. The host/memory fabric, bus
+arbitration, I/O side-effect completion, video/refresh integration, real
+Quartus project/constraints, and timing/resource validation remain open.
 
 ## Getting started
 

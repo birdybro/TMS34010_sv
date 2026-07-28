@@ -1,11 +1,11 @@
 # Architecture
 
-> Status: **implemented through Task 0120, with integration gaps**. The core
+> Status: **implemented through Task 0121, with integration gaps**. The core
 > executes the instruction and graphics operations tracked in
-> `instruction_coverage.md`; I/O registers and interrupt entry are integrated.
-> Video timing and refresh exist as standalone modules. The reset-vector fetch,
-> host/memory fabric, bus arbitration, video/refresh integration, and physical
-> FPGA build remain open.
+> `instruction_coverage.md`; reset-vector fetch, I/O registers, and interrupt
+> entry are integrated. Video timing and refresh exist as standalone modules.
+> The host/memory fabric, bus arbitration, video/refresh integration, and
+> physical FPGA build remain open.
 
 ## Specification source
 
@@ -80,7 +80,7 @@ fabric/controller has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0120** | multicycle CPU, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0121** | multicycle CPU, reset-vector fetch, memory sequencing, I/O routing, interrupts, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -128,7 +128,7 @@ fetch, divide, memory, interrupt-entry, and graphics-engine substates. The
 authoritative state enum is `core_state_t` in `rtl/tms34010_pkg.sv`.
 
 ```
-CORE_RESET  ──▶ CORE_FETCH
+CORE_RESET  ──▶ CORE_FETCH          (after level-0 vector read/PC load)
 CORE_FETCH  ──▶ CORE_DECODE         (when mem returns instruction word)
 CORE_DECODE ──▶ CORE_EXECUTE
 CORE_EXECUTE──▶ CORE_MEMORY         (if instruction touches memory)
@@ -140,6 +140,14 @@ CORE_WRITEBACK ─▶ CORE_FETCH
 Multicycle graphics operations are FSM branches invoked from `CORE_EXECUTE`
 and return to writeback only when their memory loops and architectural
 writebacks complete.
+
+**Architectural reset** (Task 0121): while `rst` is active, `CORE_RESET` keeps
+the memory request inactive. After release it holds a 32-bit read at
+`RESET_VECTOR_ADDR = 0xFFFF_FFE0` until `mem_ack`, loads PC from the returned
+level-0 vector, and enters `CORE_FETCH`. This is the same vector word used by
+TRAP 0; reset performs no PC/ST push and does not touch SP. The eight
+post-reset RAS-only cycles and HCS-selected host halt are responsibilities of
+the future physical memory controller and host interface.
 
 **Maskable-interrupt entry** (Task 0100): `tms34010_int_ctrl` is instantiated
 in the core; `int_req` (ST.IE=1 and an enabled INTPEND bit set, via the
@@ -234,8 +242,6 @@ VRAM shift-register behavior and pixel output are not implemented.
 
 ## Current implementation gaps
 
-- Architectural reset-vector fetch; the core still begins at `RESET_PC = 0`
-  (A0008).
 - A synthesizable memory fabric, physical external-bus sequencing, wait-state
   validation, cache, and arbitration among CPU/graphics/host/video/refresh.
 - Host interface behavior.

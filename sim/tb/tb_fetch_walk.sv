@@ -7,13 +7,13 @@
 // per ack.
 //
 // This test exercises:
-//   - CORE_RESET → CORE_FETCH → CORE_DECODE → CORE_FETCH loop under load.
+//   - CORE_RESET level-0 vector read, then FETCH → DECODE → FETCH under load.
 //   - PC advance by INSTR_WORD_BITS on each mem_ack.
 //   - mem_addr == pc_o while in CORE_FETCH (cross-checked against PC).
 //   - sim_memory_model ack timing (one-cycle pulse per request).
 //
-// The "instruction words" in memory have no semantics yet — decode is
-// Phase 3. The test only validates the fetch loop, not what's fetched.
+// The program uses distinct, valid single-word MOVK encodings so instruction
+// execution cannot issue secondary memory requests that obscure fetch acks.
 //
 // Sampling strategy:
 //   An `always @(posedge clk)` monitor samples in the active region of
@@ -115,12 +115,13 @@ module tb_fetch_walk;
 
     // Preload instruction words.
     for (int i = 0; i < N; i++) begin
-      preload_word         = 16'hF000 | i[15:0];
+      preload_word         = 16'h1800 | i[15:0];
       u_mem.mem[i]         = preload_word;
     end
 
     // Run reset.
     repeat (3) @(posedge clk);
+    #1;
     rst = 1'b0;
 
     // Wait for N acks. Worst case is ~4 cycles per ack in the current
@@ -150,7 +151,7 @@ module tb_fetch_walk;
       logic [ADDR_WIDTH-1:0] expected_pc;
       logic [15:0]           expected_word;
       expected_pc   = i * 16;
-      expected_word = 16'hF000 | i[15:0];
+      expected_word = 16'h1800 | i[15:0];
 
       if (observed_pc_at_ack[i] !== expected_pc) begin
         $display("TEST_RESULT: FAIL: ack #%0d: pc expected=%08h observed=%08h",

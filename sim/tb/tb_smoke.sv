@@ -5,12 +5,12 @@
 //
 // What it verifies:
 //   1. The core elaborates cleanly with the current package.
-//   2. After reset deasserts, the FSM transitions from CORE_RESET to
-//      CORE_FETCH within a bounded number of cycles.
+//   2. After reset deasserts and the level-0 vector read is acknowledged, the
+//      FSM transitions from CORE_RESET to CORE_FETCH.
 //
 // What it does NOT verify:
 //   - Any instruction behavior.
-//   - Any memory interface protocol beyond "mem_req is asserted in FETCH".
+//   - Detailed memory-interface protocol (covered by tb_reset_vector).
 //   - Any timing relationships.
 //
 // Pass/fail convention:
@@ -50,12 +50,6 @@ module tb_smoke;
   instr_word_t                       instr_w;
   logic                              illegal_w;
 
-  // Memory stub: never acks. In Phase 0 we just want to see CORE_FETCH;
-  // the core will then sit in CORE_FETCH waiting indefinitely, which is
-  // the expected skeleton behavior.
-  assign mem_rdata = '0;
-  assign mem_ack   = 1'b0;
-
   tms34010_core dut (
     .clk      (clk),
     .rst      (rst),
@@ -70,6 +64,15 @@ module tb_smoke;
     .pc_o            (pc_w),
     .instr_word_o    (instr_w),
     .illegal_opcode_o(illegal_w)
+  );
+
+  // The model's default level-0 vector is zero, so the first instruction
+  // fetch begins at word 0 after the architectural reset transaction.
+  sim_memory_model #(.DEPTH_WORDS(16)) u_mem (
+    .clk(clk), .rst(rst),
+    .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr),
+    .mem_size(mem_size), .mem_wdata(mem_wdata),
+    .mem_rdata(mem_rdata), .mem_ack(mem_ack)
   );
 
   // ---------------------------------------------------------------------------
@@ -92,11 +95,13 @@ module tb_smoke;
 
     // Release reset on a clock edge so the next sampled state reflects the
     // post-reset transition.
+    #1;
     rst = 1'b0;
 
-    // Watch up to 8 cycles for the state to advance to CORE_FETCH.
-    for (int i = 0; i < 8; i++) begin
+    // Watch up to 12 cycles for the level-0 vector transaction to complete.
+    for (int i = 0; i < 12; i++) begin
       @(posedge clk);
+      #1;
       cycles_after_release++;
       if (state_w == CORE_FETCH) begin
         reached_fetch = 1'b1;
@@ -129,7 +134,7 @@ module tb_smoke;
     $finish;
   end
 
-  // Hard timeout watchdog: should never fire on the Phase 0 skeleton.
+  // Hard timeout watchdog.
   initial begin : watchdog
     #10_000;
     $display("TEST_RESULT: FAIL: hard timeout at 10us simulated");
