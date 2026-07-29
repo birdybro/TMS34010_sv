@@ -25,7 +25,8 @@ module tb_video;
   localparam logic [15:0] DPYINT = 16'd2;
 
   logic [15:0] hcount, vcount;
-  logic        hsync, vsync, hblank, vblank, blank, dpyint_pulse;
+  logic        hsync, vsync, hblank, vblank, blank;
+  logic        hblank_start, dpyint_pulse;
   logic        display_enable;
   logic        hcount_load, vcount_load;
   logic [15:0] hcount_wdata, vcount_wdata;
@@ -39,7 +40,8 @@ module tb_video;
     .vcount_load(vcount_load), .vcount_wdata(vcount_wdata),
     .hcount(hcount), .vcount(vcount),
     .hsync(hsync), .vsync(vsync), .hblank(hblank), .vblank(vblank),
-    .blank(blank), .dpyint_pulse(dpyint_pulse)
+    .blank(blank), .hblank_start(hblank_start),
+    .dpyint_pulse(dpyint_pulse)
   );
 
   int unsigned failures;
@@ -103,6 +105,7 @@ module tb_video;
       if (hblank !== ((hcount <= HEBLNK) || (hcount > HSBLNK))) fail("hblank window");
       if (vblank !== ((vcount <= VEBLNK) || (vcount > VSBLNK))) fail("vblank window");
       if (blank  !== (hblank || vblank))                        fail("blank combine");
+      if (hblank_start !== (hcount == HSBLNK))                  fail("hblank-start event");
       if (dpyint_pulse !== ((hcount == HSBLNK) && (vcount == DPYINT)))
         fail("dpyint strobe");
       if (dpyint_pulse) dpyint_count++;

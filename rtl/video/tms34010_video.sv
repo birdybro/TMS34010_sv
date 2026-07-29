@@ -68,6 +68,7 @@ module tms34010_video
   output logic        hblank,     // 1 = horizontal blanking
   output logic        vblank,     // 1 = vertical blanking
   output logic        blank,      // 1 = blanked (either axis)
+  output logic        hblank_start,// one clock at HCOUNT == HSBLNK
   output logic        dpyint_pulse// one-clock strobe at the DPYINT scan line start
 );
 
@@ -107,12 +108,13 @@ module tms34010_video
   assign hblank = (hcount <= heblnk) || (hcount > hsblnk);
   assign vblank = (vcount <= veblnk) || (vcount > vsblnk);
   assign blank  = !display_enable || hblank || vblank;
+  assign hblank_start = (hcount == hsblnk);
 
   // Display interrupt: DPYINT matches VCOUNT at the start of horizontal
   // blanking (HCOUNT == HSBLNK), at the end of the selected scan line.
   // DPYCTL.ENV=0 inhibits new display-interrupt requests.
   assign dpyint_pulse =
-      display_enable && (hcount == hsblnk) && (vcount == dpyint);
+      display_enable && hblank_start && (vcount == dpyint);
 
 endmodule : tms34010_video
 

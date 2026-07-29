@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0140, with strict RTL
+> Baseline: functional implementation through Task 0141, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -96,6 +96,12 @@ leading blank remain active at their programmed end-count equality; trailing
 blank becomes active only on the count after HSBLNK/VSBLNK. The HSBLNK
 display event remains at equality, before the delayed blank output transition.
 
+Task 0141 completed live DPYADR and the noninterlaced screen-refresh client.
+DPYSTRT supplies frame/line reloads, SRE plus LNCNT schedule active-line
+requests, and captured SRFADR/DPYTAP remain held until completion acknowledge.
+DUDATE/ORG updates now occur only at completion. Physical VRAM
+memory-to-register service and arbitration remain in the memory-fabric gate.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -105,10 +111,11 @@ deviation.
 
 A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), A0006 (functional-first timing), and A0034 (provisional same-clock
-internal/noninterlaced video timing) are intentional design choices. They do
-not excuse missing architectural state or interface behavior; any remaining
-difference at final sign-off must be documented as a deliberate
-non-pin-compatible boundary.
+internal/noninterlaced video timing) are intentional design choices. A0035
+isolates deterministic collision/undefined behavior around the screen-refresh
+handshake. These do not excuse missing architectural state or interface
+behavior; any remaining difference at final sign-off must be documented as a
+deliberate non-pin-compatible boundary.
 
 ## System integration gaps
 
@@ -117,8 +124,7 @@ non-pin-compatible boundary.
 - Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Drive DPYADR from the display subsystem and complete the remaining
-  display/host register side effects.
+- Complete the remaining host register side effects.
 - Connect the host interface to the landed HSTCTLL.INTIN/HIP sideband and
   complete the complementary host-visible HSTCTL semantics.
 - Replace the provisional external-ack dependency for on-chip I/O accesses
@@ -131,6 +137,8 @@ non-pin-compatible boundary.
   eight post-reset RAS-only initialization cycles.
 - Add arbitration among CPU/graphics, display, refresh, and host clients with
   specification-derived priority and request-hold rules.
+- Service the held screen-refresh client with the highest-priority physical
+  VRAM memory-to-register cycle and completion acknowledge.
 - Service the exported refresh request in the local-memory arbiter/controller,
   retaining or acknowledging requests through contention and issuing the
   selected RAS-only or CAS-before-RAS cycle.
@@ -142,8 +150,8 @@ non-pin-compatible boundary.
 
 - Define the pixel/video clock boundary and implement/document every CDC.
 - Add external-sync and interlaced timing modes.
-- Add display-address generation, VRAM serial-transfer/display-memory
-  behavior, pixel output, and arbitration against CPU/graphics traffic.
+- Add physical VRAM serial-transfer/display-memory behavior, pixel output,
+  and arbitration against CPU/graphics traffic.
 
 ### FPGA realization
 

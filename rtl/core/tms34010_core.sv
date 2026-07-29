@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0140.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0141.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -11,9 +11,9 @@
 //
 // The external request/ack interface is an architectural bit-addressed
 // interface, not the original physical 16-bit bus. REFCNT requests and
-// same-clock internal/noninterlaced video timing are integrated, but refresh
-// service, display fetch, VCLK/CDC, host access, and physical bus arbitration
-// are not; see docs/architecture.md.
+// same-clock internal/noninterlaced video timing/screen scheduling are
+// integrated, but physical refresh/VRAM service, VCLK/CDC, host access, and
+// physical bus arbitration are not; see docs/architecture.md.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -70,6 +70,13 @@ module tms34010_core
   output logic                                video_hblank_o,
   output logic                                video_vblank_o,
   output logic                                video_blank_o,
+
+  // Screen-refresh client boundary. Request and payload remain stable until
+  // the future memory/VRAM controller acknowledges the completed transfer.
+  output logic                                screen_refresh_req_o,
+  input  logic                                screen_refresh_ack_i,
+  output logic [13:0]                         screen_refresh_srfaddr_o,
+  output logic [15:0]                         screen_refresh_dpytap_o,
 
   // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
@@ -2335,6 +2342,11 @@ module tms34010_core
     .video_hblank_o(video_hblank_o),
     .video_vblank_o(video_vblank_o),
     .video_blank_o(video_blank_o),
+    .dpyadr_o (),
+    .screen_refresh_req_o(screen_refresh_req_o),
+    .screen_refresh_ack_i(screen_refresh_ack_i),
+    .screen_refresh_srfaddr_o(screen_refresh_srfaddr_o),
+    .screen_refresh_dpytap_o(screen_refresh_dpytap_o),
     .nmi_clear(nmi_clear),
     .wvp_set  (wvp_set),
     .dpyint_set(dpyint_set_i),

@@ -563,6 +563,47 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   inputs are deliberate integration sidebands; their future source-clock
   crossings remain explicit in `docs/timing_notes.md`.
 
+## A0035 — Deterministic screen-refresh handshake and DPYADR collisions
+- **Date**: 2026-07-28 (Task 0141).
+- **Status**: specification-derived ordinary scheduling with isolated
+  deterministic choices for undefined/colliding control cases.
+- **Source**: 1988 TMS34010 User's Guide pages 6-17 through 6-24 and
+  §9.10.1 pages 9-18 through 9-25.
+- **Specification-derived behavior**: SRFADR reloads from DPYSTRT at the
+  beginning of vertical blanking; LNCNT reloads before the first active line
+  and after each completed screen-refresh cycle. SRE requests the first
+  active-line transfer and subsequent transfers every LCSTRT+1 lines. A
+  completed cycle advances/decrements SRFADR by DUDATE according to ORG.
+  Screen requests outrank lower-priority memory clients and remain pending
+  when an external hold prevents immediate service.
+- **Handshake boundary**: `screen_refresh_req_o` is a held level, not a pulse.
+  Its 14-bit SRFADR and 16-bit DPYTAP payloads are captured when scheduled and
+  remain stable until `screen_refresh_ack_i` reports completion of the future
+  physical VRAM memory-to-register cycle. DPYADR updates on acknowledge, not
+  request. This preserves the specified pending behavior without prematurely
+  inventing local-bus phases.
+- **Processor collision choice**: a same-edge full DPYADR processor load wins
+  over frame reload, LNCNT decrement, or acknowledge-time update; a valid
+  acknowledge still retires its held request. The guide gives split-screen
+  ordering guarantees but does not define an exact simultaneous internal
+  collision.
+- **SRE/pending choice**: clearing SRE prevents newly scheduled requests at
+  the next HBLANK but does not cancel a request already presented to the
+  memory controller. Re-enabling SRE forces the next eligible HBLANK. This
+  keeps the client protocol monotonic through stalls.
+- **Undefined DUDATE choice**: the guide requires zero or one set bit and
+  says multiple set bits produce an undefined increment. The RTL
+  deterministically treats the complete eight-bit field as an unsigned
+  add/subtract value. Conforming one-hot/zero programs exactly match the
+  specified 0/1/2/4/.../128 steps.
+- **Control during a stall**: request address/tap payloads are captured, while
+  the completion update uses the live DUDATE/ORG value. Software should not
+  rewrite display control around an outstanding transfer; the physical
+  controller task may tighten this boundary if primary bus timing requires.
+- **Regression evidence**: `tb_display_addr` covers the direct state machine
+  and all deterministic choices above. `tb_io_display` locks register
+  integration, generated timing events, held payload, and completion updates.
+
 ## A0034 — Provisional same-clock internal/noninterlaced video timing
 - **Date**: 2026-07-28 (Task 0139).
 - **Status**: deliberate functional integration boundary; dedicated VCLK/CDC,

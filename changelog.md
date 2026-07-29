@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0141 — live DPYADR and screen-refresh scheduling)
+- Added `tms34010_display_addr`, which owns live processor-writable DPYADR,
+  reloads SRFADR/LNCNT at their specified frame boundaries, and schedules
+  noninterlaced screen-refresh requests every LCSTRT+1 active lines.
+- Made each request a held handshake with captured SRFADR/DPYTAP payload.
+  DPYADR advances only after completion acknowledge, using DPYCTL.DUDATE and
+  ORG, and the request remains stable through arbitrary controller stalls.
+- Integrated DPYSTRT, DPYCTL.SRE/DUDATE/ORG, DPYTAP, and DPYADR with the I/O
+  register block, made DPYTAP reserved bits read zero, and exported the
+  screen-refresh client at the core boundary.
+- Added `tb_display_addr` and `tb_io_display` for vertical-blank suppression,
+  first-active scheduling, line cadence, stable stalls, completion updates,
+  SRE re-enable, live I/O state, reset, and collision precedence.
+- Retained the explicit same-clock/noninterlaced boundary; physical VRAM
+  memory-to-register cycles, VCLK CDC, and interlaced half-DUDATE adjustment
+  remain future work.
+- Validation: focused display/video/I/O/core benches PASS;
+  `scripts/lint.sh` clean; full regression 127/127 PASS.
+
 ### Fixed (Task 0140 — exact sync/blank interval endpoints)
 - Corrected all inherited Task 0097 interval compares to model the guide's
   one-VCLK delay after equality: HSYNC/VSYNC and leading blanking remain

@@ -1,14 +1,15 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0140, with
+> Status: **implemented and ISA/status-audited through Task 0141, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Architectural fields are sequenced onto aligned 16-bit words;
 > REFCNT and the refresh requester are integrated at the core boundary.
-> Internal/noninterlaced video timing is integrated on the project clock;
-> display fetch and the real VCLK/CDC boundary remain open. The remaining
-> system-level exit gates are recorded in `completion_audit.md`.
+> Internal/noninterlaced video timing and the held screen-refresh client are
+> integrated on the project clock; physical VRAM transfer service and the real
+> VCLK/CDC boundary remain open. The remaining system-level exit gates are
+> recorded in `completion_audit.md`.
 
 ## Specification source
 
@@ -67,10 +68,11 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
 ```
 
 The CPU, graphics execution engines, I/O register storage, interrupt entry,
-video timing, and REFCNT refresh requester currently live in or directly
-under `tms34010_core`. The field-to-word sequencer has landed below that core
-boundary. The lower local-bus/host/display-memory fabric, physical refresh
-service, and dedicated VCLK domain remain planned.
+video timing/display-address scheduling, and REFCNT refresh requester
+currently live in or directly under `tms34010_core`. The field-to-word
+sequencer has landed below that core boundary. The lower
+local-bus/host/display-memory fabric, physical refresh services, and dedicated
+VCLK domain remain planned.
 
 ## Test substrate
 
@@ -87,7 +89,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0140** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, refresh/video boundaries, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0141** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -106,8 +108,9 @@ has not landed.
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0139** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact interrupt sources, processor-side HSTCTLL, live REFCNT, and live video counter/timing integration; host/display-address integration remains |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0141** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact interrupt sources, processor-side HSTCTLL, live REFCNT/counters/DPYADR, and screen-refresh scheduling; host integration remains |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
+| `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated (Task 0141)** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP request, and acknowledge-time DUDATE/ORG update; physical VRAM cycle and interlaced adjustment remain |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
@@ -161,6 +164,13 @@ the real VCLK, external-sync, and interlace work lands. Task 0140 then
 corrected the inherited interval endpoints: end compares remain active at
 equality and blank-start compares take effect on the following count, matching
 the one-VCLK delay in §§9.5/9.6.
+
+Task 0141 made DPYADR a live register and landed the next display-memory
+client boundary. Frame/line events reload its fields from DPYSTRT, SRE
+schedules the first and LCSTRT-spaced active-line requests, and a held
+SRFADR/DPYTAP payload advances by DUDATE/ORG only after the future controller
+acknowledges completion.
+
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -326,12 +336,20 @@ and inhibits new display interrupts; when enabled, the DPYINT line compare
 sets INTPEND.DIP at the `HCOUNT=HSBLNK` event. The outputs are visible at the
 core boundary.
 
+`tms34010_display_addr` consumes the start-HBLANK event and owns live DPYADR.
+In the current noninterlaced mode, SRFADR reloads at the beginning of vertical
+blanking, LNCNT reloads before the first active line, and SRE schedules a held
+screen-refresh request every LCSTRT+1 active lines. The request captures
+SRFADR/DPYTAP (with DPYTAP reserved bits forced zero) and remains stable until
+the memory controller acknowledges a completed VRAM memory-to-register cycle.
+Only that acknowledge applies DUDATE/ORG and reloads LNCNT.
+
 This is the internal, noninterlaced functional subset and currently uses
 `clk` under A0004/A0034. It does not yet implement the independent VCLK
 domain, falling-edge pin phase, external synchronization, interlaced
-half-lines, DPYADR/DPYSTRT display address generation, VRAM shift-register
-transfers, or pixel output. `tms34010_refresh` is separately integrated with
-REFCNT but awaits service by the memory arbiter.
+half-lines/half-DUDATE adjustment, physical VRAM shift-register transfers, or
+pixel output. `tms34010_refresh` is separately integrated with REFCNT but
+also awaits service by the memory arbiter.
 
 ## Clock / reset strategy
 
@@ -355,10 +373,9 @@ REFCNT but awaits service by the memory arbiter.
 - Original-pin external-bus phase generation, LRDY validation, reset
   initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
 - Host interface behavior.
-- Remaining host/display-address I/O side effects and internally completed
-  I/O accesses.
-- Refresh request service in the memory fabric; VCLK/CDC, external sync,
-  interlace, display fetch, and pixel output.
+- Remaining host I/O side effects and internally completed I/O accesses.
+- DRAM- and screen-refresh request service in the memory fabric; VCLK/CDC,
+  external sync, interlace, physical VRAM transfer, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.

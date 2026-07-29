@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0140. Task 0124
+Functional implementation work is complete through Task 0141. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -33,7 +33,10 @@ refresh request, row, and mode at the core boundary. Task 0139 integrated the
 internal noninterlaced video counters/timing registers, corrected DIP to the
 start of horizontal blanking, and exported timing outputs. Task 0140
 corrected the inherited sync/blank interval endpoints for the guide's
-one-VCLK equality-to-output delay. The repository currently contains:
+one-VCLK equality-to-output delay. Task 0141 made DPYADR live and added a
+held screen-refresh request/acknowledge client with frame reload, line
+cadence, and completion-time address updates. The repository currently
+contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -49,9 +52,10 @@ one-VCLK equality-to-output delay. The repository currently contains:
 - a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
   partial-word RMW locking, and arbitrary word-side stalls;
 - integrated same-clock internal/noninterlaced video timing with live
-  HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, and core timing outputs, plus
-  integrated REFCNT/refresh-request generation;
-- 125 self-checking SystemVerilog testbenches, including an exhaustive
+  HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
+  screen-refresh scheduling, and core timing/client outputs, plus integrated
+  REFCNT/refresh-request generation;
+- 127 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;

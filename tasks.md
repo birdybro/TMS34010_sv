@@ -2,7 +2,9 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0140. Task 0140
+The functional implementation is complete through Task 0141. Task 0141 made
+DPYADR live and added held, acknowledged screen-refresh scheduling with exact
+frame reload, line cadence, and DUDATE/ORG completion updates. Task 0140
 corrected every internal sync/blank interval endpoint for the specified
 one-VCLK delay after equality. Task 0139 corrected the display-interrupt
 compare point and integrated internal, noninterlaced video timing with the
@@ -182,6 +184,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0138 | Correct and integrate DRAM refresh semantics | complete |
 | 0139 | Integrate internal noninterlaced video timing | complete |
 | 0140 | Correct sync and blank interval endpoints | complete |
+| 0141 | Integrate DPYADR and screen-refresh scheduling | complete |
 
 ---
 
@@ -4533,6 +4536,54 @@ Docs:
   `docs/completion_audit.md`, and `docs/timing_notes.md`.
 Commit:
 - 675863c
+
+---
+
+### Task 0141: Integrate DPYADR and screen-refresh scheduling
+Status: complete
+Dependencies:
+- Task 0139 (live internal/noninterlaced counters and timing events).
+- Task 0140 (exact sync/blank endpoint phases).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 6-17 through 6-24
+  (DPYADR, DPYCTL.DUDATE/ORG/SRE, DPYSTRT, and DPYTAP).
+- 1988 TI TMS34010 User's Guide §9.10.1, especially pages 9-18 through 9-25
+  (screen-refresh address generation, line cadence, scheduling, completion
+  updates, and held requests through bus unavailability).
+Acceptance Criteria:
+- Make DPYADR a live, full-word processor-writable register owned by a
+  dedicated display-address block.
+- Reload SRFADR from DPYSTRT at the start of vertical blanking and LNCNT at
+  the final horizontal blank preceding active display.
+- Schedule the first enabled screen refresh before active display and then
+  every LCSTRT+1 eligible lines, with no ordinary requests during vertical
+  blanking.
+- Hold each request plus captured SRFADR/DPYTAP stable until an explicit
+  completion acknowledge from the future memory/VRAM controller; keep
+  DPYTAP's reserved bits 15:14 zero.
+- Advance/decrement SRFADR by DUDATE according to ORG and reload LNCNT only
+  after acknowledged completion; preserve deterministic processor-write
+  priority over a same-edge automatic update.
+- Export request/ack/SRFADR/DPYTAP at the core boundary without claiming the
+  physical VRAM row/column cycle or interlaced/VCLK behavior.
+Tests:
+- `tb_display_addr` PASS (frame/line field loads, vertical suppression,
+  LCSTRT cadence, stall stability, acknowledge updates, ORG, SRE re-enable,
+  processor collision priority, and reset recovery).
+- `tb_io_display` PASS (live DPYADR I/O reads/writes, generated timing events,
+  DPYTAP reserved bits, held payload, acknowledge updates, and core-facing
+  client signals).
+- Existing `tb_video`, `tb_io_video`, `tb_io_regs`, and `tb_smoke` focused
+  regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 127/127 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

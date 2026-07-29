@@ -15,7 +15,7 @@
 // the host interface, which this FPGA reimplementation does not yet model;
 // resetting every register to 0 is therefore correct here.
 //
-// Current scope (Tasks 0081–0139):
+// Current scope (Tasks 0081–0141):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -27,7 +27,8 @@
 //   - REFCNT is the live writable refresh counter driven by CONTROL.RR.
 //   - HCOUNT/VCOUNT are live writable video counters. Timing registers feed
 //     the internal noninterlaced generator; DPYCTL.ENV gates BLANK and DIP.
-//     DPYADR remains ordinary storage until display fetch is integrated.
+//   - DPYADR is live display state. DPYSTRT/DPYCTL schedule held
+//     screen-refresh requests and update its address/count after acknowledge.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003), all registers -> 0.
@@ -80,6 +81,11 @@ module tms34010_io_regs
   output logic                  video_hblank_o,
   output logic                  video_vblank_o,
   output logic                  video_blank_o,
+  output logic [15:0]           dpyadr_o, // live LNCNT/SRFADR state
+  output logic                  screen_refresh_req_o, // held until ack
+  input  logic                  screen_refresh_ack_i,
+  output logic [13:0]           screen_refresh_srfaddr_o,
+  output logic [15:0]           screen_refresh_dpytap_o,
   input  logic                  nmi_clear,     // clear HSTCTLH.NMI after NMI entry
   input  logic                  wvp_set,       // synchronous INTPEND.WVP set pulse
   input  logic                  dpyint_set,    // synchronous INTPEND.DIP set pulse
@@ -104,6 +110,8 @@ module tms34010_io_regs
   logic        refcnt_load;
   logic        hcount_load;
   logic        vcount_load;
+  logic        dpyadr_load;
+  logic        video_hblank_start;
   logic        video_dpyint_pulse;
 
   tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_lint1_sync (
@@ -126,6 +134,8 @@ module tms34010_io_regs
       req && we && is_io && (idx == IO_IDX_HCOUNT);
   assign vcount_load =
       req && we && is_io && (idx == IO_IDX_VCOUNT);
+  assign dpyadr_load =
+      req && we && is_io && (idx == IO_IDX_DPYADR);
 
   // REFCNT is owned by the refresh block rather than mirrored in io_reg.
   // CONTROL.RR clocks its continuous interval/row counter, while a processor
@@ -170,7 +180,30 @@ module tms34010_io_regs
     .hblank        (video_hblank_o),
     .vblank        (video_vblank_o),
     .blank         (video_blank_o),
+    .hblank_start  (video_hblank_start),
     .dpyint_pulse  (video_dpyint_pulse)
+  );
+
+  // Live display address and held screen-refresh client request. The future
+  // memory controller maps SRFADR/DPYTAP onto the physical VRAM row/column
+  // phases and acknowledges only after the memory-to-register cycle ends.
+  tms34010_display_addr u_display_addr (
+    .clk             (clk),
+    .rst             (rst),
+    .hblank_start    (video_hblank_start),
+    .vcount          (vcount_o),
+    .veblnk          (io_reg[IO_IDX_VEBLNK]),
+    .vsblnk          (io_reg[IO_IDX_VSBLNK]),
+    .dpystart        (io_reg[IO_IDX_DPYSTRT]),
+    .dpyctl          (io_reg[IO_IDX_DPYCTL]),
+    .dpytap          (io_reg[IO_IDX_DPYTAP]),
+    .dpyadr_load     (dpyadr_load),
+    .dpyadr_wdata    (wdata),
+    .dpyadr          (dpyadr_o),
+    .refresh_req     (screen_refresh_req_o),
+    .refresh_ack     (screen_refresh_ack_i),
+    .refresh_srfaddr (screen_refresh_srfaddr_o),
+    .refresh_dpytap  (screen_refresh_dpytap_o)
   );
 
   // INTPEND is a composite view, not general storage. External requests and
@@ -197,6 +230,7 @@ module tms34010_io_regs
         IO_IDX_REFCNT:  rdata = refcnt_o;
         IO_IDX_HCOUNT:  rdata = hcount_o;
         IO_IDX_VCOUNT:  rdata = vcount_o;
+        IO_IDX_DPYADR:  rdata = dpyadr_o;
         default:        rdata = io_reg[idx];
       endcase
     end
@@ -256,9 +290,14 @@ module tms34010_io_regs
             // port consumes this write, so no mirror storage is updated.
           end
 
-          IO_IDX_HCOUNT, IO_IDX_VCOUNT: begin
-            // The video submodule owns both live counters. Its parallel-load
-            // ports consume these writes, so no mirror storage is updated.
+          IO_IDX_DPYTAP: begin
+            // Bits 14-15 are reserved/not used by the display address path.
+            io_reg[IO_IDX_DPYTAP] <= wdata & DPYTAP_MASK;
+          end
+
+          IO_IDX_HCOUNT, IO_IDX_VCOUNT, IO_IDX_DPYADR: begin
+            // Video/display submodules own these live registers. Their load
+            // ports consume processor writes, so no mirror is updated.
           end
 
           default: io_reg[idx] <= wdata;

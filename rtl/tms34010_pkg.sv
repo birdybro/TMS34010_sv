@@ -326,7 +326,23 @@ package tms34010_pkg;
 
   // Display Control register fields used by the integrated timing generator
   // (1988 User's Guide DPYCTL pages 6-18 through 6-23).
-  parameter int unsigned DPYCTL_ENV_BIT = 15; // enable video and display IRQ
+  parameter int unsigned DPYCTL_DUDATE_LO = 2;  // one-hot display update
+  parameter int unsigned DPYCTL_DUDATE_HI = 9;
+  parameter int unsigned DPYCTL_ORG_BIT    = 10; // 0=increment, 1=decrement
+  parameter int unsigned DPYCTL_SRT_BIT    = 11; // programmed pixel transfers
+  parameter int unsigned DPYCTL_SRE_BIT    = 12; // automatic screen refresh
+  parameter int unsigned DPYCTL_DXV_BIT    = 13; // 1=internal video timing
+  parameter int unsigned DPYCTL_NIL_BIT    = 14; // 1=noninterlaced
+  parameter int unsigned DPYCTL_ENV_BIT    = 15; // enable video/display IRQ
+
+  // DPYADR/DPYSTRT split into a two-bit line count and 14-bit screen address.
+  parameter int unsigned DPY_LNCNT_LO  = 0;
+  parameter int unsigned DPY_LNCNT_HI  = 1;
+  parameter int unsigned DPY_SRFADR_LO = 2;
+  parameter int unsigned DPY_SRFADR_HI = 15;
+  parameter int unsigned DPYTAP_LO      = 0;
+  parameter int unsigned DPYTAP_HI      = 13;
+  parameter logic [15:0] DPYTAP_MASK    = 16'h3FFF;
 
   // Interrupt enable/pending (INTENB/INTPEND) bit positions and the trap vector
   // address of each maskable interrupt (1988 UG §8.3/8.4, Tables 8-2/8-3).

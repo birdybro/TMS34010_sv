@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0140, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0141, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -56,6 +56,14 @@
   blank equality remains active for that count; start blank equality remains
   inactive until the following count. These are functional clock
   relationships, not the original falling-VCLK pin phase.
+- **Screen-refresh request** — at an eligible start-HBLANK event,
+  `screen_refresh_req_o` registers high and captures SRFADR/DPYTAP. The level
+  and payload remain stable for an unbounded number of core clocks until
+  `screen_refresh_ack_i` reports completion of the future physical VRAM
+  transfer. That acknowledge clears the request, reloads LNCNT, and updates
+  SRFADR by the live DUDATE/ORG value. Processor DPYADR load wins a same-edge
+  automatic update. The future arbiter must not acknowledge selection alone;
+  acknowledge denotes completed memory-to-register service.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
@@ -168,6 +176,8 @@ outputs are core-clock signals. A future VCLK task must:
   update acknowledgement where required;
 - provide reliable processor access to live counters without independently
   synchronizing binary bits;
+- transfer DPYSTRT/DPYCTL/DPYTAP updates and live DPYADR ownership coherently
+  with the screen-refresh scheduler;
 - carry display-interrupt events into the core domain without losing a
   one-VCLK pulse;
 - constrain both clocks and every crossing in SDC, then verify Quartus CDC

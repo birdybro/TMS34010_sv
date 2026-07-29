@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0140. Task 0124
+The functional implementation is complete through Task 0141. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -40,15 +40,18 @@ row, and mode for the future memory fabric. Task 0139 integrated same-clock
 internal/noninterlaced video timing, made HCOUNT/VCOUNT live, corrected the
 display-interrupt point to HSBLNK, and exported the timing intervals. Task
 0140 corrected the sync/blank endpoints for the specified one-VCLK delay
-after each equality compare. The implementation includes the
+after each equality compare. Task 0141 made DPYADR live and added held
+screen-refresh request/acknowledge scheduling with frame reload, line cadence,
+and DUDATE/ORG completion updates. The implementation includes the
 multicycle CPU core, the currently tracked instruction set, bit-field memory
 operations, graphics
 operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O
 registers, reset-vector fetch, maskable/NMI entry with architectural
 service-context ST initialization, and the illegal-opcode trap. Video timing
-is functionally integrated; a dedicated VCLK/CDC boundary, external sync,
-interlace, and display memory remain future work. Physical refresh service
-remains part of the future memory fabric. Read `tasks.md`,
+is functionally integrated through its screen-refresh client; a dedicated
+VCLK/CDC boundary, external sync, interlace, and the physical VRAM transfer
+cycle remain future work. Physical refresh service remains part of the future
+memory fabric. Read `tasks.md`,
 `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 
