@@ -1,7 +1,8 @@
 # Memory map
 
-> Status: **field-to-word translation, interrupt-register semantics, and live
-> REFCNT implemented through Task 0138**. The core issues bit-addressed
+> Status: **field-to-word translation, interrupt-register semantics, live
+> REFCNT, and internal video timing implemented through Task 0139**. The core
+> issues bit-addressed
 > 1–32-bit accesses, and a synthesizable sequencer
 > expands them into aligned 16-bit word cycles. The on-chip I/O page is
 > decoded and stored in the core. Original-pin local-bus timing and several
@@ -86,10 +87,13 @@ processor-writable continuous interval/row down-counter driven by
 CONTROL.RR, with CONTROL.RM and request/row outputs for the future memory
 fabric.
 
-The remaining register semantics are incomplete: video state is not driven
-into HCOUNT/VCOUNT/DPYADR, host-side HSTCTL behavior is not connected, and
-I/O accesses still rely on an external request/ack cycle as documented in
-A0028.
+Task 0139 connects the horizontal/vertical timing values and DPYINT/DPYCTL
+to the internal noninterlaced generator. HCOUNT/VCOUNT are now live writable
+counters, and its start-of-HBLANK compare sets the existing DIP latch.
+
+The remaining register semantics are incomplete: DPYADR is not yet driven by
+display fetch, host-side HSTCTL behavior is not connected, and I/O accesses
+still rely on an external request/ack cycle as documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -101,9 +105,9 @@ A0028.
 | C0000050 | 0x05 | VEBLNK  | video timing | Vertical End Blank |
 | C0000060 | 0x06 | VSBLNK  | video timing | Vertical Start Blank |
 | C0000070 | 0x07 | VTOTAL  | video timing | Vertical Total |
-| C0000080 | 0x08 | DPYCTL  | video timing | Display Control |
+| C0000080 | 0x08 | DPYCTL  | video timing | ENV bit 15 gates combined blank and new DIP events; other display fields await later video work |
 | C0000090 | 0x09 | DPYSTRT | video timing | Display Start |
-| C00000A0 | 0x0A | DPYINT  | video timing | Display Interrupt |
+| C00000A0 | 0x0A | DPYINT  | video timing | VCOUNT line selected for DIP at start of horizontal blanking |
 | C00000B0 | 0x0B | CONTROL | graphics ctl | Control (transparency, window, PPOP, ...) |
 | C00000C0 | 0x0C | HSTDATA | host         | Host Data |
 | C00000D0 | 0x0D | HSTADRL | host         | Host Address (LSBs) |
@@ -118,14 +122,14 @@ A0028.
 | C0000160 | 0x16 | PMASK   | graphics ctl | Plane Mask |
 | C0000170–C00001A0 | 0x17–0x1A | — | reserved | (storage present, no defined function) |
 | C00001B0 | 0x1B | DPYTAP  | video timing | Display Tap Point |
-| C00001C0 | 0x1C | HCOUNT  | video timing | Video-clock counter; CPU access reliable only while VCLK is high |
-| C00001D0 | 0x1D | VCOUNT  | video timing | Scan-line counter; CPU access reliable only while VCLK is high |
-| C00001E0 | 0x1E | DPYADR  | video timing | Writable live screen-refresh address/counter; video integration pending |
+| C00001C0 | 0x1C | HCOUNT  | video timing | Live writable horizontal counter; original VCLK access restriction is deferred with A0034 |
+| C00001D0 | 0x1D | VCOUNT  | video timing | Live writable scan-line counter; original VCLK access restriction is deferred with A0034 |
+| C00001E0 | 0x1E | DPYADR  | video timing | Writable screen-refresh address storage; live display-fetch updates pending |
 | C00001F0 | 0x1F | REFCNT  | refresh      | Live writable RINTVL/ROWADR down-counter; RR=00/01 requests every 32/64 clocks |
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
 fields for graphics and interrupt behavior are also named in the package.
-Remaining video, refresh, and host fields must be documented as their
+Remaining display-address and host fields must be documented as their
 consuming blocks are integrated.
 
 ## Host-interface-visible registers
@@ -146,6 +150,7 @@ graphics accesses.
 - Original-pin 16-bit local-bus phasing and LRDY wait-state behavior.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
-  yet consumed by host/video/refresh logic.
+  yet consumed by host/display-address logic.
 - Host-visible register access and locking semantics.
-- Video/display address generation and VRAM shift-register behavior.
+- Dedicated VCLK/CDC, external-sync/interlace timing, display-address
+  generation, and VRAM shift-register behavior.

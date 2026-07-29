@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0138.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0139.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -10,9 +10,10 @@
 // `illegal_opcode_o` output.
 //
 // The external request/ack interface is an architectural bit-addressed
-// interface, not the original physical 16-bit bus. REFCNT timing and requests
-// are integrated, but refresh service, video, host access, and physical bus
-// arbitration are not; see docs/architecture.md.
+// interface, not the original physical 16-bit bus. REFCNT requests and
+// same-clock internal/noninterlaced video timing are integrated, but refresh
+// service, display fetch, VCLK/CDC, host access, and physical bus arbitration
+// are not; see docs/architecture.md.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -61,6 +62,14 @@ module tms34010_core
   output logic                                refresh_req_o,
   output logic [7:0]                          refresh_row_o,
   output logic                                refresh_cbr_o,
+
+  // Functional video-timing boundary. These active-high interval signals use
+  // the project clock until the dedicated VCLK/CDC task lands.
+  output logic                                video_hsync_o,
+  output logic                                video_vsync_o,
+  output logic                                video_hblank_o,
+  output logic                                video_vblank_o,
+  output logic                                video_blank_o,
 
   // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
@@ -2319,6 +2328,13 @@ module tms34010_core
     .refresh_req_o(refresh_req_o),
     .refresh_row_o(refresh_row_o),
     .refresh_cbr_o(refresh_cbr_o),
+    .hcount_o (),
+    .vcount_o (),
+    .video_hsync_o(video_hsync_o),
+    .video_vsync_o(video_vsync_o),
+    .video_hblank_o(video_hblank_o),
+    .video_vblank_o(video_vblank_o),
+    .video_blank_o(video_blank_o),
     .nmi_clear(nmi_clear),
     .wvp_set  (wvp_set),
     .dpyint_set(dpyint_set_i),

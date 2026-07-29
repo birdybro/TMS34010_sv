@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0138. Task 0124
+Functional implementation work is complete through Task 0139. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -29,8 +29,10 @@ INTPEND/INTENB contract, synchronized both active-low external interrupt
 pins, and exposed synchronous host/display request sidebands. Task 0138
 corrected REFCNT to the guide's continuous 14-bit decrementing counter,
 integrated it with CONTROL.RR/RM and the I/O register file, and exposed its
-refresh request, row, and mode at the core boundary. The repository currently
-contains:
+refresh request, row, and mode at the core boundary. Task 0139 integrated the
+internal noninterlaced video counters/timing registers, corrected DIP to the
+start of horizontal blanking, and exported timing outputs. The repository
+currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -45,16 +47,17 @@ contains:
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
 - a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
   partial-word RMW locking, and arbitrary word-side stalls;
-- a standalone video-timing module plus integrated REFCNT/refresh-request
-  generation;
-- 124 self-checking SystemVerilog testbenches, including an exhaustive
+- integrated same-clock internal/noninterlaced video timing with live
+  HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, and core timing outputs, plus
+  integrated REFCNT/refresh-request generation;
+- 125 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
 the audit records the remaining pin-level local-bus controller, host/memory
 fabric, bus arbitration and physical refresh service, remaining I/O/host side
-effects, video integration, real Quartus project/constraints, and
-timing/resource validation.
+effects, video display-address/memory behavior and VCLK/CDC, real Quartus
+project/constraints, and timing/resource validation.
 
 ## Getting started
 

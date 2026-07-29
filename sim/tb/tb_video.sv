@@ -2,11 +2,10 @@
 // tb_video.sv
 //
 // Unit test for tms34010_video — the horizontal/vertical timing generator.
-// Drives the video clock with small timing-register values and checks, every
-// cycle over ~2.5 frames: the HCOUNT/VCOUNT transitions (increment, HTOTAL wrap
-// with VCOUNT step, VTOTAL frame wrap), the sync/blank window compares, and the
-// one-clock DPYINT strobe. Confirms HCOUNT reaches HTOTAL, VCOUNT reaches
-// VTOTAL, and both wrap.
+// Drives the video clock with small timing-register values and checks every
+// cycle over ~2.5 frames: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wrapping,
+// sync/blank window compares, DPYCTL.ENV behavior, and the one-clock DPYINT
+// strobe at the start of horizontal blanking.
 //
 // Timing: HTOTAL=7 (8-count line), HESYNC=2, HEBLNK=3, HSBLNK=6;
 //         VTOTAL=3 (4-line frame), VESYNC=1, VEBLNK=1, VSBLNK=3; DPYINT=2.
@@ -27,12 +26,17 @@ module tb_video;
 
   logic [15:0] hcount, vcount;
   logic        hsync, vsync, hblank, vblank, blank, dpyint_pulse;
+  logic        display_enable;
+  logic        hcount_load, vcount_load;
+  logic [15:0] hcount_wdata, vcount_wdata;
 
   tms34010_video u_video (
     .clk(clk), .rst(rst),
     .hesync(HESYNC), .heblnk(HEBLNK), .hsblnk(HSBLNK), .htotal(HTOTAL),
     .vesync(VESYNC), .veblnk(VEBLNK), .vsblnk(VSBLNK), .vtotal(VTOTAL),
-    .dpyint(DPYINT),
+    .dpyint(DPYINT), .display_enable(display_enable),
+    .hcount_load(hcount_load), .hcount_wdata(hcount_wdata),
+    .vcount_load(vcount_load), .vcount_wdata(vcount_wdata),
     .hcount(hcount), .vcount(vcount),
     .hsync(hsync), .vsync(vsync), .hblank(hblank), .vblank(vblank),
     .blank(blank), .dpyint_pulse(dpyint_pulse)
@@ -52,9 +56,43 @@ module tb_video;
   initial begin : main
     failures = 0; dpyint_count = 0;
     saw_htotal = 0; saw_vtotal = 0; saw_hwrap = 0; saw_vwrap = 0; have_prev = 0;
+    display_enable = 1'b0;
+    hcount_load = 1'b0;
+    vcount_load = 1'b0;
+    hcount_wdata = 16'h0000;
+    vcount_wdata = 16'h0000;
 
     repeat (3) @(posedge clk);
     rst = 1'b0;
+
+    // Counters continue while video is disabled, but BLANK is forced active
+    // and display-interrupt generation is inhibited for a complete frame.
+    repeat (36) begin
+      @(negedge clk);
+      if (!blank) fail("ENV=0 did not force blank");
+      if (dpyint_pulse) fail("ENV=0 did not inhibit dpyint");
+    end
+
+    // Both architected counters are writable. Load them simultaneously in
+    // this direct unit test, verify the result, then restart at frame origin.
+    hcount_load  = 1'b1;
+    hcount_wdata = 16'd4;
+    vcount_load  = 1'b1;
+    vcount_wdata = 16'd3;
+    @(negedge clk);
+    hcount_load = 1'b0;
+    vcount_load = 1'b0;
+    if (hcount !== 16'd4) fail("HCOUNT parallel load");
+    if (vcount !== 16'd3) fail("VCOUNT parallel load");
+
+    hcount_load  = 1'b1;
+    hcount_wdata = 16'd0;
+    vcount_load  = 1'b1;
+    vcount_wdata = 16'd0;
+    @(negedge clk);
+    hcount_load = 1'b0;
+    vcount_load = 1'b0;
+    display_enable = 1'b1;
 
     // Run ~2.5 frames (8*4*2.5 = 80 clocks) and check every cycle.
     for (int unsigned k = 0; k < 84; k++) begin
@@ -65,7 +103,8 @@ module tb_video;
       if (hblank !== ((hcount < HEBLNK) || (hcount >= HSBLNK))) fail("hblank window");
       if (vblank !== ((vcount < VEBLNK) || (vcount >= VSBLNK))) fail("vblank window");
       if (blank  !== (hblank || vblank))                        fail("blank combine");
-      if (dpyint_pulse !== ((hcount == 16'd0) && (vcount == DPYINT))) fail("dpyint strobe");
+      if (dpyint_pulse !== ((hcount == HSBLNK) && (vcount == DPYINT)))
+        fail("dpyint strobe");
       if (dpyint_pulse) dpyint_count++;
       // Counter range.
       if (hcount > HTOTAL) fail("hcount > HTOTAL");
@@ -100,7 +139,7 @@ module tb_video;
     end
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (video: HCOUNT/VCOUNT wrap, HSYNC/VSYNC/blank windows, DPYINT strobe)");
+      $display("TEST_RESULT: PASS (video: writable counters, timing windows, ENV, HBLANK DPYINT)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

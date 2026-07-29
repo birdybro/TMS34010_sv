@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0138, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0139, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -47,6 +47,13 @@
   newly decremented value and `refresh_cbr_o` reflects CONTROL.RM. The future
   arbiter must capture or retain this event until it performs the physical
   cycle; no service/acknowledge path exists yet.
+- **Integrated video timing** — Task 0139 runs the internal/noninterlaced
+  generator on the project `clk` under A0034. HCOUNT advances each positive
+  edge and wraps after HTOTAL; that wrap advances VCOUNT and wraps it after
+  VTOTAL. Processor counter loads take same-edge priority. The display event
+  is combinational for the `HCOUNT=HSBLNK && VCOUNT=DPYINT && ENV` interval
+  and is sampled into the DIP latch on the following clock edge. These are
+  functional clock relationships, not the original falling-VCLK pin phase.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
@@ -140,9 +147,29 @@ of the guide's one-to-two-state synchronization delay.
 The future SDC must mark the pin-to-first-stage paths asynchronous and the
 Quartus metastability report must recognize both chains. Those checks cannot
 be claimed until the real project exists. `host_int_set_i` and
-`dpyint_set_i` are currently synchronous core-clock pulses; host/video
-integration must cross their producer clocks with pulse/toggle handshakes
-rather than feeding raw pulses into a two-flop level synchronizer.
+`host_int_set_i` and the supplemental `dpyint_set_i` are currently
+synchronous core-clock pulses. The integrated Task 0139 display compare is
+same-clock and therefore needs no crossing yet. When it moves to VCLK, DIP
+delivery must use a lossless event handshake or equivalent pending-level
+protocol, timing configuration must use a coherent multi-bit transfer, and
+free-running counter observation must not synchronize binary bits
+independently.
+
+## Provisional video clock boundary
+
+Task 0139 intentionally closes functional register/timing integration before
+introducing the physical video clock. The current active-high timing interval
+outputs are core-clock signals. A future VCLK task must:
+
+- place HCOUNT/VCOUNT and timing compares in the VCLK domain;
+- transfer processor-written timing configurations coherently, with explicit
+  update acknowledgement where required;
+- provide reliable processor access to live counters without independently
+  synchronizing binary bits;
+- carry display-interrupt events into the core domain without losing a
+  one-VCLK pulse;
+- constrain both clocks and every crossing in SDC, then verify Quartus CDC
+  recognition and metastability reports.
 
 ## Cyclone V-specific notes
 

@@ -1,13 +1,14 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0138, with
+> Status: **implemented and ISA/status-audited through Task 0139, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Architectural fields are sequenced onto aligned 16-bit words;
 > REFCNT and the refresh requester are integrated at the core boundary.
-> Video timing remains standalone. The remaining system-level exit gates are
-> recorded in `completion_audit.md`.
+> Internal/noninterlaced video timing is integrated on the project clock;
+> display fetch and the real VCLK/CDC boundary remain open. The remaining
+> system-level exit gates are recorded in `completion_audit.md`.
 
 ## Specification source
 
@@ -66,10 +67,10 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
 ```
 
 The CPU, graphics execution engines, I/O register storage, interrupt entry,
-and REFCNT refresh requester currently live in or directly under
-`tms34010_core`. The field-to-word sequencer has landed below that core
-boundary. The lower local-bus/host fabric and physical refresh service remain
-planned; video timing is a standalone block awaiting integration.
+video timing, and REFCNT refresh requester currently live in or directly
+under `tms34010_core`. The field-to-word sequencer has landed below that core
+boundary. The lower local-bus/host/display-memory fabric, physical refresh
+service, and dedicated VCLK domain remain planned.
 
 ## Test substrate
 
@@ -86,7 +87,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0138** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, refresh-client boundary, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0139** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -105,8 +106,8 @@ has not landed.
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0138** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact interrupt sources, processor-side HSTCTLL, and live REFCNT/CONTROL.RR/RM integration; host/video integration remains |
-| `rtl/video/tms34010_video.sv`           | 9     | **landed (standalone)** | HSYNC/VSYNC/blanking generator: free-running HCOUNT/VCOUNT off VCLK, wraps at HTOTAL/VTOTAL, sync/blank window compares, DPYINT scan-line strobe. Not yet wired to the I/O register timing values or a pixel clock (Task 0097). |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0139** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact interrupt sources, processor-side HSTCTLL, live REFCNT, and live video counter/timing integration; host/display-address integration remains |
+| `rtl/video/tms34010_video.sv`           | 9     | **integrated (Task 0139)** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, sync/blank compares, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
@@ -152,7 +153,11 @@ Task 0138 corrected the refresh model against the individual REFCNT pages and
 made it the live I/O register. CONTROL.RR/RM now drive a continuous
 interval/row down-counter, while refresh request, decremented row, and mode
 leave the core for the future arbiter. Physical refresh bus service remains
-part of the local-memory fabric gate.
+part of the local-memory fabric gate. Task 0139 corrected the old standalone
+display-interrupt event from line start to start-of-HBLANK and integrated the
+timing registers, live HCOUNT/VCOUNT, DPYCTL.ENV, DIP latch, and timing
+outputs. A0034 records the deliberate same-clock/noninterlaced boundary until
+the real VCLK, external-sync, and interlace work lands.
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -248,13 +253,16 @@ to `ST_RESET_VALUE` at `CORE_INT_DONE`. The device auto-clears HSTCTLH.NMI on
 entry (a one-cycle `nmi_clear` into `tms34010_io_regs`) — mandatory, since a
 non-maskable request would otherwise re-fire every cycle.
 
-**Maskable pending sources** (Task 0137): raw active-low LINT1/LINT2 inputs
+**Maskable pending sources** (Tasks 0137 and 0139): raw active-low
+LINT1/LINT2 inputs
 pass through independent two-flop synchronizers and appear as read-only,
 level-sensitive INTPEND.X1P/X2P. HSTCTLL.INTIN appears as read-only HIP.
-Synchronous `host_int_set_i` and `dpyint_set_i` pulses set the host/display
-requests until software clears INTIN or writes zero to DIP; the graphics
-window path similarly latches WVP. INTENB retains only its five architected
-enable bits. The existing priority encoder implements
+Synchronous `host_int_set_i` can set the host request; `dpyint_set_i` remains
+as a supplemental integration/test sideband, while the integrated timing
+compare now sets DIP directly at start-of-HBLANK. Both requests remain until
+software clears INTIN or writes zero to DIP; the graphics window path
+similarly latches WVP. INTENB retains only its five architected enable bits.
+The existing priority encoder implements
 HI > DI > WV > INT1 > INT2, and direct tests cover both external vectors.
 
 ## Memory interface
@@ -303,13 +311,21 @@ and shared-memory access. The intended first implementation is a synchronous
 slave port; signal-level pin compatibility with original silicon is not a
 goal.
 
-## Video / display (standalone blocks only)
+## Video / display (timing integrated)
 
-`tms34010_video` produces counters, sync, blanking, and a display-interrupt
-pulse from explicit timing-register inputs. `tms34010_refresh` produces the
-refresh row and request cadence. Neither block is connected to the core's I/O
-registers, interrupt-pending bits, pixel-memory path, or a memory arbiter.
-VRAM shift-register behavior and pixel output are not implemented.
+`tms34010_video` consumes the Chapter 6 timing registers and owns live,
+processor-writable HCOUNT/VCOUNT. It produces active-high HSYNC/VSYNC and
+horizontal/vertical/combined blank intervals. DPYCTL.ENV=0 forces combined
+blank and inhibits new display interrupts; when enabled, the DPYINT line
+compare sets INTPEND.DIP at `HCOUNT=HSBLNK`, the start of horizontal blanking.
+The outputs are visible at the core boundary.
+
+This is the internal, noninterlaced functional subset and currently uses
+`clk` under A0004/A0034. It does not yet implement the independent VCLK
+domain, falling-edge pin phase, external synchronization, interlaced
+half-lines, DPYADR/DPYSTRT display address generation, VRAM shift-register
+transfers, or pixel output. `tms34010_refresh` is separately integrated with
+REFCNT but awaits service by the memory arbiter.
 
 ## Clock / reset strategy
 
@@ -333,10 +349,10 @@ VRAM shift-register behavior and pixel output are not implemented.
 - Original-pin external-bus phase generation, LRDY validation, reset
   initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
 - Host interface behavior.
-- Remaining host/video/refresh I/O side effects and internally completed I/O
-  accesses.
-- Integration of video timing with I/O registers and interrupts, plus refresh
-  request service in the memory fabric; display fetch and pixel output.
+- Remaining host/display-address I/O side effects and internally completed
+  I/O accesses.
+- Refresh request service in the memory fabric; VCLK/CDC, external sync,
+  interlace, display fetch, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.

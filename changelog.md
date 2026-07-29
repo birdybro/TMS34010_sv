@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0139 — integrated internal video timing and DIP)
+- Corrected display-interrupt generation against the register pages and
+  §9.7: the compare now fires at the start of horizontal blanking
+  (`HCOUNT=HSBLNK`) on the selected DPYINT line, not at line start.
+- Integrated all horizontal/vertical timing registers and DPYCTL.ENV with
+  `tms34010_io_regs`; HCOUNT/VCOUNT are now live writable counters and the
+  generated event sets the existing write-zero-clear INTPEND.DIP latch.
+- Made ENV=0 force the active-high internal BLANK indication and inhibit new
+  display interrupts, while leaving the counters free-running as specified.
+- Exported HSYNC/VSYNC and horizontal/vertical/combined blank intervals at
+  the core boundary. This increment intentionally retains the documented
+  same-clock internal/noninterlaced model; VCLK CDC, external sync, and
+  interlace remain later video tasks.
+- Added `tb_io_video` and strengthened `tb_video` for counter loads, the
+  corrected interrupt point, ENV behavior, register integration, and timing
+  outputs.
+- Validation: focused video/I/O/core benches PASS; `scripts/lint.sh` clean;
+  full regression 125/125 PASS.
+
 ### Fixed (Task 0138 — DRAM refresh and live REFCNT)
 - Corrected the old standalone refresh model against User's Guide pages
   6-45/6-46: REFCNT bits 2-15 are one continuous down-counter, RR=00/01

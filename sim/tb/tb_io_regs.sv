@@ -40,6 +40,9 @@ module tb_io_regs;
     .intenb_o(intenb_w), .intpend_o(intpend_w),
     .hstctlh_o(hstctlh_w), .refcnt_o(), .refresh_req_o(),
     .refresh_row_o(), .refresh_cbr_o(),
+    .hcount_o(), .vcount_o(),
+    .video_hsync_o(), .video_vsync_o(),
+    .video_hblank_o(), .video_vblank_o(), .video_blank_o(),
     .nmi_clear(1'b0), .wvp_set(1'b0),
     .dpyint_set(1'b0), .host_int_set(1'b0),
     .lint1_n_i(1'b1), .lint2_n_i(1'b1)

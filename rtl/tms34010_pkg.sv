@@ -324,6 +324,10 @@ package tms34010_pkg;
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYADR  = 5'h1E; // Display Address
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_REFCNT  = 5'h1F; // DRAM Refresh Count
 
+  // Display Control register fields used by the integrated timing generator
+  // (1988 User's Guide DPYCTL pages 6-18 through 6-23).
+  parameter int unsigned DPYCTL_ENV_BIT = 15; // enable video and display IRQ
+
   // Interrupt enable/pending (INTENB/INTPEND) bit positions and the trap vector
   // address of each maskable interrupt (1988 UG §8.3/8.4, Tables 8-2/8-3).
   // Priority (high→low): HI > DI > WV > INT1 > INT2 (internal before external).

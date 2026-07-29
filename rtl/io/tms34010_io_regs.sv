@@ -15,7 +15,7 @@
 // the host interface, which this FPGA reimplementation does not yet model;
 // resetting every register to 0 is therefore correct here.
 //
-// Current scope (Tasks 0081–0138):
+// Current scope (Tasks 0081–0139):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -25,8 +25,9 @@
 //     synchronized read-only external levels, read-only HSTCTLL.INTIN, and
 //     hardware-set/write-zero-to-clear DIP/WVP latches.
 //   - REFCNT is the live writable refresh counter driven by CONTROL.RR.
-//     HCOUNT/VCOUNT/DPYADR remain ordinary storage until their video
-//     producer is integrated.
+//   - HCOUNT/VCOUNT are live writable video counters. Timing registers feed
+//     the internal noninterlaced generator; DPYCTL.ENV gates BLANK and DIP.
+//     DPYADR remains ordinary storage until display fetch is integrated.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003), all registers -> 0.
@@ -72,6 +73,13 @@ module tms34010_io_regs
   output logic                  refresh_req_o, // one cycle at RINTVL underflow
   output logic [7:0]            refresh_row_o, // decremented ROWADR for request
   output logic                  refresh_cbr_o, // CONTROL.RM: 1=CAS-before-RAS
+  output logic [15:0]           hcount_o, // live horizontal video counter
+  output logic [15:0]           vcount_o, // live vertical video counter
+  output logic                  video_hsync_o,
+  output logic                  video_vsync_o,
+  output logic                  video_hblank_o,
+  output logic                  video_vblank_o,
+  output logic                  video_blank_o,
   input  logic                  nmi_clear,     // clear HSTCTLH.NMI after NMI entry
   input  logic                  wvp_set,       // synchronous INTPEND.WVP set pulse
   input  logic                  dpyint_set,    // synchronous INTPEND.DIP set pulse
@@ -94,6 +102,9 @@ module tms34010_io_regs
   logic lint2_n_sync;
   logic [15:0] intpend_value;
   logic        refcnt_load;
+  logic        hcount_load;
+  logic        vcount_load;
+  logic        video_dpyint_pulse;
 
   tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_lint1_sync (
     .clk     (clk),
@@ -111,6 +122,10 @@ module tms34010_io_regs
 
   assign refcnt_load =
       req && we && is_io && (idx == IO_IDX_REFCNT);
+  assign hcount_load =
+      req && we && is_io && (idx == IO_IDX_HCOUNT);
+  assign vcount_load =
+      req && we && is_io && (idx == IO_IDX_VCOUNT);
 
   // REFCNT is owned by the refresh block rather than mirrored in io_reg.
   // CONTROL.RR clocks its continuous interval/row counter, while a processor
@@ -127,6 +142,36 @@ module tms34010_io_regs
   );
 
   assign refresh_cbr_o = io_reg[IO_IDX_CONTROL][CTRL_RM_BIT];
+
+  // The project remains single-clock under A0004 at this integration stage.
+  // A later video-boundary task will move this instance to VCLK and replace
+  // direct counter/config wiring with explicit CDC structures.
+  tms34010_video u_video (
+    .clk           (clk),
+    .rst           (rst),
+    .hesync        (io_reg[IO_IDX_HESYNC]),
+    .heblnk        (io_reg[IO_IDX_HEBLNK]),
+    .hsblnk        (io_reg[IO_IDX_HSBLNK]),
+    .htotal        (io_reg[IO_IDX_HTOTAL]),
+    .vesync        (io_reg[IO_IDX_VESYNC]),
+    .veblnk        (io_reg[IO_IDX_VEBLNK]),
+    .vsblnk        (io_reg[IO_IDX_VSBLNK]),
+    .vtotal        (io_reg[IO_IDX_VTOTAL]),
+    .dpyint        (io_reg[IO_IDX_DPYINT]),
+    .display_enable(io_reg[IO_IDX_DPYCTL][DPYCTL_ENV_BIT]),
+    .hcount_load   (hcount_load),
+    .hcount_wdata  (wdata),
+    .vcount_load   (vcount_load),
+    .vcount_wdata  (wdata),
+    .hcount        (hcount_o),
+    .vcount        (vcount_o),
+    .hsync         (video_hsync_o),
+    .vsync         (video_vsync_o),
+    .hblank        (video_hblank_o),
+    .vblank        (video_vblank_o),
+    .blank         (video_blank_o),
+    .dpyint_pulse  (video_dpyint_pulse)
+  );
 
   // INTPEND is a composite view, not general storage. External requests and
   // HIP are read-only levels; only the internal DIP/WVP latches use io_reg.
@@ -150,6 +195,8 @@ module tms34010_io_regs
       unique case (idx)
         IO_IDX_INTPEND: rdata = intpend_value;
         IO_IDX_REFCNT:  rdata = refcnt_o;
+        IO_IDX_HCOUNT:  rdata = hcount_o;
+        IO_IDX_VCOUNT:  rdata = vcount_o;
         default:        rdata = io_reg[idx];
       endcase
     end
@@ -209,6 +256,11 @@ module tms34010_io_regs
             // port consumes this write, so no mirror storage is updated.
           end
 
+          IO_IDX_HCOUNT, IO_IDX_VCOUNT: begin
+            // The video submodule owns both live counters. Its parallel-load
+            // ports consume these writes, so no mirror storage is updated.
+          end
+
           default: io_reg[idx] <= wdata;
         endcase
       end
@@ -216,7 +268,7 @@ module tms34010_io_regs
       // Internal/host set pulses are independent of an unrelated processor
       // write. A set after a same-cycle write-zero clear wins, preventing an
       // interrupt event from being lost at the register boundary.
-      if (dpyint_set)
+      if (dpyint_set || video_dpyint_pulse)
         io_reg[IO_IDX_INTPEND][INT_DI_BIT] <= 1'b1;
       if (wvp_set)
         io_reg[IO_IDX_INTPEND][INT_WV_BIT] <= 1'b1;

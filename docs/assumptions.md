@@ -563,6 +563,41 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   inputs are deliberate integration sidebands; their future source-clock
   crossings remain explicit in `docs/timing_notes.md`.
 
+## A0034 — Provisional same-clock internal/noninterlaced video timing
+- **Date**: 2026-07-28 (Task 0139).
+- **Status**: deliberate functional integration boundary; dedicated VCLK/CDC,
+  external synchronization, and interlaced timing remain required before
+  final video compatibility.
+- **Source**: 1988 TMS34010 User's Guide pages 6-18 through 6-25, 6-31,
+  6-47, and §9.7 define the register behavior and video events. Project
+  conventions A0004/A0006 allow functional-first, single-clock increments but
+  do not replace the original VCLK behavior.
+- **Specification-derived behavior**: HCOUNT increments through HTOTAL and
+  wraps while advancing VCOUNT through VTOTAL; sync and blank intervals use
+  the H*/V* timing compares. DPYCTL.ENV=0 forces BLANK active and inhibits
+  setting DIP. When enabled, DIP is requested on the DPYINT-selected line at
+  start of horizontal blanking (`HCOUNT=HSBLNK`), not at HCOUNT zero.
+- **Provisional clock boundary**: `tms34010_video` currently runs on `clk`
+  under A0004 and advances on its positive edge. The original device uses a
+  separate VCLK and advances HCOUNT on falling VCLK. No claim is made about
+  pin phase, asynchronous CPU counter access, or video/core frequency ratio.
+  A later task must introduce the dedicated clock and use an explicit
+  multi-bit CDC protocol; synchronizing counter/config bits independently is
+  forbidden.
+- **Mode scope**: the integrated timing path is internal and noninterlaced.
+  DXV/external-sync correction and NIL=0 interlaced half-line behavior remain
+  unimplemented rather than being represented by misleading pseudo-support.
+- **Deterministic counter-write choice**: in the current same-clock model,
+  processor HCOUNT/VCOUNT loads take priority over automatic count updates.
+  An HCOUNT load suppresses a same-edge VCOUNT step, while an independent
+  VCOUNT load always wins for VCOUNT. The guide instead requires reliable
+  processor access only while VCLK is held high, so this collision precedence
+  is an FPGA-model choice, not an original-silicon guarantee.
+- **Regression evidence**: `tb_video` covers counter loads/wraps, timing
+  windows, ENV, and the corrected interrupt point. `tb_io_video` covers the
+  live register owners, combined blank, timing outputs, and integrated
+  hardware-set/write-zero-clear DIP behavior.
+
 ## A0033 — REFCNT reserved mode and deterministic write collision
 - **Date**: 2026-07-28 (Task 0138).
 - **Status**: deliberate behavior only where the primary guide is undefined;

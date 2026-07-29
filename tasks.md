@@ -2,11 +2,14 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0138. Task 0138
-corrected the legacy refresh model against the individual REFCNT pages,
-integrated the live counter with CONTROL and the I/O register file, and
-exported its request/row/mode boundary for the future memory fabric. Task
-0137 closed the interrupt-register/source portion of exit gate 3 by
+The functional implementation is complete through Task 0139. Task 0139
+corrected the display-interrupt compare point and integrated internal,
+noninterlaced video timing with the live I/O registers, DIP latch, and core
+timing outputs. Task 0138 corrected the legacy refresh model against the
+individual REFCNT pages, integrated the live counter with CONTROL and the I/O
+register file, and exported its request/row/mode boundary for the future
+memory fabric. Task 0137 closed the interrupt-register/source portion of exit
+gate 3 by
 implementing every maskable pending source, the external-pin synchronizers,
 and the exact processor-side register rules. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
@@ -175,6 +178,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0136 | Sequence architectural fields onto 16-bit memory words | complete |
 | 0137 | Complete interrupt-pending source semantics | complete |
 | 0138 | Correct and integrate DRAM refresh semantics | complete |
+| 0139 | Integrate internal noninterlaced video timing | complete |
 
 ---
 
@@ -4446,6 +4450,51 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 485f2d2
+
+---
+
+### Task 0139: Integrate internal noninterlaced video timing
+Status: complete
+Dependencies:
+- Task 0097 (standalone video timing generator).
+- Task 0137 (display-interrupt pending latch).
+- Task 0138 (current completion baseline).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 6-18 through 6-25
+  (DPYCTL.ENV, horizontal timing registers, and HCOUNT).
+- 1988 TI TMS34010 User's Guide pages 6-31 and 6-47
+  (DPYINT and VCOUNT).
+- 1988 TI TMS34010 User's Guide §9.7
+  (display interrupt at the start of horizontal blanking).
+Acceptance Criteria:
+- Drive the timing generator from the processor-visible HESYNC/HEBLNK/
+  HSBLNK/HTOTAL, VESYNC/VEBLNK/VSBLNK/VTOTAL, DPYCTL, and DPYINT registers.
+- Make HCOUNT and VCOUNT live writable counters rather than stale ordinary
+  register storage, with deterministic same-clock write precedence.
+- Correct DIP generation to the start of horizontal blanking
+  (`HCOUNT == HSBLNK`) on the selected VCOUNT line, latch it through the
+  existing hardware-set/write-zero-clear INTPEND path, and inhibit new DIP
+  events while DPYCTL.ENV is zero.
+- Force the active-high internal BLANK indication while ENV is zero and
+  export horizontal/vertical sync and blank intervals at the core boundary.
+- Keep this increment explicitly internal/noninterlaced and same-clock under
+  A0004/A0034; do not introduce an unsafe implicit multi-bit VCLK crossing.
+Tests:
+- `tb_video` PASS (writable counters, wraps, sync/blank windows, ENV gating,
+  and HSBLNK-positioned display-interrupt pulse).
+- `tb_io_video` PASS (live I/O counter reads/writes, timing outputs, ENV,
+  integrated DIP latch, and processor clear).
+- Existing `tb_io_regs`, `tb_io_interrupts`, `tb_io_refresh`, and `tb_smoke`
+  focused regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 125/125 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

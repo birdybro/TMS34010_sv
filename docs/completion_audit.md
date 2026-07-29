@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0138, with strict RTL
+> Baseline: functional implementation through Task 0139, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -83,6 +83,13 @@ borrow emits the 32/64-clock refresh request with a descending row, and
 CONTROL.RM plus request/row are exported at the core boundary. A physical
 refresh bus cycle and request retention still belong to the memory fabric.
 
+Task 0139 integrated the internal/noninterlaced timing subset with the I/O
+registers. HCOUNT/VCOUNT are live writable counters, DPYCTL.ENV forces blank
+and inhibits new display interrupts when clear, and the corrected
+`HCOUNT=HSBLNK` event sets the landed DIP latch on the selected DPYINT line.
+Timing intervals now leave the core boundary. The independent VCLK/CDC,
+external-sync, interlace, and display-memory paths remain exit-gate work.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -91,9 +98,10 @@ primary-spec evidence plus tests or retained as an explicit project-level
 deviation.
 
 A0003 (synchronous active-high FPGA reset), A0004 (single initial core
-clock), and A0006 (functional-first timing) are intentional design choices.
-They do not excuse missing architectural state or interface behavior; any
-remaining difference at final sign-off must be documented as a deliberate
+clock), A0006 (functional-first timing), and A0034 (provisional same-clock
+internal/noninterlaced video timing) are intentional design choices. They do
+not excuse missing architectural state or interface behavior; any remaining
+difference at final sign-off must be documented as a deliberate
 non-pin-compatible boundary.
 
 ## System integration gaps
@@ -103,8 +111,8 @@ non-pin-compatible boundary.
 - Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Connect the display timing pulse to the landed INTPEND.DI sideband and
-  drive HCOUNT/VCOUNT/DPYADR from the video subsystem.
+- Drive DPYADR from the display subsystem and complete the remaining
+  display/host register side effects.
 - Connect the host interface to the landed HSTCTLL.INTIN/HIP sideband and
   complete the complementary host-visible HSTCTL semantics.
 - Replace the provisional external-ack dependency for on-chip I/O accesses
@@ -126,10 +134,10 @@ non-pin-compatible boundary.
 
 ### Video/display
 
-- Integrate I/O timing registers with `tms34010_video`.
+- Define the pixel/video clock boundary and implement/document every CDC.
+- Add external-sync and interlaced timing modes.
 - Add display-address generation, VRAM serial-transfer/display-memory
   behavior, pixel output, and arbitration against CPU/graphics traffic.
-- Define the pixel/video clock boundary and implement/document every CDC.
 
 ### FPGA realization
 

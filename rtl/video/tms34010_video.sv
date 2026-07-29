@@ -1,10 +1,10 @@
 // -----------------------------------------------------------------------------
 // tms34010_video.sv
 //
-// Video timing generator for the TMS34010 (1988 User's Guide §"Video Timing",
-// the HESYNC/HEBLNK/HSBLNK/HTOTAL and V* registers). Free-running horizontal
-// and vertical counters driven by the video clock (VCLK) produce HSYNC/VSYNC
-// and the blanking signal, plus a display-interrupt strobe.
+// Video timing generator for the TMS34010 (1988 User's Guide §9 "Video
+// Timing" and the corresponding Chapter 6 I/O-register pages). Free-running
+// horizontal and vertical counters driven by the video clock (VCLK) produce
+// HSYNC/VSYNC and blanking, plus a display-interrupt strobe.
 //
 //   HCOUNT increments every clock; when HCOUNT == HTOTAL it wraps to 0 and the
 //   horizontal sync interval restarts. On each HCOUNT wrap, VCOUNT increments;
@@ -15,17 +15,19 @@
 //   blank, including the sync interval) or HCOUNT >= HSBLNK (the trailing
 //   blank); the visible region is HEBLNK..HSBLNK. The vertical signals are the
 //   analogous compares on VCOUNT. BLANK is asserted when either axis is
-//   blanking. DPYINT_PULSE is a one-clock strobe at the start of the scan line
-//   whose number equals DPYINT (the display-interrupt line).
+//   blanking or DPYCTL.ENV is clear. DPYINT_PULSE is a one-clock strobe at
+//   the start of horizontal blanking on the line selected by DPYINT.
 //
-// Scope (Task 0097 — standalone): a clean, synthesizable timing block, tested
-// directly (not yet wired to the core's I/O registers or a real pixel clock).
-// The spec resets HCOUNT on the VCLK FALLING edge; this synchronous design
-// uses the rising edge throughout (assumption A0003 reset/clock style).
+// Scope (Task 0139): internal, noninterlaced functional timing. The I/O block
+// drives this module from the project clock under A0004 until the dedicated
+// VCLK/CDC boundary lands. External-sync correction and interlaced half-line
+// timing remain separate video work. The original device advances HCOUNT on
+// falling VCLK; this positive-edge implementation preserves count ordering
+// but does not claim original pin phase (A0006).
 //
 // Spec source:
 //   third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf
-//   §"Video Timing"; HESYNC page 5-?, HEBLNK page 5-?.
+//   pages 6-18..6-25, 6-31, 6-47, and §9.7.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -47,6 +49,15 @@ module tms34010_video
   input  logic [15:0] vtotal,     // total - frame length (VCOUNT wrap)
   // Display-interrupt scan line.
   input  logic [15:0] dpyint,
+  input  logic        display_enable, // DPYCTL.ENV
+
+  // Processor counter writes. In the eventual VCLK implementation these
+  // become explicit clock-domain transactions; they are same-clock loads in
+  // the current A0004 functional model.
+  input  logic        hcount_load,
+  input  logic [15:0] hcount_wdata,
+  input  logic        vcount_load,
+  input  logic [15:0] vcount_wdata,
 
   output logic [15:0] hcount,
   output logic [15:0] vcount,
@@ -66,15 +77,22 @@ module tms34010_video
       hcount <= 16'd0;
       vcount <= 16'd0;
     end else begin
-      if (hwrap) begin
+      if (hcount_load) begin
+        hcount <= hcount_wdata;
+      end else if (hwrap) begin
         hcount <= 16'd0;
+      end else begin
+        hcount <= hcount + 16'd1;
+      end
+
+      if (vcount_load) begin
+        vcount <= vcount_wdata;
+      end else if (!hcount_load && hwrap) begin
         if (vcount == vtotal) begin
           vcount <= 16'd0;
         end else begin
           vcount <= vcount + 16'd1;
         end
-      end else begin
-        hcount <= hcount + 16'd1;
       end
     end
   end
@@ -84,12 +102,13 @@ module tms34010_video
   assign vsync  = (vcount < vesync);
   assign hblank = (hcount < heblnk) || (hcount >= hsblnk);
   assign vblank = (vcount < veblnk) || (vcount >= vsblnk);
-  assign blank  = hblank || vblank;
+  assign blank  = !display_enable || hblank || vblank;
 
-  // Display interrupt: a one-clock strobe at the start of the scan line whose
-  // number equals DPYINT. HCOUNT == 0 holds for exactly one clock per line, so
-  // (HCOUNT==0 && VCOUNT==DPYINT) is high for one clock at that line's start.
-  assign dpyint_pulse = (hcount == 16'd0) && (vcount == dpyint);
+  // Display interrupt: DPYINT matches VCOUNT at the start of horizontal
+  // blanking (HCOUNT == HSBLNK), at the end of the selected scan line.
+  // DPYCTL.ENV=0 inhibits new display-interrupt requests.
+  assign dpyint_pulse =
+      display_enable && (hcount == hsblnk) && (vcount == dpyint);
 
 endmodule : tms34010_video
 
