@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0151, with strict RTL
+> Baseline: functional implementation through Task 0152, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -180,8 +180,18 @@ in Q3/Q4 before the bus is released; the LAD/majority-control output enables
 drop at the following Q2 and DEN/DDOUT drop at Q3. The inverse sequence
 reacquires the bus after release. Active cycles still finish, queued commands
 cannot start while held, and the arbiter retains its partial-RMW restart
-contract. The final shared HLDA/EMUA output mux is still physical-wrapper
-work.
+contract. That task deliberately left the final shared HLDA/EMUA output mux
+as physical-wrapper work.
+
+Task 0152 closes the shared output that Task 0151 deliberately left split.
+Physical RUN/EMU is synchronized into the core with RUN as the safe reset
+value. Each architectural EMU event becomes a held CDC request that is
+acknowledged only after one complete Q1/Q2 pulse, while the separately
+registered halt level is sampled only at Q4-to-Q1 boundaries. The integrated
+pin system now exports one original HLDA/EMUA signal: EMUA owns every
+LCLK1-high Q1/Q2 half and HLDA owns every LCLK1-low Q3/Q4 half. Focused and
+end-to-end tests lock RUN-mode pulse count, halt/release, simultaneous HOLD,
+and phase exclusivity.
 
 ## Active architectural assumptions requiring closure
 
@@ -203,7 +213,8 @@ phase representation, synchronous-reset phase origin, deterministic
 undefined LAD value, and explicit CDC boundary. A0040 records the MCP's
 one-outstanding/common-reset contract and pending Quartus constraint proof.
 A0041 records physical HOLD's synchronized level handshake and phased
-output-enable implementation. These do not excuse
+output-enable implementation. A0042 records the one-outstanding EMU-event
+handshake and phase-latched halt indication. These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -218,8 +229,6 @@ deliberate non-pin-compatible boundary.
 
 ### Memory, refresh, and host fabric
 
-- Combine the landed Q3/Q4 HOLDA component with Q1/Q2 EMUA on the original
-  shared output pin.
 - Validate the one-entry DRAM-refresh service bound under the final PLL clock
   ratio, external waits, and physical HOLD behavior.
 - Implement HRDY and the asynchronous physical host wrapper/CDC around the
@@ -258,8 +267,8 @@ deliberate non-pin-compatible boundary.
    Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine, and Task
    0148 completed the coherent CDC/system hookup plus IAQ/screen-ORG path.
    Tasks 0149–0150 completed processor and host-indirect on-chip I/O cycles,
-   and Task 0151 completed physical HOLD/HOLDA bus release. The shared
-   HLDA/EMUA mux and host-pin portion remain.
+   Task 0151 completed physical HOLD/HOLDA bus release, and Task 0152 completed
+   the shared physical HLDA/EMUA output. The host-pin portion remains.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

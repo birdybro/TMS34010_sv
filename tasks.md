@@ -2,7 +2,9 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0151. Task 0151
+The functional implementation is complete through Task 0152. Task 0152
+phases the landed EMU handshake into exact Q1/Q2 windows and combines it with
+Q3/Q4 HLDA on the original shared output pin. Task 0151
 connects active-low physical HOLD to the fixed-priority arbiter through
 synchronized level handshakes and implements early Q3/Q4 HOLDA plus exact
 Q2/Q3 output-enable release and resume. Task 0150
@@ -221,6 +223,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0149 | Route processor I/O through physical I/O cycles | complete |
 | 0150 | Route host-indirect I/O through physical cycles | complete |
 | 0151 | Implement physical HOLD/HOLDA bus release | complete |
+| 0152 | Implement the shared physical HLDA/EMUA pin | complete |
 
 ---
 
@@ -5107,6 +5110,53 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `9f2794e` — Implement physical HOLD/HOLDA bus release (Task 0151)
+
+---
+
+### Task 0152: Implement the shared physical HLDA/EMUA pin
+Status: complete
+Dependencies:
+- Task 0128 (architectural RUN/EMU handshake and halt).
+- Task 0151 (Q3/Q4 HLDA component and physical HOLD release).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §2.5, Table 2-5, page 2-10
+  (HLDA in Q3/Q4, EMUA in Q1/Q2, halted indication, and one-LCLK1-cycle
+  opcode pulse).
+- 1988 TI TMS34010 User's Guide §11.4.11, page 11-20
+  (shared-pin mux selects HLDA while LCLK1 is low and EMUA while LCLK1 is
+  high).
+- 1988 TI TMS34010 User's Guide EMU instruction, page 12-77
+  (pulse EMUA, sample RUN/EMU, NOP in RUN, halt in EMU).
+Acceptance Criteria:
+- Synchronize the physical RUN/EMU input into the core domain with inactive
+  RUN as the reset-safe value.
+- Convert each core EMU execution into a source-held event and acknowledge
+  it only after one complete destination Q1/Q2 pulse has been emitted.
+- Cross the core halt state as a separately registered level and sample it
+  only at a Q4-to-Q1 boundary so EMUA never changes within Q1/Q2.
+- Drive EMUA active-low for exactly one complete Q1/Q2 window in RUN mode
+  and for every Q1/Q2 window while halted.
+- Drive the shared output from EMUA only while LCLK1 is high and from the
+  Task 0151 HLDA component only while LCLK1 is low.
+- Preserve both halves under simultaneous HOLD and EMU/halt conditions
+  without exposing an abstract duplicate pin at `tms34010_pin_system`.
+Tests:
+- Added `tb_emu_bridge` PASS with non-integer clocks, two re-armed held
+  events, simultaneous event/halt entry, repeating Q1/Q2 halt indication,
+  phase-aligned release, and independent Q3/Q4 HLDA selection.
+- Updated `tb_pin_system` PASS with a real RUN-mode opcode pulse,
+  synchronized physical emulator entry, repeating halt indication,
+  simultaneous HOLD, HLDA-only release, and execution resume.
+- Existing `tb_emu`, `tb_local_bus_hold`, and `tb_local_bus` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 139/139 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`,
+  `docs/memory_map.md`, and `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

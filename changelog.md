@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0152 — shared physical HLDA/EMUA pin)
+- Synchronized the active-low physical RUN/EMU input into the core domain
+  with RUN as the reset-safe state.
+- Added `tms34010_emu_bridge`, which stretches each one-core-clock EMU event
+  into a held four-phase CDC request and acknowledges it only after one
+  complete destination Q1/Q2 pulse.
+- Registered and synchronized the emulator-halt level separately, then
+  sampled it only at Q4-to-Q1 boundaries so halt entry and exit cannot
+  truncate an EMUA half-cycle.
+- Replaced the integrated wrapper's separate diagnostic EMUA and HLDA outputs
+  with the original shared pin: EMUA exclusively owns LCLK1-high Q1/Q2 and
+  HLDA exclusively owns LCLK1-low Q3/Q4.
+- Added `tb_emu_bridge` for asynchronous event delivery, re-arming, halt
+  entry/exit, and simultaneous HOLD; extended `tb_pin_system` with a real
+  RUN-mode opcode pulse, physical emulator halt, HOLD overlap, and resume.
+- Validation: focused bridge/EMU/HOLD/pin benches PASS; `scripts/lint.sh`
+  clean; full regression 139/139 PASS.
+
 ### Added (Task 0151 — physical HOLD/HOLDA bus release)
 - Replaced the pin-system's abstract HOLD request/acknowledge ports with an
   active-low physical HOLD input and a Q3/Q4-phased active-low HOLDA output.

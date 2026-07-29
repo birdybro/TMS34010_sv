@@ -598,11 +598,46 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0042 — Physical RUN/EMU event bridge and shared output
+- **Date**: 2026-07-28 (Task 0152).
+- **Status**: specification-derived physical RUN/EMU synchronization and
+  HLDA/EMUA phasing; Quartus synchronizer recognition and output timing remain
+  part of the FPGA sign-off gate.
+- **Sources**: 1988 TI TMS34010 User's Guide §2.5, Table 2-5, page 2-10;
+  §11.4.11, page 11-20; and the EMU instruction on page 12-77.
+- **Physical input**: RUN/EMU passes through a dedicated 2FF synchronizer into
+  the core clock domain. Both stages reset to one, the inactive RUN level, so
+  reset release cannot spuriously request emulator mode. The FPGA top still
+  owns the documented electrical pull-up choice.
+- **Execute event**: a registered source request stretches the core's
+  one-clock EMU execute indication. The 8× domain waits for Q4B-to-Q1A,
+  drives EMUA low for exactly Q1/Q2, and registers its acknowledge only at
+  Q2B-to-Q3A after that complete pulse. The source then drops the request,
+  completing a four-phase one-outstanding handshake.
+- **One-outstanding bound**: in the current cacheless system, another EMU
+  cannot execute until its opcode fetch crosses and completes on the same
+  physical bus. That fetch takes longer than the destination pulse and
+  handshake return, so two execute events cannot coalesce. A future
+  instruction cache must either retain that bound or add explicit event
+  backpressure/queueing.
+- **Halt level**: the core halt state is registered before its own 2FF
+  crossing. The destination latches it only at Q4B-to-Q1A, so assertion or
+  release cannot truncate a Q1/Q2 window. While halted, every Q1/Q2 half is
+  active; Q3/Q4 remain available to HLDA.
+- **Shared mux**: LCLK1 high selects active-low EMUA; LCLK1 low selects the
+  Task 0151 active-low HLDA component. Simultaneous halt and HOLD may keep the
+  physical pin continuously low, but each half remains attributable to its
+  specified function.
+- **Regression evidence**: `tb_emu_bridge` uses asynchronous clocks and locks
+  two independent events, handshake re-arm, halt entry/release, and HOLD
+  overlap. `tb_pin_system` executes a real RUN-mode EMU, enters physical
+  emulator halt, overlaps HOLD, and resumes while checking every phase.
+
 ## A0041 — Physical HOLD/HOLDA CDC and output-enable boundary
 - **Date**: 2026-07-28 (Task 0151).
 - **Status**: specification-derived physical release sequencing with an
-  explicit FPGA I/O-enable boundary; final shared HLDA/EMUA mux and TimeQuest
-  proof remain open.
+  explicit FPGA I/O-enable boundary; Task 0152 completes the shared
+  HLDA/EMUA mux, while TimeQuest proof remains open.
 - **Sources**: 1988 TI TMS34010 User's Guide §2.5, Table 2-5, pages 2-10
   through 2-11; §11.3, page 11-4; and §11.4.11, Figures 11-15/11-16,
   pages 11-18 through 11-21.
@@ -624,9 +659,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   within-clock relationships.
 - **Tri-state boundary**: synthesizable internal RTL exports explicit
   per-group output enables instead of assigning `Z` inside the controller.
-  The FPGA top must map them to device I/O buffers, constrain those enable
-  paths, and combine Q3/Q4 HOLDA with the Q1/Q2 EMUA component on the original
-  shared pin.
+  The FPGA top must map them to device I/O buffers and constrain those enable
+  paths. Task 0152 combines Q3/Q4 HOLDA with Q1/Q2 EMUA on the original
+  shared pin inside the integrated pin system.
 - **Regression evidence**: `tb_local_bus_hold` locks end-Q1 sampling, early
   acknowledge, exact Q2/Q3 release/resume, held-command suppression, and
   active-cycle completion. `tb_pin_system` proves the synchronized path
@@ -704,8 +739,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   only through the A0040 MCP bridge and propagates IAQ plus screen ORG.
   Tasks 0149–0150 now generate processor and host-indirect I/O cycle
   kinds/data upstream. Task 0151 adds sampled physical HOLD, phased HOLDA,
-  and explicit output-enable release; only the final shared HLDA/EMUA mux
-  remains separate.
+  and explicit output-enable release; Task 0152 completes the shared
+  HLDA/EMUA output.
 - **Regression evidence**: `tb_local_bus` verifies both LCLK waveforms, all
   seven cycle kinds, exact word/screen/refresh/I/O address/status values,
   write/read/control ordering, mid-Q4 read data, ordinary and
@@ -925,9 +960,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0032 — Abstract RUN/EMU handshake and deterministic status
 - **Date**: 2026-07-28 (Task 0128).
-- **Status**: deliberate core-boundary choice; Task 0151 completes the HOLDA
-  half, while physical EMUA phasing/shared-pin timing remains a
-  system-integration TODO.
+- **Status**: deliberate deterministic core-boundary choice, physically
+  integrated by Task 0152.
 - **Source**: 1988 TMS34010 User's Guide page 12-77 (“Initiate Emulation”)
   and page 2-10 (RUN/EMU and HLDA/EMUA pin descriptions).
 - **Architectural behavior**: opcode `0x0100` asserts active-low EMUA while
@@ -942,13 +976,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   indeterminate. This RTL preserves the complete ST word in both sampled
   modes, providing deterministic FPGA behavior without software-visible flag
   writes.
-- **Deferred physical behavior**: the original output is multiplexed as
-  HLDA/EMUA and its EMUA pulse is specified in Q1/Q2/LCLK1 terms. Task 0151
-  supplies the Q3/Q4 HOLDA component, but the abstract core pulse still
-  requires phase conversion and combination in the future physical wrapper.
-  This implementation also does not claim an external emulator's private
-  state-access protocol; it implements only the documented instruction
-  handshake, halt, and resume boundary.
+- **Physical resolution**: Task 0152 synchronizes physical RUN/EMU, converts
+  the core pulse through the A0042 held-event bridge, phase-latches the halt
+  level, and combines Q1/Q2 EMUA with Q3/Q4 HLDA. This implementation does
+  not claim an external emulator's private state-access protocol; it
+  implements only the documented instruction handshake, halt, resume, and
+  shared-pin indication.
 - **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
@@ -1022,6 +1055,5 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Shared Q1/Q2 EMUA and Q3/Q4 HOLDA output-pin multiplexing.
 - Remaining I/O side effects and host-visible semantics not yet implemented
   by `tms34010_io_regs`.

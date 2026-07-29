@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0151. Task 0124
+The functional implementation is complete through Task 0152. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -77,6 +77,9 @@ Task 0151 samples active-low HOLD at the documented end-Q1 boundary, crosses
 the request and quiescent arbiter grant as synchronized levels, emits the
 Q3/Q4 active-low HOLDA component, and sequences LAD/control output enables
 off and back on at their specified Q2/Q3 boundaries.
+Task 0152 synchronizes physical RUN/EMU into the core, bridges each EMU
+execution and the emulator-halt level into the 8× domain, and drives the
+original shared pin as exact Q1/Q2 EMUA plus Q3/Q4 HLDA.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
@@ -84,9 +87,8 @@ fetch, maskable/NMI entry with architectural service-context ST
 initialization, and the illegal-opcode trap. Video timing is functionally
 integrated through its screen-refresh client and physical memory-to-register
 cycle; a dedicated VCLK/CDC boundary, external sync, interlace, and VRAM
-serial-display service remain future work. The shared HLDA/EMUA pin mux,
-HRDY, and the asynchronous host pin wrapper remain future physical-wrapper
-work. Read
+serial-display service remain future work. HRDY and the asynchronous host pin
+wrapper remain future physical-wrapper work. Read
 `tasks.md`, `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 
@@ -154,11 +156,14 @@ RTL, tests, task log, changelog, and specification first.
   attributed request/ack toggles cross through 2FF synchronizers.
 - `rtl/tms34010_system.sv` — synthesizable functional wrapper connecting the
   core's CPU, host, display, and refresh clients to the memory fabric.
-- `rtl/tms34010_pin_system.sv` — integrated functional system, CDC bridge,
-  and original local-bus pins; synchronous host and abstract HOLD boundaries
-  remain exposed.
+- `rtl/tms34010_pin_system.sv` — integrated functional system, CDC bridges,
+  original local-bus/HOLD/RUN-EMU pins, and shared HLDA/EMUA output;
+  synchronous host boundary remains exposed.
+- `rtl/cdc/tms34010_emu_bridge.sv` — held EMU-event handshake, synchronized
+  halt level, exact Q1/Q2 phasing, and Q3/Q4 HLDA mux.
 - `rtl/cdc/tms34010_sync_bit.sv` — dedicated, Quartus-recognizable two-flop
-  synchronizer used for each asynchronous external interrupt level.
+  synchronizer used for external interrupt, HOLD, RUN/EMU, and EMUA bridge
+  levels.
 - `sim/models/sim_memory_model.sv` — behavioral, nonsynthesizable bit-addressed
   memory target used by integration tests; its public requests route through
   the field sequencer.

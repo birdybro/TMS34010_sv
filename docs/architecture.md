@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0151, with
+> Status: **implemented and ISA/status-audited through Task 0152, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -20,6 +20,8 @@
 > Active-low HOLD is sampled in the physical phase engine and exchanged with
 > the core arbiter through synchronized levels; HOLDA and every affected bus
 > output enable follow the documented Q2/Q3 release and resume boundaries.
+> Physical RUN/EMU is synchronized into the core, and exact Q1/Q2 EMUA is
+> combined with Q3/Q4 HLDA on the original shared output.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; VRAM serial-display service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -81,8 +83,9 @@ sequencer and local-cycle arbiter are composed by
 `tms34010_memory_fabric`; `tms34010_system` connects every core client to that
 fabric. `tms34010_local_bus_bridge` crosses that held command and its response
 coherently into/out of the 8× domain, while `tms34010_pin_system` composes the
-system, bridge, and `tms34010_local_bus`. The shared HLDA/EMUA pin mux, the
-asynchronous host pins, the dedicated VCLK domain, and the FPGA
+system, bridge, and `tms34010_local_bus`; `tms34010_emu_bridge` closes the
+RUN/EMU event/level CDC and shared output mux. The asynchronous host pins,
+the dedicated VCLK domain, and the FPGA
 clock/constraint project remain planned.
 
 ## Test substrate
@@ -104,7 +107,7 @@ host-indirect I/O write/read cycles.
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
 | `rtl/tms34010_system.sv`                | 6     | **landed through Task 0150** | functional-system wrapper connecting all core memory clients, including both I/O paths and the arbiter-side HOLD level, to one abstract controller boundary |
-| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0151** | integrated core-clock system, MCP bridge, 8× original-pin local bus, and synchronized physical HOLD/HOLDA release; shared HLDA/EMUA and host pin wrappers pending |
+| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0152** | integrated core-clock system, MCP bridge, 8× original-pin local bus, physical HOLD/RUN-EMU CDC, and shared HLDA/EMUA output; host pin wrapper pending |
 | `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0150** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, opcode IAQ, processor/host-I/O sidebands and completion, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
@@ -124,8 +127,9 @@ host-indirect I/O write/read cycles.
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | **integrated through Task 0150** | shared processor/host HSTADR/HSTDATA storage, independent indirect-I/O port, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
-| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0151** | dedicated attributed two-flop synchronizer used for active-low LINT levels and both physical-HOLD handshake levels |
+| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0152** | dedicated attributed two-flop synchronizer used for LINT, HOLD, RUN/EMU, and EMUA event/halt handshake levels |
 | `rtl/cdc/tms34010_local_bus_bridge.sv`  | 6     | **landed (Task 0148)** | two-phase MCP command/response CDC; source-held payloads and returned read data, one outstanding transaction |
+| `rtl/cdc/tms34010_emu_bridge.sv`        | 6     | **landed (Task 0152)** | source-held EMU-event handshake, synchronized halt level, exact Q1/Q2 EMUA windows, and Q3/Q4 HLDA shared-pin mux |
 | `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0150** | 32×16-bit memory-mapped I/O register file; processor and host-indirect read/write views with completion-qualified commits; integrated host engine, exact interrupt sources, HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0148** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP/ORG request, and acknowledge-time DUDATE/ORG update; interlaced adjustment remains |
@@ -271,8 +275,17 @@ active-low HOLDA during Q3/Q4, releases LAD plus RAS/LAL/CAS/W/TR/QE at the
 following Q2, and releases DEN/DDOUT at Q3. It retains those output enables
 inactive until an end-Q1 release sample, then reacquires the same groups at
 Q2 and Q3. Commands cannot start while held, and an active physical cycle
-still completes before grant. The actual shared HLDA/EMUA pin mux remains a
-separate wrapper boundary.
+still completes before grant. That task deliberately left the actual shared
+HLDA/EMUA pin mux as a separate wrapper boundary.
+
+Task 0152 closes that final shared-pin boundary. Physical RUN/EMU first passes
+through a reset-to-RUN 2FF synchronizer before the core samples it. Every EMU
+execute pulse sets a held source request; `tms34010_emu_bridge` acknowledges
+it only after an exact Q1/Q2 destination pulse has completed. The registered
+halt level crosses separately and is latched only on Q4B-to-Q1A, preventing a
+partial EMUA window. LCLK1 high selects that EMUA result, while LCLK1 low
+selects Task 0151's HLDA component. Simultaneous halt and HOLD therefore drive
+the shared pin low in both halves for their independent reasons.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -351,9 +364,9 @@ during `CORE_EXECUTE` and samples `run_emu_n_i`. A high RUN sample retires as
 a side-effect-free NOP. A low EMU sample enters `CORE_EMU_HALT`, holds EMUA
 low, and issues no instruction or memory request; PC already names the
 following instruction. Returning RUN high resumes at `CORE_FETCH`. This is an
-abstract single-clock core boundary. Task 0151 implements the Q3/Q4 HOLDA
-half of the physical output; exact Q1/Q2 EMUA phasing and the final shared
-HLDA/EMUA mux remain responsibilities of the physical wrapper (A0032).
+abstract single-clock core boundary. Task 0152 preserves that core contract
+while adding physical RUN/EMU synchronization, lossless event transfer, exact
+Q1/Q2 EMUA phasing, and the shared Q3/Q4 HLDA mux (A0032/A0042).
 
 **Illegal-opcode entry** (Task 0122): encodings in the reserved ranges from
 User's Guide Table 8-6 never reach execute. From `CORE_DECODE`, they enter the
@@ -527,7 +540,7 @@ waits.
 
 ## Current implementation gaps
 
-- Shared HLDA/EMUA pin mux and the optional instruction cache.
+- Optional instruction cache.
 - Host HRDY/pin timing/CDC.
 - Remaining non-host I/O side effects.
 - VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.

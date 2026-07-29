@@ -43,8 +43,9 @@ module tb_pin_system;
   logic            tr_qe_oe;
   logic            den_oe;
   logic            ddout_oe;
+  logic            run_emu_n = 1'b1;
   logic            hold_n = 1'b1;
-  logic            hlda_n;
+  logic            hlda_emua_n;
   local_subphase_t subphase;
   logic            init_done;
   logic            local_busy;
@@ -83,6 +84,8 @@ module tb_pin_system;
   logic   saw_cpu_io_write_data = 1'b0;
   logic   saw_host_io_write_data = 1'b0;
   logic   saw_io_read_data_phase = 1'b0;
+  logic   emu_halt_arm = 1'b0;
+  logic   emu_halt_injected = 1'b0;
 
   always #8 core_clk = ~core_clk;
   always #1 bus_clk8x = ~bus_clk8x;
@@ -93,8 +96,7 @@ module tb_pin_system;
     .core_clk_i        (core_clk),
     .bus_clk8x_i       (bus_clk8x),
     .rst               (rst),
-    .run_emu_n_i       (1'b1),
-    .emua_n_o          (),
+    .run_emu_n_i       (run_emu_n),
     .hcs_n_i           (1'b0),
     .host_req_i        (host_req),
     .host_we_i         (host_we),
@@ -109,7 +111,7 @@ module tb_pin_system;
     .lint2_n_i         (1'b1),
     .dpyint_set_i      (1'b0),
     .hold_n_i          (hold_n),
-    .hlda_n_o          (hlda_n),
+    .hlda_emua_n_o     (hlda_emua_n),
     .video_hsync_o     (),
     .video_vsync_o     (),
     .video_hblank_o    (),
@@ -171,6 +173,7 @@ module tb_pin_system;
         32'h0000_0060: program_word = 16'h05A1; // MOVE @PMASK,A1
         32'h0000_0070: program_word = PMASK_ADDR[15:0];
         32'h0000_0080: program_word = PMASK_ADDR[31:16];
+        32'h0000_0090: program_word = 16'h0100; // EMU in RUN state
         default:       program_word = 16'h0300; // NOP
       endcase
     end
@@ -191,6 +194,7 @@ module tb_pin_system;
       io_address_count = 0;
       io_write_address_count = 0;
       io_read_address_count = 0;
+      emu_halt_injected = 1'b0;
     end else begin
       if (bridge_busy)
         saw_bridge_busy = 1'b1;
@@ -269,7 +273,12 @@ module tb_pin_system;
                 || (physical_bit_address[29:4] == 26'h0000008))
               check(!lad_o[15],
                     "MOVI/MOVE absolute extension word must drive IAQ low");
-            read_data_q = program_word(physical_bit_address);
+            if (lad_o[15] && emu_halt_arm && !emu_halt_injected) begin
+              read_data_q = 16'h0100;
+              emu_halt_injected = 1'b1;
+            end else begin
+              read_data_q = program_word(physical_bit_address);
+            end
           end
         end
 
@@ -398,6 +407,30 @@ module tb_pin_system;
     end
   endtask
 
+  task automatic check_emu_window(input string label);
+    int unsigned watchdog;
+    begin
+      watchdog = 0;
+      while (!((subphase == LOCAL_PHASE_Q1A) && !hlda_emua_n)
+             && (watchdog < 5000)) begin
+        @(negedge bus_clk8x);
+        watchdog++;
+      end
+      check(watchdog < 5000, {label, " EMUA window timed out"});
+      check(subphase == LOCAL_PHASE_Q1A,
+            {label, " EMUA did not start in Q1A"});
+      check(!hlda_emua_n, {label, " EMUA inactive in Q1A"});
+      wait_bus_phase(LOCAL_PHASE_Q1B);
+      check(!hlda_emua_n, {label, " EMUA inactive in Q1B"});
+      wait_bus_phase(LOCAL_PHASE_Q2A);
+      check(!hlda_emua_n, {label, " EMUA inactive in Q2A"});
+      wait_bus_phase(LOCAL_PHASE_Q2B);
+      check(!hlda_emua_n, {label, " EMUA inactive in Q2B"});
+      wait_bus_phase(LOCAL_PHASE_Q3A);
+      check(hlda_emua_n, {label, " EMUA leaked into Q3/Q4"});
+    end
+  endtask
+
   initial begin
     local_word_t rd;
     logic [ADDR_WIDTH-1:0] held_pc;
@@ -412,6 +445,13 @@ module tb_pin_system;
     repeat (6) @(posedge core_clk);
     @(negedge core_clk);
     rst = 1'b0;
+
+    // The fixed EMU at address 0090h executes in RUN mode. Its core-clock
+    // event must become one and only one complete Q1/Q2 pulse on the shared
+    // physical output.
+    check_emu_window("RUN-mode");
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    check(hlda_emua_n, "RUN-mode EMUA repeated without another opcode");
 
     wait (pc >= 32'd160);
     repeat (3) @(posedge core_clk);
@@ -481,14 +521,14 @@ module tb_pin_system;
     end while (!local_busy || !bridge_busy);
     hold_n = 1'b0;
     wait_bus_phase(LOCAL_PHASE_Q2A);
-    check(hlda_n, "HLDA asserted on the HOLD sample edge");
+    check(hlda_emua_n, "HLDA asserted on the HOLD sample edge");
 
     watchdog = 0;
-    while (hlda_n && (watchdog < 400)) begin
+    while (hlda_emua_n && (watchdog < 400)) begin
       @(negedge bus_clk8x);
       watchdog++;
     end
-    check(!hlda_n, "physical HOLD did not produce early HLDA");
+    check(!hlda_emua_n, "physical HOLD did not produce early HLDA");
     check(subphase == LOCAL_PHASE_Q3A,
           "first HLDA assertion must begin in Q3");
     check_majority_oe(1'b1, "integrated early HLDA");
@@ -498,7 +538,7 @@ module tb_pin_system;
     check_majority_oe(1'b0, "integrated HOLD release Q2");
     check_slow_oe(1'b1, "integrated HOLD release Q2");
     wait_bus_phase(LOCAL_PHASE_Q3A);
-    check(!hlda_n, "HLDA must repeat while HOLD remains active");
+    check(!hlda_emua_n, "HLDA must repeat while HOLD remains active");
     check_majority_oe(1'b0, "integrated HOLD release Q3");
     check_slow_oe(1'b0, "integrated HOLD release Q3");
 
@@ -517,11 +557,11 @@ module tb_pin_system;
     wait_bus_phase(LOCAL_PHASE_Q1A);
     hold_n = 1'b1;
     wait_bus_phase(LOCAL_PHASE_Q2A);
-    check(hlda_n, "HLDA did not become inactive after HOLD release");
+    check(hlda_emua_n, "HLDA did not become inactive after HOLD release");
     check_majority_oe(1'b0, "integrated release sample Q2");
     check_slow_oe(1'b0, "integrated release sample Q2");
     wait_bus_phase(LOCAL_PHASE_Q3A);
-    check(hlda_n, "HLDA remained active during release Q3/Q4");
+    check(hlda_emua_n, "HLDA remained active during release Q3/Q4");
     check_majority_oe(1'b0, "integrated release sample Q3");
     check_slow_oe(1'b0, "integrated release sample Q3");
     wait_bus_phase(LOCAL_PHASE_Q2A);
@@ -538,6 +578,82 @@ module tb_pin_system;
     end
     check(pc != held_pc, "processor did not resume after physical HOLD");
 
+    // Arm one dynamic opcode only after the live-traffic HOLD test. RUN/EMU
+    // is first held low long enough to cross into the core, so that opcode
+    // enters the quiescent emulator state instead of acting as a NOP.
+    run_emu_n = 1'b0;
+    repeat (3) @(posedge core_clk);
+    emu_halt_arm = 1'b1;
+    watchdog = 0;
+    while ((core_state != CORE_EMU_HALT) && (watchdog < 400)) begin
+      @(posedge core_clk);
+      watchdog++;
+    end
+    check(core_state == CORE_EMU_HALT,
+          "physical RUN/EMU low did not enter emulator halt");
+    emu_halt_arm = 1'b0;
+    held_pc = pc;
+
+    check_emu_window("halt");
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    check(!hlda_emua_n, "halted EMUA did not repeat in Q1/Q2");
+    wait_bus_phase(LOCAL_PHASE_Q3A);
+    check(hlda_emua_n, "halted EMUA leaked into inactive-HLDA Q3/Q4");
+
+    // Simultaneous emulator halt and HOLD exercise both halves of the shared
+    // pin: EMUA owns Q1/Q2 and HLDA owns Q3/Q4.
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    hold_n = 1'b0;
+    watchdog = 0;
+    while (!((subphase == LOCAL_PHASE_Q3A) && !hlda_emua_n)
+           && (watchdog < 400)) begin
+      @(negedge bus_clk8x);
+      watchdog++;
+    end
+    check(watchdog < 400, "halted HOLD did not produce Q3 HLDA");
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    check(!hlda_emua_n, "EMUA missing from Q1 during simultaneous HOLD");
+    wait_bus_phase(LOCAL_PHASE_Q3A);
+    check(!hlda_emua_n, "HLDA missing from Q3 during simultaneous halt");
+
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    hold_n = 1'b1;
+    watchdog = 0;
+    while (!((subphase == LOCAL_PHASE_Q3A) && hlda_emua_n)
+           && (watchdog < 400)) begin
+      @(negedge bus_clk8x);
+      watchdog++;
+    end
+    check(watchdog < 400, "HLDA did not release while emulator stayed halted");
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    check(!hlda_emua_n, "releasing HOLD also released halted EMUA");
+
+    // Returning RUN high leaves halt after the synchronized sample and
+    // releases EMUA only on a complete Q1/Q2 boundary.
+    run_emu_n = 1'b1;
+    watchdog = 0;
+    while ((core_state == CORE_EMU_HALT) && (watchdog < 100)) begin
+      @(posedge core_clk);
+      watchdog++;
+    end
+    check(core_state != CORE_EMU_HALT,
+          "processor did not leave emulator halt");
+    watchdog = 0;
+    while (!((subphase == LOCAL_PHASE_Q1A) && hlda_emua_n)
+           && (watchdog < 400)) begin
+      @(negedge bus_clk8x);
+      watchdog++;
+    end
+    check(watchdog < 400, "EMUA did not release on resume");
+    wait_bus_phase(LOCAL_PHASE_Q3A);
+    check(hlda_emua_n, "inactive HLDA missing after emulator resume");
+    watchdog = 0;
+    while ((pc == held_pc) && (watchdog < 100)) begin
+      @(posedge core_clk);
+      watchdog++;
+    end
+    check(pc != held_pc, "execution did not resume after emulator halt");
+
     check(instr_word == 16'h0300, "pin-supplied NOP was not fetched");
     check(!illegal_opcode, "pin-level NOP stream raised illegal opcode");
     check(local_busy || (core_state != CORE_RESET),
@@ -552,7 +668,7 @@ module tb_pin_system;
   end
 
   initial begin
-    #50000;
+    #100000;
     $display("TEST_RESULT: FAIL (timeout)");
     $finish;
   end

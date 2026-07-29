@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0151. Task 0124
+Functional implementation work is complete through Task 0152. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -64,6 +64,9 @@ Task 0151 connects the active-low physical HOLD input to the existing
 fixed-priority arbiter through synchronized level handshakes, emits the
 Q3/Q4-only active-low HOLDA component, and phases LAD/control output-enable
 release and reacquisition at the specified Q2/Q3 boundaries.
+Task 0152 synchronizes RUN/EMU, transfers each architectural EMU event into
+the 8× domain with a held handshake, and combines exact Q1/Q2 EMUA with
+Q3/Q4 HLDA on the original shared output pin.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -82,7 +85,8 @@ The repository currently contains:
 - an integrated synchronous four-register host engine with shared
   processor/host HSTADR/HSTDATA state, byte-order triggers, pre-read/post-write
   incrementing, stalled-request stability, and an exposed local-word client;
-- RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
+- synchronized physical RUN/EMU sampling, exact Q1/Q2 EMUA pulse/halt
+  indication, and resume;
 - a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
   partial-word RMW locking/restart, and arbitrary word-side stalls;
 - a synthesizable fixed-priority HOLD/screen/DRAM/host/CPU local-cycle
@@ -100,16 +104,18 @@ The repository currently contains:
 - active-low physical HOLD sampling and synchronized grant return, with
   early Q3/Q4 HOLDA indication and explicit Q2/Q3 LAD/control output-enable
   release/resume sequencing;
+- the original shared HLDA/EMUA output, with lossless EMU-event CDC and
+  phase-exclusive EMUA/HLDA selection under simultaneous halt and HOLD;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 138 self-checking SystemVerilog testbenches, including an exhaustive
+- 139 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining shared HLDA/EMUA pin mux, physical VRAM serial
-service, host pin wrapper/HRDY/CDC, remaining I/O side effects, video
+the audit records the remaining physical VRAM serial service, host pin
+wrapper/HRDY/CDC, remaining I/O side effects, video
 display-memory behavior and VCLK/CDC, real Quartus project/constraints, and
 timing/resource validation.
 

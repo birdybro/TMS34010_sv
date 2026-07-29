@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0151, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0152, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -19,6 +19,7 @@
 | CPU request classification → field/I/O select | Task 0149 | one registered stage, unmeasured | retain the registered loop break; inspect fanout only if TimeQuest identifies it |
 | Host I/O read mux → grant snapshot      | Task 0150        | grant-registered, unmeasured | retain the host-grant sample; do not let live counters cross the MCP as changing payload |
 | HOLD request/grant CDC → phased output enables | Task 0151 | synchronized levels, unmeasured | preserve both 2FF chains; keep all OE/HOLDA decoding wholly in the 8× domain and constrain final I/O timing |
+| EMU held-event/halt CDC → shared pin     | Task 0152        | source-held/phase-latched, unmeasured | preserve all three 2FF chains; constrain the final Q1/Q2 EMUA and Q3/Q4 HLDA mux at the I/O boundary |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -74,9 +75,11 @@
   sampling RUN/EMU. RUN proceeds through ordinary writeback as a NOP. EMU
   enters `CORE_EMU_HALT`, holds EMUA low, issues no memory request, and stays
   halted for an unbounded number of core cycles until RUN returns high.
-  Task 0151 supplies the Q3/Q4 HOLDA half of the shared output. Original
-  Q1/Q2 EMUA pulse phasing and final HLDA/EMUA pin multiplexing are deferred
-  to the physical wrapper (A0032).
+  Task 0152 synchronizes the physical input, stretches the execute event until
+  one complete Q1/Q2 pulse is acknowledged, phase-latches the halt level, and
+  selects Task 0151's HLDA result in Q3/Q4. CDC latency may delay the physical
+  indication by complete local clocks but cannot shorten either half-cycle
+  (A0032/A0042).
 - **Physical HOLD/HOLDA release** — the 8× engine samples active-low HOLD at
   the end of Q1 and synchronizes the resulting level into the core domain.
   The arbiter grants only after its active owner completes; the synchronized
@@ -84,7 +87,8 @@
   LAD/majority-control output enables at the following Q2, and drops
   DEN/DDOUT at Q3. After end-Q1 release sampling, the inverse Q2/Q3 sequence
   reacquires the bus. Synchronizer latency may add whole local clocks before
-  either sequence begins but cannot alter its quarter-phase ordering.
+  either sequence begins but cannot alter its quarter-phase ordering. The
+  shared pin selects this HLDA value only in Q3/Q4.
 - **DRAM-refresh request** — REFCNT resets to zero while CONTROL.RR resets to
   `00`. The first active core/local clock subtracts two from RINTVL, borrows
   into ROWADR (`0 → 255`), and registers `refresh_req_o` for one clock with

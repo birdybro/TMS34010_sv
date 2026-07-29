@@ -2,13 +2,13 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0151**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0152**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
 > bridge, processor/host-indirect on-chip I/O use the dedicated cycle kinds,
-> and physical HOLD/HOLDA bus release is integrated; the shared HLDA/EMUA
-> mux, host pins, and several register side effects remain.
+> physical HOLD/HOLDA bus release and the shared HLDA/EMUA output are
+> integrated; host pins and several register side effects remain.
 
 ## Architectural address space
 
@@ -88,6 +88,12 @@ end-Q1; synchronized request/grant levels allow the current cycle to finish,
 then phase HOLDA and the physical output-enable groups through Q3/Q4, Q2,
 and Q3. Address/data and all affected controls remain released until the
 inverse resume sequence completes.
+
+Task 0152 completes the hold/emulator pin around that bus. Physical RUN/EMU
+is synchronized into the core; a held event bridge turns each architectural
+EMU execution into one complete Q1/Q2 EMUA pulse, and a phase-latched halt
+level repeats it while stopped. LCLK1 selects EMUA in Q1/Q2 and the Task 0151
+HLDA result in Q3/Q4 on one shared output.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -226,7 +232,6 @@ pixel output.
 
 ## Uncertain / partially implemented areas
 
-- Shared Q1/Q2 EMUA and Q3/Q4 HOLDA output-pin multiplexing.
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
 - Host HRDY/pin timing and CDC.

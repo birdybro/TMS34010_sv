@@ -8,9 +8,12 @@
 // The synchronous host-register boundary remains exposed for a later
 // asynchronous pin wrapper. Physical active-low HOLD is sampled in the 8×
 // domain, synchronized to the core arbiter, and returned as phased HLDA plus
-// explicit local-bus output enables. Processor and host-indirect on-chip I/O
-// requests use LOCAL_CYCLE_IO_* and carry their internal read data through
-// the coherent command bundle.
+// explicit local-bus output enables. RUN/EMU is synchronized into the core;
+// each architectural EMU event and the halt level cross back to the 8×
+// domain before Q1/Q2 EMUA is combined with Q3/Q4 HLDA on the original shared
+// output. Processor and host-indirect on-chip I/O requests use
+// LOCAL_CYCLE_IO_* and carry their internal read data through the coherent
+// command bundle.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -23,7 +26,6 @@ module tms34010_pin_system
   input  logic                              rst,
 
   input  logic                              run_emu_n_i,
-  output logic                              emua_n_o,
 
   input  logic                              hcs_n_i,
   input  logic                              host_req_i,
@@ -41,7 +43,7 @@ module tms34010_pin_system
   input  logic                              dpyint_set_i,
 
   input  logic                              hold_n_i,
-  output logic                              hlda_n_o,
+  output logic                              hlda_emua_n_o,
 
   output logic                              video_hsync_o,
   output logic                              video_vsync_o,
@@ -102,6 +104,11 @@ module tms34010_pin_system
   logic                              core_hold_req;
   logic                              core_hold_ack;
   logic                              local_hold_grant;
+  logic                              core_run_emu_n;
+  logic                              core_emua_n;
+  logic                              core_emu_event;
+  logic                              core_emu_halt;
+  logic                              local_hlda_n;
 
   always_comb begin
     core_command            = '0;
@@ -133,11 +140,20 @@ module tms34010_pin_system
     .sync_o  (local_hold_grant)
   );
 
+  // RUN/EMU is a physical input. Its inactive RUN level is the reset-safe
+  // value, and only the synchronized result is sampled by the core.
+  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_run_emu_sync (
+    .clk     (core_clk_i),
+    .rst     (rst),
+    .async_i (run_emu_n_i),
+    .sync_o  (core_run_emu_n)
+  );
+
   tms34010_system u_system (
     .clk                (core_clk_i),
     .rst                (rst),
-    .run_emu_n_i        (run_emu_n_i),
-    .emua_n_o           (emua_n_o),
+    .run_emu_n_i        (core_run_emu_n),
+    .emua_n_o           (core_emua_n),
     .hcs_n_i            (hcs_n_i),
     .host_req_i         (host_req_i),
     .host_we_i          (host_we_i),
@@ -212,7 +228,7 @@ module tms34010_pin_system
     .hold_n_i           (hold_n_i),
     .hold_req_o         (local_hold_req),
     .hold_grant_i       (local_hold_grant),
-    .hlda_n_o           (hlda_n_o),
+    .hlda_n_o           (local_hlda_n),
     .lrdy_i             (lrdy_i),
     .lad_i              (lad_i),
     .lad_o              (lad_o),
@@ -234,6 +250,29 @@ module tms34010_pin_system
     .den_oe_o           (den_oe_o),
     .ddout_oe_o         (ddout_oe_o),
     .subphase_o         (subphase_o)
+  );
+
+  assign core_emu_event =
+      (state_o == CORE_EXECUTE) && !core_emua_n;
+  // Register the sampled-low execute decision on the same edge as the event,
+  // then retain it only while the synchronized pin keeps the core halted.
+  // This prevents a faster 8× domain from seeing a one-window gap between
+  // the opcode pulse and the repeating halt indication.
+  assign core_emu_halt =
+      ((state_o == CORE_EXECUTE) && !core_emua_n && !core_run_emu_n)
+      || ((state_o == CORE_EMU_HALT) && !core_run_emu_n);
+
+  tms34010_emu_bridge u_emu_bridge (
+    .src_clk_i       (core_clk_i),
+    .src_rst_i       (rst),
+    .src_event_i     (core_emu_event),
+    .src_halt_i      (core_emu_halt),
+    .dst_clk_i       (bus_clk8x_i),
+    .dst_rst_i       (rst),
+    .dst_subphase_i  (subphase_o),
+    .dst_lclk1_i     (lclk1_o),
+    .dst_hlda_n_i    (local_hlda_n),
+    .hlda_emua_n_o   (hlda_emua_n_o)
   );
 
 endmodule : tms34010_pin_system
