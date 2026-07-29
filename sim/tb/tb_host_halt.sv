@@ -33,10 +33,13 @@ module tb_host_halt;
   instr_word_t                   instr_w;
   logic                          illegal_w;
   logic                          hcs_n;
-  logic                          host_ctl_we;
-  logic [1:0]                    host_ctl_be;
-  logic [15:0]                   host_ctl_wdata;
-  logic [15:0]                   host_ctl_rdata;
+  logic                          host_req;
+  logic                          host_we;
+  host_reg_sel_t                 host_reg;
+  logic [1:0]                    host_be;
+  logic [15:0]                   host_wdata;
+  logic [15:0]                   host_rdata;
+  logic                          host_ack;
   logic                          hint_n;
   logic                          refresh_req;
   logic                          refresh_cbr;
@@ -68,11 +71,21 @@ module tb_host_halt;
     .run_emu_n_i     (1'b1),
     .emua_n_o        (),
     .hcs_n_i         (hcs_n),
-    .host_ctl_we_i   (host_ctl_we),
-    .host_ctl_be_i   (host_ctl_be),
-    .host_ctl_wdata_i(host_ctl_wdata),
-    .host_ctl_rdata_o(host_ctl_rdata),
+    .host_req_i      (host_req),
+    .host_we_i       (host_we),
+    .host_reg_i      (host_reg),
+    .host_be_i       (host_be),
+    .host_wdata_i    (host_wdata),
+    .host_rdata_o    (host_rdata),
+    .host_ack_o      (host_ack),
+    .host_busy_o     (),
     .hint_n_o        (hint_n),
+    .host_mem_req_o  (),
+    .host_mem_we_o   (),
+    .host_mem_addr_o (),
+    .host_mem_wdata_o(),
+    .host_mem_rdata_i(16'h0000),
+    .host_mem_ack_i  (1'b0),
     .lint1_n_i       (1'b1),
     .lint2_n_i       (1'b1),
     .dpyint_set_i    (1'b0),
@@ -145,16 +158,36 @@ module tb_host_halt;
   int unsigned video_steps_while_halted;
   logic [15:0] previous_hcount;
 
-  task automatic host_high_write(input logic [15:0] write_data);
+  task automatic host_cycle(
+    input logic        write_access,
+    input logic [15:0] write_data
+  );
     begin
       @(negedge clk);
-      host_ctl_we    = 1'b1;
-      host_ctl_be    = 2'b10;
-      host_ctl_wdata = write_data;
+      host_req   = 1'b1;
+      host_we    = write_access;
+      host_reg   = HOST_REG_HSTCTL;
+      host_be    = 2'b10;
+      host_wdata = write_data;
+      while (!host_ack) begin
+        @(posedge clk);
+        #1;
+      end
       @(negedge clk);
-      host_ctl_we = 1'b0;
-      host_ctl_be = 2'b00;
+      host_req = 1'b0;
+      host_we  = 1'b0;
+      host_be  = 2'b00;
+      @(posedge clk);
+      #1;
     end
+  endtask
+
+  task automatic host_high_write(input logic [15:0] write_data);
+    host_cycle(1'b1, write_data);
+  endtask
+
+  task automatic host_ctl_read;
+    host_cycle(1'b0, 16'h0000);
   endtask
 
   task automatic check_word(
@@ -212,9 +245,11 @@ module tb_host_halt;
     video_steps_while_halted = 0;
     previous_hcount        = 16'h0000;
     hcs_n                  = 1'b1;
-    host_ctl_we            = 1'b0;
-    host_ctl_be            = 2'b00;
-    host_ctl_wdata         = 16'h0000;
+    host_req               = 1'b0;
+    host_we                = 1'b0;
+    host_reg               = HOST_REG_HSTCTL;
+    host_be                = 2'b00;
+    host_wdata             = 16'h0000;
 
     for (i = 0; i < 1024; i++)
       u_mem.mem[i] = 16'h0300;
@@ -241,11 +276,12 @@ module tb_host_halt;
     rst = 1'b0;
 
     wait (state_w == CORE_RESET_HALT);
+    host_ctl_read();
     #1;
     check_word("host-present reset PC held", pc_w, RESET_PC);
     check_bit("host-present reset memory quiescent", mem_req, 1'b0);
     check_bit("host-present reset HLT visible",
-              host_ctl_rdata[HSTCTL_HLT_BIT], 1'b1);
+              host_rdata[HSTCTL_HLT_BIT], 1'b1);
     repeat (40) begin
       @(posedge clk);
       #1;
@@ -267,13 +303,14 @@ module tb_host_halt;
     wait (state_w == CORE_FETCH_IMM_HI && pc_w >= BOOT_PC + 32'd128);
     host_high_write(HLT_MASK);
     wait (state_w == CORE_HOST_HALT);
+    host_ctl_read();
     #1;
     halted_pc = pc_w;
     check_word("current long instruction completed before halt",
                u_core.u_regfile.a_regs[2], 32'h1234_5678);
     check_bit("run-time halt memory quiescent", mem_req, 1'b0);
     check_bit("run-time HLT visible",
-              host_ctl_rdata[HSTCTL_HLT_BIT], 1'b1);
+              host_rdata[HSTCTL_HLT_BIT], 1'b1);
 
     // NMI asserted while already halted remains pending and performs no entry.
     host_high_write(HLT_MASK | NMI_NMIM_MASK);
@@ -290,9 +327,10 @@ module tb_host_halt;
     // Clear only HLT. The retained NMI request is then serviced.
     host_high_write(NMI_NMIM_MASK);
     wait (u_core.u_regfile.a_regs[5] == 32'h0000_0001);
+    host_ctl_read();
     #1;
     check_bit("resumed NMI auto-cleared",
-              host_ctl_rdata[HSTCTL_NMI_BIT], 1'b0);
+              host_rdata[HSTCTL_NMI_BIT], 1'b0);
 
     // With the core running in the handler loop, assert NMI and HLT together.
     // NMI entry must complete first, then HLT stops before the first handler
@@ -300,14 +338,15 @@ module tb_host_halt;
     wait (state_w == CORE_EXECUTE);
     host_high_write(HLT_MASK | NMI_NMIM_MASK);
     wait (state_w == CORE_HOST_HALT);
+    host_ctl_read();
     #1;
     check_word("simultaneous NMI+HLT entered before handler instruction",
                u_core.u_regfile.a_regs[5], 32'h0000_0001);
     check_word("simultaneous NMI+HLT service PC", pc_w, NMI_PC);
     check_bit("simultaneous NMI auto-cleared",
-              host_ctl_rdata[HSTCTL_NMI_BIT], 1'b0);
+              host_rdata[HSTCTL_NMI_BIT], 1'b0);
     check_bit("simultaneous HLT retained",
-              host_ctl_rdata[HSTCTL_HLT_BIT], 1'b1);
+              host_rdata[HSTCTL_HLT_BIT], 1'b1);
 
     repeat (20) @(posedge clk);
     if (video_steps_while_halted == 0) begin
@@ -322,9 +361,10 @@ module tb_host_halt;
 
     host_high_write(16'h0000);
     wait (u_core.u_regfile.a_regs[5] == 32'h0000_0002);
+    host_ctl_read();
     #1;
     check_bit("final HLT clear visible",
-              host_ctl_rdata[HSTCTL_HLT_BIT], 1'b0);
+              host_rdata[HSTCTL_HLT_BIT], 1'b0);
     check_bit("HINT remains inactive", hint_n, 1'b1);
     check_bit("no illegal opcode", illegal_w, 1'b0);
     check_bit("refresh mode remains RAS-only", refresh_cbr, 1'b0);

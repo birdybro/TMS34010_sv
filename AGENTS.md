@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0143. Task 0124
+The functional implementation is complete through Task 0144. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -47,7 +47,10 @@ HSTCTL boundary, per-side message/interrupt ownership, active-low HINT,
 HCS-selected reset halt, and instruction-boundary HLT/NMI behavior. Task 0143
 landed the synchronous HSTADR/HSTDATA register and indirect-memory engine,
 including LBL byte ordering, INCR/INCW sequencing, prefetch buffering,
-backpressure, and held local-word requests. The
+backpressure, and held local-word requests. Task 0144 integrated that engine
+with the I/O/core hierarchy, shared its state with processor accesses,
+generalized the core boundary to all four host registers, and exposed its
+held local-word client for the memory arbiter. The
 implementation includes the
 multicycle CPU core, the currently tracked instruction set, bit-field memory
 operations, graphics
@@ -56,8 +59,8 @@ registers, reset-vector fetch, maskable/NMI entry with architectural
 service-context ST initialization, and the illegal-opcode trap. Video timing
 is functionally integrated through its screen-refresh client; a dedicated
 VCLK/CDC boundary, external sync, interlace, and the physical VRAM transfer
-cycle remain future work. Physical refresh service remains part of the future
-memory fabric; host-engine integration/arbitration and the asynchronous pin
+cycle remain future work. Physical refresh service and host/local arbitration
+remain part of the future memory fabric; HRDY and the asynchronous host pin
 wrapper also remain future work. Read `tasks.md`,
 `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.

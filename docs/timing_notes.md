@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0143, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0144, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -47,6 +47,9 @@
   read; INCW changes it only on local-write acknowledge. These are internal
   core-clock relationships. The future pin wrapper must reproduce the
   asynchronous HCS/HRDY timing in §10.3.2.
+  Task 0144 routes this four-register handshake through the core/I/O boundary
+  and exports the held local-word request unchanged; the future arbiter must
+  acknowledge only completed local service, not selection.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
@@ -177,11 +180,12 @@ of the guide's one-to-two-state synchronization delay.
 
 The future SDC must mark the pin-to-first-stage paths asynchronous and the
 Quartus metastability report must recognize both chains. Those checks cannot
-be claimed until the real project exists. The direct `host_ctl_*` interface
-and supplemental `dpyint_set_i` are currently synchronous core-clock
-transactions/events. The future asynchronous host pin wrapper must transfer
-each completed control write coherently and return stable read data/HINT
-under its HRDY protocol. The integrated Task 0139 display compare is
+be claimed until the real project exists. The integrated four-register
+`host_*` request/ack interface and supplemental `dpyint_set_i` are currently
+synchronous core-clock transactions/events. The future asynchronous host pin
+wrapper must transfer each completed register cycle coherently and return
+stable read data/HINT under its HRDY protocol. The integrated Task 0139
+display compare is
 same-clock and therefore needs no crossing yet. When it moves to VCLK, DIP
 delivery must use a lossless event handshake or equivalent pending-level
 protocol, timing configuration must use a coherent multi-bit transfer, and

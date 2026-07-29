@@ -20,10 +20,12 @@ module tb_host_control;
   always #5 clk = ~clk;
 
   logic                  hcs_n;
-  logic                  host_ctl_we;
-  logic [1:0]            host_ctl_be;
-  logic [15:0]           host_ctl_wdata;
-  logic [15:0]           host_ctl_rdata;
+  logic                  host_req;
+  logic                  host_we;
+  logic [1:0]            host_be;
+  logic [15:0]           host_wdata;
+  logic [15:0]           host_rdata;
+  logic                  host_ack;
   logic                  hint_n;
   logic                  hlt;
   logic                  req;
@@ -51,12 +53,22 @@ module tb_host_control;
     .clk           (clk),
     .rst           (rst),
     .hcs_n_i       (hcs_n),
-    .host_ctl_we_i (host_ctl_we),
-    .host_ctl_be_i (host_ctl_be),
-    .host_ctl_wdata_i(host_ctl_wdata),
-    .host_ctl_rdata_o(host_ctl_rdata),
+    .host_req_i    (host_req),
+    .host_we_i     (host_we),
+    .host_reg_i    (HOST_REG_HSTCTL),
+    .host_be_i     (host_be),
+    .host_wdata_i  (host_wdata),
+    .host_rdata_o  (host_rdata),
+    .host_ack_o    (host_ack),
+    .host_busy_o   (),
     .hint_n_o      (hint_n),
     .hlt_o         (hlt),
+    .host_mem_req_o(),
+    .host_mem_we_o (),
+    .host_mem_addr_o(),
+    .host_mem_wdata_o(),
+    .host_mem_rdata_i(16'h0000),
+    .host_mem_ack_i(1'b0),
     .req           (req),
     .we            (we),
     .addr          (addr),
@@ -96,18 +108,41 @@ module tb_host_control;
 
   int unsigned failures;
 
-  task automatic host_write(
+  task automatic host_cycle(
+    input logic        write_access,
     input logic [1:0]  byte_enable,
     input logic [15:0] write_data
   );
     begin
       @(negedge clk);
-      host_ctl_we    = 1'b1;
-      host_ctl_be    = byte_enable;
-      host_ctl_wdata = write_data;
+      host_req   = 1'b1;
+      host_we    = write_access;
+      host_be    = byte_enable;
+      host_wdata = write_data;
+      while (!host_ack) begin
+        @(posedge clk);
+        #1;
+      end
       @(negedge clk);
-      host_ctl_we = 1'b0;
-      host_ctl_be = 2'b00;
+      host_req = 1'b0;
+      host_we  = 1'b0;
+      host_be  = 2'b00;
+      @(posedge clk);
+      #1;
+    end
+  endtask
+
+  task automatic host_read;
+    host_cycle(1'b0, 2'b11, 16'h0000);
+  endtask
+
+  task automatic host_write(
+    input logic [1:0]  byte_enable,
+    input logic [15:0] write_data
+  );
+    begin
+      host_cycle(1'b1, byte_enable, write_data);
+      host_read();
     end
   endtask
 
@@ -158,9 +193,10 @@ module tb_host_control;
   initial begin : main
     failures      = 0;
     hcs_n         = 1'b1;
-    host_ctl_we   = 1'b0;
-    host_ctl_be   = 2'b00;
-    host_ctl_wdata = 16'h0000;
+    host_req      = 1'b0;
+    host_we       = 1'b0;
+    host_be       = 2'b00;
+    host_wdata    = 16'h0000;
     req           = 1'b0;
     we            = 1'b0;
     addr          = A_HSTCTLL;
@@ -169,33 +205,35 @@ module tb_host_control;
 
     repeat (3) @(posedge clk);
     #1;
-    check_word("host-present reset HSTCTL", host_ctl_rdata, HLT_MASK);
     check_bit("host-present reset HLT output", hlt, 1'b1);
     check_bit("reset HINT inactive", hint_n, 1'b1);
     rst = 1'b0;
+    host_read();
+    check_word("host-present reset HSTCTL", host_rdata, HLT_MASK);
 
     // High byte is shared by both sides; reserved bits always read zero.
     host_write(2'b10, 16'hFFFF);
-    check_word("host high-byte writable mask", host_ctl_rdata,
+    check_word("host high-byte writable mask", host_rdata,
                HSTCTLH_WRITABLE_MASK);
     check_word("processor HSTCTLH tap matches host read",
                hstctlh, HSTCTLH_WRITABLE_MASK);
     check_bit("host high-byte HLT set", hlt, 1'b1);
 
     host_write(2'b10, 16'h0000);
-    check_word("host clears high byte", host_ctl_rdata, 16'h0000);
+    check_word("host clears high byte", host_rdata, 16'h0000);
     check_bit("host clears HLT", hlt, 1'b0);
 
     // Host owns MSGIN, sets INTIN with one, cannot modify MSGOUT, and cannot
     // clear INTOUT by writing one.
     host_write(2'b01, 16'h008D);
-    check_word("host low ownership", host_ctl_rdata, 16'h000D);
+    check_word("host low ownership", host_rdata, 16'h000D);
     check_word("host INTIN reflected as HIP",
                intpend & HIP_MASK, HIP_MASK);
 
     // Processor owns MSGOUT, clears INTIN with zero, and sets INTOUT with one.
     io_write(A_HSTCTLL, 16'h00F0);
-    check_word("processor low ownership", host_ctl_rdata, 16'h00F5);
+    host_read();
+    check_word("processor low ownership", host_rdata, 16'h00F5);
     check_word("processor clears INTIN/HIP",
                intpend & HIP_MASK, 16'h0000);
     check_bit("INTOUT asserts active-low HINT", hint_n, 1'b0);
@@ -203,15 +241,15 @@ module tb_host_control;
     // Host changes MSGIN, sets INTIN, and clears INTOUT. Processor MSGOUT
     // remains intact.
     host_write(2'b01, 16'h000B);
-    check_word("host complementary low update", host_ctl_rdata, 16'h007B);
+    check_word("host complementary low update", host_rdata, 16'h007B);
     check_word("host re-sets INTIN/HIP", intpend & HIP_MASK, HIP_MASK);
     check_bit("host clears INTOUT/HINT", hint_n, 1'b1);
 
     // A high-only write cannot disturb the low byte and vice versa.
     host_write(2'b10, 16'h8100);
-    check_word("high-only byte enable", host_ctl_rdata, 16'h817B);
+    check_word("high-only byte enable", host_rdata, 16'h817B);
     host_write(2'b01, 16'h0086);
-    check_word("low-only byte enable", host_ctl_rdata, 16'h817E);
+    check_word("low-only byte enable", host_rdata, 16'h817E);
 
     // Processor high-byte writes receive the same reserved-bit mask.
     io_write(A_HSTCTLH, 16'hFFFF);
@@ -227,16 +265,23 @@ module tb_host_control;
     we             = 1'b1;
     addr           = A_HSTCTLL;
     wdata          = 16'h0080;
-    host_ctl_we    = 1'b1;
-    host_ctl_be    = 2'b01;
-    host_ctl_wdata = 16'h0008;
+    host_req   = 1'b1;
+    host_we    = 1'b1;
+    host_be    = 2'b01;
+    host_wdata = 16'h0008;
+    @(posedge clk);
+    #1;
     @(negedge clk);
     req         = 1'b0;
     we          = 1'b0;
-    host_ctl_we = 1'b0;
-    host_ctl_be = 2'b00;
+    host_req    = 1'b0;
+    host_we     = 1'b0;
+    host_be     = 2'b00;
+    @(posedge clk);
+    #1;
+    host_read();
     check_word("simultaneous low producer wins",
-               host_ctl_rdata & 16'h0088, 16'h0088);
+               host_rdata & 16'h0088, 16'h0088);
     check_bit("simultaneous processor INTOUT asserts HINT", hint_n, 1'b0);
 
     // Original-silicon conflicting high writes are unpredictable. This
@@ -246,29 +291,43 @@ module tb_host_control;
     we             = 1'b1;
     addr           = A_HSTCTLH;
     wdata          = NMI_MASK;
-    host_ctl_we    = 1'b1;
-    host_ctl_be    = 2'b10;
-    host_ctl_wdata = HLT_MASK;
+    host_req   = 1'b1;
+    host_we    = 1'b1;
+    host_be    = 2'b10;
+    host_wdata = HLT_MASK;
+    @(posedge clk);
+    #1;
     @(negedge clk);
     req         = 1'b0;
     we          = 1'b0;
-    host_ctl_we = 1'b0;
-    host_ctl_be = 2'b00;
+    host_req    = 1'b0;
+    host_we     = 1'b0;
+    host_be     = 2'b00;
+    @(posedge clk);
+    #1;
+    host_read();
     check_word("simultaneous high host priority",
-               host_ctl_rdata & 16'hFF00, HLT_MASK);
+               host_rdata & 16'hFF00, HLT_MASK);
 
     // A host NMI set also wins the automatic clear on the same edge.
     @(negedge clk);
-    host_ctl_we    = 1'b1;
-    host_ctl_be    = 2'b10;
-    host_ctl_wdata = NMI_MASK;
-    nmi_clear      = 1'b1;
+    host_req   = 1'b1;
+    host_we    = 1'b1;
+    host_be    = 2'b10;
+    host_wdata = NMI_MASK;
+    nmi_clear  = 1'b1;
+    @(posedge clk);
+    #1;
     @(negedge clk);
-    host_ctl_we = 1'b0;
-    host_ctl_be = 2'b00;
-    nmi_clear   = 1'b0;
+    host_req  = 1'b0;
+    host_we   = 1'b0;
+    host_be   = 2'b00;
+    nmi_clear = 1'b0;
+    @(posedge clk);
+    #1;
+    host_read();
     check_word("host NMI write wins auto-clear",
-               host_ctl_rdata & NMI_MASK, NMI_MASK);
+               host_rdata & NMI_MASK, NMI_MASK);
 
     // Reassert reset with HCS active low: all fields, including HLT, clear.
     @(negedge clk);
@@ -276,7 +335,7 @@ module tb_host_control;
     rst   = 1'b1;
     repeat (2) @(posedge clk);
     #1;
-    check_word("self-bootstrap reset HSTCTL", host_ctl_rdata, 16'h0000);
+    check_word("self-bootstrap reset HSTCTLH", hstctlh, 16'h0000);
     check_bit("self-bootstrap reset HLT", hlt, 1'b0);
     check_bit("self-bootstrap reset HINT", hint_n, 1'b1);
 

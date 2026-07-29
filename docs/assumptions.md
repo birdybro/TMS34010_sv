@@ -569,6 +569,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   HSTADR/HSTDATA register and indirect-cycle semantics behind a synchronous
   request/ack boundary. Its I/O-block and memory-fabric connections remain
   the next integration task.
+- **Task 0144 checkpoint**: the engine is now instantiated in the I/O block.
+  One generalized core request/ack port selects all four host registers,
+  processor accesses share its HSTADR/HSTDATA state, and its held aligned-word
+  client is exposed for the future arbiter.
 
 ## A0037 — Synchronous host-indirect boundary and invalid-access collisions
 - **Date**: 2026-07-28 (Task 0143).
@@ -599,13 +603,15 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   same-edge processor access. An explicit processor access wins over an
   automatic returning-read or INCW update; an accepted host access would win
   over both. Captured local payload never changes after any later collision.
-- **Integration boundary**: the engine is synthesizable and directly tested,
-  but Task 0143 does not yet instantiate it in the I/O/core hierarchy or
-  arbitrate its local-word client. Task 0144 owns those connections.
+- **Integration boundary**: Task 0144 instantiates the engine in the I/O/core
+  hierarchy and exposes its local-word client. The next memory-fabric task
+  must arbitrate and service that client; the physical host wrapper must
+  provide HRDY, pin strobes, and CDC.
 - **Regression evidence**: `tb_host_if` covers reset, processor no-side-effect
   access, HSTCTL forwarding, both LBL orders, prefetch, INCR/INCW timing,
   partial-byte merging, request stability, backpressure, wraparound, and the
-  deterministic invalid-collision rule.
+  deterministic invalid-collision rule. `tb_host_integration` covers the
+  shared core/I/O state and complete exported local-word path.
 
 ## A0036 — Synchronous direct-host boundary and collision precedence
 - **Date**: 2026-07-28 (Task 0142).
@@ -621,23 +627,20 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   instruction boundary, blocks every interrupt while already halted, and
   leaves refresh/video functions running. A new simultaneous NMI+HLT
   completes NMI entry and halts before the first handler instruction.
-- **FPGA boundary**: `host_ctl_we_i`, `host_ctl_be_i`, and write data are
-  synchronous completed host-control transactions in the core clock domain;
-  read data and HINT are combinational views. The future host-pin wrapper must
-  implement physical strobes, HRDY, and coherent asynchronous CDC. This task
-  does not claim original-pin timing.
+- **FPGA boundary**: the current `host_req_i` transaction carries a register
+  selector, direction, byte enables, and write data in the core clock domain;
+  registered acknowledge, read data, busy, and HINT complete the synchronous
+  abstraction. The future host-pin wrapper must implement physical strobes,
+  HRDY, and coherent asynchronous CDC. This does not claim original-pin
+  timing.
 - **Collision choices**: the guide declares conflicting simultaneous
   host/processor HSTCTLH writes unpredictable; this boundary chooses host
   priority. HSTCTLL remains hazard-free, with producer events winning
   coincident consumer clears (host INTIN set over processor clear; processor
   INTOUT set over host clear). A host or processor high-byte write wins a
   coincident automatic NMI clear.
-- **Deferred field consumers**: INCW, INCR, LBL, and CF are stored and read
-  correctly, but host-indirect cycles and the instruction cache do not yet
-  exist, so those fields have no downstream behavioral effect.
-- **Task 0143 checkpoint**: the standalone host-indirect engine now consumes
-  INCW, INCR, and LBL. They gain system-level effect when Task 0144 connects
-  the engine to the current HSTCTL register and local-memory fabric. CF still
+- **Deferred field consumers**: Task 0144 connects INCW, INCR, and LBL to the
+  integrated host-indirect engine and exported local-word cycles. CF still
   has no instruction-cache consumer.
 - **Regression evidence**: `tb_host_control` covers the direct register
   contract and collisions; `tb_host_halt` covers reset/run-time halt,

@@ -2,7 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0143. Task 0143
+The functional implementation is complete through Task 0144. Task 0144
+integrated the four-register host engine into the I/O/core hierarchy, made
+HSTADR/HSTDATA common processor/host state, and exposed its held local-word
+client for the future arbiter. Task 0143
 implemented the synchronous HSTADR/HSTDATA indirect engine with LBL byte
 completion, prefetch buffering, INCR/INCW ordering, held local-word requests,
 and host backpressure. Task 0142
@@ -192,6 +195,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0141 | Integrate DPYADR and screen-refresh scheduling | complete |
 | 0142 | Integrate direct host control and halt semantics | complete |
 | 0143 | Implement the synchronous host-indirect engine | complete |
+| 0144 | Integrate the four-register host port | complete |
 
 ---
 
@@ -4686,6 +4690,49 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 7639249
+
+---
+
+### Task 0144: Integrate the four-register host port
+Status: complete
+Dependencies:
+- Task 0143 (synchronous host-register and indirect-memory engine).
+- Task 0142 (direct HSTCTL ownership and halt semantics).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §10.2, pages 10-2 through 10-3
+  (four host registers and HFS selection).
+- 1988 TI TMS34010 User's Guide §10.3.2 through §10.3.3.4, pages 10-8
+  through 10-18 (host backpressure, indirect operation, processor access,
+  and unsupported simultaneous accesses).
+- 1988 TI TMS34010 User's Guide §10.3.5, pages 10-20 through 10-21
+  (LBL-selected last-byte completion).
+Acceptance Criteria:
+- Instantiate `tms34010_host_if` in the I/O register block and replace the
+  temporary HSTCTL-only core port with one synchronous request/ack boundary
+  selecting HSTADRL, HSTADRH, HSTDATA, or HSTCTL.
+- Make processor HSTADR/HSTDATA reads and writes use the same engine-owned
+  state observed by the host without initiating an indirect local cycle.
+- Preserve Task 0142 HSTCTL ownership, HINT, HCS/HLT, NMI, byte-enable, and
+  collision behavior through the generalized host port.
+- Export the engine's held aligned 16-bit local-memory request, direction,
+  address, write data, read data, and acknowledge at the core boundary.
+- Migrate every core/I/O integration bench to the new explicit boundary
+  without claiming host/local arbitration, HRDY, asynchronous pin timing,
+  or CDC.
+Tests:
+- `tb_host_integration` PASS (shared processor/host register state, HSTCTL
+  ownership/HINT, address prefetch, INCR/INCW, and exposed local-word cycles).
+- `tb_host_if`, `tb_host_control`, `tb_host_halt`, `tb_io_access`, and
+  `tb_io_interrupts` focused regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 131/131 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

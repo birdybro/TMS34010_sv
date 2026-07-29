@@ -14,7 +14,7 @@
 // HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
 // self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0142):
+// Current scope (Tasks 0081–0144):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -28,9 +28,10 @@
 //     the internal noninterlaced generator; DPYCTL.ENV gates BLANK and DIP.
 //   - DPYADR is live display state. DPYSTRT/DPYCTL schedule held
 //     screen-refresh requests and update its address/count after acknowledge.
-//   - The synchronous direct-host HSTCTL boundary implements per-side field
-//     ownership, HINT, NMI/HLT control, and HCS-selected reset state. The
-//     future pin wrapper owns asynchronous host-bus timing and CDC.
+//   - The synchronous four-register host boundary implements HSTADR/HSTDATA
+//     indirect sequencing plus per-side HSTCTL ownership, HINT, NMI/HLT
+//     control, and HCS-selected reset state. The future pin wrapper owns
+//     asynchronous host-bus timing and CDC.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003); all registers -> 0
@@ -54,15 +55,28 @@ module tms34010_io_regs
   input  logic                  clk,
   input  logic                  rst,
 
-  // Synchronous direct-host control-register boundary. A later host-bus
-  // wrapper converts physical asynchronous pin cycles into this interface.
+  // Synchronous four-register host boundary. A later host-bus wrapper
+  // converts physical asynchronous pin cycles into this request/ack port.
   input  logic                  hcs_n_i,          // reset strap: 0=run, 1=halt
-  input  logic                  host_ctl_we_i,
-  input  logic [1:0]            host_ctl_be_i,
-  input  logic [15:0]           host_ctl_wdata_i,
-  output logic [15:0]           host_ctl_rdata_o,
+  input  logic                  host_req_i,
+  input  logic                  host_we_i,
+  input  host_reg_sel_t         host_reg_i,
+  input  logic [1:0]            host_be_i,
+  input  local_word_t           host_wdata_i,
+  output local_word_t           host_rdata_o,
+  output logic                  host_ack_o,
+  output logic                  host_busy_o,
   output logic                  hint_n_o,
   output logic                  hlt_o,
+
+  // Held host-indirect local-word client. The future memory arbiter grants
+  // and acknowledges this alongside CPU, display, and refresh clients.
+  output logic                  host_mem_req_o,
+  output logic                  host_mem_we_o,
+  output logic [ADDR_WIDTH-1:0] host_mem_addr_o,
+  output local_word_t           host_mem_wdata_o,
+  input  local_word_t           host_mem_rdata_i,
+  input  logic                  host_mem_ack_i,
 
   input  logic                  req,      // access strobe
   input  logic                  we,       // 1 = write, 0 = read
@@ -125,6 +139,59 @@ module tms34010_io_regs
   logic        dpyadr_load;
   logic        video_hblank_start;
   logic        video_dpyint_pulse;
+  logic        host_ctl_we;
+  logic [1:0]  host_ctl_be;
+  local_word_t host_ctl_wdata;
+  local_word_t host_ctl_rdata;
+  logic        cpu_host_we;
+  host_reg_sel_t cpu_host_reg;
+  local_word_t cpu_host_rdata;
+
+  // Map the processor's three memory-mapped host registers onto the same
+  // storage owned by tms34010_host_if. HSTCTL remains in io_reg because its
+  // per-side field ownership and interrupt effects live in this block.
+  always_comb begin
+    cpu_host_reg = HOST_REG_HSTDATA;
+    unique case (idx)
+      IO_IDX_HSTADRL: cpu_host_reg = HOST_REG_HSTADRL;
+      IO_IDX_HSTADRH: cpu_host_reg = HOST_REG_HSTADRH;
+      IO_IDX_HSTDATA: cpu_host_reg = HOST_REG_HSTDATA;
+      default: ;
+    endcase
+  end
+
+  assign cpu_host_we = req && we && is_io
+                    && ((idx == IO_IDX_HSTADRL)
+                        || (idx == IO_IDX_HSTADRH)
+                        || (idx == IO_IDX_HSTDATA));
+
+  tms34010_host_if u_host_if (
+    .clk           (clk),
+    .rst           (rst),
+    .host_req_i    (host_req_i),
+    .host_we_i     (host_we_i),
+    .host_reg_i    (host_reg_i),
+    .host_be_i     (host_be_i),
+    .host_wdata_i  (host_wdata_i),
+    .host_rdata_o  (host_rdata_o),
+    .host_ack_o    (host_ack_o),
+    .host_busy_o   (host_busy_o),
+    .ctl_we_o      (host_ctl_we),
+    .ctl_be_o      (host_ctl_be),
+    .ctl_wdata_o   (host_ctl_wdata),
+    .ctl_rdata_i   (host_ctl_rdata),
+    .hstctlh_i     (io_reg[IO_IDX_HSTCTLH]),
+    .cpu_we_i      (cpu_host_we),
+    .cpu_reg_i     (cpu_host_reg),
+    .cpu_wdata_i   (wdata),
+    .cpu_rdata_o   (cpu_host_rdata),
+    .local_req_o   (host_mem_req_o),
+    .local_we_o    (host_mem_we_o),
+    .local_addr_o  (host_mem_addr_o),
+    .local_wdata_o (host_mem_wdata_o),
+    .local_rdata_i (host_mem_rdata_i),
+    .local_ack_i   (host_mem_ack_i)
+  );
 
   tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_lint1_sync (
     .clk     (clk),
@@ -243,6 +310,9 @@ module tms34010_io_regs
         IO_IDX_HCOUNT:  rdata = hcount_o;
         IO_IDX_VCOUNT:  rdata = vcount_o;
         IO_IDX_DPYADR:  rdata = dpyadr_o;
+        IO_IDX_HSTADRL,
+        IO_IDX_HSTADRH,
+        IO_IDX_HSTDATA: rdata = cpu_host_rdata;
         default:        rdata = io_reg[idx];
       endcase
     end
@@ -257,7 +327,7 @@ module tms34010_io_regs
   assign intenb_o  = io_reg[IO_IDX_INTENB];
   assign intpend_o = intpend_value;
   assign hstctlh_o = io_reg[IO_IDX_HSTCTLH];
-  assign host_ctl_rdata_o = {
+  assign host_ctl_rdata = {
     io_reg[IO_IDX_HSTCTLH][15:8],
     io_reg[IO_IDX_HSTCTLL][7:0]
   };
@@ -313,6 +383,11 @@ module tms34010_io_regs
                 wdata & HSTCTLH_WRITABLE_MASK;
           end
 
+          IO_IDX_HSTADRL, IO_IDX_HSTADRH, IO_IDX_HSTDATA: begin
+            // tms34010_host_if owns these registers. cpu_host_we consumes the
+            // completed processor write without launching an indirect cycle.
+          end
+
           IO_IDX_REFCNT: begin
             // The refresh submodule owns the live counter. Its parallel-load
             // port consumes this write, so no mirror storage is updated.
@@ -335,19 +410,19 @@ module tms34010_io_regs
       // Direct host writes obey the complementary HSTCTL ownership table.
       // Host owns MSGIN, may set INTIN with one, and may clear INTOUT with
       // zero. MSGOUT remains processor-owned.
-      if (host_ctl_we_i && host_ctl_be_i[0]) begin
-        io_reg[IO_IDX_HSTCTLL][2:0] <= host_ctl_wdata_i[2:0];
-        if (host_ctl_wdata_i[HSTCTL_INTIN_BIT])
+      if (host_ctl_we && host_ctl_be[0]) begin
+        io_reg[IO_IDX_HSTCTLL][2:0] <= host_ctl_wdata[2:0];
+        if (host_ctl_wdata[HSTCTL_INTIN_BIT])
           io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <= 1'b1;
-        if (!host_ctl_wdata_i[HSTCTL_INTOUT_BIT])
+        if (!host_ctl_wdata[HSTCTL_INTOUT_BIT])
           io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <= 1'b0;
       end
 
       // Conflicting simultaneous HSTCTLH writes are unpredictable on the
       // original device. This synchronous boundary chooses host priority.
-      if (host_ctl_we_i && host_ctl_be_i[1])
+      if (host_ctl_we && host_ctl_be[1])
         io_reg[IO_IDX_HSTCTLH] <=
-            host_ctl_wdata_i & HSTCTLH_WRITABLE_MASK;
+            host_ctl_wdata & HSTCTLH_WRITABLE_MASK;
 
       // Internal set pulses are independent of an unrelated processor write.
       // A set after a same-cycle write-zero clear wins, preventing an
@@ -367,7 +442,7 @@ module tms34010_io_regs
       // automatic NMI clear.
       if (nmi_clear
           && !(req && we && is_io && (idx == IO_IDX_HSTCTLH))
-          && !(host_ctl_we_i && host_ctl_be_i[1]))
+          && !(host_ctl_we && host_ctl_be[1]))
         io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
     end
   end

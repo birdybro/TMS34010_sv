@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0143, with strict RTL
+> Baseline: functional implementation through Task 0144, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -116,6 +116,12 @@ requests, and serialization of host side effects. The module remains an
 integration boundary until its processor-visible register port, Task 0142
 HSTCTL path, and local-word client are connected to the core and arbiter.
 
+Task 0144 connected the register-side boundary. The core now exposes one
+synchronous four-register host port; processor HSTADR/HSTDATA accesses share
+the engine-owned state without indirect side effects; and the engine's held
+aligned-word client leaves the core. The remaining host-memory work is
+arbiter service plus the asynchronous pin/HRDY/CDC wrapper.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -141,7 +147,6 @@ deliberate non-pin-compatible boundary.
 - Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Integrate the landed HSTADR/HSTDATA engine with the I/O register file.
 - Replace the provisional external-ack dependency for on-chip I/O accesses
   with the final bus/controller contract.
 
@@ -157,9 +162,9 @@ deliberate non-pin-compatible boundary.
 - Service the exported refresh request in the local-memory arbiter/controller,
   retaining or acknowledging requests through contention and issuing the
   selected RAS-only or CAS-before-RAS cycle.
-- Connect the landed host-indirect local-word client to arbitration; implement
-  HRDY and the asynchronous physical host wrapper/CDC around the synchronous
-  host-register boundary.
+- Connect the exported host-indirect local-word client to arbitration;
+  implement HRDY and the asynchronous physical host wrapper/CDC around the
+  synchronous host-register boundary.
 
 ### Video/display
 

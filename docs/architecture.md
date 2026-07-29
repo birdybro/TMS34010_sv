@@ -1,12 +1,13 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0143, with
+> Status: **implemented and ISA/status-audited through Task 0144, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Direct HSTCTL access, HINT, HCS-selected reset halt, and HLT
-> are also integrated. The synchronous HSTADR/HSTDATA engine is implemented
-> and awaits core/fabric integration. Architectural fields are sequenced onto
+> are also integrated. The synchronous four-register host engine shares
+> HSTADR/HSTDATA with processor I/O accesses and exports its held local-word
+> client for the future arbiter. Architectural fields are sequenced onto
 > aligned 16-bit words; REFCNT and the refresh requester are integrated at
 > the core boundary.
 > Internal/noninterlaced video timing and the held screen-refresh client are
@@ -92,7 +93,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0142** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, I/O routing, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0144** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, I/O routing, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -103,15 +104,15 @@ has not landed.
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
 | `rtl/memory/tms34010_local_bus.sv`      | 6     | not started | original-pin row/column/data phases, LRDY waits, and reset initialization |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
-| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | not started | core vs. graphics vs. host arbitration |
+| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | not started | screen refresh, DRAM refresh, host, and CPU/graphics arbitration |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
 | `rtl/graphics/tms34010_pixblt.sv`       | 7     | not separate | PIXBLT/FILL datapaths and FSM states currently reside in the core |
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
-| `rtl/host/tms34010_host_if.sv`          | 6     | **landed (Task 0143), integration pending** | synchronous HSTADR/HSTDATA storage, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
+| `rtl/host/tms34010_host_if.sv`          | 6     | **integrated (Task 0144)** | shared processor/host HSTADR/HSTDATA storage, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0142** | 32×16-bit memory-mapped I/O register file; graphics taps, exact interrupt sources, direct HSTCTL/HINT/HCS behavior, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0144** | 32×16-bit memory-mapped I/O register file; integrated four-register host engine, exact interrupt sources, direct HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated (Task 0141)** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP request, and acknowledge-time DUDATE/ORG update; physical VRAM cycle and interlaced adjustment remain |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
@@ -186,7 +187,13 @@ It owns aligned HSTADR and buffered HSTDATA state, implements both LBL
 byte-last conventions, launches the specified address prefetch/read/write
 cycles, orders INCR before reads and INCW after acknowledged writes, and
 holds its local-word client stable through stalls. Core I/O-register and
-memory-arbiter integration are deliberately the next bounded task.
+memory-arbiter integration were deliberately deferred.
+
+Task 0144 instantiated that engine in the I/O block. Processor and host
+accesses now share HSTADR/HSTDATA state through one generalized four-register
+core boundary, while HSTCTL continues through its existing ownership logic.
+The resulting held aligned-word host client is exposed from the core for the
+next specification-priority arbiter task.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -339,27 +346,29 @@ These engines currently share implementation inside `tms34010_core`.
 Extraction into dedicated modules is optional refactoring and must not precede
 functional or synthesis evidence that justifies it.
 
-## Host interface (direct control integrated; indirect engine landed)
+## Host interface (four-register engine integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control
-and shared-memory access. Task 0142 provides a synchronous completed-cycle
-boundary for direct HSTCTL access: `host_ctl_we_i`, two byte enables, write
-data, combined read data, and active-low HINT. The host owns MSGIN, sets
-INTIN, and clears INTOUT; the processor owns MSGOUT, clears INTIN, and sets
-INTOUT. Both can write the seven defined HSTCTLH fields. HCS initializes HLT,
-and separate reset/run-time halt states preserve the correct resume point.
+and shared-memory access. The core's synchronous completed-cycle boundary
+selects any of those four 16-bit registers, carries two byte enables, and
+returns acknowledge, read data, busy, and active-low HINT. The host owns
+MSGIN, sets INTIN, and clears INTOUT; the processor owns MSGOUT, clears INTIN,
+and sets INTOUT. Both can write the seven defined HSTCTLH fields. HCS
+initializes HLT, and separate reset/run-time halt states preserve the correct
+resume point.
 
-`tms34010_host_if` now supplies the synchronous HSTADRL/HSTADRH/HSTDATA
-engine described in §10.3.3. It forces word alignment, buffers prefetched
-data, implements both LBL byte completion orders, applies INCR before reads
-and INCW after acknowledged writes, and holds its local-word request during
-backpressure. Processor-side accesses have no indirect side effects.
+`tms34010_host_if` is instantiated in `tms34010_io_regs` and supplies the
+synchronous HSTADRL/HSTADRH/HSTDATA engine described in §10.3.3. It forces
+word alignment, buffers prefetched data, implements both LBL byte completion
+orders, applies INCR before reads and INCW after acknowledged writes, and
+holds its local-word request during backpressure. Processor-side accesses
+share the stored values but have no indirect side effects. HSTCTL transactions
+pass through to the I/O block's Task 0142 owner.
 
-The new engine is not yet instantiated in `tms34010_core`; Task 0144 will
-connect its HSTCTL pass-through and processor-visible registers to the I/O
-block and route its local-word client into the memory fabric. HRDY, physical
-pin strobes, asynchronous CDC, and host/local arbitration remain future
-work. CF is stored but has no cache to flush.
+The aligned 16-bit host client now leaves `tms34010_core`, but no shared
+memory arbiter consumes it yet. HRDY, physical pin strobes, asynchronous CDC,
+and host/local arbitration remain future work. CF is stored but has no cache
+to flush.
 
 ## Video / display (timing integrated)
 
@@ -409,8 +418,8 @@ also awaits service by the memory arbiter.
 
 - Original-pin external-bus phase generation, LRDY validation, reset
   initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
-- Host-indirect HSTADR/HSTDATA memory behavior, HRDY/pin timing/CDC, and
-  arbitration; internally completed I/O accesses.
+- Host/local-memory arbitration, HRDY/pin timing/CDC, and internally completed
+  I/O accesses.
 - Remaining non-host I/O side effects.
 - DRAM- and screen-refresh request service in the memory fabric; VCLK/CDC,
   external sync, interlace, physical VRAM transfer, and pixel output.

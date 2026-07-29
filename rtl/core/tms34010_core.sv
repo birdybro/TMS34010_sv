@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0142.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0144.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -12,9 +12,9 @@
 // The external request/ack interface is an architectural bit-addressed
 // interface, not the original physical 16-bit bus. REFCNT requests and
 // same-clock internal/noninterlaced video timing/screen scheduling are
-// integrated. Direct synchronous host-control access, HINT, and HLT behavior
-// are also integrated; physical host-pin timing/CDC, indirect host access,
-// refresh/VRAM service, VCLK/CDC, and physical bus arbitration are not.
+// integrated. The synchronous four-register host engine, HINT, and HLT
+// behavior are also integrated; physical host-pin timing/CDC, host/local
+// arbitration, refresh/VRAM service, VCLK/CDC, and physical bus timing are not.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -49,14 +49,26 @@ module tms34010_core
   input  logic                                run_emu_n_i,
   output logic                                emua_n_o,
 
-  // Direct synchronous host-control boundary. The future pin-level host
-  // wrapper supplies bus timing/CDC and drives these completed transactions.
+  // Synchronous four-register host boundary. The future pin-level wrapper
+  // supplies bus timing/CDC and drives these request/ack transactions.
   input  logic                                hcs_n_i,
-  input  logic                                host_ctl_we_i,
-  input  logic [1:0]                          host_ctl_be_i,
-  input  logic [15:0]                         host_ctl_wdata_i,
-  output logic [15:0]                         host_ctl_rdata_o,
+  input  logic                                host_req_i,
+  input  logic                                host_we_i,
+  input  host_reg_sel_t                       host_reg_i,
+  input  logic [1:0]                          host_be_i,
+  input  local_word_t                         host_wdata_i,
+  output local_word_t                         host_rdata_o,
+  output logic                                host_ack_o,
+  output logic                                host_busy_o,
   output logic                                hint_n_o,
+
+  // Held host-indirect local-word client for the future memory arbiter.
+  output logic                                host_mem_req_o,
+  output logic                                host_mem_we_o,
+  output logic [ADDR_WIDTH-1:0]               host_mem_addr_o,
+  output local_word_t                         host_mem_wdata_o,
+  input  local_word_t                         host_mem_rdata_i,
+  input  logic                                host_mem_ack_i,
 
   // Interrupt-source boundary. LINT pins are raw asynchronous active-low
   // levels and are synchronized internally. The display set input remains a
@@ -2328,12 +2340,22 @@ module tms34010_core
     .clk      (clk),
     .rst      (rst),
     .hcs_n_i  (hcs_n_i),
-    .host_ctl_we_i(host_ctl_we_i),
-    .host_ctl_be_i(host_ctl_be_i),
-    .host_ctl_wdata_i(host_ctl_wdata_i),
-    .host_ctl_rdata_o(host_ctl_rdata_o),
+    .host_req_i(host_req_i),
+    .host_we_i(host_we_i),
+    .host_reg_i(host_reg_i),
+    .host_be_i(host_be_i),
+    .host_wdata_i(host_wdata_i),
+    .host_rdata_o(host_rdata_o),
+    .host_ack_o(host_ack_o),
+    .host_busy_o(host_busy_o),
     .hint_n_o (hint_n_o),
     .hlt_o    (io_hlt),
+    .host_mem_req_o(host_mem_req_o),
+    .host_mem_we_o(host_mem_we_o),
+    .host_mem_addr_o(host_mem_addr_o),
+    .host_mem_wdata_o(host_mem_wdata_o),
+    .host_mem_rdata_i(host_mem_rdata_i),
+    .host_mem_ack_i(host_mem_ack_i),
     .req      (mem_req),
     .we       (mem_we_int),    // the access's write intent
     .addr     (mem_addr),

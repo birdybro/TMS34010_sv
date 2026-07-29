@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0143**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0144**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > Original-pin local-bus timing and several I/O side effects remain open.
@@ -103,9 +103,11 @@ prefetches HSTDATA, HSTDATA reads/writes launch held 16-bit local cycles,
 LBL chooses the last byte, and INCR/INCW update the pointer in the specified
 order. Processor accesses cause no indirect side effect.
 
-The remaining register integration is incomplete: the new engine is not yet
-instantiated in the I/O/core path, and I/O accesses still rely on an external
-request/ack cycle as documented in A0028.
+Task 0144 instantiates the engine in the I/O/core path. Processor and host
+therefore observe the same HSTADR/HSTDATA state, while the host's indirect
+aligned-word request leaves the core on a held request/ack client. It is not
+yet connected to the shared local-memory arbiter. I/O accesses still rely on
+an external request/ack cycle as documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -146,12 +148,12 @@ consuming blocks are integrated.
 
 ## Host-interface-visible registers
 
-The synchronous direct-host boundary exposes the combined 16-bit HSTCTL
-register and active-low HINT. `tms34010_host_if` separately implements the
-four-register synchronous request/ack contract, HSTADR/HSTDATA storage and
-side effects, and a held local-word client. These represent completed
+The integrated synchronous host boundary selects HSTADRL, HSTADRH, HSTDATA,
+or the combined HSTCTL register and exposes active-low HINT.
+`tms34010_host_if` owns HSTADR/HSTDATA storage and side effects while passing
+HSTCTL through to the I/O register owner. These represent completed
 core-clock-domain transactions, not an asynchronous original-pin bus.
-Core/I/O instantiation, memory arbitration, and HRDY generation remain open.
+Memory arbitration, physical pin timing/CDC, and HRDY generation remain open.
 
 ## Display / video memory behavior
 
@@ -167,6 +169,6 @@ with core and graphics accesses.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
-- Host-engine core/fabric integration, HRDY/pin timing, CDC, and arbitration.
+- Host local-memory arbitration, HRDY/pin timing, and CDC.
 - Dedicated VCLK/CDC, external-sync/interlace timing, display-address
   generation, and VRAM shift-register behavior.

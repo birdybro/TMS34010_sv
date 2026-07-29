@@ -29,10 +29,11 @@ module tb_io_interrupts;
   logic                  nmi_clear;
   logic                  wvp_set;
   logic                  dpyint_set;
-  logic                  host_ctl_we;
-  logic [1:0]            host_ctl_be;
-  logic [15:0]           host_ctl_wdata;
-  logic [15:0]           host_ctl_rdata;
+  logic                  host_req;
+  logic                  host_we;
+  logic [1:0]            host_be;
+  logic [15:0]           host_wdata;
+  logic                  host_ack;
   logic                  lint1_n;
   logic                  lint2_n;
 
@@ -52,12 +53,22 @@ module tb_io_interrupts;
     .clk         (clk),
     .rst         (rst),
     .hcs_n_i     (1'b0),
-    .host_ctl_we_i(host_ctl_we),
-    .host_ctl_be_i(host_ctl_be),
-    .host_ctl_wdata_i(host_ctl_wdata),
-    .host_ctl_rdata_o(host_ctl_rdata),
+    .host_req_i  (host_req),
+    .host_we_i   (host_we),
+    .host_reg_i  (HOST_REG_HSTCTL),
+    .host_be_i   (host_be),
+    .host_wdata_i(host_wdata),
+    .host_rdata_o(),
+    .host_ack_o  (host_ack),
+    .host_busy_o (),
     .hint_n_o    (),
     .hlt_o       (),
+    .host_mem_req_o(),
+    .host_mem_we_o(),
+    .host_mem_addr_o(),
+    .host_mem_wdata_o(),
+    .host_mem_rdata_i(16'h0000),
+    .host_mem_ack_i(1'b0),
     .req         (req),
     .we          (we),
     .addr        (addr),
@@ -116,12 +127,20 @@ module tb_io_interrupts;
   task automatic host_write(input logic [15:0] write_data);
     begin
       @(negedge clk);
-      host_ctl_we    = 1'b1;
-      host_ctl_be    = 2'b11;
-      host_ctl_wdata = write_data;
+      host_req   = 1'b1;
+      host_we    = 1'b1;
+      host_be    = 2'b11;
+      host_wdata = write_data;
+      while (!host_ack) begin
+        @(posedge clk);
+        #1;
+      end
       @(negedge clk);
-      host_ctl_we = 1'b0;
-      host_ctl_be = 2'b00;
+      host_req = 1'b0;
+      host_we  = 1'b0;
+      host_be  = 2'b00;
+      @(posedge clk);
+      #1;
     end
   endtask
 
@@ -159,9 +178,10 @@ module tb_io_interrupts;
     nmi_clear    = 1'b0;
     wvp_set      = 1'b0;
     dpyint_set   = 1'b0;
-    host_ctl_we    = 1'b0;
-    host_ctl_be    = 2'b00;
-    host_ctl_wdata = 16'h0000;
+    host_req       = 1'b0;
+    host_we        = 1'b0;
+    host_be        = 2'b00;
+    host_wdata     = 16'h0000;
     lint1_n      = 1'b1;
     lint2_n      = 1'b1;
 

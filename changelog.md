@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0144 — integrated four-register host port)
+- Instantiated `tms34010_host_if` in the I/O block and made its aligned
+  HSTADR and buffered HSTDATA state visible to both processor and host.
+- Replaced the temporary HSTCTL-only core boundary with one synchronous
+  request/ack port selecting all four host registers while preserving direct
+  HSTCTL ownership, HINT, HCS/HLT, NMI, and byte-enable behavior.
+- Exposed the host engine's held aligned-word request at the core boundary,
+  ready for the specification-priority memory arbiter without prematurely
+  claiming physical local-bus or asynchronous host-pin timing.
+- Migrated every core and I/O integration bench to the generalized host
+  boundary and added `tb_host_integration` for the complete shared-register
+  and indirect-cycle path.
+- Validation: host/I/O focused tests PASS; `scripts/lint.sh` clean; full
+  regression 131/131 PASS.
+
 ### Added (Task 0143 — synchronous host-indirect engine)
 - Added `tms34010_host_if`, which owns word-aligned HSTADRL/HSTADRH and the
   HSTDATA prefetch/write buffer behind a synchronous host request/ack port.
