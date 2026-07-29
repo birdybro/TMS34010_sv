@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0157.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0158.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -44,6 +44,7 @@ module tms34010_core
   output logic [FIELD_SIZE_WIDTH-1:0]         mem_size,
   output logic [DATA_WIDTH-1:0]               mem_wdata,
   output logic                                mem_iaq,
+  output logic                                mem_srt,
   output logic                                mem_is_io,
   output logic                                mem_io_we,
   output local_word_t                         mem_io_rdata,
@@ -337,8 +338,8 @@ module tms34010_core
        && mem_op_step == 2'd0) begin
         move_data_q <= mem_rdata_eff;
       end
-      // PIXT store plane-mask RMW: step 0 reads the destination pixel; latch
-      // it so step 1 can merge it under the plane mask.
+      // A processing/window PIXT store reads the destination at step 0; latch
+      // it so step 1 can merge the result.
       if (decoded.iclass == INSTR_MOVE_FIELD_STORE && pixt_rmw && mem_op_step == 2'd0) begin
         pix_dest_q <= mem_rdata_eff;
       end
@@ -370,8 +371,8 @@ module tms34010_core
         INSTR_MOVB_OFF_M2M,
         INSTR_MOVB_ABS_M2M:
                     mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
-        // PIXT store RMW: step 0 (read) -> step 1 (write) -> 0. Regular MOVE
-        // store (no force_pixel) is single-step and falls through to default.
+        // Processing/window PIXT store: read -> write -> 0. Direct PIXT and
+        // regular MOVE stores are single-step and fall through to default.
         INSTR_MOVE_FIELD_STORE:
                     mem_op_step <= (pixt_rmw && mem_op_step == 2'd0) ? 2'd1 : 2'd0;
         default:    mem_op_step <= 2'd0;
@@ -404,9 +405,18 @@ module tms34010_core
   logic [15:0]           fill_x_q, fill_y_q;
   logic [DATA_WIDTH-1:0] fill_psize_ext;
   logic                  fill_row_end, fill_done;
+  // The destination is not read for the documented fast path: replace
+  // processing, transparency disabled, and no protected planes. Field
+  // insertion still performs any alignment-required word RMW in the memory
+  // fabric. Other pixel modes need the destination value explicitly.
+  logic                  pixel_dest_read_required;
   assign fill_psize_ext = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
   assign fill_row_end   = (fill_x_q == fill_dx_q - 16'd1);
   assign fill_done      = fill_row_end && (fill_y_q == fill_dy_q - 16'd1);
+  assign pixel_dest_read_required =
+      (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO] != 5'd0)
+      || io_control[CTRL_T_BIT]
+      || (io_pmask != 16'h0000);
 
   // FILL XY: convert the XY DADDR (latched raw at EXECUTE) to a linear start
   // address at SETUP, where OFFSET (B4) is on read port 3. Same shift form as
@@ -421,12 +431,12 @@ module tms34010_core
       + rf_rs3_data;   // OFFSET (B4) at SETUP
   assign fill_start = fill_is_xy ? fill_xy_linear : fill_daddr_raw_q;
 
-  // FILL pixel processing (Task 0093). Each pixel is a read-modify-write: step
-  // 0 (fill_substep_q=0) reads the destination pixel into fill_dest_q, step 1
-  // writes fill_merged = PPOP(COLOR1, dest) plane-masked and transparency-
-  // checked. At reset defaults (PPOP=0/PMASK=0/T=0) merged = COLOR1, so a plain
-  // fill is unchanged (it just also reads first).
-  logic                  fill_substep_q;   // 0 = read dest, 1 = write merged
+  // FILL pixel processing (Task 0093). Modes that consume the old pixel use
+  // step 0 to read it into fill_dest_q, then step 1 writes PPOP(COLOR1,dest)
+  // with plane masking and transparency. The default replace/no-mask/no-T
+  // path starts directly at step 1.
+  logic                  fill_substep_q;   // 0 = read dest, 1 = write merged/direct
+  logic                  fill_dest_read_q;
   logic [DATA_WIDTH-1:0] fill_dest_q;      // destination pixel latched at read
   logic [DATA_WIDTH-1:0] fill_pixel_mask, fill_pmask_field;
   logic [DATA_WIDTH-1:0] fill_processed, fill_merged;
@@ -544,6 +554,7 @@ module tms34010_core
       fill_x_q         <= '0;
       fill_y_q         <= '0;
       fill_substep_q   <= 1'b0;
+      fill_dest_read_q <= 1'b0;
       fill_dest_q      <= '0;
       fill_wstart_q    <= '0;
       fill_wend_q      <= '0;
@@ -567,6 +578,9 @@ module tms34010_core
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
         fill_w1_q        <= fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
+        fill_dest_read_q <= pixel_dest_read_required
+                         || (fill_is_xy
+                             && (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3));
       end
       // CORE_FILL_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_FILL_SETUP_WIN) begin
@@ -579,15 +593,17 @@ module tms34010_core
         fill_color_q    <= rf_rs1_data;        // COLOR1
         fill_addr_q     <= fill_start;
         fill_row_base_q <= fill_start;
-        fill_substep_q  <= 1'b0;
+        fill_substep_q  <= !fill_dest_read_q;
       end
-      // CORE_FILL: per pixel, read (sub-step 0) then write (sub-step 1).
+      // CORE_FILL: direct replace writes start/stay at sub-step 1; all other
+      // modes read at sub-step 0 before writing at sub-step 1.
       if (state_q == CORE_FILL && mem_ack) begin
-        fill_substep_q <= ~fill_substep_q;
         if (!fill_substep_q) begin
           // Read ack: latch the destination pixel for processing.
           fill_dest_q <= mem_rdata_eff;
+          fill_substep_q <= 1'b1;
         end else begin
+          fill_substep_q <= !fill_dest_read_q;
           // Write ack: advance to the next pixel (or to the final DADDR).
           fill_addr_q <= fill_addr_q + fill_psize_ext;
           if (fill_row_end && !fill_done) begin
@@ -613,9 +629,9 @@ module tms34010_core
   // apart) to the DESTINATION array (DADDR=B2, rows DPTCH=B3 apart), processing
   // each pixel: written = PPOP(source pixel, destination pixel), plane-masked
   // and transparency-checked. Operands are read at EXECUTE (SADDR/DADDR/DYDX)
-  // and CORE_PBLT_SETUP (SPTCH/DPTCH). Each pixel is a 3-step sequence
-  // (substep 0 read source, 1 read destination, 2 write); both pointers advance
-  // by PSIZE per pixel and row-step by their pitch. SADDR/DADDR are updated to
+  // and CORE_PBLT_SETUP (SPTCH/DPTCH). Each pixel reads its source, optionally
+  // reads its destination when processing requires it, then writes; both
+  // pointers advance by PSIZE per pixel and row-step by their pitch. SADDR/DADDR are updated to
   // the pixel following their last (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2).
   // No corner adjust (top-left → bottom-right), no window checking yet.
   // ---------------------------------------------------------------------------
@@ -625,6 +641,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_row_q, pblt_dst_row_q;
   logic [15:0]           pblt_x_q, pblt_y_q;
   logic [1:0]            pblt_substep_q;     // 0 read src, 1 read dst, 2 write
+  logic                  pblt_dest_read_q;
   logic [DATA_WIDTH-1:0] pblt_src_pix_q, pblt_dst_pix_q;
   logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask, pblt_pmask_field;
   logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
@@ -712,6 +729,7 @@ module tms34010_core
       pblt_x_q        <= '0;
       pblt_y_q        <= '0;
       pblt_substep_q  <= 2'd0;
+      pblt_dest_read_q <= 1'b0;
       pblt_src_pix_q  <= '0;
       pblt_dst_pix_q  <= '0;
       pblt_color0_q   <= '0;
@@ -743,6 +761,9 @@ module tms34010_core
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
         pblt_w1_q       <= decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
+        pblt_dest_read_q <= pixel_dest_read_required
+                         || (decoded.blt_dst_xy
+                             && (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3));
       end
       // CORE_PBLT_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_PBLT_SETUP_WIN) begin
@@ -772,7 +793,7 @@ module tms34010_core
       if (state_q == CORE_PBLT && mem_ack) begin
         if (pblt_substep_q == 2'd0) begin
           pblt_src_pix_q <= mem_rdata_eff;
-          pblt_substep_q <= 2'd1;
+          pblt_substep_q <= pblt_dest_read_q ? 2'd1 : 2'd2;
         end else if (pblt_substep_q == 2'd1) begin
           pblt_dst_pix_q <= mem_rdata_eff;
           pblt_substep_q <= 2'd2;
@@ -803,13 +824,14 @@ module tms34010_core
   // A single-pixel COLOR1 draw at Rd's XY address, then Rd advances by Rs as an
   // XY add. At EXECUTE: Rd (port2) is XY-converted to a linear address with
   // OFFSET (port3) — pix_xy_dst_linear, the same form as PIXT XY / FILL XY —
-  // and latched; Rs/Rd are latched for the advance. CORE_DRAV then runs a
-  // 2-step read-dest / write-merged RMW (COLOR1 on port1), reusing the FILL
-  // pixel-merge (PPOP / transparency / PMASK). The advance is written back at
+  // and latched; Rs/Rd are latched for the advance. CORE_DRAV optionally
+  // reads the destination when PPOP/transparency/PMASK requires it, then
+  // writes COLOR1 through the shared FILL pixel merge. The advance is written back at
   // CORE_WRITEBACK. Task 0112 adds the per-pixel W=1/2/3 behavior below.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] drav_rd_q, drav_rs_q, drav_linear_q, drav_dest_q;
   logic                  drav_substep_q;    // 0 = read dest, 1 = write merged
+  logic                  drav_dest_read_q;
   // Per-pixel window check (CONTROL.W, Task 0112). Rd's XY is tested against the
   // inclusive [WSTART..WEND] rectangle (read at CORE_DRAV_SETUP_WIN). The pixel
   // is drawn only for W=0, or W=2/W=3 when inside. V (W!=0) = NOT inside; WVP is
@@ -849,6 +871,7 @@ module tms34010_core
       drav_linear_q  <= '0;
       drav_dest_q    <= '0;
       drav_substep_q <= 1'b0;
+      drav_dest_read_q <= 1'b0;
       drav_w_q       <= 2'd0;
       drav_inside_q  <= 1'b0;
     end else begin
@@ -856,14 +879,19 @@ module tms34010_core
         drav_rd_q      <= rf_rs2_data;        // Rd (XY dest)
         drav_rs_q      <= rf_rs1_data;        // Rs (XY increment)
         drav_linear_q  <= pix_xy_dst_linear;  // convert(Rd) + OFFSET (port3)
-        drav_substep_q <= 1'b0;
+        drav_substep_q <= !pixel_dest_read_required;
+        drav_dest_read_q <= pixel_dest_read_required;
         drav_w_q       <= io_control[CTRL_W_HI:CTRL_W_LO];
       end
       // CORE_DRAV_SETUP_WIN: latch the window test (WSTART=port1, WEND=port2).
       if (state_q == CORE_DRAV_SETUP_WIN) drav_inside_q <= drav_in_window;
       if (state_q == CORE_DRAV && mem_ack) begin
-        drav_substep_q <= ~drav_substep_q;
-        if (!drav_substep_q) drav_dest_q <= mem_rdata_eff;  // read ack
+        if (!drav_substep_q) begin
+          drav_dest_q    <= mem_rdata_eff;  // read ack
+          drav_substep_q <= 1'b1;
+        end else begin
+          drav_substep_q <= !drav_dest_read_q;
+        end
       end
     end
   end
@@ -872,8 +900,8 @@ module tms34010_core
   // LINE (Bresenham inner loop) — SPVU001A page 12-99.
   //
   // The implied B operands are read over 3 setup cycles (line_rd_b above), then
-  // CORE_LINE_DRAW runs the per-pixel loop: draw COLOR1 at DADDR's XY (2-step
-  // RMW, reusing the FILL/DRAV pixel merge), then step the decision variable d
+  // CORE_LINE_DRAW runs the per-pixel loop: draw COLOR1 at DADDR's XY
+  // (optional destination read plus the FILL/DRAV pixel merge), then step d
   // and DADDR (+INC1 when d>0 i.e. the diagonal move, else +INC2) and decrement
   // COUNT. The Z bit (instr_word_q[7]) selects whether d=0 counts as ">0"
   // (Z=1 -> d>=0). At the end d/DADDR/COUNT are written back to B0/B2/B10.
@@ -884,6 +912,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] line_offset_q, line_daddr_q, line_color_q, line_dest_q;
   logic [15:0]           line_b_q, line_a_q;
   logic                  line_substep_q;
+  logic                  line_dest_read_q;
   // Per-pixel linear address from DADDR's XY (same conversion form as FILL XY).
   logic [DATA_WIDTH-1:0] line_linear;
   assign line_linear =
@@ -953,6 +982,7 @@ module tms34010_core
       line_b_q       <= '0;
       line_a_q       <= '0;
       line_substep_q <= 1'b0;
+      line_dest_read_q <= 1'b0;
       line_wstart_q  <= '0;
       line_wend_q    <= '0;
       line_last_inside_q <= 1'b0;
@@ -978,13 +1008,15 @@ module tms34010_core
       if (state_q == CORE_LINE_SETUP3) begin
         line_daddr_q   <= rf_rs1_data;               // DADDR (B2)
         line_color_q   <= rf_rs2_data;               // COLOR1 (B9)
-        line_substep_q <= 1'b0;
+        line_substep_q <= !(pixel_dest_read_required || line_win_en);
+        line_dest_read_q <= pixel_dest_read_required || line_win_en;
       end
       if (state_q == CORE_LINE_DRAW && mem_ack) begin
-        line_substep_q <= ~line_substep_q;
         if (!line_substep_q) begin
           line_dest_q <= mem_rdata_eff;              // read ack
+          line_substep_q <= 1'b1;
         end else begin
+          line_substep_q <= !line_dest_read_q;
           // Write ack: record this pixel's window status (for the final V) and
           // whether it triggered a W=1/W=2 abort, then advance the Bresenham
           // state for the next pixel.
@@ -1378,10 +1410,10 @@ module tms34010_core
     end
   end
 
-  // PIXT store pixel-write engine (Tasks 0089/0090/0091). A PIXT store is a
-  // 2-step CORE_MEMORY read-modify-write: step 0 reads the destination pixel
-  // (pix_dest_q), step 1 writes the result. The result combines three CONTROL
-  // features, all confined to the PSIZE-bit pixel by mv_fmask:
+  // PIXT store pixel-write engine (Tasks 0089/0090/0091). A store reads
+  // pix_dest_q first only when processing or an XY window needs it; otherwise
+  // replace/no-mask/no-T is one direct write. The processed path combines
+  // three CONTROL features, all confined to the PSIZE-bit pixel by mv_fmask:
   //   1. Pixel processing (PPOP, CONTROL[14:10]): processed = f(src, dest).
   //      All 16 Boolean and 6 arithmetic codes are implemented within the
   //      selected pixel width.
@@ -1402,7 +1434,8 @@ module tms34010_core
   // the unsigned add. Arith ops are only defined for pixels of 4/8/16 bits
   // (SPVU001A); they are computed for all sizes (1/2-bit results are
   // spec-Undefined, so any value is acceptable).
-  assign pixt_rmw         = decoded.force_pixel && is_mv_store;
+  assign pixt_rmw         = decoded.force_pixel && is_mv_store
+                          && (pixel_dest_read_required || pixt_xy_win);
   assign pixt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & mv_fmask;
   assign pixt_processed   = ppop_apply(rf_rs1_data, pix_dest_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], mv_fmask);
@@ -1415,11 +1448,12 @@ module tms34010_core
   logic                  pixt_xy_win, pixt_xy_m2m;
   logic [DATA_WIDTH-1:0] pixt_wstart_q, pixt_wend_q;
   logic [DATA_WIDTH-1:0] pixt_point_q;
-  logic                  pixt_inside_q;     // latched at the RMW write step
+  logic                  pixt_inside_q;     // latched at the pixel write step
   logic                  pixt_in_window, pixt_in_window_live, pixt_clip_out;
   assign pixt_xy_m2m = decoded.force_pixel && decoded.xy_addr
                      && (decoded.iclass == INSTR_MOVE_FIELD_M2M);
-  assign pixt_xy_win  = decoded.xy_addr && (pixt_rmw || pixt_xy_m2m)
+  assign pixt_xy_win  = decoded.xy_addr
+                     && ((decoded.force_pixel && is_mv_store) || pixt_xy_m2m)
                      && (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0);
   assign pixt_in_window =
         (pixt_point_q[15:0] >= pixt_wstart_q[15:0])
@@ -2341,6 +2375,7 @@ module tms34010_core
   logic [15:0]           io_convsp;    // CONVSP register (XY->linear source pitch)
   logic [15:0]           io_control;   // CONTROL register (PPOP, T, window mode, ...)
   logic [15:0]           io_pmask;     // PMASK register (plane mask)
+  logic                  io_pixel_srt; // DPYCTL.SRT program-controlled VRAM transfer
   logic [15:0]           io_intenb;    // INTENB register (maskable-interrupt enables)
   logic [15:0]           io_intpend;   // INTPEND register (maskable-interrupt pending)
   logic [15:0]           io_hstctlh;   // HSTCTLH register (host control; NMI/NMIM bits)
@@ -2385,6 +2420,7 @@ module tms34010_core
     .convsp_o (io_convsp),
     .control_o(io_control),
     .pmask_o  (io_pmask),
+    .pixel_srt_o(io_pixel_srt),
     .intenb_o (io_intenb),
     .intpend_o(io_intpend),
     .hstctlh_o(io_hstctlh),
@@ -2475,6 +2511,16 @@ module tms34010_core
   // a one-clock completion-qualified request, so held memory waits cannot
   // repeat a processor write or live-register load.
   assign mem_we = mem_we_int && !io_is_io;
+  // DPYCTL.SRT converts only graphics pixel accesses. Instruction fetches,
+  // stack/data moves, host traffic, and on-chip I/O retain their ordinary
+  // cycle types. The registered memory-fabric ingress captures this sideband
+  // with the complete architectural request before arbitration.
+  assign mem_srt = mem_req && io_pixel_srt && !io_is_io
+                && ((state_q == CORE_DRAV)
+                    || (state_q == CORE_LINE_DRAW)
+                    || (state_q == CORE_FILL)
+                    || (state_q == CORE_PBLT)
+                    || ((state_q == CORE_MEMORY) && decoded.force_pixel));
   assign mem_is_io    = io_is_io;
   assign mem_io_we    = mem_we_int;
   assign mem_io_rdata = io_rdata16;
@@ -2884,14 +2930,14 @@ module tms34010_core
 
       CORE_DRAV_SETUP_WIN: begin
         // One cycle to read WSTART(B5)/WEND(B6) and test Rd's pixel. If the
-        // pixel is drawn (W=2/3 inside) go to the RMW; otherwise skip straight
+        // pixel is drawn (W=2/3 inside) go to its access; otherwise skip straight
         // to CORE_WRITEBACK, which still advances Rd and writes V/WVP.
         state_d = (((drav_w_q == 2'd2) || (drav_w_q == 2'd3)) && drav_in_window)
                 ? CORE_DRAV : CORE_WRITEBACK;
       end
 
       CORE_PIXT_SETUP_WIN: begin
-        // Read WSTART/WEND. A register-to-XY store runs its RMW and inhibits
+        // Read WSTART/WEND. A register-to-XY store runs its pixel access and inhibits
         // the write there. XY-to-XY has no destination-read phase, so modes
         // that suppress drawing skip directly to writeback.
         state_d = (pixt_xy_m2m
@@ -2901,9 +2947,9 @@ module tms34010_core
       end
 
       CORE_DRAV: begin
-        // Single-pixel RMW at Rd's linear address: read the destination pixel
-        // (sub-step 0), then write the merged COLOR1 (sub-step 1). On the write
-        // ack proceed to CORE_WRITEBACK, which advances Rd by Rs.
+        // Draw at Rd's linear address: optionally read the destination at
+        // sub-step 0, then write merged/direct COLOR1 at sub-step 1. On the
+        // write ack proceed to CORE_WRITEBACK, which advances Rd by Rs.
         mem_req  = 1'b1;
         mem_addr = drav_linear_q;
         mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
@@ -2929,8 +2975,8 @@ module tms34010_core
       CORE_LINE_SETUP_WIN: state_d = CORE_LINE_DRAW;
 
       CORE_LINE_DRAW: begin
-        // Per-pixel RMW at DADDR's linear address: read dest (sub-step 0), write
-        // the merged COLOR1 (sub-step 1). On the write ack of the last pixel
+        // Per pixel, optionally read dest at sub-step 0, then write merged or
+        // direct COLOR1 at sub-step 1. On the write ack of the last pixel
         // (COUNT about to reach 0) go to writeback; else draw the next pixel.
         mem_req  = 1'b1;
         mem_addr = line_linear;
@@ -2953,9 +2999,8 @@ module tms34010_core
       CORE_LINE_WB_COUNT: state_d = CORE_FETCH;         // write COUNT -> B10, then fetch
 
       CORE_FILL: begin
-        // Per pixel, read the destination (sub-step 0) then write the merged
-        // value (sub-step 1): merged = PPOP(COLOR1, dest) plane-masked and
-        // transparency-checked. The memory model RMW handles sub-word /
+        // Per pixel, optionally read the destination at sub-step 0, then write
+        // the merged/direct value at sub-step 1. The field sequencer handles sub-word /
         // straddling pixels. Stay until the array's last write completes.
         mem_req   = 1'b1;
         mem_addr  = fill_addr_q;
@@ -3013,8 +3058,8 @@ module tms34010_core
       end
 
       CORE_PBLT: begin
-        // Per pixel: read source (sub-step 0), read destination (1), write the
-        // processed pixel (2). Stay until the array's last write completes.
+        // Per pixel: read source (sub-step 0), optionally read destination
+        // (1), then write the processed/direct pixel (2).
         // The binary source is read 1 bit at a time; otherwise PSIZE bits.
         mem_req   = 1'b1;
         mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
@@ -3177,9 +3222,9 @@ module tms34010_core
             // mem[mv_addr]. mv_addr = pointer Rd (postinc/none) or Rd-FS
             // (predec); the pointer auto-update (Rd±FS) is written back at
             // WRITEBACK for the inc/dec forms. FS from the F-selected ST pair.
-            // A PIXT store (pixt_rmw) is a 2-step plane-mask read-modify-write:
-            // step 0 reads the destination pixel, step 1 writes the merged
-            // value. A regular MOVE store (and PMASK=0 PIXT) is a single write.
+            // A processing/window PIXT store reads the destination at step 0
+            // and writes the merged value at step 1. A regular MOVE or direct
+            // replace PIXT store is a single write.
             mem_req   = 1'b1;
             mem_addr  = mv_addr;           // = Rd or Rd-FS (predec)
             mem_size  = mv_fs;             // field size (1..32)
@@ -3279,7 +3324,7 @@ module tms34010_core
             INSTR_MOVB_OFF_M2M,
             INSTR_MOVB_ABS_M2M:
                         if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
-            // PIXT store RMW stays for its write step; single-step store exits.
+            // A destination-reading PIXT stays for its write; direct store exits.
             INSTR_MOVE_FIELD_STORE:
                         if (!pixt_rmw || mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
             default:    state_d = CORE_WRITEBACK;

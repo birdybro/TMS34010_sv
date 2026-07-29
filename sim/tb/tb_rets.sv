@@ -59,7 +59,7 @@ module tb_rets;
     .mem_we          (mem_we),
     .mem_addr        (mem_addr),
     .mem_size        (mem_size),
-    .mem_wdata       (mem_wdata),
+    .mem_wdata       (mem_wdata), .mem_srt(),
     .mem_rdata       (mem_rdata),
     .mem_ack         (mem_ack),
     .state_o         (state_w),

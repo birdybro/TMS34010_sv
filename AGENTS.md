@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0157. Task 0124
+The functional implementation is complete through Task 0158. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -101,6 +101,13 @@ synchronized active-low HSYNC/VSYNC inputs receive the specified recognition
 delay; external edges or total-register fallbacks control the counters;
 external interlace classifies the next field at the recognition edge; and
 split sync output enables reach the pin-system boundary.
+Task 0158 consumes DPYCTL.SRT only for graphics pixel traffic. PIXT, DRAV,
+LINE, FILL, and PIXBLT pixel reads/writes become explicit VRAM
+memory-to-register/register-to-memory local cycles with the documented
+TR/QE/W/address-status phases; ordinary instruction, data, I/O, and host
+traffic are unchanged. Direct replace operations avoid unnecessary
+destination reads. The TMS34010 itself has no pixel-data output pins:
+external VRAM serial ports supply pixels.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
@@ -108,7 +115,9 @@ fetch, maskable/NMI entry with architectural service-context ST
 initialization, and the illegal-opcode trap. Video timing is integrated in
 its dedicated VCLK domain through coherent CDC, internal/external
 noninterlaced/interlaced timing, the screen-refresh client, and its physical
-memory-to-register cycle; VRAM serial-display service remains future work.
+memory-to-register cycle. Program-controlled VRAM MTR/RTM service is also
+integrated; external VRAM serial-display behavior is a surrounding-system
+responsibility rather than missing processor RTL.
 Host pin timing is functionally
 integrated; its final FPGA I/O timing and CDC constraints remain sign-off
 work. Read
@@ -173,7 +182,8 @@ RTL, tests, task log, changelog, and specification first.
 - `rtl/memory/tms34010_memory_fabric.sv` — field sequencer plus all-client
   arbiter composition behind one abstract controller boundary.
 - `rtl/memory/tms34010_local_bus.sv` — standalone 8× original-pin phase
-  engine, LRDY waits, address/status multiplexing, and reset initialization.
+  engine, LRDY waits, address/status multiplexing, explicit screen/SRT VRAM
+  transfers, and reset initialization.
 - `rtl/cdc/tms34010_local_bus_bridge.sv` — two-phase MCP command/response
   bridge between core and 8× domains; payload buses are held stable while
   attributed request/ack toggles cross through 2FF synchronizers.
@@ -224,7 +234,7 @@ accepts `REGRESS_JOBS=<N>` for parallel Verilator builds.
 `scripts/synth_quartus.sh` is currently only a placeholder/tool-discovery
 check. Its zero exit status is not evidence of synthesis, fit, timing closure,
 or Cyclone V compatibility. A real Quartus project, constraints, and reports
-remain future work.
+are the next completion gate.
 
 RTL lint is a zero-diagnostic gate. Do not silently suppress new warnings or
 call a warning-bearing run "clean."

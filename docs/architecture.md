@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0157, with
+> Status: **implemented and ISA/status-audited through Task 0158, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -32,8 +32,10 @@
 > configuration/command/status mailboxes, lossless DIP delivery, a completed
 > bundled screen-transaction bridge, and individually synchronized active-low
 > HSYNC/VSYNC inputs isolate it from the core clock and asynchronous pins.
-> VRAM serial-display/pixel service remains open. The remaining system-level exit
-> gates are recorded in `completion_audit.md`.
+> DPYCTL.SRT now converts only graphics pixel reads/writes into explicit VRAM
+> MTR/RTM cycles with the documented physical phases. Pixel data comes from
+> the attached VRAM serial port rather than a processor pin. The remaining
+> system-level exit gates are recorded in `completion_audit.md`.
 
 ## Specification source
 
@@ -118,9 +120,9 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/tms34010_system.sv`                | 6     | **landed through Task 0157** | functional-system wrapper connecting all core memory clients, explicit VCLK, and raw video-sync pins to the core/fabric boundary |
-| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0157** | integrated core/VCLK/8× system, MCP bridges, original-pin local bus, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, shared HLDA/EMUA, and split video-sync direction |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0157** | multicycle CPU, memory/host/interrupt/graphics engines, explicit VCLK, and coherent DRAM/screen/video boundaries including sync inputs/output enables |
+| `rtl/tms34010_system.sv`                | 6     | **landed through Task 0158** | functional-system wrapper connecting all core memory clients, explicit VCLK, raw video-sync pins, and the graphics SRT tag to the core/fabric boundary |
+| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0158** | integrated core/VCLK/8× system, MCP bridges, original-pin local bus including SRT transfers, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, shared HLDA/EMUA, and split video-sync direction |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0158** | multicycle CPU, memory/host/interrupt/graphics engines, explicit VCLK, coherent DRAM/screen/video boundaries, and graphics-only DPYCTL.SRT tagging |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -129,10 +131,10 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0135** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
-| `rtl/memory/tms34010_local_bus.sv`      | 6     | **integrated through Task 0151** | 8× original-pin LCLK/row/column/data phases, address/status encoding, LRDY waits, I/O cycles, reset RAS cycles, and phased HOLD/HOLDA output-enable release |
+| `rtl/memory/tms34010_local_bus.sv`      | 6     | **integrated through Task 0158** | 8× original-pin LCLK/row/column/data phases, address/status encoding, screen and explicit MTR/RTM transfers, LRDY waits, I/O/reset cycles, and phased HOLD/HOLDA output-enable release |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
-| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed through Task 0150** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation/HOLD restart; processor/host I/O cycle selection and host-read snapshot |
-| `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed through Task 0150** | registered CPU request classification; external field sequencing; processor-I/O bypass; host-I/O classification; screen/DRAM/host/CPU arbitration |
+| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed through Task 0158** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh capture; CPU RMW/HOLD restart; I/O and graphics MTR/RTM cycle selection |
+| `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed through Task 0158** | registered CPU request/SRT classification; external field sequencing; processor-I/O bypass; host-I/O classification; screen/DRAM/host/CPU arbitration |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
 | `rtl/graphics/tms34010_pixblt.sv`       | 7     | not separate | PIXBLT/FILL datapaths and FSM states currently reside in the core |
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
@@ -145,7 +147,7 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/cdc/tms34010_emu_bridge.sv`        | 6     | **landed (Task 0152)** | source-held EMU-event handshake, synchronized halt level, exact Q1/Q2 EMUA windows, and Q3/Q4 HLDA shared-pin mux |
 | `rtl/cdc/tms34010_cdc_mailbox.sv`       | 9     | **landed (Task 0155)** | one-entry packed MCP word crossing with source-ready/accept and destination-valid pulse |
 | `rtl/cdc/tms34010_screen_cdc.sv`        | 9     | **landed (Task 0155)** | VCLK-to-core held screen transaction; bundled payload stable until returned physical completion |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0157** | memory-mapped I/O/host/interrupt/refresh storage plus the explicit VCLK subsystem, external-sync boundary, and coherent live-register read views |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0158** | memory-mapped I/O/host/interrupt/refresh storage plus explicit VCLK/external-sync boundaries, the DPYCTL.SRT tap, and coherent live-register read views |
 | `rtl/video/tms34010_video_subsystem.sv` | 9     | **integrated through Task 0157** | VCLK-domain internal/external noninterlaced/interlaced timing and display composition with atomic config, coalesced live commands, coherent status, DIP event, and screen transaction CDC |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0157** | internal/external timing: writable counters, synchronized active-low sync inputs, exact recognition/fallback/interval endpoints, field sequencing, ENV gating, DPYINT, and split output enables |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0156** | VCLK-owned live DPYADR, frame/line reloads, signed interlaced DUDATE/2 start, LCSTRT+1 scheduling, and acknowledged SRFADR/DPYTAP/ORG transfer |
@@ -200,7 +202,7 @@ timing registers, live HCOUNT/VCOUNT, DPYCTL.ENV, DIP latch, and timing
 outputs. At that checkpoint A0034 recorded a deliberate
 same-clock/noninterlaced boundary; Task 0155 later resolves the VCLK half,
 Task 0156 closes internal interlace, and Task 0157 closes external
-synchronization.
+synchronization. Task 0158 closes the graphics SRT transfer consumer.
 Task 0140 then
 corrected the inherited interval endpoints: end compares remain active at
 equality and blank-start compares take effect on the following count, matching
@@ -322,8 +324,9 @@ completed requester path. Reserved indices 17h–1Ah are explicit non-storage:
 writes do nothing and both read views return zero, including the PMASK
 compatibility word called out by the guide. Defined fields are unchanged;
 REFCNT's previously documented A0033 reserved-bit retention remains isolated.
-The remaining SRT consumer belongs to the video/display gate, and CD/CF have
-no cache consumer in the current cacheless implementation.
+At that checkpoint SRT remained for the video/display gate; Task 0158 now
+consumes it. CD/CF have no cache consumer in the current cacheless
+implementation.
 
 Task 0155 closes the provisional core/VCLK boundary from A0034.
 `tms34010_video_subsystem` now owns all counters, timing compares, DPYADR, and
@@ -357,6 +360,19 @@ line, while external VSYNC or the VTOTAL fallback begins a field. NIL=0
 classifies an external field from the pre-clear HCOUNT window; NIL=1 forces
 the noninterlaced even phase. Explicit HSYNC/VSYNC output enables now reach
 the pin-system boundary.
+
+Task 0158 completes DPYCTL.SRT and corrects the final video scope. The core
+tags only graphics pixel requests from PIXT, DRAV, LINE, FILL, and PIXBLT.
+The registered fabric preserves that tag through field-to-word sequencing;
+the arbiter converts reads to `LOCAL_CYCLE_PIXEL_MTR` and writes to
+`LOCAL_CYCLE_PIXEL_RTM`. The physical engine retains the ordinary address,
+forces IAQ inactive and TR column status active, holds TR/QE at RAS fall, and
+uses low W at RAS fall only for RTM. Neither cycle exchanges CPU data during
+the access period; an MTR pixel-load result is deterministic zero under
+A0048. Direct replace modes bypass an unnecessary destination read, while
+PPOP, transparency, PMASK, and applicable windows keep the read path.
+The processor has sync/blank and VRAM-control pins but no pixel-data output;
+the external VRAM serial port is the pixel source.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -410,8 +426,8 @@ level-0 vector, and enters `CORE_FETCH`. This is the same vector word used by
 TRAP 0; reset performs no PC/ST push and does not touch SP. When HCS is high
 during reset, HSTCTL.HLT resets to one and `CORE_RESET_HALT` defers that
 vector request until a direct host high-byte write clears HLT. The eight
-post-reset RAS-only cycles remain a responsibility of the future physical
-memory controller.
+post-reset RAS-only cycles are emitted by the integrated 8× physical
+controller before that pending vector request can reach LAD.
 
 **Maskable-interrupt entry** (Task 0100): `tms34010_int_ctrl` is instantiated
 in the core; `int_req` (ST.IE=1 and an enabled INTPEND bit set, via the
@@ -616,10 +632,13 @@ the exception to the core/VCLK mailboxes: each is independently synchronized
 as a one-bit VCLK level before edge recognition. A0045 records the internal
 active-edge representation, common synchronous-reset contract, and behavior
 when VCLK is stopped; A0047 records the external-sync timing and direction
-contract.
+contract. A0048 records the separate core-clock SRT transfer and
+attached-VRAM boundary.
 
-Timing generation and synchronization are functionally implemented. Physical
-VRAM shift-register transfers and pixel output are not yet implemented.
+Timing generation, synchronization, scheduled screen MTR, and
+program-controlled graphics MTR/RTM are functionally and physically
+implemented at the TMS34010 pin boundary. Attached VRAM owns its
+shift-register storage and pixel output.
 `tms34010_refresh` is integrated with REFCNT and its request is serviced
 through the pin system; final FPGA integration must still prove its bounded
 service under the PLL ratio, physical HOLD, and external waits.
@@ -649,11 +668,10 @@ service under the PLL ratio, physical HOLD, and external waits.
 ## Current implementation gaps
 
 - Optional instruction cache.
-- VRAM serial behavior and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.
 
-The instruction/status reconciliation is complete. Remaining observable
-compatibility questions are at the physical memory, video, CDC, and FPGA
-realization boundaries recorded in `completion_audit.md`.
+The instruction/status reconciliation and TMS34010 functional interface are
+complete. Remaining completion work is FPGA realization and measured
+memory/video/CDC timing evidence recorded in `completion_audit.md`.

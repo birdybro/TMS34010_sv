@@ -79,6 +79,7 @@ module tms34010_system
   logic [DATA_WIDTH-1:0]             cpu_field_rdata;
   logic                              cpu_field_ack;
   logic                              cpu_field_iaq;
+  logic                              cpu_field_srt;
   logic                              cpu_field_is_io;
   logic                              cpu_field_io_we;
   local_word_t                       cpu_field_io_rdata;
@@ -114,6 +115,7 @@ module tms34010_system
     .mem_size                (cpu_field_size),
     .mem_wdata               (cpu_field_wdata),
     .mem_iaq                 (cpu_field_iaq),
+    .mem_srt                 (cpu_field_srt),
     .mem_is_io               (cpu_field_is_io),
     .mem_io_we               (cpu_field_io_we),
     .mem_io_rdata            (cpu_field_io_rdata),
@@ -172,6 +174,7 @@ module tms34010_system
     .cpu_field_size_i   (cpu_field_size),
     .cpu_field_wdata_i  (cpu_field_wdata),
     .cpu_field_iaq_i    (cpu_field_iaq),
+    .cpu_field_srt_i    (cpu_field_srt),
     .cpu_field_is_io_i  (cpu_field_is_io),
     .cpu_field_io_we_i  (cpu_field_io_we),
     .cpu_field_io_rdata_i(cpu_field_io_rdata),

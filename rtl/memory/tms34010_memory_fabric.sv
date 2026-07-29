@@ -9,6 +9,8 @@
 // words with screen refresh, DRAM refresh, host indirect access, and HOLD.
 // Processor on-chip I/O transactions bypass field splitting and select the
 // dedicated I/O read/write cycle kinds with their internal read-data payload.
+// A captured DPYCTL.SRT sideband converts only resulting graphics pixel words
+// into explicit VRAM memory-to-register/register-to-memory cycles.
 // Host-indirect requests arrive as aligned words and select those same I/O
 // kinds when their held address decodes into the internal register page.
 // One abstract controller-facing cycle remains held until acknowledgement.
@@ -38,6 +40,7 @@ module tms34010_memory_fabric
   input  logic [FIELD_SIZE_WIDTH-1:0]       cpu_field_size_i,
   input  logic [DATA_WIDTH-1:0]             cpu_field_wdata_i,
   input  logic                              cpu_field_iaq_i,
+  input  logic                              cpu_field_srt_i,
   input  logic                              cpu_field_is_io_i,
   input  logic                              cpu_field_io_we_i,
   input  local_word_t                       cpu_field_io_rdata_i,
@@ -102,6 +105,7 @@ module tms34010_memory_fabric
   logic [FIELD_SIZE_WIDTH-1:0]   cpu_request_size_q;
   logic [DATA_WIDTH-1:0]         cpu_request_wdata_q;
   logic                          cpu_request_iaq_q;
+  logic                          cpu_request_srt_q;
   local_word_t                   cpu_request_io_rdata_q;
 
   // Register the architectural request before classifying it as external
@@ -117,6 +121,7 @@ module tms34010_memory_fabric
       cpu_request_size_q     <= '0;
       cpu_request_wdata_q    <= '0;
       cpu_request_iaq_q      <= 1'b0;
+      cpu_request_srt_q      <= 1'b0;
       cpu_request_io_rdata_q <= '0;
     end else if (cpu_request_active_q) begin
       if (cpu_field_ack_o)
@@ -131,6 +136,7 @@ module tms34010_memory_fabric
       cpu_request_size_q     <= cpu_field_size_i;
       cpu_request_wdata_q    <= cpu_field_wdata_i;
       cpu_request_iaq_q      <= cpu_field_iaq_i;
+      cpu_request_srt_q      <= cpu_field_srt_i;
       cpu_request_io_rdata_q <= cpu_field_io_rdata_i;
     end
   end
@@ -206,6 +212,7 @@ module tms34010_memory_fabric
     .cpu_io_i          (cpu_request_is_io_q),
     .cpu_io_rdata_i    (cpu_request_io_rdata_q),
     .cpu_iaq_i         (cpu_request_iaq_q),
+    .cpu_srt_i         (cpu_request_srt_q),
     .cpu_rmw_lock_i    (selected_cpu_rmw_lock),
     .cpu_rdata_o       (cpu_word_rdata),
     .cpu_ack_o         (cpu_word_ack),

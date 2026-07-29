@@ -381,6 +381,77 @@ module tb_local_bus;
           "screen completion");
     finish_command();
 
+    // Program-controlled memory-to-register transfers retain the ordinary
+    // pixel address, force IAQ inactive and TR status active at column time,
+    // and use the same two-period VRAM transfer envelope as screen refresh.
+    word_address = 32'h31A5_67B0;
+    word_row     = expected_word_row(word_address);
+    word_column  = expected_word_column(word_address, 1'b0);
+    word_column[14] = 1'b0;
+    begin_command(
+        LOCAL_CYCLE_PIXEL_MTR, word_address, 16'hFFFF, 1'b1,
+        14'h0000, 16'h0000, 1'b0, 8'h00);
+    check(!den_n && !ddout && we_n,
+          "MTR must initially enable the input data path");
+    wait_phase(LOCAL_PHASE_Q2A);
+    check(lad_oe && (lad_o == word_row) && den_n && ddout
+          && !tr_qe_n && we_n,
+          "MTR row and transfer setup");
+    wait_phase(LOCAL_PHASE_Q3B);
+    check(!ras_n && !tr_qe_n && we_n && (lad_o == word_row),
+          "MTR transfer indication at RAS fall");
+    wait_phase(LOCAL_PHASE_Q4A);
+    check((lad_o == word_column) && !word_column[15]
+          && !word_column[14] && we_n,
+          "MTR column TR/IAQ status and inactive W");
+    wait_phase(LOCAL_PHASE_Q1A);
+    check(lad_oe && (lad_o == 16'h0000) && !ras_n && !lal_n
+          && cas_n && !tr_qe_n,
+          "MTR undefined second-period LAD and transfer hold");
+    wait_phase(LOCAL_PHASE_Q1B);
+    check(!cas_n && !tr_qe_n,
+          "MTR CAS must fall while transfer remains active");
+    wait_phase(LOCAL_PHASE_Q3A);
+    check(tr_qe_n && !ras_n && !cas_n,
+          "MTR transfer indication must release before RAS");
+    wait_phase(LOCAL_PHASE_Q4B);
+    check(cycle_ack && (cycle_rdata == 16'h0000),
+          "MTR completes without returning LAD data to the CPU");
+    finish_command();
+
+    // Register-to-memory uses the same explicit transfer cycle, with W low
+    // at the RAS falling edge and released again before the column address.
+    word_address = 32'h06D4_2A90;
+    word_row     = expected_word_row(word_address);
+    word_column  = expected_word_column(word_address, 1'b0);
+    word_column[14] = 1'b0;
+    begin_command(
+        LOCAL_CYCLE_PIXEL_RTM, word_address, 16'hA55A, 1'b1,
+        14'h0000, 16'h0000, 1'b0, 8'h00);
+    check(!den_n && !ddout && we_n,
+          "RTM must initially enable the input data path");
+    wait_phase(LOCAL_PHASE_Q2A);
+    check((lad_o == word_row) && !tr_qe_n && !we_n,
+          "RTM row, transfer, and early W setup");
+    wait_phase(LOCAL_PHASE_Q3B);
+    check(!ras_n && !tr_qe_n && !we_n && (lad_o == word_row),
+          "RTM must present low W at RAS fall");
+    wait_phase(LOCAL_PHASE_Q4A);
+    check((lad_o == word_column) && we_n
+          && !word_column[15] && !word_column[14],
+          "RTM must release W before TR/IAQ column status");
+    wait_phase(LOCAL_PHASE_Q1B);
+    check(lad_oe && (lad_o == 16'h0000) && !cas_n && !tr_qe_n
+          && we_n,
+          "RTM second period carries no CPU write data");
+    wait_phase(LOCAL_PHASE_Q3A);
+    check(tr_qe_n && !ras_n && !cas_n && we_n,
+          "RTM transfer release ordering");
+    wait_phase(LOCAL_PHASE_Q4B);
+    check(cycle_ack && ras_n && cas_n && tr_qe_n && we_n,
+          "RTM completion");
+    finish_command();
+
     // RAS-only refresh emits the duplicated REFCNT row mapping and activates
     // no control other than RAS/LAL.
     refresh_row = expected_refresh_row(8'hA6);

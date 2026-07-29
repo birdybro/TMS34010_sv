@@ -7,6 +7,32 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0158 — program-controlled VRAM register transfers)
+- Exported DPYCTL.SRT from the I/O owner and captured it with the registered
+  architectural CPU request. Only PIXT/DRAV/LINE/FILL/PIXBLT pixel accesses
+  are tagged; instruction, ordinary data, I/O, host, refresh, and screen
+  clients retain their existing cycle classes.
+- Added explicit `LOCAL_CYCLE_PIXEL_MTR` and `LOCAL_CYCLE_PIXEL_RTM`
+  arbitration and physical local-bus service. Both use the ordinary
+  unaltered address with inactive IAQ and active-low TR column status;
+  TR/QE spans the RAS transfer, and RTM alone presents W low at RAS fall.
+- Added the direct replace fast path for transparency-off, PPOP-replace,
+  unprotected pixels. Aligned PSIZE=16 writes therefore emit one RTM rather
+  than a synthetic destination MTR plus RTM, while pixel processing, PMASK,
+  transparency, and applicable window modes retain destination reads.
+- Defined deterministic zero for an SRT pixel-read destination because MTR
+  transfers VRAM memory into its external serial register and returns no LAD
+  data to the CPU.
+- Added `tb_pixel_srt` end-to-end program coverage, including direct
+  PSIZE=16 RTM and partial PSIZE=8 MTR→RTM insertion, and extended arbiter
+  and phase-level local-bus tests. Updated every direct core/I/O bench
+  instantiation for the explicit SRT ports.
+- Corrected the completion scope: the TMS34010 exposes video timing and VRAM
+  transfer controls but no pixel-data pins; the attached VRAM serial port
+  emits pixels and is not unfinished processor behavior.
+- Validation: focused SRT/arbitration/local-bus tests PASS;
+  `scripts/lint.sh` clean; full regression 144/144 PASS.
+
 ### Added (Task 0157 — external video synchronization)
 - Consumed DPYCTL.DXV/HSD in the VCLK timing owner. DXV selects internal
   sync generation or external synchronization, while HSD keeps horizontal

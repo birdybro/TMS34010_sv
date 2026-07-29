@@ -50,7 +50,7 @@ module tb_io_refresh;
     .convdp_o     (),
     .convsp_o     (),
     .control_o    (),
-    .pmask_o      (),
+    .pmask_o      (), .pixel_srt_o(),
     .intenb_o     (),
     .intpend_o    (),
     .hstctlh_o    (),

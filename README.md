@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0157. Task 0124
+Functional implementation work is complete through Task 0158. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -88,6 +88,13 @@ recognition delay, HTOTAL/VTOTAL provide missing-sync fallbacks, HSD selects
 horizontal input or output operation, external interlace uses the documented
 horizontal recognition window, and explicit sync output enables propagate to
 the pin-system boundary.
+Task 0158 consumes DPYCTL.SRT and converts only graphics pixel reads/writes
+into the specified explicit VRAM memory-to-register/register-to-memory local
+cycles. It adds the exact TR/QE/W/address-status phases, retains ordinary
+instruction/data/I/O/host traffic, and avoids unnecessary destination reads
+for direct replace operations. This also corrects the completion boundary:
+the TMS34010 has no pixel-data output pins; attached VRAM supplies pixels
+through its serial port.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -116,8 +123,8 @@ The repository currently contains:
 - an integrated functional-system wrapper that converges CPU/graphics,
   screen, DRAM-refresh, and host-indirect traffic on one abstract controller;
 - a standalone 8×-clock original-pin local-bus engine covering ordinary word,
-  screen-transfer, RAS-only, CAS-before-RAS, and I/O cycles, including LRDY
-  waits and reset initialization;
+  screen-transfer, program-controlled MTR/RTM, RAS-only, CAS-before-RAS, and
+  I/O cycles, including LRDY waits and reset initialization;
 - an integrated core-clock-to-8× pin-system wrapper using a lossless MCP
   command/response CDC, including returned read data, IAQ, and screen ORG;
 - processor and host-indirect on-chip I/O access through dedicated
@@ -138,15 +145,19 @@ The repository currently contains:
   screen-refresh scheduling; coherent MCP configuration/command/status,
   event, and completed-screen-transaction crossings; plus integrated
   REFCNT/refresh-request generation;
-- 143 self-checking SystemVerilog testbenches, including non-integer-clock
+- DPYCTL.SRT classification for every graphics engine, with explicit
+  program-controlled VRAM MTR/RTM pin cycles and unaffected nonpixel traffic;
+- 144 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
-  and an exhaustive
-  65,536-opcode static status-policy sweep.
+  end-to-end SRT graphics-cycle coverage, and an exhaustive 65,536-opcode
+  static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining physical VRAM serial service, video
-display-memory/pixel behavior, real Quartus project/constraints, and
-timing/resource/CDC validation.
+the TMS34010 functional/video/local-bus boundary is complete, and the audit
+records the remaining real Quartus project/constraints plus
+timing/resource/CDC validation. A board-level design still needs external
+VRAM or an equivalent memory/video subsystem to consume the landed transfer
+cycles and emit pixels; that device behavior is not part of this processor.
 
 ## Getting started
 

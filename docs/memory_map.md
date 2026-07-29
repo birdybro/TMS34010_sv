@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal/external video timing, and live DPYADR
-> implemented through Task 0157**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0158**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -122,6 +122,11 @@ Task 0157 consumes DPYCTL.DXV/HSD: active-low external sync inputs are
 recognized after the specified 2.5-VCLK delay, total-register fallbacks keep
 the counters progressing when an input is absent, and the corresponding
 output enables propagate to the pin-system boundary.
+Task 0158 consumes DPYCTL.SRT in the core/memory path. Only graphics pixel
+reads/writes carry the captured SRT tag; arbitration maps them to explicit
+VRAM memory-to-register/register-to-memory cycles. Their ordinary address is
+unchanged, IAQ is inactive, TR column status is active, and all nonpixel
+request classes retain their previous mapping.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -205,6 +210,7 @@ Task 0155 moves live counters and display state into VCLK with coherent
 core-domain views. Task 0156 consumes NIL for internal field sequencing and
 the field-aware half-DUDATE DPYADR reload.
 Task 0157 consumes DXV/HSD for external sync recognition and direction.
+Task 0158 consumes SRT for graphics-only explicit VRAM register transfers.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -216,7 +222,7 @@ Task 0157 consumes DXV/HSD for external sync recognition and direction.
 | C0000050 | 0x05 | VEBLNK  | video timing | Vertical End Blank |
 | C0000060 | 0x06 | VSBLNK  | video timing | Vertical Start Blank |
 | C0000070 | 0x07 | VTOTAL  | video timing | Vertical Total |
-| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; NIL selects internal/external field sequencing; ENV gates combined blank and new DIP events; DXV/HSD select sync input/output operation; SRT remains an unconsumed serial-transfer control |
+| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; NIL selects internal/external field sequencing; ENV gates combined blank and new DIP events; DXV/HSD select sync input/output operation; SRT converts graphics pixel reads/writes to explicit VRAM MTR/RTM cycles |
 | C0000090 | 0x09 | DPYSTRT | video timing | LCSTRT/SRSTRT reload live DPYADR at line/frame boundaries |
 | C00000A0 | 0x0A | DPYINT  | video timing | VCOUNT line selected for DIP at start of horizontal blanking |
 | C00000B0 | 0x0B | CONTROL | graphics ctl | Bits 1:0 read zero; RM/RR, transparency, window, direction, PPOP, CD |
@@ -264,10 +270,17 @@ transaction bridge carries it into the core, and the integrated local-bus MCP
 routes it to the controller's physical memory-to-register pin cycle before
 completion returns to DPYADR. Task 0156 adds the interlaced starting-address
 displacement without changing that completed-transfer contract. Task 0157
-closes the timing-side external synchronization contract without inventing
-serial-display data. There is still no physical bidirectional sync-pin
-wrapper, VRAM serial-output model, or pixel output.
+closes the timing-side external synchronization contract. Task 0158 adds the
+other processor-controlled path: graphics reads/writes become explicit MTR
+or RTM cycles with normal address mapping, active TR status, and the RTM
+W-at-RAS distinction.
+
+The TMS34010 itself provides HSYNC, VSYNC, BLANK, and VRAM control but no
+pixel-data output pins. Pixel bits come from the attached VRAM serial port.
+An FPGA board design may model or connect that external memory/video path,
+but it is outside the TMS34010-only processor memory map.
 
 ## Uncertain / partially implemented areas
 
-- Physical VRAM shift-register behavior and pixel output.
+- No unresolved TMS34010 architectural memory-map item remains. Physical
+  pin mapping and timing closure belong to the Quartus realization gate.

@@ -48,14 +48,16 @@ package tms34010_pkg;
   // A later physical-bus controller translates these cycle kinds into the
   // original LAD/RAS/CAS/TR/Q timing. Screen refresh and DRAM refresh carry
   // their dedicated payloads rather than pretending to be CPU word accesses.
-  typedef enum logic [2:0] {
-    LOCAL_CYCLE_WORD_READ      = 3'd0,
-    LOCAL_CYCLE_WORD_WRITE     = 3'd1,
-    LOCAL_CYCLE_SCREEN_REFRESH = 3'd2,
-    LOCAL_CYCLE_DRAM_RAS       = 3'd3,
-    LOCAL_CYCLE_DRAM_CBR       = 3'd4,
-    LOCAL_CYCLE_IO_READ        = 3'd5,
-    LOCAL_CYCLE_IO_WRITE       = 3'd6
+  typedef enum logic [3:0] {
+    LOCAL_CYCLE_WORD_READ      = 4'd0,
+    LOCAL_CYCLE_WORD_WRITE     = 4'd1,
+    LOCAL_CYCLE_SCREEN_REFRESH = 4'd2,
+    LOCAL_CYCLE_DRAM_RAS       = 4'd3,
+    LOCAL_CYCLE_DRAM_CBR       = 4'd4,
+    LOCAL_CYCLE_IO_READ        = 4'd5,
+    LOCAL_CYCLE_IO_WRITE       = 4'd6,
+    LOCAL_CYCLE_PIXEL_MTR      = 4'd7,
+    LOCAL_CYCLE_PIXEL_RTM      = 4'd8
   } local_cycle_kind_t;
 
   // Eight half-quarter subphases resolve the control transitions within each
@@ -126,10 +128,10 @@ package tms34010_pkg;
     CORE_DIVIDE       = 6'd8,  // multi-cycle wait for the divider (DIVU/MODU/...)
     CORE_FILL_SETUP   = 6'd9,  // FILL: latch COLOR1 + init counters (operands B2/B3/B7
                                //       latched at EXECUTE); the pixel loop follows
-    CORE_FILL         = 6'd10, // FILL: per-pixel read-modify-write until the array is done
+    CORE_FILL         = 6'd10, // FILL: optional destination read plus pixel-write loop
     CORE_FILL_WB      = 6'd11, // FILL: write the final DADDR back to B2
     CORE_PBLT_SETUP   = 6'd12, // PIXBLT: latch SPTCH/DPTCH (SADDR/DADDR/DYDX at EXECUTE)
-    CORE_PBLT         = 6'd13, // PIXBLT: per-pixel read-src / read-dst / write loop
+    CORE_PBLT         = 6'd13, // PIXBLT: per-pixel source / optional destination / write loop
     CORE_PBLT_WB      = 6'd14, // PIXBLT: write the final SADDR back to B0
     CORE_PBLT_WB2     = 6'd15, // PIXBLT: write the final DADDR back to B2
     CORE_PBLT_SETUP2  = 6'd16, // PIXBLT B (color expand): latch COLOR0/COLOR1
@@ -143,17 +145,17 @@ package tms34010_pkg;
     CORE_PBLT_WIN_MISS  = 6'd24, // PIXBLT XY (W=2): array outside window — no draw, V=1, WVP
     CORE_FILL_WIN_HIT   = 6'd25, // FILL XY (W=1): hit detection — no draw, V/WVP on overlap
     CORE_PBLT_WIN_HIT   = 6'd26, // PIXBLT XY (W=1): hit detection — no draw, V/WVP on overlap
-    CORE_DRAV           = 6'd27, // DRAV: 2-step RMW pixel draw at Rd's XY (advance at WRITEBACK)
+    CORE_DRAV           = 6'd27, // DRAV: optional destination read + pixel draw at Rd's XY
     CORE_DRAV_SETUP_WIN = 6'd28, // DRAV (W!=0): read WSTART/WEND, test Rd's XY against window
     CORE_LINE_SETUP1    = 6'd29, // LINE: read d(B0)/DYDX(B7)/COUNT(B10)
     CORE_LINE_SETUP2    = 6'd30, // LINE: read INC1(B11)/INC2(B12)/OFFSET(B4)
     CORE_LINE_SETUP3    = 6'd31, // LINE: read DADDR(B2)/COLOR1(B9)
-    CORE_LINE_DRAW      = 6'd32, // LINE: per-pixel RMW draw + Bresenham step (d/DADDR/COUNT)
+    CORE_LINE_DRAW      = 6'd32, // LINE: pixel draw + Bresenham step (d/DADDR/COUNT)
     CORE_LINE_WB_D      = 6'd33, // LINE: write back d -> B0
     CORE_LINE_WB_DADDR  = 6'd34, // LINE: write back DADDR -> B2
     CORE_LINE_WB_COUNT  = 6'd35, // LINE: write back COUNT (=0) -> B10
     CORE_LINE_SETUP_WIN = 6'd36, // LINE (W=3): read WSTART/WEND for per-pixel clip
-    CORE_PIXT_SETUP_WIN = 6'd37, // PIXT XY (W!=0): read WSTART/WEND before the RMW
+    CORE_PIXT_SETUP_WIN = 6'd37, // PIXT XY (W!=0): read WSTART/WEND before pixel access
     CORE_FETCH_IMM_EXT_LO = 6'd38, // fourth instruction word (second 32-bit operand low)
     CORE_FETCH_IMM_EXT_HI = 6'd39, // fifth instruction word (second 32-bit operand high)
     CORE_EMU_HALT         = 6'd40, // EMU sampled active: quiescent until RUN returns high

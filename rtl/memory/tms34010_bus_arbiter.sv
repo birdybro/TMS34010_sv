@@ -15,6 +15,8 @@
 // partial-word read/modify/write pairs are reserved across their read-to-write
 // boundary. HOLD is the only exception: when accepted in that boundary, the
 // arbiter pulses cpu_restart_o so the field sequencer repeats the entire pair.
+// CPU I/O takes precedence over its captured SRT tag; otherwise SRT maps a
+// pixel read/write to the explicit VRAM MTR/RTM cycle kind.
 //
 // Screen, host, and CPU clients hold their requests and address/write payloads
 // stable until acknowledgement. A host I/O read's live internal word is
@@ -68,6 +70,7 @@ module tms34010_bus_arbiter
   input  logic                          cpu_io_i,
   input  local_word_t                   cpu_io_rdata_i,
   input  logic                          cpu_iaq_i,
+  input  logic                          cpu_srt_i,
   input  logic                          cpu_rmw_lock_i,
   output local_word_t                   cpu_rdata_o,
   output logic                          cpu_ack_o,
@@ -284,6 +287,10 @@ module tms34010_bus_arbiter
           cycle_kind_o = cpu_we_i
                        ? LOCAL_CYCLE_IO_WRITE
                        : LOCAL_CYCLE_IO_READ;
+        end else if (cpu_srt_i) begin
+          cycle_kind_o = cpu_we_i
+                       ? LOCAL_CYCLE_PIXEL_RTM
+                       : LOCAL_CYCLE_PIXEL_MTR;
         end else begin
           cycle_kind_o = cpu_we_i
                        ? LOCAL_CYCLE_WORD_WRITE
@@ -292,7 +299,7 @@ module tms34010_bus_arbiter
         cycle_addr_o  = cpu_addr_i;
         cycle_wdata_o = cpu_wdata_i;
         cycle_io_rdata_o = cpu_io_rdata_i;
-        cycle_iaq_o   = cpu_io_i ? 1'b0 : cpu_iaq_i;
+        cycle_iaq_o   = (cpu_io_i || cpu_srt_i) ? 1'b0 : cpu_iaq_i;
         cpu_ack_o     = cycle_ack_i;
       end
 

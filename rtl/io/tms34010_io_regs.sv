@@ -14,7 +14,7 @@
 // HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
 // self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0155):
+// Current scope (Tasks 0081–0158):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -107,6 +107,7 @@ module tms34010_io_regs
   output logic [15:0]           convsp_o, // CONVSP: XY->linear source pitch shift
   output logic [15:0]           control_o,// CONTROL: PPOP[14:10], PBV/PBH, W, T(bit5)
   output logic [15:0]           pmask_o,  // PMASK: plane mask (1 bit = plane masked)
+  output logic                  pixel_srt_o, // DPYCTL.SRT pixel-cycle conversion
   output logic [15:0]           intenb_o, // INTENB: maskable-interrupt enables
   output logic [15:0]           intpend_o,// INTPEND: maskable-interrupt pending bits
   output logic [15:0]           hstctlh_o,// HSTCTLH: host control (NMI/NMIM in bits 8/9)
@@ -319,6 +320,7 @@ module tms34010_io_regs
   );
 
   assign refresh_cbr_o = io_reg[IO_IDX_CONTROL][CTRL_RM_BIT];
+  assign pixel_srt_o = io_reg[IO_IDX_DPYCTL][DPYCTL_SRT_BIT];
 
   // HCOUNT/VCOUNT, all timing compares, DPYADR, and the automatic display
   // scheduler live wholly in VCLK. Configuration, live-register commands,

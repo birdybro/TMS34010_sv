@@ -49,7 +49,7 @@ module tb_external_interrupts;
     .mem_we          (mem_we),
     .mem_addr        (mem_addr),
     .mem_size        (mem_size),
-    .mem_wdata       (mem_wdata),
+    .mem_wdata       (mem_wdata), .mem_srt(),
     .mem_rdata       (mem_rdata),
     .mem_ack         (mem_ack),
     .run_emu_n_i     (1'b1),

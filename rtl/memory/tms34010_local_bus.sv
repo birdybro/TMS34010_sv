@@ -15,6 +15,7 @@
 // Implemented cycles:
 //   - ordinary 16-bit word read and late write;
 //   - screen-refresh VRAM memory-to-register transfer;
+//   - program-controlled pixel memory-to-register/register-to-memory transfer;
 //   - RAS-only and CAS-before-RAS DRAM refresh;
 //   - on-chip I/O read and write external-pin cycles.
 //
@@ -454,6 +455,11 @@ module tms34010_local_bus
         read_data_q <= lad_i;
       else if (active_kind == LOCAL_CYCLE_IO_READ)
         read_data_q <= io_rdata_i;
+      else if (active_kind == LOCAL_CYCLE_PIXEL_MTR)
+        // A VRAM memory-to-register cycle returns no LAD data to the CPU.
+        // Retain deterministic zero for the architecturally unspecified
+        // destination value of an explicit SRT pixel read.
+        read_data_q <= '0;
     end
   end
 
@@ -506,6 +512,14 @@ module tms34010_local_bus
         column_value = 16'h4000;
       end
 
+      LOCAL_CYCLE_PIXEL_MTR,
+      LOCAL_CYCLE_PIXEL_RTM: begin
+        // Explicit pixel SRT cycles retain the ordinary unaltered address.
+        // TR status is active low and IAQ is inactive during column time.
+        column_value = word_column_address(active_addr, 1'b0);
+        column_value[14] = 1'b0;
+      end
+
       LOCAL_CYCLE_WORD_READ,
       LOCAL_CYCLE_WORD_WRITE: ;
       default: ;
@@ -546,6 +560,8 @@ module tms34010_local_bus
           end
 
           LOCAL_CYCLE_SCREEN_REFRESH,
+          LOCAL_CYCLE_PIXEL_MTR,
+          LOCAL_CYCLE_PIXEL_RTM,
           LOCAL_CYCLE_DRAM_RAS,
           LOCAL_CYCLE_DRAM_CBR: begin
             lad_o    = '0;
@@ -623,7 +639,17 @@ module tms34010_local_bus
           end
         end
 
-        LOCAL_CYCLE_SCREEN_REFRESH: begin
+        LOCAL_CYCLE_SCREEN_REFRESH,
+        LOCAL_CYCLE_PIXEL_MTR,
+        LOCAL_CYCLE_PIXEL_RTM: begin
+          // VRAM transfer cycles begin with the external data path in input
+          // direction, then release it before the row strobe. No LAD data is
+          // transferred during the second period.
+          if ((state_q == BUS_FIRST)
+              && (phase_q < LOCAL_PHASE_Q2A)) begin
+            den_n_o = 1'b0;
+            ddout_o = 1'b0;
+          end
           if ((state_q == BUS_FIRST)
               && (phase_q >= LOCAL_PHASE_Q3B))
             ras_n_o = 1'b0;
@@ -648,6 +674,13 @@ module tms34010_local_bus
               && !second_repeat_q
               && (phase_q <= LOCAL_PHASE_Q2B))
             tr_qe_n_o = 1'b0;
+          // Register-to-memory is distinguished from memory-to-register by
+          // W being low at the RAS fall. It rises again before column time.
+          if ((active_kind == LOCAL_CYCLE_PIXEL_RTM)
+              && (state_q == BUS_FIRST)
+              && (phase_q >= LOCAL_PHASE_Q2A)
+              && (phase_q <= LOCAL_PHASE_Q3B))
+            we_n_o = 1'b0;
         end
 
         LOCAL_CYCLE_WORD_READ: begin

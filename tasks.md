@@ -2,7 +2,12 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0157. Task 0157
+The functional implementation is complete through Task 0158. Task 0158
+consumes DPYCTL.SRT: graphics pixel reads/writes become explicit VRAM
+memory-to-register/register-to-memory cycles with exact local-bus phases,
+while instruction, ordinary data, I/O, and host traffic remain unchanged.
+It also closes the TMS34010 video boundary: pixel data is emitted by the
+external VRAM serial port, not by processor pins. Task 0157
 implements external synchronization with the specified active-low input
 recognition delay, total-register fallbacks, HSD direction, field
 discrimination, and explicit sync output enables. Task 0156
@@ -241,6 +246,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0155 | Introduce the dedicated VCLK domain and video CDC | complete |
 | 0156 | Implement internal interlaced video timing | complete |
 | 0157 | Implement external video synchronization | complete |
+| 0158 | Implement program-controlled VRAM register transfers | complete |
 
 ---
 
@@ -5439,6 +5445,71 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `dcbc87de698e1cb20fe9b124e495a83bfd09c63b`
+
+---
+
+### Task 0158: Implement program-controlled VRAM register transfers
+Status: complete
+Dependencies:
+- Task 0136 (architectural field-to-word sequencing).
+- Task 0145 (fixed-priority local-cycle arbitration).
+- Tasks 0147–0148 (physical phase engine and coherent pin-system path).
+- Task 0154 (defined DPYCTL storage and masks).
+Spec sources:
+- 1988 TI TMS34010 User's Guide DPYCTL pages 6-20/6-21
+  (SRT selects program-controlled VRAM serial-register transfers).
+- 1988 TI TMS34010 User's Guide §9.10.2, pages 9-26/9-27
+  (graphics pixel read/write conversion and unaffected access classes).
+- 1988 TI TMS34010 User's Guide §§11.4.3–11.4.4, pages 11-9/11-10
+  and Figures 11-5/11-6 (MTR/RTM address/status and control phases).
+- 1988 TI TMS34010 User's Guide §2.4, page 2-9
+  (processor video pins; external VRAM serial ports supply pixel data).
+- 1988 TI TMS34010 User's Guide §4.2.1
+  (aligned 16-bit insertion is one direct write).
+Acceptance Criteria:
+- Export DPYCTL.SRT from the I/O owner and capture it with each complete
+  architectural CPU request before arbitration.
+- Tag only graphics pixel accesses issued by PIXT, DRAV, LINE, FILL, and
+  PIXBLT. Instruction fetches, ordinary MOVE/data, vectors/stacks, on-chip
+  I/O, host-indirect accesses, refresh, and screen requests retain their
+  existing cycle kinds.
+- Convert tagged pixel reads to `LOCAL_CYCLE_PIXEL_MTR` and writes to
+  `LOCAL_CYCLE_PIXEL_RTM`, preserve the normal unaltered address, force IAQ
+  inactive, and assert active-low TR column status.
+- Emit the documented two-period transfer envelope. Hold TR/QE active at
+  the RAS falling edge; distinguish RTM with W low at that edge and release
+  W before column time; transfer no CPU LAD data in either direction.
+- Return deterministic zero for the architecturally unspecified result of an
+  SRT pixel read.
+- Avoid an unnecessary destination read for replace processing with
+  transparency disabled and no protected planes. Retain destination reads
+  whenever PPOP, transparency, PMASK, or the existing window operation needs
+  them; field alignment still performs required partial-word RMW internally.
+- Record that the TMS34010 exposes sync/blank and VRAM-control pins but no
+  pixel-data output. External VRAM serial-shift/output behavior is outside
+  the TMS34010-only scope rather than an unfinished processor feature.
+Tests:
+- Added `tb_pixel_srt` PASS: a real integrated program proves a PIXT-load MTR,
+  direct PIXT/FILL RTMs at exact addresses, the required PSIZE=8 insertion
+  MTR→RTM pair, normal instruction/immediate IAQ, unchanged ordinary MOVE
+  traffic while SRT is set, deterministic MTR result, and restoration of an
+  ordinary pixel write after clearing SRT.
+- Extended `tb_bus_arbiter` PASS for I/O-over-SRT precedence, MTR/RTM
+  classification, preserved address/data, inactive IAQ, and CPU response.
+- Extended `tb_local_bus` PASS for exact MTR/RTM row/column/status, initial
+  DEN/DDOUT direction, TR/QE/CAS/RAS ordering, RTM W-at-RAS distinction,
+  no second-period CPU data, and completion.
+- Updated every direct core and I/O-register bench instantiation for the new
+  explicit SRT ports; all existing PIXT/FILL/PIXBLT/DRAV/LINE tests pass.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 144/144 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

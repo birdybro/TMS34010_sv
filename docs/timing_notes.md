@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0157, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0158, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -24,6 +24,7 @@
 | Core↔VCLK video configuration/command/status/DIP | Task 0155 | four packed MCP mailboxes, unconstrained | declare core/VCLK asynchronous; recognize every request/ack 2FF; cut only source-held payload paths; retain bounded-stale status and sticky DIP contracts |
 | VCLK→core screen request/completion | Task 0155 | held bundled MCP transaction, unconstrained | preserve request/complete toggles and source payload; keep the core request registered through memory completion |
 | External HSYNC/VSYNC pins → VCLK recognition | Task 0157 | attributed two-stage level synchronizers plus edge history, unconstrained | constrain pin-to-first-stage input delay, preserve/report both chains, and prove no path bypasses delayed edge recognition |
+| Graphics-state/SRT decode → registered CPU request | Task 0158 | one-bit sideband captured with request, unmeasured | retain the registered fabric ingress; inspect graphics-state and DPYCTL fanout if TimeQuest identifies it |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -149,6 +150,19 @@
   Task 0156 keeps the field phase in VCLK: a DPYSTRT reload preceding the odd
   field is unchanged, while one preceding the even field applies signed
   DUDATE/2. Per-line completion still applies full DUDATE.
+- **Program-controlled VRAM transfers** — while DPYCTL.SRT is set, the core
+  asserts `mem_srt` only for pixel requests in PIXT, DRAV, LINE, FILL, and
+  PIXBLT states. The registered fabric ingress captures that tag with the
+  complete field request; each resulting aligned word read/write becomes an
+  MTR/RTM arbitration cycle. Explicit transfers consume the same two local
+  clocks as screen transfer: initial DEN/DDOUT input selection, TR/QE low
+  through RAS fall and early access, then release before RAS. RTM additionally
+  holds W low from first-period Q2A through Q3B and releases it before the
+  column address. LRDY extends the access period with the same transfer-release
+  behavior. No second-period LAD data is exchanged. Direct replace writes
+  skip an architectural destination read when PPOP=replace, transparency is
+  disabled, PMASK is zero, and no existing window path needs it; alignment-
+  required partial writes still use the field sequencer's word RMW.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
@@ -369,6 +383,12 @@ and output-enable delays/inversion. Both domains must sample the common
 synchronous reset asserted so toggle phases start at zero. If VCLK stops,
 status remains at its last coherent snapshot and pending commands complete
 only when it resumes (A0045/A0047).
+
+Task 0158 adds no new clock crossing: its SRT value and graphics request are
+both core-clock signals captured before the already landed core-to-8× MCP.
+The expanded cycle kind then crosses as part of the existing stable command
+payload. Quartus must nevertheless include the MTR/RTM pin paths in the same
+8× output-delay and output-enable analysis as screen transfer (A0048).
 
 ## Cyclone V-specific notes
 

@@ -41,6 +41,7 @@ module tb_bus_arbiter;
   logic                      cpu_io;
   local_word_t               cpu_io_rdata;
   logic                      cpu_iaq;
+  logic                      cpu_srt;
   logic                      cpu_rmw_lock;
   local_word_t               cpu_rdata;
   logic                      cpu_ack;
@@ -87,6 +88,7 @@ module tb_bus_arbiter;
     .cpu_io_i          (cpu_io),
     .cpu_io_rdata_i    (cpu_io_rdata),
     .cpu_iaq_i         (cpu_iaq),
+    .cpu_srt_i         (cpu_srt),
     .cpu_rmw_lock_i    (cpu_rmw_lock),
     .cpu_rdata_o       (cpu_rdata),
     .cpu_ack_o         (cpu_ack),
@@ -253,6 +255,7 @@ module tb_bus_arbiter;
     cpu_io         = 1'b0;
     cpu_io_rdata   = '0;
     cpu_iaq        = 1'b0;
+    cpu_srt        = 1'b0;
     cpu_rmw_lock   = 1'b0;
     cycle_rdata    = 16'h0000;
     cycle_ack      = 1'b0;
@@ -355,14 +358,53 @@ module tb_bus_arbiter;
 
     cpu_req   = 1'b1;
     cpu_we    = 1'b1;
+    cpu_srt   = 1'b1;
     cpu_addr  = IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PMASK) << 4);
     cpu_wdata = 16'hBEEF;
     wait_cycle("CPU I/O write", LOCAL_CYCLE_IO_WRITE);
     check_word("CPU I/O write payload", cycle_wdata, 16'hBEEF);
+    check_bit("CPU I/O takes precedence over SRT", cycle_iaq, 1'b0);
     ack_cycle("CPU I/O write", 1'b0, 1'b0, 1'b0, 1'b1);
     cpu_req = 1'b0;
     cpu_we  = 1'b0;
     cpu_io  = 1'b0;
+    @(negedge clk);
+
+    // DPYCTL.SRT changes only graphics pixel reads and writes into explicit
+    // VRAM register transfers. The ordinary address is preserved and IAQ is
+    // always inactive for both transfer directions.
+    cpu_req  = 1'b1;
+    cpu_addr = 32'h1234_5670;
+    cpu_iaq  = 1'b1;
+    wait_cycle("CPU pixel MTR", LOCAL_CYCLE_PIXEL_MTR);
+    if (cycle_addr !== 32'h1234_5670) begin
+      $display("TEST_RESULT: FAIL: CPU MTR address expected=12345670 actual=%08h",
+               cycle_addr);
+      failures++;
+    end
+    check_bit("CPU MTR IAQ inactive", cycle_iaq, 1'b0);
+    cycle_rdata = 16'h0000;
+    ack_cycle("CPU pixel MTR", 1'b0, 1'b0, 1'b0, 1'b1);
+    check_word("CPU MTR response routing", cpu_rdata, 16'h0000);
+    cpu_req = 1'b0;
+    @(negedge clk);
+
+    cpu_req   = 1'b1;
+    cpu_we    = 1'b1;
+    cpu_addr  = 32'h2A5B_C9D0;
+    cpu_wdata = 16'hCAFE;
+    wait_cycle("CPU pixel RTM", LOCAL_CYCLE_PIXEL_RTM);
+    if (cycle_addr !== 32'h2A5B_C9D0) begin
+      $display("TEST_RESULT: FAIL: CPU RTM address expected=2a5bc9d0 actual=%08h",
+               cycle_addr);
+      failures++;
+    end
+    check_word("CPU RTM payload remains available", cycle_wdata, 16'hCAFE);
+    check_bit("CPU RTM IAQ inactive", cycle_iaq, 1'b0);
+    ack_cycle("CPU pixel RTM", 1'b0, 1'b0, 1'b0, 1'b1);
+    cpu_req = 1'b0;
+    cpu_we  = 1'b0;
+    cpu_srt = 1'b0;
 
     // Host-indirect I/O retains host priority and completion routing, but
     // selects the special cycle kinds. Live internal read data is sampled

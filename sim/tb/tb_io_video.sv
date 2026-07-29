@@ -88,7 +88,7 @@ module tb_io_video;
     .convdp_o      (),
     .convsp_o      (),
     .control_o     (),
-    .pmask_o       (),
+    .pmask_o       (), .pixel_srt_o(),
     .intenb_o      (),
     .intpend_o     (intpend),
     .hstctlh_o     (),

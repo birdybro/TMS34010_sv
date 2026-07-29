@@ -81,7 +81,7 @@ module tb_io_interrupts;
     .convdp_o    (),
     .convsp_o    (),
     .control_o   (),
-    .pmask_o     (),
+    .pmask_o     (), .pixel_srt_o(),
     .intenb_o    (intenb),
     .intpend_o   (intpend),
     .hstctlh_o   (hstctlh),

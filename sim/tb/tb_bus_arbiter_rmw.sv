@@ -107,6 +107,7 @@ module tb_bus_arbiter_rmw;
     .cpu_io_i          (1'b0),
     .cpu_io_rdata_i    (16'h0000),
     .cpu_iaq_i         (1'b0),
+    .cpu_srt_i         (1'b0),
     .cpu_rmw_lock_i    (cpu_rmw_lock),
     .cpu_rdata_o       (cpu_rdata),
     .cpu_ack_o         (cpu_ack),

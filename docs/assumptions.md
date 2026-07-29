@@ -599,6 +599,49 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0048 — Program-controlled VRAM transfers and processor/video boundary
+- **Date**: 2026-07-29 (Task 0158).
+- **Status**: specification-derived SRT classification and pin cycles, with
+  isolated deterministic handling of the undefined processor read value.
+- **Sources**: 1988 TI TMS34010 User's Guide DPYCTL pages 6-20/6-21;
+  §9.10.2, pages 9-26/9-27; §§11.4.3–11.4.4, pages 11-9/11-10 and
+  Figures 11-5/11-6; §2.4, page 2-9; and §4.2.1.
+- **Classification**: DPYCTL.SRT affects only pixel accesses performed by
+  graphics instructions. PIXT, DRAV, LINE, FILL, and PIXBLT pixel reads
+  select memory-to-register; their pixel writes select register-to-memory.
+  Instruction fetches, immediate/vector/stack words, ordinary MOVE/data,
+  on-chip I/O, host-indirect traffic, refresh, and scheduled screen transfers
+  keep their existing cycles. The fabric captures the SRT sideband with the
+  complete architectural request so it cannot change during arbitration.
+- **Physical transfer contract**: explicit SRT cycles preserve the ordinary
+  unaltered word address, force IAQ inactive, and drive active-low TR column
+  status. DEN/DDOUT initially select the input data path, TR/QE is low at the
+  RAS falling edge and through the early access period, and no CPU data is
+  transferred on LAD in the second period. Register-to-memory is
+  distinguished by W low at RAS fall and releases W before column time.
+- **Destination-read fast path**: replace processing with transparency
+  disabled and PMASK zero does not architecturally require the old pixel.
+  The graphics engines therefore issue their pixel write directly, subject
+  to existing window needs. Any nonzero PPOP, transparency, protected plane,
+  or operation that consumes the destination retains the explicit read.
+  The field sequencer independently preserves §4.2.1 partial-word insertion;
+  an aligned PSIZE=16 direct replacement remains one write.
+- **Undefined MTR result choice**: an MTR loads the external VRAM serial
+  register and does not return pixel data on LAD. If software uses an SRT
+  pixel read form with a processor destination, this RTL supplies
+  deterministic zero rather than an X value. The value is not claimed as
+  original-silicon software behavior.
+- **Scope resolution**: the TMS34010 video pins are HSYNC, VSYNC, and BLANK;
+  pixel bits leave the external VRAM serial port. The processor's obligation
+  is timing, screen MTR scheduling, and explicit SRT MTR/RTM control.
+  Modeling attached VRAM storage/shift/output is board-level integration
+  outside A0002's TMS34010-only implementation scope.
+- **Regression evidence**: `tb_pixel_srt` executes an integrated program and
+  locks graphics-only classification, exact addresses/counts, deterministic
+  MTR result, normal nonpixel traffic, and SRT disable. `tb_bus_arbiter` locks
+  direction/precedence/IAQ, and `tb_local_bus` locks both transfer diagrams
+  down to half-quarter control and status phases.
+
 ## A0047 — External video synchronization and split pin direction
 - **Date**: 2026-07-29 (Task 0157).
 - **Status**: specification-derived external synchronization with isolated
@@ -762,9 +805,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **REFCNT exception**: A0033 already isolates the guide's unspecified
   software-write behavior for REFCNT bits 1:0 and regression-locks their
   retention. Task 0154 deliberately does not rewrite that prior choice.
-- **Consumer boundary**: DPYCTL.NIL is consumed by Task 0156 and HSD/DXV are
-  consumed by Task 0157. Defined DPYCTL.SRT remains stored but belongs to the
-  video/display completion gate. CONTROL.CD and
+- **Consumer boundary**: DPYCTL.NIL is consumed by Task 0156, HSD/DXV by
+  Task 0157, and SRT by Task 0158 under A0048. CONTROL.CD and
   HSTCTL.CF remain stored in the cacheless configuration. These are missing
   consumers or cycle-accuracy features, not missing register masks.
 - **Regression evidence**: `tb_io_regs` writes all ones to each masked

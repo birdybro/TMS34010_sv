@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0157, with strict RTL
+> Baseline: functional implementation through Task 0158, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -246,6 +246,18 @@ explicit output enables propagate through the pin-system boundary.
 `tb_video_external_sync` locks recognition latency, both fallbacks, HSD,
 field selection, NIL, and direction.
 
+Task 0158 closes DPYCTL.SRT and the remaining TMS34010 video-memory boundary.
+Only graphics pixel accesses are tagged; reads become explicit VRAM
+memory-to-register cycles and writes become register-to-memory cycles, while
+all instruction, ordinary data, I/O, host, refresh, and scheduled screen
+traffic remains unchanged. The phase engine now emits the ordinary address
+with active TR status, the specified TR/QE transfer envelope, and the RTM
+W-at-RAS distinction. Direct replace graphics writes avoid an unnecessary
+destination read, while PPOP, transparency, PMASK, and applicable window
+operations retain it. The TMS34010 has no pixel-data output pins: attached
+VRAM emits pixels from its serial port, so modeling that external device is
+not a missing TMS34010 feature.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -273,7 +285,9 @@ reserved-location read-zero choice and REFCNT exception. A0045 records the
 dedicated VCLK MCP/stopped-clock/active-edge/reset contract. A0046 records
 interlaced phase recovery, counter-write priority, and equality-counter
 programming requirements. A0047 records external-sync sampling, recognition,
-fallback, field classification, direction, and final FPGA I/O choices. These
+fallback, field classification, direction, and final FPGA I/O choices. A0048
+records explicit SRT transfer classification/phases, the deterministic
+no-LAD read result, and the processor/external-VRAM scope boundary. These
 do not excuse missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -287,8 +301,6 @@ deliberate non-pin-compatible boundary.
 
 ### Video/display
 
-- Add physical VRAM serial-transfer/display-memory behavior, pixel output,
-  and arbitration against CPU/graphics traffic.
 - Constrain and prove the VCLK phase, clock groups, MCP payload paths,
   external-sync input/output timing, and synchronizer recognition in the real
   Quartus project.
@@ -314,9 +326,8 @@ deliberate non-pin-compatible boundary.
    I/O side effects and every interrupt source. Source-specific pending bits,
    live video/refresh/display registers, host ownership, completion-qualified
    processor/host I/O paths, and every documented reserved field/location now
-   have direct tests. The defined SRT consumer remains in video gate 5;
-   cache controls remain in the optional cache/cycle-accuracy
-   scope.
+   have direct tests. Task 0158 consumes SRT; cache controls remain in the
+   optional cache/cycle-accuracy scope.
 4. **Complete (Tasks 0136, 0145–0153):** land the pin-level local memory
    controller, refresh, host, and arbitration fabric with LRDY/reset tests.
    Task 0136 completed field-to-word sequencing; Tasks 0145–0146 landed and
@@ -325,11 +336,12 @@ deliberate non-pin-compatible boundary.
    requesters; Tasks 0151–0152 completed HOLD and HLDA/EMUA; and Task 0153
    completed the asynchronous host pins, HRDY, and HD direction. The final
    PLL/SDC service-bound proof belongs to FPGA-realization gate 6.
-5. **In progress (Tasks 0155–0157):** the dedicated VCLK boundary, every
-   core/video crossing, internal/external noninterlaced/interlaced timing, and
-   completed screen-transfer request path have direct/asynchronous-clock
-   tests. Complete physical VRAM serial display/pixel output with frame-level
-   tests.
+5. **Complete (Tasks 0155–0158):** the dedicated VCLK boundary, every
+   core/video crossing, internal/external noninterlaced/interlaced timing,
+   completed screen-transfer request path, and DPYCTL.SRT graphics MTR/RTM
+   path have direct/asynchronous-clock and physical-phase tests. Pixel data is
+   emitted by attached VRAM, not by a TMS34010 pin, so external serial-memory
+   behavior is outside the processor implementation gate.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,
    and a final spec/documentation audit from a clean worktree.

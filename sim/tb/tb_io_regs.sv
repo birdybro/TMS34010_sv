@@ -38,7 +38,7 @@ module tb_io_regs;
     .req(req), .we(we), .addr(addr), .wdata(wdata),
     .rdata(rdata), .is_io(is_io),
     .psize_o(psize_w), .convdp_o(convdp_w), .convsp_o(convsp_w),
-    .control_o(control_w), .pmask_o(pmask_w),
+    .control_o(control_w), .pmask_o(pmask_w), .pixel_srt_o(),
     .intenb_o(intenb_w), .intpend_o(intpend_w),
     .hstctlh_o(hstctlh_w), .refcnt_o(), .refresh_req_o(),
     .refresh_row_o(), .refresh_cbr_o(),
