@@ -5156,7 +5156,7 @@ Docs:
   `docs/completion_audit.md`, `docs/instruction_coverage.md`,
   `docs/memory_map.md`, and `docs/timing_notes.md`.
 Commit:
-- pending
+- `ba9d8d6` — Implement the shared physical HLDA/EMUA pin (Task 0152)
 
 ---
 
