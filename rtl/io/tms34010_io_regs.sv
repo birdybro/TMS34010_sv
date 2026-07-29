@@ -14,7 +14,7 @@
 // HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
 // self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0154):
+// Current scope (Tasks 0081–0155):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -26,10 +26,12 @@
 //     synchronized read-only external levels, read-only HSTCTLL.INTIN, and
 //     hardware-set/write-zero-to-clear DIP/WVP latches.
 //   - REFCNT is the live writable refresh counter driven by CONTROL.RR.
-//   - HCOUNT/VCOUNT are live writable video counters. Timing registers feed
-//     the internal noninterlaced generator; DPYCTL.ENV gates BLANK and DIP.
-//   - DPYADR is live display state. DPYSTRT/DPYCTL schedule held
-//     screen-refresh requests and update its address/count after acknowledge.
+//   - HCOUNT/VCOUNT and DPYADR live in the dedicated VCLK subsystem. Packed
+//     MCP mailboxes carry atomic configuration/coalesced writes and return
+//     coherent live snapshots; DPYCTL.ENV gates BLANK and DIP.
+//   - DPYSTRT/DPYCTL schedule held VCLK screen-refresh requests; a bundled
+//     transaction crosses to the memory fabric and returns completion before
+//     the address/count update.
 //   - The synchronous four-register host boundary implements HSTADR/HSTDATA
 //     indirect sequencing plus per-side HSTCTL ownership, HINT, NMI/HLT
 //     control, and HCS-selected reset state. Host-indirect accesses to this
@@ -59,6 +61,7 @@ module tms34010_io_regs
   import tms34010_pkg::*;
 (
   input  logic                  clk,
+  input  logic                  vclk_i,
   input  logic                  rst,
 
   // Synchronous four-register host boundary. The Task 0153 host-bus wrapper
@@ -146,7 +149,7 @@ module tms34010_io_regs
   logic        hcount_load;
   logic        vcount_load;
   logic        dpyadr_load;
-  logic        video_hblank_start;
+  logic        video_config_write;
   logic        video_dpyint_pulse;
   logic        host_ctl_we;
   logic [1:0]  host_ctl_be;
@@ -281,6 +284,20 @@ module tms34010_io_regs
       io_write_commit && (io_write_idx == IO_IDX_VCOUNT);
   assign dpyadr_load =
       io_write_commit && (io_write_idx == IO_IDX_DPYADR);
+  assign video_config_write =
+      io_write_commit
+      && ((io_write_idx == IO_IDX_HESYNC)
+          || (io_write_idx == IO_IDX_HEBLNK)
+          || (io_write_idx == IO_IDX_HSBLNK)
+          || (io_write_idx == IO_IDX_HTOTAL)
+          || (io_write_idx == IO_IDX_VESYNC)
+          || (io_write_idx == IO_IDX_VEBLNK)
+          || (io_write_idx == IO_IDX_VSBLNK)
+          || (io_write_idx == IO_IDX_VTOTAL)
+          || (io_write_idx == IO_IDX_DPYINT)
+          || (io_write_idx == IO_IDX_DPYSTRT)
+          || (io_write_idx == IO_IDX_DPYCTL)
+          || (io_write_idx == IO_IDX_DPYTAP));
 
   // REFCNT is owned by the refresh block rather than mirrored in io_reg.
   // CONTROL.RR clocks its continuous interval/row counter, while a processor
@@ -299,58 +316,48 @@ module tms34010_io_regs
 
   assign refresh_cbr_o = io_reg[IO_IDX_CONTROL][CTRL_RM_BIT];
 
-  // The project remains single-clock under A0004 at this integration stage.
-  // A later video-boundary task will move this instance to VCLK and replace
-  // direct counter/config wiring with explicit CDC structures.
-  tms34010_video u_video (
-    .clk           (clk),
-    .rst           (rst),
-    .hesync        (io_reg[IO_IDX_HESYNC]),
-    .heblnk        (io_reg[IO_IDX_HEBLNK]),
-    .hsblnk        (io_reg[IO_IDX_HSBLNK]),
-    .htotal        (io_reg[IO_IDX_HTOTAL]),
-    .vesync        (io_reg[IO_IDX_VESYNC]),
-    .veblnk        (io_reg[IO_IDX_VEBLNK]),
-    .vsblnk        (io_reg[IO_IDX_VSBLNK]),
-    .vtotal        (io_reg[IO_IDX_VTOTAL]),
-    .dpyint        (io_reg[IO_IDX_DPYINT]),
-    .display_enable(io_reg[IO_IDX_DPYCTL][DPYCTL_ENV_BIT]),
-    .hcount_load   (hcount_load),
-    .hcount_wdata  (io_write_data),
-    .vcount_load   (vcount_load),
-    .vcount_wdata  (io_write_data),
-    .hcount        (hcount_o),
-    .vcount        (vcount_o),
-    .hsync         (video_hsync_o),
-    .vsync         (video_vsync_o),
-    .hblank        (video_hblank_o),
-    .vblank        (video_vblank_o),
-    .blank         (video_blank_o),
-    .hblank_start  (video_hblank_start),
-    .dpyint_pulse  (video_dpyint_pulse)
-  );
-
-  // Live display address and held screen-refresh client request. The local
-  // controller maps SRFADR/DPYTAP onto the physical VRAM row/column phases
-  // and acknowledges only after the memory-to-register cycle ends.
-  tms34010_display_addr u_display_addr (
-    .clk             (clk),
-    .rst             (rst),
-    .hblank_start    (video_hblank_start),
-    .vcount          (vcount_o),
-    .veblnk          (io_reg[IO_IDX_VEBLNK]),
-    .vsblnk          (io_reg[IO_IDX_VSBLNK]),
-    .dpystart        (io_reg[IO_IDX_DPYSTRT]),
-    .dpyctl          (io_reg[IO_IDX_DPYCTL]),
-    .dpytap          (io_reg[IO_IDX_DPYTAP]),
-    .dpyadr_load     (dpyadr_load),
-    .dpyadr_wdata    (io_write_data),
-    .dpyadr          (dpyadr_o),
-    .refresh_req     (screen_refresh_req_o),
-    .refresh_ack     (screen_refresh_ack_i),
-    .refresh_srfaddr (screen_refresh_srfaddr_o),
-    .refresh_dpytap  (screen_refresh_dpytap_o),
-    .refresh_org     (screen_refresh_org_o)
+  // HCOUNT/VCOUNT, all timing compares, DPYADR, and the automatic display
+  // scheduler live wholly in VCLK. Configuration, live-register commands,
+  // coherent status snapshots, DIP events, and screen requests each use an
+  // explicit handshake in tms34010_video_subsystem.
+  tms34010_video_subsystem u_video_subsystem (
+    .core_clk_i       (clk),
+    .core_rst_i       (rst),
+    .video_clk_i      (vclk_i),
+    .video_rst_i      (rst),
+    .hesync_i         (io_reg[IO_IDX_HESYNC]),
+    .heblnk_i         (io_reg[IO_IDX_HEBLNK]),
+    .hsblnk_i         (io_reg[IO_IDX_HSBLNK]),
+    .htotal_i         (io_reg[IO_IDX_HTOTAL]),
+    .vesync_i         (io_reg[IO_IDX_VESYNC]),
+    .veblnk_i         (io_reg[IO_IDX_VEBLNK]),
+    .vsblnk_i         (io_reg[IO_IDX_VSBLNK]),
+    .vtotal_i         (io_reg[IO_IDX_VTOTAL]),
+    .dpyint_i         (io_reg[IO_IDX_DPYINT]),
+    .dpystart_i       (io_reg[IO_IDX_DPYSTRT]),
+    .dpyctl_i         (io_reg[IO_IDX_DPYCTL]),
+    .dpytap_i         (io_reg[IO_IDX_DPYTAP]),
+    .config_write_i   (video_config_write),
+    .hcount_write_i   (hcount_load),
+    .hcount_wdata_i   (io_write_data),
+    .vcount_write_i   (vcount_load),
+    .vcount_wdata_i   (io_write_data),
+    .dpyadr_write_i   (dpyadr_load),
+    .dpyadr_wdata_i   (io_write_data),
+    .hcount_o         (hcount_o),
+    .vcount_o         (vcount_o),
+    .dpyadr_o         (dpyadr_o),
+    .dpyint_pulse_o   (video_dpyint_pulse),
+    .hsync_o          (video_hsync_o),
+    .vsync_o          (video_vsync_o),
+    .hblank_o         (video_hblank_o),
+    .vblank_o         (video_vblank_o),
+    .blank_o          (video_blank_o),
+    .screen_req_o     (screen_refresh_req_o),
+    .screen_ack_i     (screen_refresh_ack_i),
+    .screen_srfaddr_o (screen_refresh_srfaddr_o),
+    .screen_dpytap_o  (screen_refresh_dpytap_o),
+    .screen_org_o     (screen_refresh_org_o)
   );
 
   // INTPEND is a composite view, not general storage. External requests and

@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0144.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0155.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -10,11 +10,11 @@
 // `illegal_opcode_o` output.
 //
 // The external request/ack interface is an architectural bit-addressed
-// interface, not the original physical 16-bit bus. REFCNT requests and
-// same-clock internal/noninterlaced video timing/screen scheduling are
+// interface, not the original physical 16-bit bus. REFCNT requests and the
+// dedicated-VCLK internal/noninterlaced video timing/screen scheduler are
 // integrated. The synchronous four-register host engine, HINT, and HLT
-// behavior are also integrated; physical host-pin timing/CDC, host/local
-// arbitration, refresh/VRAM service, VCLK/CDC, and physical bus timing are not.
+// behavior are also integrated; the enclosing system/pin wrappers provide
+// host/local arbitration and the original physical bus phases.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -32,6 +32,7 @@ module tms34010_core
   import tms34010_pkg::*;
 (
   input  logic                                clk,
+  input  logic                                vclk_i,
   input  logic                                rst,
 
   // Architectural bit-addressed memory request/ack interface.
@@ -90,8 +91,9 @@ module tms34010_core
   output logic [7:0]                          refresh_row_o,
   output logic                                refresh_cbr_o,
 
-  // Functional video-timing boundary. These active-high interval signals use
-  // the project clock until the dedicated VCLK/CDC task lands.
+  // Functional video-timing boundary. These active-high interval signals are
+  // generated in vclk_i; explicit CDC inside the I/O block returns live
+  // register snapshots, DIP, and screen transactions to clk.
   output logic                                video_hsync_o,
   output logic                                video_vsync_o,
   output logic                                video_hblank_o,
@@ -2345,6 +2347,7 @@ module tms34010_core
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
   tms34010_io_regs u_io_regs (
     .clk      (clk),
+    .vclk_i   (vclk_i),
     .rst      (rst),
     .hcs_n_i  (hcs_n_i),
     .host_req_i(host_req_i),

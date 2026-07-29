@@ -43,7 +43,7 @@ module tb_external_interrupts;
   localparam int unsigned X2_VEC_HI = 1019;
 
   tms34010_core u_core (
-    .clk             (clk),
+    .clk             (clk), .vclk_i(clk),
     .rst             (rst),
     .mem_req         (mem_req),
     .mem_we          (mem_we),

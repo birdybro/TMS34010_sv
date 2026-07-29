@@ -51,7 +51,7 @@ module tb_smoke;
   logic                              illegal_w;
 
   tms34010_core dut (
-    .clk      (clk),
+    .clk      (clk), .vclk_i(clk),
     .rst      (rst),
     .mem_req  (mem_req),
     .mem_we   (mem_we),

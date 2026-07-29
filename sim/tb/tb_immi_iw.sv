@@ -36,7 +36,7 @@ module tb_immi_iw;
   logic                          illegal_w;
 
   tms34010_core u_core (
-    .clk             (clk),
+    .clk             (clk), .vclk_i(clk),
     .rst             (rst),
     .mem_req         (mem_req),
     .mem_we          (mem_we),

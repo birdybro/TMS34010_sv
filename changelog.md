@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0155 — dedicated VCLK domain and coherent video CDC)
+- Added an explicit `vclk_i` through the core, functional-system, and
+  original-pin hierarchy; existing core unit benches intentionally tie it to
+  `clk`, while video/pin integration uses unrelated clocks.
+- Added `tms34010_video_subsystem` and moved HCOUNT/VCOUNT, timing compares,
+  DPYADR, and automatic screen scheduling wholly into VCLK.
+- Added the reusable one-entry `tms34010_cdc_mailbox`. Atomic packed
+  configuration, coalesced HCOUNT/VCOUNT/DPYADR commands, coherent
+  bounded-stale status snapshots, and sticky DIP delivery all use
+  source-held request/acknowledge toggles rather than per-bit synchronizers.
+- Added `tms34010_screen_cdc`, which captures SRFADR/DPYTAP/ORG in VCLK,
+  holds one core request through arbitrary memory waits, and returns exactly
+  one completion only after physical memory-to-register service.
+- Added `tb_video_cdc` with a non-integer clock ratio, atomic/coalesced
+  transfers, coherent status, lossless DIP, stalled payload stability, and
+  returned completion. Converted `tb_io_video`, `tb_io_display`, and
+  `tb_pin_system` to exercise the explicit VCLK boundary.
+- Validation: focused video/I/O/pin/fabric/host benches PASS;
+  `scripts/lint.sh` clean; full regression 141/141 PASS.
+
 ### Fixed (Task 0154 — reserved I/O fields and locations)
 - Added shared CONTROL and DPYCTL writable masks alongside the existing
   DPYTAP mask, keeping CONTROL bits 1:0, DPYCTL bit 1, and DPYTAP bits 15:14

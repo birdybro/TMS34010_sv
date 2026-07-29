@@ -44,14 +44,15 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   match the User's Guide.
 
 ## A0004 — Single core clock for the first milestones
-- **Date**: 2026-05-12; refined 2026-07-28 (Task 0148).
+- **Date**: 2026-05-12; refined 2026-07-28 (Tasks 0148 and 0155).
 - **Status**: active
 - **Source**: project convention (not in spec).
 - **Assumption**: The integrated functional core hierarchy runs on one core
   clock. Task 0147 adds an original-pin engine clocked at eight times the
   local-clock rate, and Task 0148 connects it through the A0040 coherent CDC
-  bridge. The video output subsystem will separately introduce a pixel clock
-  and a clearly documented CDC boundary.
+  bridge. Task 0155 adds a separate video clock and the A0045 coherent
+  core/VCLK boundary. No other implicit derived or fabric-gated clock is
+  permitted.
 
 ## A0005 — Bit-addressed memory exposed at the interface boundary
 - **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0136)**.
@@ -598,6 +599,59 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0045 — Dedicated VCLK ownership and coherent CDC contract
+- **Date**: 2026-07-28 (Task 0155).
+- **Status**: specification-derived clock ownership with isolated FPGA CDC,
+  stopped-clock, reset, and active-edge representation choices. Quartus
+  recognition/constraints remain part of gate 6.
+- **Sources**: 1988 TI TMS34010 User's Guide §2.4, page 2-9; §§9.2–9.6,
+  pages 9-3 through 9-12; §9.10.1, pages 9-18 through 9-25; and the project
+  CDC rules in `docs/hdl-coding-guidelines/23-cdc-single-bit.md` and
+  `24-cdc-multi-bit.md`.
+- **Clock ownership**: `vclk_i` exclusively clocks HCOUNT/VCOUNT, timing
+  compares and outputs, DPYADR, and automatic screen scheduling. Core I/O
+  storage and the memory fabric remain on `clk`. The clocks may have any
+  phase or frequency relationship.
+- **Configuration crossing**: HESYNC/HEBLNK/HSBLNK/HTOTAL,
+  VESYNC/VEBLNK/VSBLNK/VTOTAL, DPYINT, DPYSTRT, DPYCTL, and DPYTAP cross as
+  one packed MCP snapshot. The source payload register remains stable through
+  the request/acknowledge round trip. Writes made while one snapshot is in
+  flight coalesce into a later atomic latest-value snapshot.
+- **Live-write crossing**: completion-qualified HCOUNT, VCOUNT, and DPYADR
+  writes use a second packed mailbox. A pending bit and latest data are kept
+  independently for each owner, so writes to different owners cannot erase
+  one another; repeated writes to one owner while busy deterministically
+  coalesce to the latest value. VCLK applies all flags in one destination
+  pulse, with the pre-existing load-over-automatic-update priority.
+- **Processor/host read view**: a continuously re-armed MCP returns one
+  coherent `{HCOUNT,VCOUNT,DPYADR}` snapshot. The core view is several
+  asynchronous handshake cycles stale but can never be bit-torn or combine
+  different source epochs. This is the FPGA replacement for independently
+  sampling changing binary registers, which is forbidden.
+- **Stopped-VCLK choice**: the original guide recommends holding VCLK high
+  while HCOUNT/VCOUNT are accessed. This synchronous FPGA boundary instead
+  requires VCLK edges to complete commands and refresh snapshots. If VCLK is
+  stopped, reads retain the last coherent snapshot and writes remain queued
+  until VCLK resumes. A0003 already excludes original electrical pin
+  compatibility; the final FPGA top must keep its internal video clock
+  running or explicitly document this software-visible difference.
+- **Event/transaction crossings**: the one-bit DIP condition is held until a
+  toggle mailbox accepts it; multiple occurrences while INTPEND.DIP is
+  already pending are intentionally equivalent. A screen request captures
+  SRFADR/DPYTAP/ORG, crosses once, remains asserted through arbitrary
+  core-memory waits, and returns exactly one VCLK completion only after the
+  physical memory-to-register cycle acknowledges.
+- **Active-edge/reset representation**: every synthesizable block remains
+  positive-edge clocked. The active edge of the internal FPGA `vclk_i`
+  represents the original falling-VCLK state-update edge; final PLL/pin phase
+  mapping belongs to the FPGA top. The project-wide synchronous `rst` must be
+  sampled asserted by both clocks so all mailbox toggle phases reset to zero.
+- **Regression evidence**: `tb_video_cdc` uses a non-integer clock ratio and
+  covers atomic/coalesced configuration, coalesced distinct live commands,
+  coherent status, one-cycle DIP delivery, stalled bundled screen payload,
+  and returned completion. `tb_io_video`, `tb_io_display`, and
+  `tb_pin_system` exercise the integrated hierarchy.
+
 ## A0044 — Reserved I/O fields and register locations
 - **Date**: 2026-07-28 (Task 0154).
 - **Status**: specification-derived write masking plus a deterministic
@@ -966,15 +1020,16 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   and all deterministic choices above. `tb_io_display` locks register
   integration, generated timing events, held payload, and completion updates.
 
-## A0034 — Provisional same-clock internal/noninterlaced video timing
-- **Date**: 2026-07-28 (Task 0139).
-- **Status**: deliberate functional integration boundary; dedicated VCLK/CDC,
-  external synchronization, and interlaced timing remain required before
-  final video compatibility.
+## A0034 — Internal/noninterlaced video timing
+- **Date**: 2026-07-28 (Task 0139); **resolved/refined 2026-07-28
+  (Task 0155)**.
+- **Status**: **RESOLVED** for the dedicated clock/CDC boundary. External
+  synchronization and interlaced timing remain separate missing modes, not
+  an implicit same-clock assumption.
 - **Source**: 1988 TMS34010 User's Guide pages 6-18 through 6-25, 6-31,
   6-47, and §9.7 define the register behavior and video events. Project
-  conventions A0004/A0006 allow functional-first, single-clock increments but
-  do not replace the original VCLK behavior.
+  conventions A0004/A0006 allowed the Task 0139 functional-first checkpoint;
+  A0045 now defines the independent VCLK behavior.
 - **Specification-derived behavior**: HCOUNT increments through HTOTAL and
   wraps while advancing VCOUNT through VTOTAL; sync and blank intervals use
   the H*/V* timing compares. Task 0140 verified the specified one-VCLK output
@@ -983,25 +1038,23 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   DPYCTL.ENV=0 forces BLANK active and inhibits setting DIP. When enabled,
   DIP is requested on the DPYINT-selected line at the HSBLNK equality event,
   not at HCOUNT zero.
-- **Provisional clock boundary**: `tms34010_video` currently runs on `clk`
-  under A0004 and advances on its positive edge. The original device uses a
-  separate VCLK and advances HCOUNT on falling VCLK. No claim is made about
-  pin phase, asynchronous CPU counter access, or video/core frequency ratio.
-  A later task must introduce the dedicated clock and use an explicit
-  multi-bit CDC protocol; synchronizing counter/config bits independently is
-  forbidden.
+- **Resolved clock boundary**: Task 0155 moves timing and display-address
+  state to explicit `vclk_i`. A0045 defines the packed MCP configuration,
+  command/status, DIP, and completed-screen-transaction crossings. The active
+  FPGA edge represents the original falling-VCLK update edge; final physical
+  phase mapping and SDC proof remain FPGA-realization work.
 - **Mode scope**: the integrated timing path is internal and noninterlaced.
   DXV/external-sync correction and NIL=0 interlaced half-line behavior remain
   unimplemented rather than being represented by misleading pseudo-support.
-- **Deterministic counter-write choice**: in the current same-clock model,
-  processor HCOUNT/VCOUNT loads take priority over automatic count updates.
-  An HCOUNT load suppresses a same-edge VCOUNT step, while an independent
-  VCOUNT load always wins for VCOUNT. The guide instead requires reliable
-  processor access only while VCLK is held high, so this collision precedence
-  is an FPGA-model choice, not an original-silicon guarantee.
+- **Deterministic counter-write choice**: a delivered VCLK command retains the
+  original load priority: HCOUNT load suppresses that edge's wrap/VCOUNT step,
+  and an independent VCOUNT load wins for VCOUNT. A0045 records coalescing and
+  the stopped-VCLK access difference; this collision precedence remains an
+  FPGA-model choice rather than an original-silicon guarantee.
 - **Regression evidence**: `tb_video` covers counter loads/wraps, timing
-  windows, ENV, and the corrected interrupt point. `tb_io_video` covers the
-  live register owners, combined blank, timing outputs, and integrated
+  windows, ENV, and the corrected interrupt point. `tb_video_cdc` covers the
+  dedicated domain and every crossing. `tb_io_video` covers the live register
+  snapshots, combined blank, timing outputs, and integrated
   hardware-set/write-zero-clear DIP behavior.
 
 ## A0033 — REFCNT reserved mode and deterministic write collision

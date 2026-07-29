@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0154, with strict RTL
+> Baseline: functional implementation through Task 0155, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -87,8 +87,9 @@ Task 0139 integrated the internal/noninterlaced timing subset with the I/O
 registers. HCOUNT/VCOUNT are live writable counters, DPYCTL.ENV forces blank
 and inhibits new display interrupts when clear, and the corrected
 `HCOUNT=HSBLNK` event sets the landed DIP latch on the selected DPYINT line.
-Timing intervals now leave the core boundary. The independent VCLK/CDC,
-external-sync, interlace, and display-memory paths remain exit-gate work.
+Timing intervals now leave the core boundary. At that checkpoint, the
+independent VCLK/CDC, external-sync, interlace, and display-memory paths
+remained exit-gate work.
 
 Task 0140 corrected the inherited standalone timing interval endpoints
 against the individual Chapter 6 register pages and §§9.5/9.6. Sync and
@@ -217,6 +218,15 @@ A0033 continues to isolate REFCNT bits 1:0. Defined DPYCTL modes awaiting
 consumers are assigned to the video gate rather than left as ambiguous I/O
 state.
 
+Task 0155 closes the independent core/VCLK boundary. HCOUNT/VCOUNT, all timing
+compares, DPYADR, and screen scheduling now live exclusively in `vclk_i`.
+Packed source-held mailboxes carry atomic configuration, coalesced live
+commands, and coherent bounded-stale status; DIP uses a held event crossing;
+and each screen request retains its bundled SRFADR/DPYTAP/ORG payload through
+core-memory completion. `tb_video_cdc` exercises every crossing under a
+non-integer clock ratio. External synchronization, interlace, and serial
+display/pixel behavior remain gate-5 work.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -224,9 +234,9 @@ found during the remaining system integration must still be resolved by
 primary-spec evidence plus tests or retained as an explicit project-level
 deviation.
 
-A0003 (synchronous active-high FPGA reset), A0004 (single initial core
-clock), A0006 (functional-first timing), and A0034 (provisional same-clock
-internal/noninterlaced video timing) are intentional design choices. A0035
+A0003 (synchronous active-high FPGA reset), A0004 (explicit project clock
+domains), A0006 (functional-first timing), and A0034 (internal/noninterlaced
+video timing) are intentional design choices. A0035
 isolates deterministic collision/undefined behavior around the screen-refresh
 handshake, A0036 isolates the direct synchronous host boundary and
 otherwise-unpredictable simultaneous high-byte write choice, and A0037
@@ -240,7 +250,8 @@ A0041 records physical HOLD's synchronized level handshake and phased
 output-enable implementation. A0042 records the one-outstanding EMU-event
 handshake and phase-latched halt indication. A0043 records the asynchronous
 host bundled-data/re-arm contract and FPGA I/O timing work. A0044 records the
-reserved-location read-zero choice and REFCNT exception. These do not excuse
+reserved-location read-zero choice and REFCNT exception. A0045 records the
+dedicated VCLK MCP/stopped-clock/active-edge/reset contract. These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -254,10 +265,11 @@ deliberate non-pin-compatible boundary.
 
 ### Video/display
 
-- Define the pixel/video clock boundary and implement/document every CDC.
 - Add external-sync and interlaced timing modes.
 - Add physical VRAM serial-transfer/display-memory behavior, pixel output,
   and arbitration against CPU/graphics traffic.
+- Constrain and prove the VCLK phase, clock groups, MCP payload paths, and
+  synchronizer recognition in the real Quartus project.
 
 ### FPGA realization
 
@@ -291,7 +303,10 @@ deliberate non-pin-compatible boundary.
    requesters; Tasks 0151–0152 completed HOLD and HLDA/EMUA; and Task 0153
    completed the asynchronous host pins, HRDY, and HD direction. The final
    PLL/SDC service-bound proof belongs to FPGA-realization gate 6.
-5. Integrate video/display memory and CDC with frame-level tests.
+5. **In progress (Task 0155):** the dedicated VCLK boundary, every core/video
+   crossing, noninterlaced timing, and completed screen-transfer request path
+   have asynchronous-clock tests. Complete external-sync/interlaced modes and
+   physical VRAM serial display/pixel output with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,
    and a final spec/documentation audit from a clean worktree.

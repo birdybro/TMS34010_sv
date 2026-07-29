@@ -39,7 +39,7 @@ module tb_int_priority;
   logic                          dpyint_set;
 
   tms34010_core u_core (
-    .clk(clk), .rst(rst),
+    .clk(clk), .vclk_i(clk), .rst(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_size(mem_size),
     .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
     .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w),

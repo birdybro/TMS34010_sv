@@ -2,8 +2,9 @@
 // tms34010_pin_system.sv
 //
 // Integrated functional core/memory system plus the original-pin local-bus
-// phase engine. tms34010_system remains entirely in core_clk_i; a coherent
-// command/response MCP bridge is the only connection to bus_clk8x_i.
+// phase engine. The hierarchy has explicit core_clk_i, bus_clk8x_i, and
+// vclk_i domains. Coherent MCP handshakes isolate both asynchronous
+// core-to-bus commands and the video configuration/status/screen paths.
 //
 // The asynchronous host controls are converted into one held synchronous
 // register request with physical HRDY and byte-lane HD direction. Physical
@@ -24,6 +25,7 @@ module tms34010_pin_system
 (
   input  logic                              core_clk_i,
   input  logic                              bus_clk8x_i,
+  input  logic                              vclk_i,
   input  logic                              rst,
 
   input  logic                              run_emu_n_i,
@@ -184,6 +186,7 @@ module tms34010_pin_system
 
   tms34010_system u_system (
     .clk                (core_clk_i),
+    .vclk_i             (vclk_i),
     .rst                (rst),
     .run_emu_n_i        (core_run_emu_n),
     .emua_n_o           (core_emua_n),

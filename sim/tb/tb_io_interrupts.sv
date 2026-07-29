@@ -50,7 +50,7 @@ module tb_io_interrupts;
   localparam logic [15:0] HI_MASK = 16'h0001 << INT_HI_BIT;
 
   tms34010_io_regs u_dut (
-    .clk         (clk),
+    .clk         (clk), .vclk_i(clk),
     .rst         (rst),
     .hcs_n_i     (1'b0),
     .host_req_i  (host_req),

@@ -50,7 +50,7 @@ module tb_host_control;
       16'h0001 << INT_HI_BIT;
 
   tms34010_io_regs u_dut (
-    .clk           (clk),
+    .clk           (clk), .vclk_i(clk),
     .rst           (rst),
     .hcs_n_i       (hcs_n),
     .host_req_i    (host_req),

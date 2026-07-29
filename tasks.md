@@ -2,7 +2,9 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0154. Task 0154 closes
+The functional implementation is complete through Task 0155. Task 0155 moves
+timing/display ownership to independent VCLK and closes every core/video
+crossing with coherent MCP/event/transaction handshakes. Task 0154 closes
 the remaining reserved I/O field/location behavior for both processor and
 host-indirect accesses. Task 0153 wraps
 the synchronous four-register host engine with the original asynchronous host
@@ -5258,6 +5260,63 @@ Docs:
   `docs/completion_audit.md`, and `docs/memory_map.md`.
 Commit:
 - `940e809c45b8f6a23fa5090a6d22343602717ef5`
+
+---
+
+### Task 0155: Introduce the dedicated VCLK domain and video CDC
+Status: complete
+Dependencies:
+- Task 0140 (verified internal timing interval endpoints).
+- Task 0141 (live display-address scheduler and held screen request).
+- Task 0148 (core-to-local-bus CDC and physical screen-transfer service).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §2.4, page 2-9 (VCLK is independent
+  of INCLK and owns the video timing logic).
+- 1988 TI TMS34010 User's Guide §§9.2–9.6, pages 9-3 through 9-12
+  (VCLK timing-counter ownership, timing events, and display scheduling).
+- 1988 TI TMS34010 User's Guide §9.10.1, pages 9-18 through 9-25
+  (screen-refresh scheduling and completed-transfer address updates).
+Acceptance Criteria:
+- Add an explicit VCLK input through the core, functional-system, and
+  original-pin hierarchy; retain same-clock unit-test composition by tying
+  that input to the core clock where a separate domain is not under test.
+- Move HCOUNT/VCOUNT, all timing compares, DPYADR, and the screen-refresh
+  scheduler wholly into VCLK without sampling changing multi-bit buses
+  through independent synchronizers.
+- Transfer the complete timing/display configuration as an atomic MCP
+  snapshot and transfer HCOUNT/VCOUNT/DPYADR writes as coalescing,
+  completion-qualified commands.
+- Return coherent HCOUNT/VCOUNT/DPYADR snapshots to the core for both
+  processor and host-indirect reads, with an explicitly documented bounded
+  stale-view contract.
+- Carry each display-interrupt event into the core through a lossless
+  toggle handshake.
+- Carry the held screen-refresh request and bundled SRFADR/DPYTAP/ORG payload
+  into the core domain, retain it through arbitrary memory waits, and return
+  exactly one completion to VCLK.
+- Keep external synchronization, interlaced half-line/address adjustment,
+  and physical serial pixel output as subsequent numbered video tasks.
+Tests:
+- Added `tb_video_cdc` PASS with asynchronous-clock CDC coverage for atomic
+  and coalesced configuration,
+  live-register commands/snapshots, lossless DIP, stable screen payloads,
+  arbitrary completion waits, reset, and non-integer clock ratios.
+- Updated `tb_io_video` and `tb_io_display` PASS for completion-qualified
+  writes, destination-domain timing/scheduling, coherent live snapshots, DIP,
+  and returned screen completion under asynchronous VCLK.
+- Updated `tb_pin_system` PASS with an independent VCLK while retaining all
+  physical local-bus, host, HOLD, and RUN/EMU checks.
+- Existing `tb_video`, `tb_display_addr`, `tb_system_fabric`,
+  `tb_host_halt`, `tb_io_regs`, and `tb_host_integration` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 141/141 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

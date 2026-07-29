@@ -20,12 +20,12 @@
 //   DPYINT_PULSE is a one-clock strobe at the HSBLNK equality event on the
 //   line selected by DPYINT.
 //
-// Scope (Task 0139): internal, noninterlaced functional timing. The I/O block
-// drives this module from the project clock under A0004 until the dedicated
-// VCLK/CDC boundary lands. External-sync correction and interlaced half-line
-// timing remain separate video work. The original device advances HCOUNT on
-// falling VCLK; this positive-edge implementation preserves count ordering
-// but does not claim original pin phase (A0006).
+// Scope: internal, noninterlaced functional timing. Task 0155 places this
+// module wholly in the dedicated VCLK domain behind coherent configuration,
+// command, status, interrupt, and screen-transaction crossings. External-sync
+// correction and interlaced half-line timing remain separate video work. The
+// active edge of the FPGA video clock represents the original device's
+// falling-VCLK update edge; final phase/pin mapping belongs in the FPGA top.
 //
 // Spec source:
 //   third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf
@@ -53,9 +53,8 @@ module tms34010_video
   input  logic [15:0] dpyint,
   input  logic        display_enable, // DPYCTL.ENV
 
-  // Processor counter writes. In the eventual VCLK implementation these
-  // become explicit clock-domain transactions; they are same-clock loads in
-  // the current A0004 functional model.
+  // Processor counter writes arrive as destination-domain pulses from the
+  // Task 0155 coherent command mailbox.
   input  logic        hcount_load,
   input  logic [15:0] hcount_wdata,
   input  logic        vcount_load,

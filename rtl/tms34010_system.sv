@@ -6,10 +6,10 @@
 // CPU/graphics, screen refresh, DRAM refresh, and host-indirect traffic all
 // converge on one controller request.
 //
-// Physical host strobes/HRDY/CDC, VCLK/CDC, and original local-bus pin phases
-// remain outside this wrapper. The controller-facing cycle kind and payload
-// are intentionally explicit so those wrappers can land without changing the
-// verified core/fabric contract.
+// Physical host strobes/HRDY/CDC and original local-bus pin phases remain
+// outside this wrapper. The dedicated VCLK enters explicitly and its video
+// CDC is owned below the core I/O block. The controller-facing cycle kind and
+// payload remain explicit for the pin wrapper.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -18,6 +18,7 @@ module tms34010_system
   import tms34010_pkg::*;
 (
   input  logic                              clk,
+  input  logic                              vclk_i,
   input  logic                              rst,
 
   input  logic                              run_emu_n_i,
@@ -99,6 +100,7 @@ module tms34010_system
 
   tms34010_core u_core (
     .clk                     (clk),
+    .vclk_i                  (vclk_i),
     .rst                     (rst),
     .mem_req                 (cpu_field_req),
     .mem_we                  (cpu_field_we),

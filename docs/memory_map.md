@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0154**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0155**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -10,7 +10,8 @@
 > physical HOLD/HOLDA bus release and the shared HLDA/EMUA output are
 > integrated, and the original asynchronous host controls, HRDY, and split
 > HD direction now wrap the four-register engine. Defined reserved fields and
-> locations are enforced on both processor and host-indirect paths.
+> locations are enforced on both processor and host-indirect paths. Video
+> counters/display state now live in VCLK behind coherent core-domain views.
 
 ## Architectural address space
 
@@ -216,9 +217,9 @@ paths and makes all four reserved locations explicit non-storage.
 | C0000160 | 0x16 | PMASK   | graphics ctl | Plane Mask |
 | C0000170–C00001A0 | 0x17–0x1A | — | reserved | Writes ignored; reads return zero |
 | C00001B0 | 0x1B | DPYTAP  | video timing | Bits 13:0 captured per screen-refresh request; reserved bits 15:14 read zero |
-| C00001C0 | 0x1C | HCOUNT  | video timing | Live writable horizontal counter; original VCLK access restriction is deferred with A0034 |
-| C00001D0 | 0x1D | VCOUNT  | video timing | Live writable scan-line counter; original VCLK access restriction is deferred with A0034 |
-| C00001E0 | 0x1E | DPYADR  | video timing | Live writable LNCNT/SRFADR; frame reload and acknowledged screen-refresh updates |
+| C00001C0 | 0x1C | HCOUNT  | video timing | VCLK-owned writable counter; core reads a coherent bounded-stale snapshot and writes use the A0045 command mailbox |
+| C00001D0 | 0x1D | VCOUNT  | video timing | VCLK-owned writable scan-line counter with the same coherent snapshot/command contract |
+| C00001E0 | 0x1E | DPYADR  | video timing | VCLK-owned LNCNT/SRFADR; coherent core snapshot, command writes, frame reload, and acknowledged screen-refresh updates |
 | C00001F0 | 0x1F | REFCNT  | refresh      | Live writable RINTVL/ROWADR down-counter; RR=00/01 requests every 32/64 clocks |
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
@@ -242,12 +243,13 @@ constraints remain part of hardware realization, not the register map.
 
 The original device interacts with VRAM through random-access and serial-shift
 cycles. The current repository now schedules and holds the screen-refresh
-client request with captured SRFADR/DPYTAP/ORG. The integrated MCP bridge
-routes it to the controller's physical memory-to-register pin cycle and
-returns completion to DPYADR. There is still no VRAM serial-output model or
+client request in VCLK with captured SRFADR/DPYTAP/ORG. The Task 0155 MCP
+transaction bridge carries it into the core, and the integrated local-bus MCP
+routes it to the controller's physical memory-to-register pin cycle before
+completion returns to DPYADR. There is still no VRAM serial-output model or
 pixel output.
 
 ## Uncertain / partially implemented areas
 
-- Dedicated VCLK/CDC, external-sync/interlace timing, VRAM shift-register
-  behavior, and pixel output.
+- External-sync/interlace timing, VRAM shift-register behavior, and pixel
+  output.

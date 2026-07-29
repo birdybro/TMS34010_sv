@@ -59,7 +59,7 @@ module tb_host_halt;
     | (16'h0001 << HSTCTL_NMIM_BIT);
 
   tms34010_core u_core (
-    .clk             (clk),
+    .clk             (clk), .vclk_i(clk),
     .rst             (rst),
     .mem_req         (mem_req),
     .mem_we          (mem_we),

@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0154. Task 0124
+The functional implementation is complete through Task 0155. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -87,14 +87,19 @@ enables.
 Task 0154 masks the remaining CONTROL/DPYCTL/DPYTAP reserved fields and makes
 all four reserved I/O register locations ignore processor/host-indirect writes
 and read as zero.
+Task 0155 moves HCOUNT/VCOUNT, timing compares, DPYADR, and the automatic
+screen scheduler into a dedicated VCLK domain. Atomic MCP mailboxes carry
+configuration, coalesced live-register commands, and coherent status
+snapshots; separate held handshakes return DIP and completed bundled screen
+transactions to the core domain.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
 fetch, maskable/NMI entry with architectural service-context ST
-initialization, and the illegal-opcode trap. Video timing is functionally
-integrated through its screen-refresh client and physical memory-to-register
-cycle; a dedicated VCLK/CDC boundary, external sync, interlace, and VRAM
-serial-display service remain future work. Host pin timing is functionally
+initialization, and the illegal-opcode trap. Video timing is integrated in
+its dedicated VCLK domain through coherent CDC, the screen-refresh client,
+and its physical memory-to-register cycle; external sync, interlace, and
+VRAM serial-display service remain future work. Host pin timing is functionally
 integrated; its final FPGA I/O timing and CDC constraints remain sign-off
 work. Read
 `tasks.md`, `docs/completion_audit.md`, and the current-status sections in
@@ -162,6 +167,13 @@ RTL, tests, task log, changelog, and specification first.
 - `rtl/cdc/tms34010_local_bus_bridge.sv` — two-phase MCP command/response
   bridge between core and 8× domains; payload buses are held stable while
   attributed request/ack toggles cross through 2FF synchronizers.
+- `rtl/cdc/tms34010_cdc_mailbox.sv` — one-entry coherent MCP word crossing
+  used for video configuration, live commands/status, and DIP delivery.
+- `rtl/cdc/tms34010_screen_cdc.sv` — held VCLK-to-core screen transaction;
+  bundled SRFADR/DPYTAP/ORG stays stable until physical completion returns.
+- `rtl/video/tms34010_video_subsystem.sv` — dedicated VCLK owner composing
+  timing, display-address scheduling, every core/VCLK mailbox, and the screen
+  transaction bridge.
 - `rtl/tms34010_system.sv` — synthesizable functional wrapper connecting the
   core's CPU, host, display, and refresh clients to the memory fabric.
 - `rtl/tms34010_pin_system.sv` — integrated functional system, CDC bridges,

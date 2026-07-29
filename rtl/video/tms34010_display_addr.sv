@@ -16,10 +16,10 @@
 // refreshes occur every LCSTRT+1 eligible scan lines. On completion, SRFADR
 // increments or decrements by DPYCTL.DUDATE and LNCNT reloads.
 //
-// Current scope: same-clock internal/noninterlaced scheduling under A0034.
-// Task 0148 carries the captured ORG direction with each request through the
-// physical-bus bridge. Interlaced half-DUDATE adjustment and VCLK CDC remain
-// later tasks.
+// Current scope: internal/noninterlaced scheduling in the dedicated VCLK
+// domain. Task 0148 carries captured ORG through the physical-bus bridge, and
+// Task 0155 wraps this held request in a coherent VCLK-to-core transaction.
+// Interlaced half-DUDATE adjustment remains later work.
 //
 // Spec source:
 //   1988 TI TMS34010 User's Guide pages 6-17..6-24 and §9.10.1.

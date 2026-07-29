@@ -72,7 +72,7 @@ module tb_system_fabric;
   logic                      illegal_opcode;
 
   tms34010_system u_system (
-    .clk               (clk),
+    .clk               (clk), .vclk_i(clk),
     .rst               (rst),
     .run_emu_n_i       (1'b1),
     .emua_n_o          (),

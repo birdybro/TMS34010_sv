@@ -1,10 +1,10 @@
 // -----------------------------------------------------------------------------
 // tb_io_video.sv
 //
-// Same-clock functional integration regression for the Chapter 6 video I/O
-// registers and tms34010_video. Programs a compact noninterlaced frame,
-// observes live writable HCOUNT/VCOUNT and timing outputs, and verifies that
-// DPYCTL.ENV gates BLANK plus the hardware-set/write-zero-clear DIP latch.
+// I/O integration regression for the Chapter 6 video registers across the
+// dedicated VCLK boundary. Programs a compact noninterlaced frame, observes
+// coherent live HCOUNT/VCOUNT snapshots and VCLK timing outputs, and verifies
+// that DPYCTL.ENV gates BLANK plus the hardware-set/write-zero-clear DIP latch.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -13,8 +13,10 @@ module tb_io_video;
   import tms34010_pkg::*;
 
   logic clk = 1'b0;
+  logic vclk = 1'b0;
   logic rst = 1'b1;
   always #5 clk = ~clk;
+  always #7 vclk = ~vclk;
 
   logic                  req;
   logic                  we;
@@ -62,6 +64,7 @@ module tb_io_video;
 
   tms34010_io_regs u_dut (
     .clk           (clk),
+    .vclk_i        (vclk),
     .rst           (rst),
     .req           (req),
     .we            (we),
@@ -93,10 +96,11 @@ module tb_io_video;
     .screen_refresh_ack_i(1'b0),
     .screen_refresh_srfaddr_o(),
     .screen_refresh_dpytap_o(),
+    .screen_refresh_org_o(),
     .nmi_clear     (1'b0),
     .wvp_set       (1'b0),
     .dpyint_set    (1'b0),
-    .hcs_n_i(1'b0), .host_req_i(1'b0), .host_we_i(1'b0), .host_reg_i(HOST_REG_HSTCTL), .host_be_i(2'b00), .host_wdata_i(16'h0000), .host_rdata_o(), .host_ack_o(), .host_busy_o(), .hint_n_o(), .host_mem_req_o(), .host_mem_we_o(), .host_mem_addr_o(), .host_mem_wdata_o(), .host_mem_rdata_i(16'h0000), .host_mem_ack_i(1'b0), .hlt_o(),
+    .hcs_n_i(1'b0), .host_req_i(1'b0), .host_we_i(1'b0), .host_reg_i(HOST_REG_HSTCTL), .host_be_i(2'b00), .host_wdata_i(16'h0000), .host_rdata_o(), .host_ack_o(), .host_busy_o(), .hint_n_o(), .host_mem_req_o(), .host_mem_we_o(), .host_mem_addr_o(), .host_mem_wdata_o(), .host_mem_is_io_o(), .host_mem_io_rdata_o(), .host_mem_rdata_i(16'h0000), .host_mem_ack_i(1'b0), .hlt_o(),
     .lint1_n_i     (1'b1),
     .lint2_n_i     (1'b1)
   );
@@ -147,6 +151,47 @@ module tb_io_video;
     end
   endtask
 
+  task automatic wait_video_config(
+    input logic [15:0] expected_dpyctl
+  );
+    integer watchdog_count;
+    begin
+      watchdog_count = 0;
+      while (((u_dut.u_video_subsystem.config_video_q.htotal != 16'd7)
+              || (u_dut.u_video_subsystem.config_video_q.dpyctl
+                  != expected_dpyctl))
+             && (watchdog_count < 200)) begin
+        @(posedge vclk);
+        watchdog_count++;
+      end
+      check_value("video configuration reached VCLK",
+                  u_dut.u_video_subsystem.config_video_q.htotal, 16'd7);
+      check_value("DPYCTL reached VCLK",
+                  u_dut.u_video_subsystem.config_video_q.dpyctl,
+                  expected_dpyctl);
+    end
+  endtask
+
+  task automatic wait_video_position(
+    input logic [15:0] expected_hcount,
+    input logic [15:0] expected_vcount
+  );
+    integer watchdog_count;
+    begin
+      watchdog_count = 0;
+      while (((u_dut.u_video_subsystem.hcount_video != expected_hcount)
+              || (u_dut.u_video_subsystem.vcount_video != expected_vcount))
+             && (watchdog_count < 200)) begin
+        @(negedge vclk);
+        watchdog_count++;
+      end
+      check_value("VCLK HCOUNT command",
+                  u_dut.u_video_subsystem.hcount_video, expected_hcount);
+      check_value("VCLK VCOUNT command",
+                  u_dut.u_video_subsystem.vcount_video, expected_vcount);
+    end
+  endtask
+
   initial begin : main
     failures = 0;
     req      = 1'b0;
@@ -169,22 +214,27 @@ module tb_io_video;
     io_write(A_VESYNC, 16'd1);
     io_write(A_VEBLNK, 16'd1);
     io_write(A_VSBLNK, 16'd3);
-    io_write(A_VTOTAL, 16'd3);
+    io_write(A_VTOTAL, 16'd15);
     io_write(A_DPYINT, 16'd2);
+    wait_video_config(16'h0000);
 
-    // Writes address the live counter owners, not stale io_reg mirrors.
+    // Writes address the VCLK owners. VCOUNT is stable until a line wrap,
+    // while HCOUNT's coherent core snapshot may already have advanced beyond
+    // the loaded value by the time the round-trip completes.
     io_write(A_VCOUNT, 16'd2);
+    io_write(A_HCOUNT, 16'd4);
+    wait_video_position(16'd4, 16'd2);
+    wait (vcount == 16'd2);
     addr = A_VCOUNT;
     #1;
     check_value("live VCOUNT processor write/read", rdata, 16'd2);
-    io_write(A_HCOUNT, 16'd4);
     addr = A_HCOUNT;
     #1;
-    check_value("live HCOUNT processor write/read", rdata, 16'd4);
+    check_value("HCOUNT read uses coherent live snapshot", rdata, hcount);
 
     // ENV=0 continues counting but forces BLANK and inhibits DIP even when
     // the counters cross the selected HSBLNK/VCOUNT compare.
-    repeat (4) @(negedge clk);
+    repeat (4) @(negedge vclk);
     check_bit("disabled video remains blanked", blank, 1'b1);
     check_value("disabled video did not set DIP", intpend & DIP_MASK, 16'h0000);
 
@@ -192,31 +242,41 @@ module tb_io_video;
     // selected line, and allow the registered pending latch to sample the
     // generated compare pulse.
     io_write(A_DPYCTL, ENV_MASK);
+    wait_video_config(ENV_MASK);
     io_write(A_VCOUNT, 16'd2);
     io_write(A_HCOUNT, 16'd5);
-    @(negedge clk);
-    check_value("counter reached HSBLNK", hcount, 16'd6);
+    wait_video_position(16'd5, 16'd2);
+    wait (u_dut.u_video_subsystem.hcount_video == 16'd6);
+    @(negedge vclk);
     check_bit("HSBLNK equality precedes output blank transition", hblank, 1'b0);
-    @(negedge clk);
+    wait (u_dut.u_video_subsystem.hcount_video == 16'd7);
+    @(negedge vclk);
     check_bit("count after HSBLNK asserts horizontal blank", hblank, 1'b1);
+    wait ((intpend & DIP_MASK) != 16'h0000);
     check_value("HBLANK compare set DIP", intpend & DIP_MASK, DIP_MASK);
 
     // A processor zero clears the latch. Disabling video before recreating
     // the same compare prevents it from being set again.
+    io_write(A_DPYCTL, 16'h0000);
+    wait_video_config(16'h0000);
+    repeat (8) @(posedge clk);
     io_write(A_INTPEND, 16'h0000);
     check_value("processor cleared DIP", intpend & DIP_MASK, 16'h0000);
-    io_write(A_DPYCTL, 16'h0000);
     io_write(A_VCOUNT, 16'd2);
     io_write(A_HCOUNT, 16'd5);
-    repeat (2) @(negedge clk);
+    wait_video_position(16'd5, 16'd2);
+    repeat (5) @(negedge vclk);
     check_bit("disabled compare forces BLANK", blank, 1'b1);
     check_value("disabled compare leaves DIP clear",
                 intpend & DIP_MASK, 16'h0000);
 
     // Reload a visible coordinate to exercise the integrated output windows.
     io_write(A_DPYCTL, ENV_MASK);
+    wait_video_config(ENV_MASK);
     io_write(A_VCOUNT, 16'd2);
     io_write(A_HCOUNT, 16'd4);
+    wait_video_position(16'd4, 16'd2);
+    @(negedge vclk);
     check_bit("visible coordinate hsync low", hsync, 1'b0);
     check_bit("visible coordinate vsync low", vsync, 1'b0);
     check_bit("visible coordinate hblank low", hblank, 1'b0);

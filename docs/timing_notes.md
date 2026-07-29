@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0153, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0155, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -21,6 +21,8 @@
 | HOLD request/grant CDC → phased output enables | Task 0151 | synchronized levels, unmeasured | preserve both 2FF chains; keep all OE/HOLDA decoding wholly in the 8× domain and constrain final I/O timing |
 | EMU held-event/halt CDC → shared pin     | Task 0152        | source-held/phase-latched, unmeasured | preserve all three 2FF chains; constrain the final Q1/Q2 EMUA and Q3/Q4 HLDA mux at the I/O boundary |
 | Host access/HCS levels → bundled payload | Task 0153        | 2FF-qualified MCP, unconstrained | preserve both synchronizers; constrain host input minima and bundled HFS/HD/control stability through capture; constrain HRDY and HD/OE outputs |
+| Core↔VCLK video configuration/command/status/DIP | Task 0155 | four packed MCP mailboxes, unconstrained | declare core/VCLK asynchronous; recognize every request/ack 2FF; cut only source-held payload paths; retain bounded-stale status and sticky DIP contracts |
+| VCLK→core screen request/completion | Task 0155 | held bundled MCP transaction, unconstrained | preserve request/complete toggles and source payload; keep the core request registered through memory completion |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -110,22 +112,25 @@
   Task 0148 routes it through the MCP bridge to the RAS-only or CBR phase
   engine. The final wait/PLL configuration and permitted HOLD duration must
   still prove the one-entry pending latch cannot be overrun.
-- **Integrated video timing** — Task 0139 runs the internal/noninterlaced
-  generator on the project `clk` under A0034. HCOUNT advances each positive
-  edge and wraps after HTOTAL; that wrap advances VCOUNT and wraps it after
-  VTOTAL. Processor counter loads take same-edge priority. The display event
-  is combinational for the `HCOUNT=HSBLNK && VCOUNT=DPYINT && ENV` interval
-  and is sampled into the DIP latch on the following clock edge. Sync/end
-  blank equality remains active for that count; start blank equality remains
-  inactive until the following count. These are functional clock
-  relationships, not the original falling-VCLK pin phase.
+- **Integrated video timing** — Task 0155 runs the internal/noninterlaced
+  generator on independent `vclk_i`. HCOUNT advances each active edge and
+  wraps after HTOTAL; that wrap advances VCOUNT and wraps it after VTOTAL.
+  Delivered counter loads take destination-edge priority. The display event
+  is the `HCOUNT=HSBLNK && VCOUNT=DPYINT && ENV` interval and enters a sticky
+  source event before its toggle crosses to the core DIP latch. Sync/end blank
+  equality remains active for that count; start blank equality remains
+  inactive until the following count. The internal positive edge represents
+  the original falling-VCLK update edge; final PLL/pin phase mapping remains
+  gate-6 work.
 - **Screen-refresh request** — at an eligible start-HBLANK event,
   `screen_refresh_req_o` registers high and captures SRFADR/DPYTAP/ORG. The level
   and payload remain stable for an unbounded number of core clocks until
-  `screen_refresh_ack_i` reports completion of the future physical VRAM
-  transfer. That acknowledge clears the request, reloads LNCNT, and updates
-  SRFADR by the live DUDATE/ORG value. Processor DPYADR load wins a same-edge
-  automatic update. Task 0145's arbiter contract does not acknowledge
+  `screen_refresh_ack_i` reports completion of the physical VRAM transfer.
+  Task 0155 captures the VCLK payload behind a request toggle, holds a
+  core-clock request through the arbiter/controller wait, and returns one
+  completion toggle. That VCLK acknowledge clears the request, reloads LNCNT,
+  and updates SRFADR by the live DUDATE/ORG value. A delivered DPYADR load wins
+  a same-edge automatic update. Task 0145's arbiter contract does not acknowledge
   selection alone; acknowledge denotes completed memory-to-register service.
   Task 0148 carries that held request through the MCP bridge and returns the
   acknowledge only after the 8× screen-transfer cycle completes.
@@ -245,8 +250,9 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## FPGA timing concerns
 
-- The integrated pin system has one core clock and a dedicated 8× local-bus
-  timing domain; a future PLL supplies the latter. Target Fmax is
+- The integrated pin system has a core clock, a dedicated 8× local-bus timing
+  domain, and independent VCLK; a future PLL supplies/maps the FPGA clocks.
+  Target Fmax is
   **not** set yet. Initial core-clock sanity target:
   clear 50 MHz on the documented Cyclone V `5CSEBA6U23I7`, then set the real
   target from system requirements and measured reports.
@@ -295,12 +301,10 @@ of the guide's one-to-two-state synchronization delay.
 The future SDC must mark the pin-to-first-stage paths asynchronous and the
 Quartus metastability report must recognize both chains. Those checks cannot
 be claimed until the real project exists. The supplemental `dpyint_set_i`
-remains a synchronous core-clock event. The integrated Task 0139 display
-compare is same-clock and therefore needs no crossing yet. When it moves to
-VCLK, DIP delivery must use a lossless event handshake or equivalent
-pending-level protocol, timing configuration must use a coherent multi-bit
-transfer, and free-running counter observation must not synchronize binary
-bits independently.
+remains a synchronous core-clock event. Task 0155's display compare lives in
+VCLK: a sticky event feeds a packed one-bit MCP mailbox and emits one core
+pulse, while an already pending architectural DIP makes multiple intervening
+events equivalent.
 
 ## Host pin CDC boundary
 
@@ -322,23 +326,28 @@ pin-to-first-stage paths, recognize both 2FF chains, prove the host's minimum
 active/inactive strobe widths, constrain the bundled payload relative to the
 capture edge, and close HRDY plus HD/output-enable pin delays.
 
-## Provisional video clock boundary
+## Dedicated video clock boundary
 
-Task 0139 intentionally closes functional register/timing integration before
-introducing the physical video clock. The current active-high timing interval
-outputs are core-clock signals. A future VCLK task must:
+Task 0155 closes the functional VCLK boundary:
 
-- place HCOUNT/VCOUNT and timing compares in the VCLK domain;
-- transfer processor-written timing configurations coherently, with explicit
-  update acknowledgement where required;
-- provide reliable processor access to live counters without independently
-  synchronizing binary bits;
-- transfer DPYSTRT/DPYCTL/DPYTAP updates and live DPYADR ownership coherently
-  with the screen-refresh scheduler;
-- carry display-interrupt events into the core domain without losing a
-  one-VCLK pulse;
-- constrain both clocks and every crossing in SDC, then verify Quartus CDC
-  recognition and metastability reports.
+- HCOUNT/VCOUNT, timing compares/outputs, DPYADR, and the screen scheduler are
+  wholly in `vclk_i`;
+- one source-held packed mailbox carries all twelve timing/display
+  configuration words atomically, and a second carries coalesced live-owner
+  commands;
+- a continuously re-armed packed mailbox returns coherent
+  `{HCOUNT,VCOUNT,DPYADR}` snapshots. The core view is handshake-latency stale
+  but never bit-torn;
+- a pending DIP condition crosses through a one-bit toggle mailbox;
+- a dedicated request/completion bridge holds SRFADR/DPYTAP/ORG through
+  arbitrary core-memory waits.
+
+The core and VCLK clocks are asynchronous. The final SDC must define both
+clocks, use asynchronous clock groups, preserve and report every toggle 2FF,
+and cut/waive only payload buses proven stable by the MCP protocol. Both
+domains must sample the common synchronous reset asserted so toggle phases
+start at zero. If VCLK stops, status remains at its last coherent snapshot and
+pending commands complete only when it resumes (A0045).
 
 ## Cyclone V-specific notes
 

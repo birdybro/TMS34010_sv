@@ -22,6 +22,7 @@ module tb_pin_system;
 
   logic core_clk = 1'b0;
   logic bus_clk8x = 1'b0;
+  logic vclk = 1'b0;
   logic rst = 1'b1;
 
   local_word_t     lad_i;
@@ -91,12 +92,14 @@ module tb_pin_system;
 
   always #8 core_clk = ~core_clk;
   always #1 bus_clk8x = ~bus_clk8x;
+  always #3 vclk = ~vclk;
 
   assign lad_i = read_data_q;
 
   tms34010_pin_system dut (
     .core_clk_i        (core_clk),
     .bus_clk8x_i       (bus_clk8x),
+    .vclk_i            (vclk),
     .rst               (rst),
     .run_emu_n_i       (run_emu_n),
     .hcs_n_i           (hcs_n),

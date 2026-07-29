@@ -36,7 +36,7 @@ module tb_io_refresh;
       (16'h0003 << CTRL_RR_LO);
 
   tms34010_io_regs u_dut (
-    .clk          (clk),
+    .clk          (clk), .vclk_i(clk),
     .rst          (rst),
     .req          (req),
     .we           (we),
