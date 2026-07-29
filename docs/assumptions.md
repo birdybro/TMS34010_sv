@@ -563,6 +563,33 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   inputs are deliberate integration sidebands; their future source-clock
   crossings remain explicit in `docs/timing_notes.md`.
 
+## A0033 — REFCNT reserved mode and deterministic write collision
+- **Date**: 2026-07-28 (Task 0138).
+- **Status**: deliberate behavior only where the primary guide is undefined;
+  all ordinary RR=00/01/11 behavior is specification-derived.
+- **Source**: 1988 TMS34010 User's Guide pages 6-10/6-11 and 6-45/6-46.
+  The guide defines RR=00 as subtracting two from RINTVL per local clock,
+  RR=01 as subtracting one, RR=11 as disabled, and bits 2-15 as a continuous
+  counter whose borrow decrements ROWADR and requests refresh. REFCNT resets
+  to zero and may be read or written, though software should disable refresh
+  before writing.
+- **Direct implementation**: reset zero plus active RR=00 produces a borrow
+  on the first local clock after reset, then every 32 clocks. RR=01 similarly
+  borrows first and then every 64 clocks. The request is registered for one
+  core clock while the output row reflects the newly decremented ROWADR.
+- **Reserved RR=10 choice**: the guide reserves this encoding without
+  specifying an operation. The FPGA implementation treats it as disabled,
+  holding REFCNT and issuing no request; RR=11 has the same hold behavior.
+- **Write-collision choice**: a processor REFCNT load takes priority over an
+  automatic decrement and suppresses a same-edge request. This makes the
+  guide's otherwise-unreliable write-while-refresh-enabled case
+  deterministic without changing conforming software, which disables
+  refresh before the load.
+- **Regression evidence**: `tb_refresh` locks ordinary count/borrow periods,
+  descending rows, wrap, both non-counting encodings, load precedence, and
+  reserved-bit retention. `tb_io_refresh` locks live processor reads/writes
+  and the exported row/request/mode boundary.
+
 ## A0032 — Abstract RUN/EMU handshake and deterministic status
 - **Date**: 2026-07-28 (Task 0128).
 - **Status**: deliberate core-boundary choice; physical pin timing remains a

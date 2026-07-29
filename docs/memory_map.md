@@ -1,8 +1,8 @@
 # Memory map
 
-> Status: **field-to-word translation and interrupt-register semantics
-> implemented through Task 0137**. The core issues bit-addressed 1–32-bit
-> accesses, and a synthesizable sequencer
+> Status: **field-to-word translation, interrupt-register semantics, and live
+> REFCNT implemented through Task 0138**. The core issues bit-addressed
+> 1–32-bit accesses, and a synthesizable sequencer
 > expands them into aligned 16-bit word cycles. The on-chip I/O page is
 > decoded and stored in the core. Original-pin local-bus timing and several
 > I/O side effects remain open.
@@ -81,12 +81,15 @@ auto-cleared on entry. Task 0137 made INTENB reserved bits read zero and
 implemented INTPEND by source: synchronized read-only LINT1/LINT2 levels,
 read-only HSTCTLL.INTIN/HIP, and hardware-set DIP/WVP latches cleared by
 writing zero. Processor-side HSTCTLL writes also obey the INTIN, MSGOUT, and
-INTOUT restrictions on pages 6-36/6-37.
+INTOUT restrictions on pages 6-36/6-37. Task 0138 made REFCNT a live
+processor-writable continuous interval/row down-counter driven by
+CONTROL.RR, with CONTROL.RM and request/row outputs for the future memory
+fabric.
 
-The remaining register semantics are incomplete: video/refresh counters are
-not driven into HCOUNT/VCOUNT/REFCNT/DPYADR, host-side HSTCTL behavior is not
-connected, and I/O accesses still rely on an external request/ack cycle as
-documented in A0028.
+The remaining register semantics are incomplete: video state is not driven
+into HCOUNT/VCOUNT/DPYADR, host-side HSTCTL behavior is not connected, and
+I/O accesses still rely on an external request/ack cycle as documented in
+A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -115,10 +118,10 @@ documented in A0028.
 | C0000160 | 0x16 | PMASK   | graphics ctl | Plane Mask |
 | C0000170–C00001A0 | 0x17–0x1A | — | reserved | (storage present, no defined function) |
 | C00001B0 | 0x1B | DPYTAP  | video timing | Display Tap Point |
-| C00001C0 | 0x1C | HCOUNT  | video timing | Horizontal Count (read-only on silicon) |
-| C00001D0 | 0x1D | VCOUNT  | video timing | Vertical Count (read-only on silicon) |
-| C00001E0 | 0x1E | DPYADR  | video timing | Display Address (read-only on silicon) |
-| C00001F0 | 0x1F | REFCNT  | refresh      | DRAM Refresh Count (read-only on silicon) |
+| C00001C0 | 0x1C | HCOUNT  | video timing | Video-clock counter; CPU access reliable only while VCLK is high |
+| C00001D0 | 0x1D | VCOUNT  | video timing | Scan-line counter; CPU access reliable only while VCLK is high |
+| C00001E0 | 0x1E | DPYADR  | video timing | Writable live screen-refresh address/counter; video integration pending |
+| C00001F0 | 0x1F | REFCNT  | refresh      | Live writable RINTVL/ROWADR down-counter; RR=00/01 requests every 32/64 clocks |
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
 fields for graphics and interrupt behavior are also named in the package.

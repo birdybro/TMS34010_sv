@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0137, with strict RTL
+> Baseline: functional implementation through Task 0138, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -76,6 +76,13 @@ latches with specification-defined write-zero clearing. Host and display
 sidebands make those sources testable until their clock-domain wrappers land;
 direct entry tests lock both external vectors and INT1-over-INT2 priority.
 
+Task 0138 corrected the pre-audit refresh model against User's Guide pages
+6-45/6-46 and integrated it as the processor-visible REFCNT register.
+CONTROL.RR now subtracts two/one from the continuous interval/row counter,
+borrow emits the 32/64-clock refresh request with a descending row, and
+CONTROL.RM plus request/row are exported at the core boundary. A physical
+refresh bus cycle and request retention still belong to the memory fabric.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -93,7 +100,7 @@ non-pin-compatible boundary.
 
 ### I/O and interrupt sources
 
-- Complete read-only, write-to-clear, set-by-hardware, and host-visible
+- Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
 - Connect the display timing pulse to the landed INTPEND.DI sideband and
@@ -110,7 +117,9 @@ non-pin-compatible boundary.
   eight post-reset RAS-only initialization cycles.
 - Add arbitration among CPU/graphics, display, refresh, and host clients with
   specification-derived priority and request-hold rules.
-- Integrate the standalone DRAM-refresh generator and expose REFCNT behavior.
+- Service the exported refresh request in the local-memory arbiter/controller,
+  retaining or acknowledging requests through contention and issuing the
+  selected RAS-only or CAS-before-RAS cycle.
 - Implement the host interface, host-direct/indirect accesses, HCS-selected
   reset halt, HLT behavior, HRDY/HINT signaling, and CDC where host timing is
   asynchronous.

@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0137. Task 0124
+The functional implementation is complete through Task 0138. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -34,13 +34,16 @@ sequencing from architectural fields onto aligned 16-bit words, including
 all seven specification cases, partial-word RMW locking, and word-side wait
 states. Task 0137 implemented source-specific INTPEND/INTENB behavior,
 dedicated LINT1/LINT2 synchronizers, every maskable pending source, and direct
-external-interrupt entry coverage. The implementation includes the multicycle
-CPU core, the currently
-tracked instruction set, bit-field memory operations, graphics
+external-interrupt entry coverage. Task 0138 corrected and integrated the
+continuous REFCNT interval/row down-counter and exported the refresh request,
+row, and mode for the future memory fabric. The implementation includes the
+multicycle CPU core, the currently tracked instruction set, bit-field memory
+operations, graphics
 operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O
 registers, reset-vector fetch, maskable/NMI entry with architectural
 service-context ST initialization, and the illegal-opcode trap. Video timing
-and refresh blocks exist as standalone modules. Read `tasks.md`,
+remains standalone; physical refresh service remains part of the future
+memory fabric. Read `tasks.md`,
 `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 

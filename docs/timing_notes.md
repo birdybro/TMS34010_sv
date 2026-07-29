@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0137, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0138, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -39,6 +39,14 @@
   halted for an unbounded number of core cycles until RUN returns high.
   Original Q1/Q2 pulse phasing and HLDA/EMUA pin multiplexing are deferred to
   the physical wrapper (A0032).
+- **DRAM-refresh request** — REFCNT resets to zero while CONTROL.RR resets to
+  `00`. The first active core/local clock subtracts two from RINTVL, borrows
+  into ROWADR (`0 → 255`), and registers `refresh_req_o` for one clock with
+  `refresh_row_o=255`. Further RR=00 requests are 32 clocks apart; RR=01
+  requests are 64 clocks apart. During each request pulse, the row is the
+  newly decremented value and `refresh_cbr_o` reflects CONTROL.RM. The future
+  arbiter must capture or retain this event until it performs the physical
+  cycle; no service/acknowledge path exists yet.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

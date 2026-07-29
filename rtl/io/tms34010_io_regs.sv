@@ -15,7 +15,7 @@
 // the host interface, which this FPGA reimplementation does not yet model;
 // resetting every register to 0 is therefore correct here.
 //
-// Current scope (Tasks 0081–0137):
+// Current scope (Tasks 0081–0138):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -24,8 +24,9 @@
 //   - INTPEND implements the source-specific semantics from pages 6-41/6-42:
 //     synchronized read-only external levels, read-only HSTCTLL.INTIN, and
 //     hardware-set/write-zero-to-clear DIP/WVP latches.
-//   - HCOUNT/VCOUNT/REFCNT/DPYADR remain ordinary storage until their
-//     video/refresh producers are integrated.
+//   - REFCNT is the live writable refresh counter driven by CONTROL.RR.
+//     HCOUNT/VCOUNT/DPYADR remain ordinary storage until their video
+//     producer is integrated.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003), all registers -> 0.
@@ -67,6 +68,10 @@ module tms34010_io_regs
   output logic [15:0]           intenb_o, // INTENB: maskable-interrupt enables
   output logic [15:0]           intpend_o,// INTPEND: maskable-interrupt pending bits
   output logic [15:0]           hstctlh_o,// HSTCTLH: host control (NMI/NMIM in bits 8/9)
+  output logic [15:0]           refcnt_o, // REFCNT: live interval/row counter
+  output logic                  refresh_req_o, // one cycle at RINTVL underflow
+  output logic [7:0]            refresh_row_o, // decremented ROWADR for request
+  output logic                  refresh_cbr_o, // CONTROL.RM: 1=CAS-before-RAS
   input  logic                  nmi_clear,     // clear HSTCTLH.NMI after NMI entry
   input  logic                  wvp_set,       // synchronous INTPEND.WVP set pulse
   input  logic                  dpyint_set,    // synchronous INTPEND.DIP set pulse
@@ -88,6 +93,7 @@ module tms34010_io_regs
   logic lint1_n_sync;
   logic lint2_n_sync;
   logic [15:0] intpend_value;
+  logic        refcnt_load;
 
   tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_lint1_sync (
     .clk     (clk),
@@ -102,6 +108,25 @@ module tms34010_io_regs
     .async_i (lint2_n_i),
     .sync_o  (lint2_n_sync)
   );
+
+  assign refcnt_load =
+      req && we && is_io && (idx == IO_IDX_REFCNT);
+
+  // REFCNT is owned by the refresh block rather than mirrored in io_reg.
+  // CONTROL.RR clocks its continuous interval/row counter, while a processor
+  // write loads the full value. The future arbiter consumes request/row/mode.
+  tms34010_refresh u_refresh (
+    .clk          (clk),
+    .rst          (rst),
+    .rr           (io_reg[IO_IDX_CONTROL][CTRL_RR_HI:CTRL_RR_LO]),
+    .refcnt_load  (refcnt_load),
+    .refcnt_wdata (wdata),
+    .refcnt       (refcnt_o),
+    .refresh_row  (refresh_row_o),
+    .refresh_req  (refresh_req_o)
+  );
+
+  assign refresh_cbr_o = io_reg[IO_IDX_CONTROL][CTRL_RM_BIT];
 
   // INTPEND is a composite view, not general storage. External requests and
   // HIP are read-only levels; only the internal DIP/WVP latches use io_reg.
@@ -122,10 +147,11 @@ module tms34010_io_regs
   always_comb begin
     rdata = 16'h0000;
     if (is_io) begin
-      if (idx == IO_IDX_INTPEND)
-        rdata = intpend_value;
-      else
-        rdata = io_reg[idx];
+      unique case (idx)
+        IO_IDX_INTPEND: rdata = intpend_value;
+        IO_IDX_REFCNT:  rdata = refcnt_o;
+        default:        rdata = io_reg[idx];
+      endcase
     end
   end
 
@@ -176,6 +202,11 @@ module tms34010_io_regs
             io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <=
                 io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT]
                 | wdata[HSTCTL_INTOUT_BIT];
+          end
+
+          IO_IDX_REFCNT: begin
+            // The refresh submodule owns the live counter. Its parallel-load
+            // port consumes this write, so no mirror storage is updated.
           end
 
           default: io_reg[idx] <= wdata;

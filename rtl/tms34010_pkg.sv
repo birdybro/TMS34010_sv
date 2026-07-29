@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0137: architectural widths and register layouts,
+// Current through Task 0138: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states plus physical-memory word geometry are defined here.
 // -----------------------------------------------------------------------------
@@ -355,6 +355,9 @@ package tms34010_pkg;
   parameter int unsigned           HSTCTL_INTOUT_BIT = 7; // HSTCTLL: GSP-to-host IRQ
 
   // CONTROL register bit fields (1988 UG page 4-? CONTROL register).
+  parameter int unsigned CTRL_RM_BIT   = 2;   // DRAM refresh mode: 0=RAS-only
+  parameter int unsigned CTRL_RR_LO    = 3;   // DRAM refresh rate
+  parameter int unsigned CTRL_RR_HI    = 4;
   parameter int unsigned CTRL_T_BIT    = 5;   // pixel transparency enable
   parameter int unsigned CTRL_W_LO     = 6;   // window violation detection mode
   parameter int unsigned CTRL_W_HI     = 7;

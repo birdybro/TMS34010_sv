@@ -1,10 +1,10 @@
 // -----------------------------------------------------------------------------
 // tb_refresh.sv
 //
-// Unit test for tms34010_refresh — the DRAM-refresh address generator. Checks
-// the refresh strobe interval (CONTROL.RR: 32 / 64 clocks), the row-address
-// increment per refresh, and that RR = 11 (and the reserved 10) disable
-// refresh. SPVU001A §6 (REFCNT, CONTROL.RR).
+// Unit regression for the exact REFCNT counter described by the 1988 User's
+// Guide pages 6-45/6-46. It checks the first post-reset borrow, 32/64-clock
+// periods, descending ROWADR, both disabled RR modes, processor load
+// precedence, reserved-bit retention, odd RR=00 underflow, and row wrap.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -12,92 +12,186 @@
 module tb_refresh;
   import tms34010_pkg::*;
 
-  logic       clk = 1'b0;
-  logic       rst = 1'b1;
-  logic [1:0] rr;
+  logic        clk = 1'b0;
+  logic        rst = 1'b1;
+  logic [1:0]  rr;
+  logic        refcnt_load;
+  logic [15:0] refcnt_wdata;
   always #5 clk = ~clk;
 
-  logic [7:0] refresh_row;
-  logic       refresh_req;
+  logic [15:0] refcnt;
+  logic [7:0]  refresh_row;
+  logic        refresh_req;
 
   tms34010_refresh u_ref (
-    .clk(clk), .rst(rst), .rr(rr),
-    .refresh_row(refresh_row), .refresh_req(refresh_req)
+    .clk          (clk),
+    .rst          (rst),
+    .rr           (rr),
+    .refcnt_load  (refcnt_load),
+    .refcnt_wdata (refcnt_wdata),
+    .refcnt       (refcnt),
+    .refresh_row  (refresh_row),
+    .refresh_req  (refresh_req)
   );
 
   int unsigned failures;
 
-  // Count refresh strobes over `n` clocks and return the gap between the first
-  // two strobes (the refresh interval).
-  task automatic run_and_count(input int unsigned n,
-                               output int unsigned pulses,
-                               output int unsigned first_gap);
-    int unsigned last_idx;
-    pulses = 0; first_gap = 0; last_idx = 0;
-    for (int unsigned k = 1; k <= n; k++) begin
-      @(negedge clk);
-      if (refresh_req) begin
-        pulses++;
-        if (pulses == 2) first_gap = k - last_idx;
-        last_idx = k;
+  task automatic check_value(
+    input string       label,
+    input logic [15:0] actual,
+    input logic [15:0] expected
+  );
+    begin
+      if (actual !== expected) begin
+        $display("TEST_RESULT: FAIL: %s expected=%04h actual=%04h",
+                 label, expected, actual);
+        failures++;
       end
     end
   endtask
 
+  task automatic check_bit(
+    input string label,
+    input logic  actual,
+    input logic  expected
+  );
+    begin
+      if (actual !== expected) begin
+        $display("TEST_RESULT: FAIL: %s expected=%0b actual=%0b",
+                 label, expected, actual);
+        failures++;
+      end
+    end
+  endtask
+
+  task automatic apply_reset(input logic [1:0] new_rr);
+    begin
+      @(negedge clk);
+      rst          = 1'b1;
+      rr           = new_rr;
+      refcnt_load  = 1'b0;
+      refcnt_wdata = 16'h0000;
+      repeat (2) @(posedge clk);
+      @(negedge clk);
+      rst = 1'b0;
+    end
+  endtask
+
+  task automatic load_refcnt(input logic [15:0] value);
+    begin
+      @(negedge clk);
+      refcnt_wdata = value;
+      refcnt_load  = 1'b1;
+      @(negedge clk);
+      refcnt_load = 1'b0;
+    end
+  endtask
+
   initial begin : main
-    int unsigned pulses, gap;
-    failures = 0;
-    rr = 2'b00;
+    int unsigned pulse_count;
 
+    failures     = 0;
+    rr           = 2'b00;
+    refcnt_load  = 1'b0;
+    refcnt_wdata = 16'h0000;
+
+    // RR=00: reset REFCNT=0. The first decrement by two borrows immediately,
+    // producing row FF/RINTVL 62, then requests recur every 32 clocks.
     repeat (3) @(posedge clk);
+    @(negedge clk);
+    check_value("reset REFCNT", refcnt, 16'h0000);
     rst = 1'b0;
+    @(negedge clk);
+    check_bit("RR00 first-clock request", refresh_req, 1'b1);
+    check_value("RR00 first decrement", refcnt, 16'hFFF8);
+    check_value("RR00 first row", {8'h00, refresh_row}, 16'h00FF);
 
-    // RR = 00: refresh every 32 clocks. Over 96 clocks expect 3 strobes
-    // (at clocks 31, 63, 95), 32 apart, and the row reaches 3.
-    run_and_count(96, pulses, gap);
-    if (pulses != 3) begin
-      $display("TEST_RESULT: FAIL: RR=00 pulses=%0d, expected 3", pulses);
+    pulse_count = 0;
+    for (int unsigned k = 1; k <= 32; k++) begin
+      @(negedge clk);
+      if (refresh_req)
+        pulse_count++;
+      if ((k < 32) && refresh_req) begin
+        $display("TEST_RESULT: FAIL: RR00 early request at gap %0d", k);
+        failures++;
+      end
+    end
+    if (pulse_count != 1) begin
+      $display("TEST_RESULT: FAIL: RR00 requests over next 32 clocks=%0d expected=1",
+               pulse_count);
       failures++;
     end
-    if (gap != 32) begin
-      $display("TEST_RESULT: FAIL: RR=00 interval=%0d clocks, expected 32", gap);
-      failures++;
-    end
-    if (refresh_row != 8'd3) begin
-      $display("TEST_RESULT: FAIL: RR=00 row=%0d, expected 3", refresh_row);
-      failures++;
-    end
+    check_value("RR00 second decremented row/refill", refcnt, 16'hFEF8);
 
-    // RR = 01: refresh every 64 clocks. Over 128 clocks expect 2 strobes, 64
-    // apart. Reset the counter first.
-    @(negedge clk); rst = 1'b1; rr = 2'b01; repeat (2) @(posedge clk); @(negedge clk); rst = 1'b0;
-    run_and_count(128, pulses, gap);
-    if (pulses != 2) begin
-      $display("TEST_RESULT: FAIL: RR=01 pulses=%0d, expected 2", pulses);
-      failures++;
-    end
-    if (gap != 64) begin
-      $display("TEST_RESULT: FAIL: RR=01 interval=%0d clocks, expected 64", gap);
-      failures++;
-    end
+    // RR=01: one count per clock, immediate first borrow then a 64-clock gap.
+    apply_reset(2'b01);
+    @(negedge clk);
+    check_bit("RR01 first-clock request", refresh_req, 1'b1);
+    check_value("RR01 first decrement", refcnt, 16'hFFFC);
 
-    // RR = 11: no refresh. Over 100 clocks expect 0 strobes; row stays 0.
-    @(negedge clk); rst = 1'b1; rr = 2'b11; repeat (2) @(posedge clk); @(negedge clk); rst = 1'b0;
-    run_and_count(100, pulses, gap);
-    if (pulses != 0) begin
-      $display("TEST_RESULT: FAIL: RR=11 pulses=%0d, expected 0 (refresh disabled)", pulses);
+    pulse_count = 0;
+    for (int unsigned k = 1; k <= 64; k++) begin
+      @(negedge clk);
+      if (refresh_req)
+        pulse_count++;
+      if ((k < 64) && refresh_req) begin
+        $display("TEST_RESULT: FAIL: RR01 early request at gap %0d", k);
+        failures++;
+      end
+    end
+    if (pulse_count != 1) begin
+      $display("TEST_RESULT: FAIL: RR01 requests over next 64 clocks=%0d expected=1",
+               pulse_count);
       failures++;
     end
-    if (refresh_row != 8'd0) begin
-      $display("TEST_RESULT: FAIL: RR=11 row=%0d, expected 0", refresh_row);
-      failures++;
-    end
+    check_value("RR01 second decremented row/refill", refcnt, 16'hFEFC);
 
-    if (failures == 0) begin
-      $display("TEST_RESULT: PASS (refresh: 32/64-clock interval per RR, row increments, RR=11 disables)");
-    end else begin
+    // RR=10 is reserved and RR=11 disables refresh. This implementation
+    // deterministically holds REFCNT for both non-counting encodings.
+    apply_reset(2'b10);
+    repeat (70) begin
+      @(negedge clk);
+      check_bit("RR10 no request", refresh_req, 1'b0);
+    end
+    check_value("RR10 counter held", refcnt, 16'h0000);
+
+    apply_reset(2'b11);
+    repeat (70) begin
+      @(negedge clk);
+      check_bit("RR11 no request", refresh_req, 1'b0);
+    end
+    check_value("RR11 counter held", refcnt, 16'h0000);
+
+    // A software load owns all 16 bits. Reserved bits 1:0 persist while the
+    // architected 14-bit counter decrements; the load itself suppresses req.
+    load_refcnt(16'h0203);
+    check_value("software load", refcnt, 16'h0203);
+    check_bit("load suppresses request", refresh_req, 1'b0);
+    rr = 2'b01;
+    @(negedge clk);
+    check_bit("loaded zero interval underflows", refresh_req, 1'b1);
+    check_value("row decrements and reserved bits persist", refcnt, 16'h01FF);
+    @(negedge clk);
+    check_bit("request is one clock", refresh_req, 1'b0);
+    check_value("RR01 resumes counting", refcnt, 16'h01FB);
+
+    // A coincident load has explicit priority over automatic counting.
+    load_refcnt(16'hAA03);
+    check_value("load precedence", refcnt, 16'hAA03);
+    check_bit("load precedence suppresses request", refresh_req, 1'b0);
+
+    // RR=00 subtracts two, so both RINTVL=0 and RINTVL=1 borrow.
+    rr = 2'b11;
+    load_refcnt(16'h0007);
+    rr = 2'b00;
+    @(negedge clk);
+    check_bit("RR00 odd interval borrow", refresh_req, 1'b1);
+    check_value("RR00 odd interval row wrap", refcnt, 16'hFFFF);
+
+    if (failures == 0)
+      $display("TEST_RESULT: PASS (REFCNT: exact decrement, borrow, row, load, and RR semantics)");
+    else
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
-    end
     $finish;
   end
 

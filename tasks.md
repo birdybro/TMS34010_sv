@@ -2,10 +2,13 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0137. Task 0137
-closed the interrupt-register/source portion of exit gate 3 by implementing
-every maskable pending source, the external-pin synchronizers, and the exact
-processor-side register rules. Task 0118
+The functional implementation is complete through Task 0138. Task 0138
+corrected the legacy refresh model against the individual REFCNT pages,
+integrated the live counter with CONTROL and the I/O register file, and
+exported its request/row/mode boundary for the future memory fabric. Task
+0137 closed the interrupt-register/source portion of exit gate 3 by
+implementing every maskable pending source, the external-pin synchronizers,
+and the exact processor-side register rules. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -171,6 +174,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0135 | Complete the instruction status audit | complete |
 | 0136 | Sequence architectural fields onto 16-bit memory words | complete |
 | 0137 | Complete interrupt-pending source semantics | complete |
+| 0138 | Correct and integrate DRAM refresh semantics | complete |
 
 ---
 
@@ -4397,6 +4401,51 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 7c483a6
+
+---
+
+### Task 0138: Correct and integrate DRAM refresh semantics
+Status: complete
+Dependencies:
+- Task 0081 (I/O register file).
+- Task 0099 (standalone refresh generator).
+- Task 0137 (current completion baseline).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 6-10/6-11
+  (CONTROL.RM/RR modes and reset behavior).
+- 1988 TI TMS34010 User's Guide pages 6-45/6-46
+  (REFCNT field layout, decrement/borrow behavior, row address, and access).
+Acceptance Criteria:
+- Model REFCNT bits 2-15 as one continuous writable 14-bit counter:
+  RR=00 decrements RINTVL by two each local clock, RR=01 decrements it by
+  one, and an underflow decrements ROWADR and requests a refresh.
+- Preserve software-written reserved bits 1:0, reset the whole register to
+  zero, and make an explicit processor load take precedence over automatic
+  counting as required for deterministic FPGA behavior.
+- Integrate the refresh generator into `tms34010_io_regs`, so processor
+  reads/writes observe the live REFCNT register and CONTROL.RR/RM drive the
+  refresh behavior.
+- Expose the refresh request, decremented row address, and RAS-only versus
+  CAS-before-RAS mode at the core boundary for the future memory arbiter.
+- Directly test first-underflow behavior, 32/64-clock periods, descending
+  rows, wrap, disable modes, software load, reserved-bit retention, and I/O
+  integration.
+Tests:
+- `tb_refresh` PASS (first borrow, 32/64-clock periods, descending rows,
+  disable modes, write priority, reserved bits, and wrap).
+- `tb_io_refresh` PASS (live REFCNT reads/writes plus exported
+  request/row/mode).
+- Existing `tb_io_regs`, `tb_io_interrupts`, and `tb_smoke` focused
+  regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 124/124 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

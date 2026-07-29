@@ -1,12 +1,13 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0137, with
+> Status: **implemented and ISA/status-audited through Task 0138, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
-> integrated. Architectural fields are sequenced onto aligned 16-bit words.
-> Video timing and refresh exist as standalone modules. The remaining
-> system-level exit gates are recorded in `completion_audit.md`.
+> integrated. Architectural fields are sequenced onto aligned 16-bit words;
+> REFCNT and the refresh requester are integrated at the core boundary.
+> Video timing remains standalone. The remaining system-level exit gates are
+> recorded in `completion_audit.md`.
 
 ## Specification source
 
@@ -64,11 +65,11 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
                             └────────────────────────────────┘
 ```
 
-The CPU, graphics execution engines, I/O register storage, and interrupt entry
-currently live in or directly under `tms34010_core`. The field-to-word
-sequencer has landed below that core boundary. The lower local-bus/host fabric
-remains planned; video timing and refresh are standalone blocks awaiting
-integration.
+The CPU, graphics execution engines, I/O register storage, interrupt entry,
+and REFCNT refresh requester currently live in or directly under
+`tms34010_core`. The field-to-word sequencer has landed below that core
+boundary. The lower local-bus/host fabric and physical refresh service remain
+planned; video timing is a standalone block awaiting integration.
 
 ## Test substrate
 
@@ -85,7 +86,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0137** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0138** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, refresh-client boundary, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -104,9 +105,9 @@ has not landed.
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0137** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact INTENB/INTPEND source semantics, and processor-side HSTCTLL restrictions; host/video/refresh producer integration remains |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0138** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact interrupt sources, processor-side HSTCTLL, and live REFCNT/CONTROL.RR/RM integration; host/video integration remains |
 | `rtl/video/tms34010_video.sv`           | 9     | **landed (standalone)** | HSYNC/VSYNC/blanking generator: free-running HCOUNT/VCOUNT off VCLK, wraps at HTOTAL/VTOTAL, sync/blank window compares, DPYINT scan-line strobe. Not yet wired to the I/O register timing values or a pixel clock (Task 0097). |
-| `rtl/video/tms34010_refresh.sv`         | 9     | **landed (standalone)** | DRAM-refresh address generator: prescaler off CONTROL.RR (every 32/64 clocks, or disabled), 8-bit REFCNT row counter, one-clock refresh strobe (Task 0099). Not yet wired to the memory arbiter. |
+| `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
 
@@ -147,6 +148,11 @@ alignment cases, stalls, reset recovery, and per-word RMW indivisibility.
 Task 0137 completed the pending-source half of the I/O/interrupt gate:
 dedicated LINT synchronizers, read-only X1P/X2P/HIP, latched DIP/WVP,
 host/display set sidebands, and core-level external vector/priority tests.
+Task 0138 corrected the refresh model against the individual REFCNT pages and
+made it the live I/O register. CONTROL.RR/RM now drive a continuous
+interval/row down-counter, while refresh request, decremented row, and mode
+leave the core for the future arbiter. Physical refresh bus service remains
+part of the local-memory fabric gate.
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -329,8 +335,8 @@ VRAM shift-register behavior and pixel output are not implemented.
 - Host interface behavior.
 - Remaining host/video/refresh I/O side effects and internally completed I/O
   accesses.
-- Integration of video timing and refresh with I/O registers, interrupts, and
-  memory; display fetch and pixel output.
+- Integration of video timing with I/O registers and interrupts, plus refresh
+  request service in the memory fabric; display fetch and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.

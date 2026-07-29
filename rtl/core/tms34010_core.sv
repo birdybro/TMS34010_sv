@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0137.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0138.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -10,8 +10,9 @@
 // `illegal_opcode_o` output.
 //
 // The external request/ack interface is an architectural bit-addressed
-// interface, not the original physical 16-bit bus. Video/refresh, host access,
-// and physical bus arbitration are not integrated; see docs/architecture.md.
+// interface, not the original physical 16-bit bus. REFCNT timing and requests
+// are integrated, but refresh service, video, host access, and physical bus
+// arbitration are not; see docs/architecture.md.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -53,6 +54,13 @@ module tms34010_core
   input  logic                                lint2_n_i,
   input  logic                                host_int_set_i,
   input  logic                                dpyint_set_i,
+
+  // Refresh-client boundary. The request is a one-core-clock underflow event;
+  // the row and mode remain stable for that cycle. The future memory fabric
+  // arbitrates and emits the physical refresh cycle.
+  output logic                                refresh_req_o,
+  output logic [7:0]                          refresh_row_o,
+  output logic                                refresh_cbr_o,
 
   // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
@@ -2307,6 +2315,10 @@ module tms34010_core
     .intenb_o (io_intenb),
     .intpend_o(io_intpend),
     .hstctlh_o(io_hstctlh),
+    .refcnt_o (),
+    .refresh_req_o(refresh_req_o),
+    .refresh_row_o(refresh_row_o),
+    .refresh_cbr_o(refresh_cbr_o),
     .nmi_clear(nmi_clear),
     .wvp_set  (wvp_set),
     .dpyint_set(dpyint_set_i),

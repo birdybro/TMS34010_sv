@@ -1,69 +1,107 @@
 // -----------------------------------------------------------------------------
 // tms34010_refresh.sv
 //
-// DRAM-refresh address generator for the TMS34010 (1988 User's Guide §6, the
-// REFCNT register and the CONTROL.RR refresh-rate field).
+// REFCNT counter and DRAM-refresh request generator.
 //
-// The TMS34010 automatically issues RAS-only DRAM-refresh cycles at a regular
-// interval set by CONTROL.RR (bits 4:3):
-//   00 = refresh every 32 local clock periods
-//   01 = refresh every 64 local clock periods
-//   10 = reserved (treated here as "no refresh")
-//   11 = no DRAM refreshing
-// On each refresh cycle the 8-bit refresh row address (REFCNT, the low byte)
-// increments; it counts 0..255 and wraps, sequencing through all DRAM rows.
-// REFCNT is 0 at reset.
+// The 1988 User's Guide pages 6-45/6-46 define REFCNT bits 2-15 as one
+// continuous 14-bit down-counter. Bits 2-7 are RINTVL and bits 8-15 are
+// ROWADR. CONTROL.RR=00 subtracts two from RINTVL per local clock, RR=01
+// subtracts one, and a borrow from RINTVL decrements ROWADR and requests a
+// refresh cycle. Consequently the row sequence descends from 255 to 0.
 //
-// `refresh_req` is a one-clock strobe marking each refresh cycle; `refresh_row`
-// is the current REFCNT row address. The interface to the actual memory
-// arbiter (issuing the RAS-only cycle at the highest priority) is a follow-up;
-// this is the standalone counter.
+// REFCNT is also a processor-writable I/O register. A synchronous explicit
+// load has priority over automatic counting. The guide recommends disabling
+// refresh before writing; the priority here gives the FPGA implementation a
+// deterministic result even if software violates that recommendation.
 //
-// Spec source:
-//   third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf
-//   §6 (REFCNT, CONTROL.RR), page 6-11.
+// `refresh_req` is registered for one clock at each RINTVL underflow. During
+// that pulse, `refresh_row` is the newly decremented ROWADR value that the
+// future memory controller must drive for the refresh cycle.
+//
+// Clock domain: core/local clock only. Reset is synchronous active-high per
+// project convention A0003.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
-module tms34010_refresh
-  import tms34010_pkg::*;
-(
-  input  logic       clk,
-  input  logic       rst,
-  input  logic [1:0] rr,            // CONTROL.RR (bits 4:3)
 
-  output logic [7:0] refresh_row,   // REFCNT row address (ROWADR)
-  output logic       refresh_req    // one-clock strobe at each refresh cycle
+module tms34010_refresh (
+  input  logic        clk,
+  input  logic        rst,
+  input  logic [1:0]  rr,
+  input  logic        refcnt_load,
+  input  logic [15:0] refcnt_wdata,
+
+  output logic [15:0] refcnt,
+  output logic [7:0]  refresh_row,
+  output logic        refresh_req
 );
 
-  // Enabled only for RR = 00 (every 32) or 01 (every 64). The prescaler counts
-  // up to interval-1 then wraps, so the refresh period is `interval` clocks.
-  logic       enabled;
-  logic [6:0] interval;             // 31 (=> 32 clocks) or 63 (=> 64 clocks)
-  assign enabled  = (rr == 2'b00) || (rr == 2'b01);
-  assign interval = (rr == 2'b01) ? 7'd63 : 7'd31;
+  logic        count_enable;
+  logic [13:0] count_step;
+  logic        interval_underflow;
+  logic [15:0] refcnt_d;
 
-  logic [6:0] presc_q;
-  logic [7:0] refresh_row_q;
+  // Justification (a): architected REFCNT state persists across local clocks
+  // and is both processor-visible and consumed by the refresh requester.
+  logic [15:0] refcnt_q;
 
-  // A refresh cycle occurs when the prescaler reaches the interval.
-  assign refresh_req = enabled && (presc_q == interval);
-  assign refresh_row = refresh_row_q;
+  always_comb begin
+    count_enable = 1'b0;
+    count_step   = 14'd0;
+
+    unique case (rr)
+      2'b00: begin
+        count_enable = 1'b1;
+        count_step   = 14'd2;
+      end
+      2'b01: begin
+        count_enable = 1'b1;
+        count_step   = 14'd1;
+      end
+      2'b10,
+      2'b11: begin
+        count_enable = 1'b0;
+        count_step   = 14'd0;
+      end
+      default: begin
+        count_enable = 1'b0;
+        count_step   = 14'd0;
+      end
+    endcase
+  end
+
+  // Borrow out of the six-bit RINTVL field is the refresh-request event.
+  assign interval_underflow =
+      count_enable && ({8'd0, refcnt_q[7:2]} < count_step);
+
+  always_comb begin
+    refcnt_d = refcnt_q;
+    if (count_enable)
+      refcnt_d[15:2] = refcnt_q[15:2] - count_step;
+  end
 
   always_ff @(posedge clk) begin
-    if (rst) begin
-      presc_q       <= 7'd0;
-      refresh_row_q <= 8'd0;
-    end else if (enabled) begin
-      if (presc_q == interval) begin
-        presc_q       <= 7'd0;
-        refresh_row_q <= refresh_row_q + 8'd1;   // wraps 255 -> 0
-      end else begin
-        presc_q <= presc_q + 7'd1;
-      end
-    end
-    // Disabled (RR = 10 / 11): hold the prescaler and row address.
+    if (rst)
+      refcnt_q <= 16'h0000;
+    else if (refcnt_load)
+      refcnt_q <= refcnt_wdata;
+    else
+      refcnt_q <= refcnt_d;
   end
+
+  // Justification (a): this one-cycle event records the underflow decision
+  // across the clock edge so the simultaneously updated row is stable.
+  always_ff @(posedge clk) begin
+    if (rst)
+      refresh_req <= 1'b0;
+    else if (refcnt_load)
+      refresh_req <= 1'b0;
+    else
+      refresh_req <= interval_underflow;
+  end
+
+  assign refcnt      = refcnt_q;
+  assign refresh_row = refcnt_q[15:8];
 
 endmodule : tms34010_refresh
 

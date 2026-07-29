@@ -38,7 +38,9 @@ module tb_io_regs;
     .psize_o(psize_w), .convdp_o(convdp_w), .convsp_o(convsp_w),
     .control_o(control_w), .pmask_o(pmask_w),
     .intenb_o(intenb_w), .intpend_o(intpend_w),
-    .hstctlh_o(hstctlh_w), .nmi_clear(1'b0), .wvp_set(1'b0),
+    .hstctlh_o(hstctlh_w), .refcnt_o(), .refresh_req_o(),
+    .refresh_row_o(), .refresh_cbr_o(),
+    .nmi_clear(1'b0), .wvp_set(1'b0),
     .dpyint_set(1'b0), .host_int_set(1'b0),
     .lint1_n_i(1'b1), .lint2_n_i(1'b1)
   );
@@ -83,13 +85,20 @@ module tb_io_regs;
   endtask
 
   // A few register addresses (IO_BASE + index*0x10).
-  localparam logic [ADDR_WIDTH-1:0] A_PSIZE   = IO_BASE_ADDR + (IO_IDX_PSIZE   << 4);
-  localparam logic [ADDR_WIDTH-1:0] A_PMASK   = IO_BASE_ADDR + (IO_IDX_PMASK   << 4);
-  localparam logic [ADDR_WIDTH-1:0] A_CONVSP  = IO_BASE_ADDR + (IO_IDX_CONVSP  << 4);
-  localparam logic [ADDR_WIDTH-1:0] A_CONVDP  = IO_BASE_ADDR + (IO_IDX_CONVDP  << 4);
-  localparam logic [ADDR_WIDTH-1:0] A_CONTROL = IO_BASE_ADDR + (IO_IDX_CONTROL << 4);
-  localparam logic [ADDR_WIDTH-1:0] A_HESYNC  = IO_BASE_ADDR + (IO_IDX_HESYNC  << 4); // idx 0
-  localparam logic [ADDR_WIDTH-1:0] A_REFCNT  = IO_BASE_ADDR + (IO_IDX_REFCNT  << 4); // idx 31
+  localparam logic [ADDR_WIDTH-1:0] A_PSIZE =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PSIZE) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_PMASK =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PMASK) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_CONVSP =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONVSP) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_CONVDP =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONVDP) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_CONTROL =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONTROL) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_HESYNC =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HESYNC) << 4); // idx 0
+  localparam logic [ADDR_WIDTH-1:0] A_REFCNT =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_REFCNT) << 4); // idx 31
 
   initial begin : main
     failures = 0;
@@ -102,13 +111,14 @@ module tb_io_regs;
     end
 
     repeat (3) @(posedge clk);
-    rst = 1'b0;
     @(negedge clk);
 
-    // 1) Reset clears every register to 0.
+    // 1) Reset clears every register to 0. Check while reset remains asserted:
+    // after release CONTROL.RR=00 makes the live REFCNT decrement immediately.
     check_read("1: PSIZE reset 0",  A_PSIZE,  16'h0000);
     check_read("1: REFCNT reset 0", A_REFCNT, 16'h0000);
     check_read("1: HESYNC reset 0", A_HESYNC, 16'h0000);
+    rst = 1'b0;
 
     // 2) Write/read-back the graphics control registers, no aliasing.
     io_write(A_PSIZE,  16'h0008);   // 8 bpp

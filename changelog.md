@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0138 — DRAM refresh and live REFCNT)
+- Corrected the old standalone refresh model against User's Guide pages
+  6-45/6-46: REFCNT bits 2-15 are one continuous down-counter, RR=00/01
+  subtract two/one per local clock, and interval borrow decrements ROWADR
+  while requesting refresh. Rows now sequence 255 down to 0.
+- Made REFCNT processor-writable with full-word load precedence and preserved
+  reserved bits 1:0 during automatic counting. RR=10 and RR=11
+  deterministically hold the counter.
+- Integrated the generator into the I/O register file under CONTROL.RR/RM;
+  processor reads now observe live REFCNT, and the core exports the request,
+  decremented row, and RAS-only/CAS-before-RAS mode for the future arbiter.
+- Reworked `tb_refresh` around the exact counter and added `tb_io_refresh` for
+  processor-visible state plus the arbiter-facing boundary.
+- Validation: focused refresh/I/O benches PASS; `scripts/lint.sh` clean;
+  full regression 124/124 PASS.
+
 ### Fixed (Task 0137 — interrupt-pending source semantics)
 - Implemented the User's Guide pages 6-36 through 6-42 register contract:
   INTPEND.X1P/X2P are read-only active-low pin reflections, HIP is the
