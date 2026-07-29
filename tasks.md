@@ -2,10 +2,13 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0146. Task 0146
-connects the core's CPU/graphics, screen, DRAM-refresh, and host-indirect
-clients through the field sequencer and fixed-priority arbiter to one abstract
-controller boundary. Task 0145 landed that arbiter with active-owner
+The functional implementation is complete through Task 0147. Task 0147
+implements the standalone 8× original-pin local-bus phase engine, all landed
+cycle families, LRDY waits, exact address/status multiplexing, and eight
+post-reset RAS-only cycles. Task 0146 connects the core's CPU/graphics,
+screen, DRAM-refresh, and host-indirect clients through the field sequencer
+and fixed-priority arbiter to one abstract controller boundary. Task 0145
+landed that arbiter with active-owner
 retention, DRAM-refresh event capture, CPU RMW reservation, inter-word
 preemption, and the HOLD restart exception. Task 0144 integrated the host
 engine into the I/O/core hierarchy, made HSTADR/HSTDATA common processor/host
@@ -200,6 +203,9 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0142 | Integrate direct host control and halt semantics | complete |
 | 0143 | Implement the synchronous host-indirect engine | complete |
 | 0144 | Integrate the four-register host port | complete |
+| 0145 | Implement specification-priority local-bus arbitration | complete |
+| 0146 | Integrate the core memory clients and arbiter | complete |
+| 0147 | Implement the original-pin local-bus phase engine | complete |
 
 ---
 
@@ -4832,6 +4838,58 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 87d30e3
+
+---
+
+### Task 0147: Implement the original-pin local-bus phase engine
+Status: complete
+Dependencies:
+- Task 0145 (controller-facing local-cycle kinds and held payload contract).
+- Task 0146 (integrated abstract system/fabric boundary).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §11.4, Figures 11-3 through 11-14,
+  pages 11-7 through 11-18 (word, register-transfer, refresh, I/O, and LRDY
+  phase behavior).
+- 1988 TI TMS34010 User's Guide §11.4.12, Figure 11-17, page 11-22
+  (eight post-reset RAS-only initialization cycles).
+- 1988 TI TMS34010 User's Guide §11.5, Figures 11-18/11-19, pages 11-23
+  through 11-27 (word/status and DRAM-refresh row formats).
+- 1988 TI TMS34010 User's Guide §9.10.1.2, Figures 9-13/9-14, pages 9-20
+  through 9-23 (screen-refresh SRFADR/DPYTAP/ORG address generation).
+Acceptance Criteria:
+- Add a synthesizable standalone local-bus controller whose dedicated 8×
+  timing clock represents both halves of Q1..Q4, generates LCLK1/LCLK2, and
+  never uses either output waveform as a fabric clock.
+- Generate exact LAD row/column/data and active-low RAS/CAS/LAL/W/TR/QE/DEN
+  plus DDOUT behavior for ordinary word read/write, screen
+  memory-to-register, RAS-only, CAS-before-RAS, and I/O read/write cycles.
+- Encode RF/TR/IAQ and logical address bits exactly for word accesses; encode
+  duplicated REFCNT rows, screen SRFADR/DPYTAP/ORG addresses, and inactive
+  I/O address/status values exactly.
+- Sample LRDY at the end of Q1, repeat one whole local-clock access period for
+  every low sample, retain the specified screen-transfer TR/QE release point,
+  and ignore LRDY for I/O cycles.
+- Sample ordinary read data in the middle of Q4 and return on a completing
+  end-Q4 acknowledge; source I/O read data from the on-chip-data input.
+- Automatically perform exactly eight extendable zero-row RAS-only cycles
+  after synchronous reset release before accepting a client command.
+- Keep the command interface synchronous to the 8× domain and explicitly
+  defer core-clock CDC/system connection, physical HOLD release, and upstream
+  IAQ/screen-ORG/I/O metadata propagation.
+Tests:
+- `tb_local_bus` PASS (both LCLK waveforms, all seven cycle kinds,
+  half-quarter strobe order, exact word/screen/refresh/I/O address/status
+  values, write data, middle-Q4 read capture, ordinary/screen/reset waits,
+  I/O LRDY bypass, and exactly eight reset initialization cycles).
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 135/135 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

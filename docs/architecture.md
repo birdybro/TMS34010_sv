@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0146, with
+> Status: **implemented and ISA/status-audited through Task 0147, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -11,6 +11,9 @@
 > the fixed-priority local-cycle arbiter has landed with CPU RMW/HOLD restart
 > semantics. The functional-system wrapper connects every core client through
 > that fabric to one abstract controller boundary.
+> A standalone 8×-clock local-bus engine now generates the original
+> LCLK/LAD/control phases, address/status formats, LRDY waits, and reset
+> initialization. Its CDC and system connection remain open.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; physical VRAM transfer service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -56,7 +59,11 @@ a `TODO/spec-uncertain` marker.
 │                              │ abstract held local cycle                  │
 └──────────────────────────────│────────────────────────────────────────────┘
                                ▼
-                 future physical local-bus controller
+                   future command/response CDC
+                               ▼
+             ┌──────── tms34010_local_bus (8× clock) ────────┐
+             │ LCLK1/2, LAD, RAS/CAS/LAL/W/TR/DEN/DDOUT      │
+             └────────────────────────────────────────────────┘
 ```
 
 The CPU, graphics execution engines, I/O register storage, interrupt entry,
@@ -64,8 +71,12 @@ video timing/display-address scheduling, and REFCNT refresh requester
 currently live in or directly under `tms34010_core`. The field-to-word
 sequencer and local-cycle arbiter are composed by
 `tms34010_memory_fabric`; `tms34010_system` connects every core client to that
-fabric. The lower physical local-bus/host/display-memory controller, refresh
-pin service, and dedicated VCLK domain remain planned.
+fabric. The lower host/display-memory integration, refresh service through the
+physical controller, and dedicated VCLK domain remain planned.
+`tms34010_local_bus` has landed separately at the pin-phase side of that open
+boundary. It is not yet connected to `tms34010_system`; the required coherent
+command/response CDC, physical HOLD release, and FPGA clock source belong to
+following tasks.
 
 ## Test substrate
 
@@ -74,8 +85,9 @@ For tests beyond pure FSM-state checks, a behavioral memory model under
 one-cycle 16-bit backing store. Every arbitrary 1–32-bit request passes
 through the synthesizable `tms34010_field_sequencer`, including three-word
 straddles and partial-word read/modify/write preservation. Only the backing
-target is simulation-specific. An original-pin external-memory controller
-has not landed.
+target is simulation-specific. The original-pin controller has a standalone
+phase-level regression, but functional core tests do not route through it
+until the CDC/integration task lands.
 
 ## Module map
 
@@ -92,7 +104,7 @@ has not landed.
 | `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0135** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
-| `rtl/memory/tms34010_local_bus.sv`      | 6     | not started | original-pin row/column/data phases, LRDY waits, and reset initialization |
+| `rtl/memory/tms34010_local_bus.sv`      | 6     | **landed standalone (Task 0147)** | 8× original-pin LCLK/row/column/data phases, address/status encoding, LRDY waits, I/O cycles, and eight reset RAS cycles; CDC/integration pending |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
 | `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed (Task 0145)** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation and HOLD restart |
 | `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed (Task 0146)** | composes field sequencing and arbitration for CPU/graphics, screen, DRAM refresh, host, and HOLD |
@@ -201,6 +213,15 @@ synchronous host/interrupt/control inputs, functional video outputs, HOLD,
 and one abstract local-cycle controller interface. It is not the final FPGA
 top or a claim of original-pin timing.
 
+Task 0147 landed the opposite side of that boundary as a standalone physical
+phase engine. `tms34010_local_bus` divides one dedicated 8× timing clock into
+the documented LCLK1/LCLK2 Q phases, multiplexes exact word, screen, refresh,
+and I/O row/column/status values onto LAD, samples ordinary reads in mid-Q4,
+repeats the access period for each low LRDY sample, and performs the eight
+zero-row RAS-only cycles after reset. Keeping its command port synchronous to
+the 8× domain makes the remaining CDC explicit rather than embedding an
+unsafe multi-bit crossing.
+
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -211,9 +232,9 @@ structure rather than claiming project completion.
 
 - **Width**: TMS34010 is a 32-bit architecture with a 16-bit external
   multiplexed bus. Internally, ALU is 32 bits; external bus is 16 bits and
-  cycles are multiphase. Field-to-word splitting is implemented; exact
-  original-pin phasing is not and must be taken from the User's Guide
-  bus-cycle chapter when the local-bus controller is designed.
+  cycles are multiphase. Field-to-word splitting and the standalone
+  original-pin phase engine are implemented; the coherent clock-domain bridge
+  between them remains open.
 - **Pipelining**: initial implementation is multi-cycle FSM, not pipelined.
   This keeps the first ISA implementation reviewable. Pipelining is a
   Phase 10 candidate.
@@ -342,8 +363,9 @@ owner keeps an issued cycle active through controller acknowledge. A CPU RMW
 reservation forces the matching write ahead of other ordinary clients; only
 HOLD can break the pair, in which case `word_restart_i` suppresses the
 not-yet-issued write and repeats the read. The arbiter exposes an abstract
-cycle kind and payload; a later local-bus controller converts it into
-RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY.
+cycle kind and payload. The landed standalone `tms34010_local_bus` converts
+that shape into RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY once a
+coherent core-clock-to-8× bridge connects the two.
 
 `tms34010_memory_fabric` composes those two modules without adding state or a
 second scheduling policy. `tms34010_system` wires the core's four landed
@@ -434,12 +456,13 @@ also awaits service by the memory arbiter.
 
 ## Current implementation gaps
 
-- Original-pin external-bus phase generation, LRDY validation, reset
-  initialization, cache, and connection to the integrated abstract fabric.
+- Core-clock-to-8× command/response CDC and connection of the landed
+  original-pin phase engine to the integrated abstract fabric; physical HOLD
+  pin release and the optional cache also remain.
 - Host HRDY/pin timing/CDC and internally completed I/O accesses.
 - Remaining non-host I/O side effects.
-- DRAM- and screen-refresh request service in the memory fabric; VCLK/CDC,
-  external sync, interlace, physical VRAM transfer, and pixel output.
+- Integrated DRAM- and screen-refresh service through the phase engine;
+  VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.

@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0147 — original-pin local-bus phase engine)
+- Added `tms34010_local_bus`, a standalone controller clocked at eight times
+  the local-clock rate so half-quarter control transitions and the middle-Q4
+  read sample are explicit.
+- Generated LCLK1/LCLK2 and the documented LAD/RAS/CAS/LAL/W/TR/DEN/DDOUT
+  schedules for word read/write, screen memory-to-register, RAS-only,
+  CAS-before-RAS, and on-chip I/O cycles.
+- Implemented exact word, refresh, screen SRFADR/DPYTAP/ORG, and I/O
+  address/status formats; repeated access periods for low LRDY samples while
+  preserving the special screen-transfer TR/QE release behavior.
+- Added eight automatic extendable zero-row RAS-only cycles after reset and
+  isolated the synchronous 8× command boundary for the following CDC/system
+  integration task.
+- Added `tb_local_bus` for both local clocks, every cycle kind, phase ordering,
+  address/status values, waits, read sampling, I/O LRDY bypass, and reset
+  initialization.
+- Validation: `tb_local_bus` PASS; `scripts/lint.sh` clean; full regression
+  135/135 PASS.
+
 ### Added (Task 0146 — integrated core memory fabric)
 - Added `tms34010_memory_fabric`, which composes architectural field-to-word
   sequencing with the fixed-priority local-cycle arbiter.

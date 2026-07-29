@@ -11,9 +11,10 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0145: architectural widths and register layouts,
+// Current through Task 0147: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
-// FSM states, physical-memory word geometry, and local-cycle kinds are here.
+// FSM states, physical-memory word geometry, local-cycle kinds, and the
+// original local-clock subphases are here.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -52,8 +53,25 @@ package tms34010_pkg;
     LOCAL_CYCLE_WORD_WRITE     = 3'd1,
     LOCAL_CYCLE_SCREEN_REFRESH = 3'd2,
     LOCAL_CYCLE_DRAM_RAS       = 3'd3,
-    LOCAL_CYCLE_DRAM_CBR       = 3'd4
+    LOCAL_CYCLE_DRAM_CBR       = 3'd4,
+    LOCAL_CYCLE_IO_READ        = 3'd5,
+    LOCAL_CYCLE_IO_WRITE       = 3'd6
   } local_cycle_kind_t;
+
+  // Eight half-quarter subphases resolve the control transitions within each
+  // Q1..Q4 local-clock period and the specified middle-of-Q4 read sample.
+  // A future FPGA top supplies the 8x PLL clock consumed by the local-bus
+  // controller; LCLK1/LCLK2 are output waveforms, not internal fabric clocks.
+  typedef enum logic [2:0] {
+    LOCAL_PHASE_Q1A = 3'd0,
+    LOCAL_PHASE_Q1B = 3'd1,
+    LOCAL_PHASE_Q2A = 3'd2,
+    LOCAL_PHASE_Q2B = 3'd3,
+    LOCAL_PHASE_Q3A = 3'd4,
+    LOCAL_PHASE_Q3B = 3'd5,
+    LOCAL_PHASE_Q4A = 3'd6,
+    LOCAL_PHASE_Q4B = 3'd7
+  } local_subphase_t;
 
   // ---------------------------------------------------------------------------
   // Instruction-stream constants

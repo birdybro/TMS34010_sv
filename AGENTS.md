@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0146. Task 0124
+The functional implementation is complete through Task 0147. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -56,16 +56,21 @@ DRAM-refresh events, reserved CPU partial-word RMW pairs, and implemented the
 required complete-pair restart when HOLD intervenes between read and write.
 Task 0146's functional-system wrapper connects the core's CPU/graphics, screen,
 DRAM-refresh, and host-indirect clients through the field sequencer and
-arbiter to one abstract controller boundary. The implementation includes the
+arbiter to one abstract controller boundary. Task 0147's standalone
+`tms34010_local_bus` runs from an 8× timing clock and emits the original
+LCLK/LAD/RAS/CAS/LAL/DEN/DDOUT/W phases for ordinary word, screen-transfer,
+DRAM-refresh, and I/O cycles, including LRDY waits and eight reset
+initialization cycles. The implementation includes the
 multicycle CPU core, the currently tracked instruction set, bit-field memory
 operations, graphics
 operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O
 registers, reset-vector fetch, maskable/NMI entry with architectural
 service-context ST initialization, and the illegal-opcode trap. Video timing
 is functionally integrated through its screen-refresh client; a dedicated
-VCLK/CDC boundary, external sync, interlace, and the physical VRAM transfer
-cycle remain future work. Physical local-bus/refresh service, HRDY, and the
-asynchronous host pin wrapper remain future memory-fabric work. Read
+VCLK/CDC boundary, external sync, interlace, and integrated VRAM transfer
+service remain future work. The core-to-8× command CDC/system connection,
+physical HOLD release, HRDY, and the asynchronous host pin wrapper remain
+future memory-fabric work. Read
 `tasks.md`,
 `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
@@ -127,6 +132,8 @@ RTL, tests, task log, changelog, and specification first.
   refresh-event retention, CPU RMW reservation, and HOLD restart signaling.
 - `rtl/memory/tms34010_memory_fabric.sv` — field sequencer plus all-client
   arbiter composition behind one abstract controller boundary.
+- `rtl/memory/tms34010_local_bus.sv` — standalone 8× original-pin phase
+  engine, LRDY waits, address/status multiplexing, and reset initialization.
 - `rtl/tms34010_system.sv` — synthesizable functional wrapper connecting the
   core's CPU, host, display, and refresh clients to the memory fabric.
 - `rtl/cdc/tms34010_sync_bit.sv` — dedicated, Quartus-recognizable two-flop

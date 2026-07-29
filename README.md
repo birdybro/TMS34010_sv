@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0146. Task 0124
+Functional implementation work is complete through Task 0147. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -48,6 +48,9 @@ held-owner completion, pulsed DRAM-refresh retention, CPU partial-word RMW
 reservation, inter-word preemption, and the external-HOLD restart exception.
 Task 0146 connected every core memory client through the field sequencer and
 arbiter behind one synthesizable functional-system/controller boundary.
+Task 0147 added the standalone original-pin local-bus phase engine with
+LCLK1/LCLK2, exact address/status multiplexing, LRDY extension, all landed
+word/screen/DRAM/I/O cycle families, and eight post-reset RAS-only cycles.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -73,18 +76,21 @@ The repository currently contains:
   arbiter with held grants and a captured DRAM-refresh event;
 - an integrated functional-system wrapper that converges CPU/graphics,
   screen, DRAM-refresh, and host-indirect traffic on one abstract controller;
+- a standalone 8×-clock original-pin local-bus engine covering ordinary word,
+  screen-transfer, RAS-only, CAS-before-RAS, and I/O cycles, including LRDY
+  waits and reset initialization;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 134 self-checking SystemVerilog testbenches, including an exhaustive
+- 135 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining pin-level local-bus controller and physical
-refresh/VRAM service, host pin wrapper/HRDY/CDC, remaining I/O side effects,
-video display-memory behavior and VCLK/CDC, real Quartus project/constraints,
-and timing/resource validation.
+the audit records the remaining core-to-8× local-bus CDC/integration and HOLD
+pin release, physical VRAM serial service, host pin wrapper/HRDY/CDC,
+remaining I/O side effects, video display-memory behavior and VCLK/CDC, real
+Quartus project/constraints, and timing/resource validation.
 
 ## Getting started
 

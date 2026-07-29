@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0146, with strict RTL
+> Baseline: functional implementation through Task 0147, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -137,8 +137,17 @@ composes field-to-word sequencing with fixed-priority arbitration, and
 host-indirect clients through it. End-to-end regression boots real
 instructions, programs and services screen refresh, retains automatic DRAM
 refresh, completes host-indirect reads, and verifies HOLD quiescence at one
-controller-facing request/ack boundary. Original-pin cycle generation remains
-the next memory-fabric gate.
+controller-facing request/ack boundary.
+
+Task 0147 landed the standalone original-pin phase engine.
+`tms34010_local_bus` uses a dedicated 8× timing clock to generate
+LCLK1/LCLK2 plus the documented LAD/RAS/CAS/LAL/W/TR/DEN/DDOUT phases for
+ordinary word, screen memory-to-register, RAS-only, CAS-before-RAS, and I/O
+cycles. It implements word/refresh/screen address-status formats, end-Q1 LRDY
+sampling and whole-clock extensions, mid-Q4 read capture, I/O LRDY bypass,
+and eight zero-row RAS-only cycles after reset. The core-to-8× CDC and system
+connection, physical HOLD release, and upstream IAQ/screen-ORG/I/O metadata
+remain the next memory-fabric gate.
 
 ## Active architectural assumptions requiring closure
 
@@ -155,7 +164,9 @@ handshake, A0036 isolates the direct synchronous host boundary and
 otherwise-unpredictable simultaneous high-byte write choice, and A0037
 isolates host-engine collisions and the pre-pin synchronous protocol. A0038
 isolates the one-entry DRAM-refresh retention bound until the physical
-controller proves service before the next interval. These do not excuse
+controller proves service before the next interval. A0039 records the 8×
+phase representation, synchronous-reset phase origin, deterministic
+undefined LAD value, and explicit CDC boundary. These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -172,14 +183,14 @@ deliberate non-pin-compatible boundary.
 
 ### Memory, refresh, and host fabric
 
-- Connect the landed field sequencer to an original-pin local memory-cycle
-  controller: row/column/address/data phases, LRDY-controlled waits, and the
-  eight post-reset RAS-only initialization cycles.
-- Service the held screen-refresh client with the highest-priority physical
+- Connect the core-clock fabric to the landed 8× original-pin controller
+  through a coherent command/response CDC, including IAQ, I/O direction/data,
+  screen ORG, completion/read data, reset ordering, and physical HOLD release.
+- Route the held screen-refresh client through that connection to the landed
   VRAM memory-to-register cycle and completion acknowledge.
-- Service the exported refresh request in the local-memory arbiter/controller,
-  retaining or acknowledging requests through contention and issuing the
-  selected RAS-only or CAS-before-RAS cycle.
+- Route retained DRAM-refresh requests through that connection to the landed
+  RAS-only or CAS-before-RAS cycles, then validate the one-entry service
+  bound under the final clock ratio, waits, and HOLD behavior.
 - Implement HRDY and the asynchronous physical host wrapper/CDC around the
   synchronous host-register boundary; Task 0146 completed the host client's
   abstract arbiter connection.
@@ -213,6 +224,8 @@ deliberate non-pin-compatible boundary.
    fabric with LRDY/reset tests. Task 0136 completed field-to-word sequencing,
    Task 0145 completed the standalone priority/RMW arbitration engine, and
    Task 0146 integrated every core client at the abstract controller boundary.
+   Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine; its CDC,
+   system hookup, physical HOLD release, and host-pin portion remain.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

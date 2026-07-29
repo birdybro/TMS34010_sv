@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0146, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0147, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -14,6 +14,7 @@
 | PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
 | Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
 | Field-window shift/mask and word merge | Task 0136      | landed, sequenced, unmeasured | preserve the registered word boundary; pipeline only if TimeQuest identifies this path |
+| 8× local-bus phase/pin decode        | Task 0147        | landed standalone, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the PLL clock and every pin delay before integration |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -24,8 +25,9 @@
   acknowledge and the next state is `CORE_FETCH`; there is no stack or data
   write. The field sequencer expands that abstract request into two ascending
   16-bit word reads and holds each request through `word_ack_i`. The eight
-  original-silicon RAS-only initialization cycles still precede this
-  transaction in the future pin-level memory controller.
+  original-silicon RAS-only initialization cycles are now implemented by the
+  standalone local-bus controller, but do not yet precede this transaction in
+  `tms34010_system` until the core/8× bridge lands.
 - **Host-present reset halt** — if HCS is high during reset,
   HSTCTLH.HLT resets to one and `CORE_RESET_HALT` issues no vector or
   instruction request. A synchronous direct-host high-byte write clearing
@@ -129,6 +131,16 @@
   its write. A pulsed DRAM refresh occupies a one-entry pending latch until
   physical completion. These are internal arbitration clocks, not original
   LAD/RAS/CAS pin phases.
+- **Original local-bus phases** — `tms34010_local_bus` runs from a dedicated
+  clock at eight times the local-clock rate. Two 8× ticks form each Q phase,
+  allowing the documented mid-quarter control transitions and the middle-Q4
+  read sample. An ordinary ready cycle consumes two local clocks (16 8×
+  ticks). LRDY is sampled at the end of Q1 in the access period; every low
+  sample repeats that period for eight more 8× ticks. I/O cycles ignore LRDY.
+  Screen-transfer TR/QE releases during the original access period and is not
+  repeated with RAS/CAS/LAL. Reset release starts eight two-clock, zero-row
+  RAS-only cycles, each independently extendable by LRDY. This is verified
+  standalone; no frequency/phase relationship to the core clock is assumed.
 - **Integrated functional fabric** — `tms34010_system` routes the core's
   architectural field request through `tms34010_field_sequencer`, then joins
   its words with host, screen, and DRAM-refresh traffic in the arbiter. No
@@ -177,13 +189,32 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## FPGA timing concerns
 
-- Single core clock; target Fmax is **not** set yet. Initial sanity target:
+- The integrated functional system still has one core clock; the standalone
+  local-bus engine adds a planned dedicated 8× PLL domain. Target Fmax is
+  **not** set yet. Initial core-clock sanity target:
   clear 50 MHz on the documented Cyclone V `5CSEBA6U23I7`, then set the real
   target from system requirements and measured reports.
 - Avoid combinational paths longer than ~10 LUT levels. If a path goes
   longer, register it or note the exception here.
-- All clock-domain crossings (host interface, video) must be wrapped in
-  a CDC primitive (Phase 6 / Phase 9). Listed here when they land.
+- All clock-domain crossings (local bus, host interface, video) must be
+  wrapped in a CDC primitive. Listed here when they land.
+
+## Local-bus clock boundary
+
+Task 0147 deliberately keeps the local-bus request, payload, response, and
+acknowledge synchronous to `clk8x_i`. LCLK1/LCLK2 are output waveforms decoded
+from the internal subphase counter and are never used as fabric clocks. A
+future PLL supplies `clk8x_i`; the QSF/SDC must put that PLL output on a clock
+network and constrain the physical LCLK/LAD/control pins.
+
+The `tms34010_system` command boundary remains in the core clock domain. Its
+cycle kind and multi-bit payload must cross coherently with a multi-cycle
+request/acknowledge handshake or a small asynchronous FIFO; independent bit
+synchronizers are forbidden. The return read word and completion event must
+cross in the opposite direction under the same transaction. The bridge must
+also keep the arbiter's held-request contract intact and prevent a controller
+ack pulse from being lost. No async path may be connected until the matching
+SDC exceptions and CDC regression exist.
 
 ## Interrupt input CDC
 

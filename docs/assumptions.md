@@ -44,12 +44,14 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   match the User's Guide.
 
 ## A0004 — Single core clock for the first milestones
-- **Date**: 2026-05-12
+- **Date**: 2026-05-12; refined 2026-07-28 (Task 0147).
 - **Status**: active
 - **Source**: project convention (not in spec).
-- **Assumption**: All RTL through Phase 8 runs on a single clock. The video
-  output subsystem (Phase 9) will introduce a pixel clock and a clearly
-  documented CDC boundary.
+- **Assumption**: The integrated functional core hierarchy runs on one core
+  clock. Task 0147 adds a standalone original-pin engine clocked at eight
+  times the local-clock rate; it remains disconnected until a coherent CDC
+  bridge lands. The video output subsystem will separately introduce a pixel
+  clock and a clearly documented CDC boundary.
 
 ## A0005 — Bit-addressed memory exposed at the interface boundary
 - **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0136)**.
@@ -75,9 +77,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   core-side abstraction through the same sequencer. The complete Task 0136
   regression passes 121/121 benches.
 - **Boundary**: This resolution covers architectural field alignment and
-  physical-word sequencing. Original pin-level RAS/CAS/LCLK/LRDY phases,
-  post-reset initialization, and arbitration remain system-integration work,
-  not an unresolved field-semantics assumption.
+  physical-word sequencing. Arbitration and the standalone
+  RAS/CAS/LCLK/LRDY/reset phase engine have since landed; their coherent CDC
+  and system connection remain integration work, not an unresolved
+  field-semantics assumption.
 
 ## A0006 — No cycle-accuracy contract in Phase 0–4
 - **Date**: 2026-05-12
@@ -121,7 +124,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   integrated. HSTCTLH.HLT samples HCS during reset, `CORE_RESET_HALT` issues
   no vector request while it remains one, and clearing HLT returns to
   `CORE_RESET` for the ordinary vector fetch. The eight prerequisite
-  RAS-only cycles remain with the future external-memory controller.
+  RAS-only cycles are implemented by the standalone Task 0147 controller and
+  remain to be placed ahead of the core request through CDC/integration.
 
 ---
 
@@ -577,6 +581,44 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   client is exposed. Task 0145 lands the standalone arbiter contract; wiring
   this client through it remains memory-fabric integration work.
 
+## A0039 — 8× original-pin phase engine boundary
+- **Date**: 2026-07-28 (Task 0147).
+- **Status**: specification-derived pin sequencing with explicit FPGA clock,
+  reset, undefined-value, and CDC boundaries.
+- **Source**: 1988 TI TMS34010 User's Guide §11.4, Figures 11-3 through
+  11-17, pages 11-7 through 11-22; §11.5, Figures 11-18/11-19, pages 11-23
+  through 11-27; and §9.10.1.2, Figures 9-13/9-14, pages 9-20 through 9-23.
+- **Specification-derived behavior**: two local clocks form each ordinary
+  word, screen-transfer, refresh, or I/O cycle. Row, column, and status bits
+  use the documented multiplexing; screen addresses combine SRFADR/DPYTAP
+  and ORG; LRDY is sampled at the end of Q1 and repeats the access period;
+  I/O cycles ignore LRDY; reads sample LAD in mid-Q4; and reset is followed
+  by eight extendable zero-row RAS-only cycles.
+- **8× representation**: two timing ticks represent each Q phase. This
+  resolves the diagrams' mid-quarter strobe transitions and middle-Q4 read
+  sample without driving internal flops from LCLK1 or LCLK2. The future FPGA
+  top must source `clk8x_i` from a PLL/clock network and constrain the output
+  pins; the current repository has no synthesis or timing evidence.
+- **Synchronous reset boundary**: A0003 resets the subphase counter to Q1A,
+  holding the two LCLK outputs at their Q1 levels while reset remains active.
+  Original silicon keeps its local clocks running and asynchronously samples
+  RESET. The eight required memory-initialization cycles begin immediately
+  after synchronous release, but exact active-reset clock/pin compatibility
+  is deliberately not claimed.
+- **Undefined LAD choice**: phases the guide labels Undefined are driven as
+  deterministic zero while the controller owns LAD; read data phases are
+  explicitly high impedance through `lad_oe_o`. This avoids synthesizable X
+  values and does not assign architectural meaning to the zero.
+- **CDC/integration boundary**: command and response signals are synchronous
+  to `clk8x_i`. `tms34010_system` remains core-clocked, so a coherent
+  multi-bit request/acknowledge bridge must land before connection. IAQ,
+  screen ORG, I/O direction/data, and HOLD pin release must also be propagated
+  through that final contract.
+- **Regression evidence**: `tb_local_bus` verifies both LCLK waveforms, all
+  seven cycle kinds, exact word/screen/refresh/I/O address/status values,
+  write/read/control ordering, mid-Q4 read data, ordinary and
+  screen-transfer waits, I/O LRDY bypass, and exactly eight reset cycles.
+
 ## A0038 — Local-cycle arbitration and refresh-event retention
 - **Date**: 2026-07-28 (Task 0145).
 - **Status**: specification-derived priority/atomicity with an isolated
@@ -596,10 +638,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Refresh retention bound**: REFCNT produces a one-clock event every 32 or
   64 local clocks. The arbiter captures one pending row/mode. A new event can
   replace a just-retired event on the same edge, but an additional event while
-  one is already pending is not queued. The physical controller and external
-  HOLD user must therefore complete service before the next interval; an
-  overlong HOLD already violates the guide's refresh-availability constraint.
-  This bound must be validated when the physical controller lands.
+  one is already pending is not queued. Task 0147 proves the standalone
+  controller consumes two local clocks plus any LRDY waits, but the final CDC
+  and external HOLD path must still guarantee service before the next
+  interval. An overlong HOLD already violates the guide's
+  refresh-availability constraint.
 - **Regression evidence**: `tb_bus_arbiter` locks the full priority order,
   active-owner/payload retention, response routing, and pulsed-refresh capture.
   `tb_bus_arbiter_rmw` integrates the real field sequencer and locks the
@@ -886,7 +929,8 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Pin-level LCLK/RAS/CAS/LAL/DEN/DDOUT/W/LRDY phase generation, eight
-  post-reset RAS-only initialization cycles, and memory-client arbitration.
+- Core-clock-to-8× local-bus CDC/integration, physical HOLD pin release, and
+  propagation of IAQ, screen ORG, and I/O-cycle metadata into the landed
+  phase engine.
 - I/O side effects, on-chip completion timing, and host-visible semantics not
   yet implemented by `tms34010_io_regs`.

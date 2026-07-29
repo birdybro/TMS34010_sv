@@ -2,10 +2,11 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0146**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0147**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
-> Original-pin local-bus timing and several I/O side effects remain open.
+> The standalone original-pin phase engine is implemented; its CDC/system
+> hookup and several I/O side effects remain open.
 
 ## Architectural address space
 
@@ -44,8 +45,17 @@ captured with its row/mode until serviced.
 Task 0146 composes those blocks in `tms34010_memory_fabric` and connects the
 core through `tms34010_system`. CPU/graphics fields, screen refresh, DRAM
 refresh, and host-indirect accesses now converge on one held abstract
-controller cycle. Original local-bus pin phase generation remains outside
-that functional wrapper.
+controller cycle.
+
+Task 0147 adds `tms34010_local_bus` at the physical side of that open
+boundary. From a dedicated 8× timing clock it generates LCLK1/LCLK2 and the
+half-quarter LAD/RAS/CAS/LAL/W/TR/DEN/DDOUT schedule for word reads/writes,
+screen memory-to-register transfers, both DRAM-refresh modes, and I/O cycles.
+It emits the exact §11.5 word/refresh status format plus the §9.10.1.2
+screen-address network, repeats the access period while LRDY is low, and
+performs eight zero-row RAS-only cycles after reset. The controller command
+port is intentionally synchronous to the 8× domain; the coherent bridge from
+the core-clock fabric remains a following task.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -54,11 +64,11 @@ Thus all integration benches exercise physical word splitting. Tasks
 0077–0079 remain responsible for FS, FE, pointer stepping, and MOVE addressing;
 pixel operations similarly drive `mem_size` from PSIZE.
 
-Future external-memory glue consumes the sequencer's aligned word requests
-and translates them into original local-bus pin phases. The architectural
-address is 32 bits; the original multiplexed physical address output uses
-bits [29:4] (§4.1), with upper address-space bits also participating in
-region/I/O interpretation at the later controller boundary.
+The architectural address is 32 bits; the local-bus controller emits logical
+address bits [29:4] in the original multiplexed format, with RF/TR/IAQ in the
+three status positions. A following CDC/integration layer transfers held
+arbiter commands and completed read/ack responses between the core and 8×
+domains.
 
 ## Architectural vector words
 
@@ -174,13 +184,16 @@ Physical pin timing/CDC and HRDY generation remain open.
 
 The original device interacts with VRAM through random-access and serial-shift
 cycles. The current repository now schedules and holds the screen-refresh
-client request with raw SRFADR/DPYTAP, but has no physical VRAM
-memory-to-register pin cycle, serial-output model, or pixel output. The held
-request does reach the abstract local-cycle arbiter in `tms34010_system`.
+client request with raw SRFADR/DPYTAP. The standalone controller implements
+its physical memory-to-register pin cycle and address network, but it is not
+yet connected to the held request and there is no VRAM serial-output model or
+pixel output. The held request does reach the abstract local-cycle arbiter in
+`tms34010_system`.
 
 ## Uncertain / partially implemented areas
 
-- Original-pin 16-bit local-bus phasing and LRDY wait-state behavior.
+- Core-clock-to-8× local-bus CDC/integration, IAQ propagation from the core,
+  screen ORG payload propagation, and physical HOLD release.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
