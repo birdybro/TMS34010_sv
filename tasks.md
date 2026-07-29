@@ -5106,7 +5106,7 @@ Docs:
   `docs/completion_audit.md`, `docs/memory_map.md`, and
   `docs/timing_notes.md`.
 Commit:
-- pending
+- `9f2794e` — Implement physical HOLD/HOLDA bus release (Task 0151)
 
 ---
 
