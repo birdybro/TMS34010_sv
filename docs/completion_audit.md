@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0150, with strict RTL
+> Baseline: functional implementation through Task 0151, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -153,8 +153,9 @@ reverse response handshake; only request/ack toggles pass through attributed
 2FF synchronizers. `tms34010_pin_system` composes the core-clock system,
 bridge, and 8× controller. Opcode IAQ and captured screen ORG now propagate
 end to end, and the pin-level regression proves reset initialization precedes
-the two-word vector and real instruction fetches. Physical HOLD release,
-on-chip I/O bus completion, host pins, and Quartus CDC sign-off remain.
+the two-word vector and real instruction fetches. At that checkpoint,
+physical HOLD release, on-chip I/O bus completion, host pins, and Quartus CDC
+sign-off remained; Tasks 0149–0151 close the first two items.
 
 Task 0149 completes physical on-chip I/O cycles for processor accesses. A
 registered fabric stage classifies and holds the architectural CPU request;
@@ -171,6 +172,16 @@ at host selection; the existing MCP/phase path returns it to HSTDATA. Writes
 commit only on physical completion, including live registers and the
 host-side HSTCTLL ownership rules. Pin-level regression locks one processor
 write/read plus host prefetch/read/write as exactly five RAS/LAL-only cycles.
+
+Task 0151 closes physical HOLD release. The 8× phase engine samples
+active-low HOLD at the end of Q1, synchronizes that level into the core
+arbiter, and synchronizes its quiescent grant back. HOLDA becomes active only
+in Q3/Q4 before the bus is released; the LAD/majority-control output enables
+drop at the following Q2 and DEN/DDOUT drop at Q3. The inverse sequence
+reacquires the bus after release. Active cycles still finish, queued commands
+cannot start while held, and the arbiter retains its partial-RMW restart
+contract. The final shared HLDA/EMUA output mux is still physical-wrapper
+work.
 
 ## Active architectural assumptions requiring closure
 
@@ -191,7 +202,8 @@ controller proves service before the next interval. A0039 records the 8×
 phase representation, synchronous-reset phase origin, deterministic
 undefined LAD value, and explicit CDC boundary. A0040 records the MCP's
 one-outstanding/common-reset contract and pending Quartus constraint proof.
-These do not excuse
+A0041 records physical HOLD's synchronized level handshake and phased
+output-enable implementation. These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -206,8 +218,8 @@ deliberate non-pin-compatible boundary.
 
 ### Memory, refresh, and host fabric
 
-- Implement original-pin HOLD/HOLDA release around the integrated controller,
-  including the specified bus-control/LAD high-impedance behavior.
+- Combine the landed Q3/Q4 HOLDA component with Q1/Q2 EMUA on the original
+  shared output pin.
 - Validate the one-entry DRAM-refresh service bound under the final PLL clock
   ratio, external waits, and physical HOLD behavior.
 - Implement HRDY and the asynchronous physical host wrapper/CDC around the
@@ -245,8 +257,9 @@ deliberate non-pin-compatible boundary.
    Task 0146 integrated every core client at the abstract controller boundary.
    Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine, and Task
    0148 completed the coherent CDC/system hookup plus IAQ/screen-ORG path.
-   Tasks 0149–0150 completed processor and host-indirect on-chip I/O cycles.
-   Physical HOLD and the host-pin portion remain.
+   Tasks 0149–0150 completed processor and host-indirect on-chip I/O cycles,
+   and Task 0151 completed physical HOLD/HOLDA bus release. The shared
+   HLDA/EMUA mux and host-pin portion remain.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

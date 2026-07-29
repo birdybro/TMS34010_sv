@@ -5,10 +5,12 @@
 // phase engine. tms34010_system remains entirely in core_clk_i; a coherent
 // command/response MCP bridge is the only connection to bus_clk8x_i.
 //
-// The synchronous host-register request boundary and abstract HOLD request/
-// acknowledge boundary remain exposed for later pin-wrapper tasks. Processor
-// and host-indirect on-chip I/O requests use LOCAL_CYCLE_IO_* and carry their
-// internal read data through the coherent command bundle.
+// The synchronous host-register boundary remains exposed for a later
+// asynchronous pin wrapper. Physical active-low HOLD is sampled in the 8×
+// domain, synchronized to the core arbiter, and returned as phased HLDA plus
+// explicit local-bus output enables. Processor and host-indirect on-chip I/O
+// requests use LOCAL_CYCLE_IO_* and carry their internal read data through
+// the coherent command bundle.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -38,8 +40,8 @@ module tms34010_pin_system
   input  logic                              lint2_n_i,
   input  logic                              dpyint_set_i,
 
-  input  logic                              hold_req_i,
-  output logic                              hold_ack_o,
+  input  logic                              hold_n_i,
+  output logic                              hlda_n_o,
 
   output logic                              video_hsync_o,
   output logic                              video_vsync_o,
@@ -60,6 +62,13 @@ module tms34010_pin_system
   output logic                              tr_qe_n_o,
   output logic                              den_n_o,
   output logic                              ddout_o,
+  output logic                              ras_oe_o,
+  output logic                              lal_oe_o,
+  output logic                              cas_oe_o,
+  output logic                              we_oe_o,
+  output logic                              tr_qe_oe_o,
+  output logic                              den_oe_o,
+  output logic                              ddout_oe_o,
   output local_subphase_t                   subphase_o,
   output logic                              local_init_done_o,
   output logic                              local_cycle_busy_o,
@@ -89,6 +98,10 @@ module tms34010_pin_system
   logic                              local_cycle_req;
   local_word_t                       local_cycle_rdata;
   logic                              local_cycle_ack;
+  logic                              local_hold_req;
+  logic                              core_hold_req;
+  logic                              core_hold_ack;
+  logic                              local_hold_grant;
 
   always_comb begin
     core_command            = '0;
@@ -102,6 +115,23 @@ module tms34010_pin_system
     core_command.screen_org = core_cycle_screen_org;
     core_command.dram_row   = core_cycle_dram_row;
   end
+
+  // HOLD is sampled by the physical local-bus engine at the specified LCLK2
+  // edge. Only that held level crosses to the core arbiter; its quiescent
+  // grant returns through an independent 2FF level synchronizer.
+  tms34010_sync_bit #(.RESET_VALUE(1'b0)) u_hold_req_sync (
+    .clk     (core_clk_i),
+    .rst     (rst),
+    .async_i (local_hold_req),
+    .sync_o  (core_hold_req)
+  );
+
+  tms34010_sync_bit #(.RESET_VALUE(1'b0)) u_hold_grant_sync (
+    .clk     (bus_clk8x_i),
+    .rst     (rst),
+    .async_i (core_hold_ack),
+    .sync_o  (local_hold_grant)
+  );
 
   tms34010_system u_system (
     .clk                (core_clk_i),
@@ -121,8 +151,8 @@ module tms34010_pin_system
     .lint1_n_i          (lint1_n_i),
     .lint2_n_i          (lint2_n_i),
     .dpyint_set_i       (dpyint_set_i),
-    .hold_req_i         (hold_req_i),
-    .hold_ack_o         (hold_ack_o),
+    .hold_req_i         (core_hold_req),
+    .hold_ack_o         (core_hold_ack),
     .video_hsync_o      (video_hsync_o),
     .video_vsync_o      (video_vsync_o),
     .video_hblank_o     (video_hblank_o),
@@ -179,6 +209,10 @@ module tms34010_pin_system
     .cycle_ack_o        (local_cycle_ack),
     .cycle_busy_o       (local_cycle_busy_o),
     .init_done_o        (local_init_done_o),
+    .hold_n_i           (hold_n_i),
+    .hold_req_o         (local_hold_req),
+    .hold_grant_i       (local_hold_grant),
+    .hlda_n_o           (hlda_n_o),
     .lrdy_i             (lrdy_i),
     .lad_i              (lad_i),
     .lad_o              (lad_o),
@@ -192,6 +226,13 @@ module tms34010_pin_system
     .tr_qe_n_o          (tr_qe_n_o),
     .den_n_o            (den_n_o),
     .ddout_o            (ddout_o),
+    .ras_oe_o           (ras_oe_o),
+    .lal_oe_o           (lal_oe_o),
+    .cas_oe_o           (cas_oe_o),
+    .we_oe_o            (we_oe_o),
+    .tr_qe_oe_o         (tr_qe_oe_o),
+    .den_oe_o           (den_oe_o),
+    .ddout_oe_o         (ddout_oe_o),
     .subphase_o         (subphase_o)
   );
 

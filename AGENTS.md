@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0150. Task 0124
+The functional implementation is complete through Task 0151. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -73,6 +73,10 @@ and qualifies every processor I/O write with returned physical completion.
 Task 0150 gives the held host-indirect client the same I/O decode/cycle path,
 samples its live internal read word at arbitration, and commits host-side
 register writes only when physical completion returns.
+Task 0151 samples active-low HOLD at the documented end-Q1 boundary, crosses
+the request and quiescent arbiter grant as synchronized levels, emits the
+Q3/Q4 active-low HOLDA component, and sequences LAD/control output enables
+off and back on at their specified Q2/Q3 boundaries.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
@@ -80,8 +84,9 @@ fetch, maskable/NMI entry with architectural service-context ST
 initialization, and the illegal-opcode trap. Video timing is functionally
 integrated through its screen-refresh client and physical memory-to-register
 cycle; a dedicated VCLK/CDC boundary, external sync, interlace, and VRAM
-serial-display service remain future work. Physical HOLD release, HRDY, and
-the asynchronous host pin wrapper remain future memory-fabric work. Read
+serial-display service remain future work. The shared HLDA/EMUA pin mux,
+HRDY, and the asynchronous host pin wrapper remain future physical-wrapper
+work. Read
 `tasks.md`, `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 

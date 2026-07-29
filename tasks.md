@@ -2,7 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0150. Task 0150
+The functional implementation is complete through Task 0151. Task 0151
+connects active-low physical HOLD to the fixed-priority arbiter through
+synchronized level handshakes and implements early Q3/Q4 HOLDA plus exact
+Q2/Q3 output-enable release and resume. Task 0150
 routes host-indirect accesses to the on-chip I/O page through the same
 two-clock physical cycle contract, shared register owner, and returned
 completion as processor accesses. Task 0149
@@ -217,6 +220,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0148 | Integrate the core and local-bus clocks | complete |
 | 0149 | Route processor I/O through physical I/O cycles | complete |
 | 0150 | Route host-indirect I/O through physical cycles | complete |
+| 0151 | Implement physical HOLD/HOLDA bus release | complete |
 
 ---
 
@@ -5055,6 +5059,54 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `fc1e47e` — Route host-indirect I/O through physical cycles (Task 0150)
+
+---
+
+### Task 0151: Implement physical HOLD/HOLDA bus release
+Status: complete
+Dependencies:
+- Task 0145 (fixed-priority HOLD arbitration and partial-RMW restart).
+- Task 0148 (integrated core-to-8× command/response path).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §2.5, Table 2-5, pages 2-10 through
+  2-11 (active-low HOLD and shared HLDA/EMUA pin roles).
+- 1988 TI TMS34010 User's Guide §11.3, page 11-4 (HOLD priority and
+  active-cycle completion).
+- 1988 TI TMS34010 User's Guide §11.4.11, Figures 11-15/11-16,
+  pages 11-18 through 11-21 (end-Q1 sampling, early HOLDA, Q2/Q3 release,
+  high impedance, and resume).
+Acceptance Criteria:
+- Replace the integrated pin system's abstract HOLD request/acknowledge
+  boundary with active-low physical HOLD sampling at the end of Q1.
+- Cross the sampled request into the core and the arbiter's quiescent grant
+  back into the 8× domain through dedicated synchronized level paths.
+- Finish an active physical cycle before acknowledging HOLD and preserve the
+  existing highest-priority arbitration and partial-RMW restart contract.
+- Drive the active-low HOLDA component only during Q3/Q4, beginning one
+  quarter-clock before the bus is released.
+- Release LAD and the majority of bus controls at the following Q2, then
+  release DEN/DDOUT at Q3; retain all output enables inactive while granted.
+- Reacquire the majority controls at Q2 and DEN/DDOUT at Q3 after an
+  end-Q1 release sample, without accepting a queued command while held.
+- Keep the Q1/Q2 EMUA half and final shared HLDA/EMUA pin mux explicit as
+  separate physical-wrapper work.
+Tests:
+- Added `tb_local_bus_hold` PASS for request sampling, early HOLDA, exact
+  Q2/Q3 release and reacquisition, held command suppression, and
+  active-cycle completion before grant.
+- Updated `tb_pin_system` PASS for physical HOLD during real core traffic,
+  synchronized quiescence, exact output-enable phases, and execution resume.
+- Existing `tb_local_bus`, `tb_local_bus_bridge`, `tb_bus_arbiter_rmw`, and
+  `tb_system_fabric` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 138/138 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

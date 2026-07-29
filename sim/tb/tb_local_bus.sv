@@ -60,6 +60,10 @@ module tb_local_bus;
     .cycle_ack_o         (cycle_ack),
     .cycle_busy_o        (cycle_busy),
     .init_done_o         (init_done),
+    .hold_n_i            (1'b1),
+    .hold_req_o          (),
+    .hold_grant_i        (1'b0),
+    .hlda_n_o            (),
     .lrdy_i              (lrdy),
     .lad_i               (lad_i),
     .lad_o               (lad_o),
@@ -73,6 +77,13 @@ module tb_local_bus;
     .tr_qe_n_o           (tr_qe_n),
     .den_n_o             (den_n),
     .ddout_o             (ddout),
+    .ras_oe_o            (),
+    .lal_oe_o            (),
+    .cas_oe_o            (),
+    .we_oe_o             (),
+    .tr_qe_oe_o          (),
+    .den_oe_o            (),
+    .ddout_oe_o          (),
     .subphase_o          (subphase)
   );
 

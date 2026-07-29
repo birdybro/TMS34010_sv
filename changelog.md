@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0151 — physical HOLD/HOLDA bus release)
+- Replaced the pin-system's abstract HOLD request/acknowledge ports with an
+  active-low physical HOLD input and a Q3/Q4-phased active-low HOLDA output.
+- Sampled HOLD at the end of Q1 and crossed only synchronized level requests
+  and quiescent arbiter grants between the 8× and core domains.
+- Added early acknowledge, Q2 majority-bus release, Q3 DEN/DDOUT release,
+  held high-impedance intent, and symmetric Q2/Q3 reacquisition sequencing.
+- Exported explicit output enables for LAD and every affected bus control so
+  the future FPGA I/O wrapper can implement physical tri-state behavior.
+- Prevented queued commands from starting while the bus is granted away and
+  retained active-cycle completion, fixed HOLD priority, and partial-RMW
+  restart semantics from the existing arbiter.
+- Added `tb_local_bus_hold` for exact quarter-phase timing and extended
+  `tb_pin_system` with live-traffic HOLD, quiescence, release, and resume
+  checks.
+- Validation: focused HOLD/local-bus/arbiter/fabric/pin benches PASS;
+  `scripts/lint.sh` clean; full regression 138/138 PASS.
+
 ### Added (Task 0150 — host-indirect on-chip I/O bus cycles)
 - Decoded the held host-indirect address against the complete on-chip I/O
   page and exported an independent internal-register read view alongside the

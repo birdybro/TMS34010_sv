@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0150. Task 0124
+Functional implementation work is complete through Task 0151. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -60,6 +60,10 @@ commits writes exactly once on returned completion.
 Task 0150 routes host-indirect accesses through those same physical cycles,
 adds an independent shared-register read view, and commits host-side writes
 only after their returned completion.
+Task 0151 connects the active-low physical HOLD input to the existing
+fixed-priority arbiter through synchronized level handshakes, emits the
+Q3/Q4-only active-low HOLDA component, and phases LAD/control output-enable
+release and reacquisition at the specified Q2/Q3 boundaries.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -93,16 +97,19 @@ The repository currently contains:
 - processor and host-indirect on-chip I/O access through dedicated
   RAS/LAL-only physical cycles, including internal read data and
   completion-qualified register writes;
+- active-low physical HOLD sampling and synchronized grant return, with
+  early Q3/Q4 HOLDA indication and explicit Q2/Q3 LAD/control output-enable
+  release/resume sequencing;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 137 self-checking SystemVerilog testbenches, including an exhaustive
+- 138 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining physical HOLD pin release, physical VRAM
-serial service, host pin wrapper/HRDY/CDC, remaining I/O side effects, video
+the audit records the remaining shared HLDA/EMUA pin mux, physical VRAM serial
+service, host pin wrapper/HRDY/CDC, remaining I/O side effects, video
 display-memory behavior and VCLK/CDC, real Quartus project/constraints, and
 timing/resource validation.
 

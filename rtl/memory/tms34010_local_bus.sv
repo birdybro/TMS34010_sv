@@ -9,8 +9,8 @@
 // rate. It emits LCLK1/LCLK2 plus the LAD and active-low memory controls.
 //
 // The command request and all payload inputs are synchronous to clk8x_i and
-// must remain stable until cycle_ack_o. A later CDC task will bridge the
-// core-clock memory fabric to this deliberately single-domain boundary.
+// must remain stable until cycle_ack_o. The integrated MCP bridge connects
+// the core-clock fabric to this deliberately single-domain boundary.
 //
 // Implemented cycles:
 //   - ordinary 16-bit word read and late write;
@@ -21,10 +21,16 @@
 // LRDY is sampled at the end of Q1. Each low sample repeats the access period
 // for one complete local clock. I/O cycles ignore LRDY. Following reset, eight
 // zero-row RAS-only refresh cycles run before an external command can start.
+// HOLD is sampled at the same end-Q1 LCLK2 edge. Once the core-side arbiter
+// confirms quiescence, HLDA is asserted in Q3/Q4, LAD and the majority control
+// outputs release at the following Q2, and DEN/DDOUT release at Q3. Bus
+// reacquisition uses the symmetric one-quarter-staggered sequence.
 //
 // Spec sources:
 //   - 1988 TMS34010 User's Guide §11.4, Figures 11-3 through 11-14,
 //     pages 11-7 through 11-18 (cycle phases and LRDY).
+//   - §11.4.11, Figures 11-15/11-16, pages 11-18 through 11-21
+//     (HOLD sampling, early HLDA, high-impedance release/resume).
 //   - §11.4.12, Figure 11-17, page 11-22 (eight reset RAS-only cycles).
 //   - §11.5, Figure 11-18, pages 11-23/11-24 (address/status format).
 //   - §11.5.3, Figure 11-19, pages 11-25 through 11-27 (refresh rows).
@@ -59,6 +65,11 @@ module tms34010_local_bus
   output logic                              cycle_busy_o,
   output logic                              init_done_o,
 
+  input  logic                              hold_n_i,
+  output logic                              hold_req_o,
+  input  logic                              hold_grant_i,
+  output logic                              hlda_n_o,
+
   input  logic                              lrdy_i,
   input  local_word_t                       lad_i,
   output local_word_t                       lad_o,
@@ -72,6 +83,13 @@ module tms34010_local_bus
   output logic                              tr_qe_n_o,
   output logic                              den_n_o,
   output logic                              ddout_o,
+  output logic                              ras_oe_o,
+  output logic                              lal_oe_o,
+  output logic                              cas_oe_o,
+  output logic                              we_oe_o,
+  output logic                              tr_qe_oe_o,
+  output logic                              den_oe_o,
+  output logic                              ddout_oe_o,
   output local_subphase_t                   subphase_o
 );
 
@@ -82,8 +100,18 @@ module tms34010_local_bus
     BUS_SECOND = 2'd3
   } local_bus_state_t;
 
+  typedef enum logic [2:0] {
+    HOLD_RUN             = 3'd0,
+    HOLD_EARLY_ACK       = 3'd1,
+    HOLD_RELEASE_MAJORITY= 3'd2,
+    HOLD_BUS_RELEASED    = 3'd3,
+    HOLD_RESUME_WAIT     = 3'd4,
+    HOLD_RESUME_MAJORITY = 3'd5
+  } local_hold_state_t;
+
   local_bus_state_t state_q, state_d;
   local_subphase_t  phase_q;
+  local_hold_state_t hold_state_q, hold_state_d;
 
   // Justification (a): a selected command must survive for both local-clock
   // periods and any LRDY extensions after the producer presents it.
@@ -127,6 +155,9 @@ module tms34010_local_bus
   logic                          cycle_complete;
   logic                          active_is_io;
   logic                          release_strobes;
+  logic                          hold_req_q;
+  logic                          hold_majority_drive;
+  logic                          hold_slow_drive;
 
   function automatic local_word_t word_row_address(
     input logic [ADDR_WIDTH-1:0] address
@@ -175,6 +206,106 @@ module tms34010_local_bus
     else     phase_q <= local_subphase_t'(phase_q + 3'd1);
   end
 
+  // HOLD is synchronous to LCLK2 and is sampled on its rising edge at the end
+  // of Q1 (the Q1B-to-Q2A 8× edge). The sampled active-high level alone
+  // crosses to the core arbiter.
+  always_ff @(posedge clk8x_i) begin
+    if (rst) begin
+      hold_req_q <= 1'b0;
+    end else if (phase_q == LOCAL_PHASE_Q1B) begin
+      hold_req_q <= !hold_n_i;
+    end
+  end
+
+  assign hold_req_o = hold_req_q;
+
+  // Physical release/reacquisition timing from Figures 11-15/11-16. The
+  // core grant is considered only on an end-Q1 sample after reset
+  // initialization and any active local cycle have retired.
+  always_comb begin
+    hold_state_d = hold_state_q;
+
+    unique case (hold_state_q)
+      HOLD_RUN: begin
+        if ((phase_q == LOCAL_PHASE_Q1B)
+            && !hold_n_i
+            && hold_grant_i
+            && init_done_q
+            && (state_q == BUS_IDLE))
+          hold_state_d = HOLD_EARLY_ACK;
+      end
+
+      HOLD_EARLY_ACK: begin
+        if (phase_q == LOCAL_PHASE_Q1B)
+          hold_state_d = hold_n_i
+                       ? HOLD_RUN
+                       : HOLD_RELEASE_MAJORITY;
+      end
+
+      HOLD_RELEASE_MAJORITY: begin
+        if (phase_q == LOCAL_PHASE_Q2B)
+          hold_state_d = HOLD_BUS_RELEASED;
+      end
+
+      HOLD_BUS_RELEASED: begin
+        if ((phase_q == LOCAL_PHASE_Q1B) && hold_n_i)
+          hold_state_d = HOLD_RESUME_WAIT;
+      end
+
+      HOLD_RESUME_WAIT: begin
+        if (phase_q == LOCAL_PHASE_Q1B)
+          hold_state_d = hold_n_i
+                       ? HOLD_RESUME_MAJORITY
+                       : HOLD_BUS_RELEASED;
+      end
+
+      HOLD_RESUME_MAJORITY: begin
+        if (phase_q == LOCAL_PHASE_Q2B)
+          hold_state_d = HOLD_RUN;
+      end
+
+      default: hold_state_d = HOLD_RUN;
+    endcase
+  end
+
+  always_ff @(posedge clk8x_i) begin
+    if (rst) hold_state_q <= HOLD_RUN;
+    else     hold_state_q <= hold_state_d;
+  end
+
+  always_comb begin
+    hold_majority_drive = 1'b0;
+    hold_slow_drive     = 1'b0;
+
+    unique case (hold_state_q)
+      HOLD_RUN,
+      HOLD_EARLY_ACK: begin
+        hold_majority_drive = 1'b1;
+        hold_slow_drive     = 1'b1;
+      end
+
+      HOLD_RELEASE_MAJORITY: begin
+        hold_slow_drive = 1'b1;
+      end
+
+      HOLD_RESUME_MAJORITY: begin
+        hold_majority_drive = 1'b1;
+      end
+
+      HOLD_BUS_RELEASED,
+      HOLD_RESUME_WAIT: ;
+      default: ;
+    endcase
+  end
+
+  // HLDA occupies only the shared pin's Q3/Q4 half. EMUA multiplexing in
+  // Q1/Q2 remains at the pin wrapper boundary.
+  assign hlda_n_o =
+      lclk1_o
+      || !((hold_state_q == HOLD_EARLY_ACK)
+           || (hold_state_q == HOLD_RELEASE_MAJORITY)
+           || (hold_state_q == HOLD_BUS_RELEASED));
+
   always_comb begin
     state_d = state_q;
 
@@ -182,7 +313,9 @@ module tms34010_local_bus
       BUS_RESET: state_d = BUS_FIRST;
 
       BUS_IDLE: begin
-        if ((phase_q == LOCAL_PHASE_Q4B) && cycle_req_i)
+        if ((phase_q == LOCAL_PHASE_Q4B)
+            && cycle_req_i
+            && (hold_state_q == HOLD_RUN))
           state_d = BUS_FIRST;
       end
 
@@ -327,11 +460,23 @@ module tms34010_local_bus
   assign cycle_rdata_o = read_data_q;
   assign cycle_ack_o = init_done_q && cycle_complete;
   assign bus_active = (state_q == BUS_FIRST) || (state_q == BUS_SECOND);
-  assign cycle_busy_o = !init_done_q || (state_q != BUS_IDLE) || cycle_req_i;
+  assign cycle_busy_o = !init_done_q
+                      || (state_q != BUS_IDLE)
+                      || cycle_req_i
+                      || hold_req_q
+                      || (hold_state_q != HOLD_RUN);
   assign release_strobes =
       (state_q == BUS_SECOND)
       && (phase_q == LOCAL_PHASE_Q4B)
       && ready_q;
+
+  assign ras_oe_o   = hold_majority_drive;
+  assign lal_oe_o   = hold_majority_drive;
+  assign cas_oe_o   = hold_majority_drive;
+  assign we_oe_o    = hold_majority_drive;
+  assign tr_qe_oe_o = hold_majority_drive;
+  assign den_oe_o   = hold_slow_drive;
+  assign ddout_oe_o = hold_slow_drive;
 
   always_comb begin
     screen_address = active_screen_org
@@ -411,6 +556,9 @@ module tms34010_local_bus
         endcase
       end
     end
+
+    if (!hold_majority_drive)
+      lad_oe_o = 1'b0;
   end
 
   // Active-low pin decode. Defaults are the inactive-high internal-cycle

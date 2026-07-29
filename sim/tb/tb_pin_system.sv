@@ -36,6 +36,15 @@ module tb_pin_system;
   logic            tr_qe_n;
   logic            den_n;
   logic            ddout;
+  logic            ras_oe;
+  logic            lal_oe;
+  logic            cas_oe;
+  logic            we_oe;
+  logic            tr_qe_oe;
+  logic            den_oe;
+  logic            ddout_oe;
+  logic            hold_n = 1'b1;
+  logic            hlda_n;
   local_subphase_t subphase;
   logic            init_done;
   logic            local_busy;
@@ -99,8 +108,8 @@ module tb_pin_system;
     .lint1_n_i         (1'b1),
     .lint2_n_i         (1'b1),
     .dpyint_set_i      (1'b0),
-    .hold_req_i        (1'b0),
-    .hold_ack_o        (),
+    .hold_n_i          (hold_n),
+    .hlda_n_o          (hlda_n),
     .video_hsync_o     (),
     .video_vsync_o     (),
     .video_hblank_o    (),
@@ -119,6 +128,13 @@ module tb_pin_system;
     .tr_qe_n_o         (tr_qe_n),
     .den_n_o           (den_n),
     .ddout_o           (ddout),
+    .ras_oe_o          (ras_oe),
+    .lal_oe_o          (lal_oe),
+    .cas_oe_o          (cas_oe),
+    .we_oe_o           (we_oe),
+    .tr_qe_oe_o        (tr_qe_oe),
+    .den_oe_o          (den_oe),
+    .ddout_oe_o        (ddout_oe),
     .subphase_o        (subphase),
     .local_init_done_o (init_done),
     .local_cycle_busy_o(local_busy),
@@ -349,8 +365,43 @@ module tb_pin_system;
     end
   endtask
 
+  task automatic wait_bus_phase(input local_subphase_t wanted);
+    begin
+      @(negedge bus_clk8x);
+      while (subphase != wanted)
+        @(negedge bus_clk8x);
+    end
+  endtask
+
+  task automatic check_majority_oe(
+    input logic expected,
+    input string label
+  );
+    begin
+      check(ras_oe == expected, {label, " RAS OE"});
+      check(lal_oe == expected, {label, " LAL OE"});
+      check(cas_oe == expected, {label, " CAS OE"});
+      check(we_oe == expected, {label, " W OE"});
+      check(tr_qe_oe == expected, {label, " TR/QE OE"});
+      if (!expected)
+        check(!lad_oe, {label, " LAD OE"});
+    end
+  endtask
+
+  task automatic check_slow_oe(
+    input logic expected,
+    input string label
+  );
+    begin
+      check(den_oe == expected, {label, " DEN OE"});
+      check(ddout_oe == expected, {label, " DDOUT OE"});
+    end
+  endtask
+
   initial begin
     local_word_t rd;
+    logic [ADDR_WIDTH-1:0] held_pc;
+    int unsigned watchdog;
 
     host_req   = 1'b0;
     host_we    = 1'b0;
@@ -421,6 +472,72 @@ module tb_pin_system;
           "host-indirect I/O write data was not driven on LAD");
     check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK] == 16'h1234,
           "host-indirect I/O write did not commit PMASK on completion");
+
+    // Assert the physical active-low HOLD during live NOP traffic. The
+    // current cycle must retire before the first Q3/Q4 early HLDA; the bus
+    // then releases majority outputs at Q2 and DEN/DDOUT at Q3.
+    do begin
+      wait_bus_phase(LOCAL_PHASE_Q1A);
+    end while (!local_busy || !bridge_busy);
+    hold_n = 1'b0;
+    wait_bus_phase(LOCAL_PHASE_Q2A);
+    check(hlda_n, "HLDA asserted on the HOLD sample edge");
+
+    watchdog = 0;
+    while (hlda_n && (watchdog < 400)) begin
+      @(negedge bus_clk8x);
+      watchdog++;
+    end
+    check(!hlda_n, "physical HOLD did not produce early HLDA");
+    check(subphase == LOCAL_PHASE_Q3A,
+          "first HLDA assertion must begin in Q3");
+    check_majority_oe(1'b1, "integrated early HLDA");
+    check_slow_oe(1'b1, "integrated early HLDA");
+
+    wait_bus_phase(LOCAL_PHASE_Q2A);
+    check_majority_oe(1'b0, "integrated HOLD release Q2");
+    check_slow_oe(1'b1, "integrated HOLD release Q2");
+    wait_bus_phase(LOCAL_PHASE_Q3A);
+    check(!hlda_n, "HLDA must repeat while HOLD remains active");
+    check_majority_oe(1'b0, "integrated HOLD release Q3");
+    check_slow_oe(1'b0, "integrated HOLD release Q3");
+
+    held_pc = pc;
+    repeat (4) begin
+      @(posedge core_clk);
+      #1;
+      check(pc == held_pc, "processor PC changed while local bus was held");
+      check(!lad_oe, "LAD drove while external master owned the bus");
+      check_majority_oe(1'b0, "integrated held bus");
+      check_slow_oe(1'b0, "integrated held bus");
+    end
+
+    // Deassert before end Q1. HLDA becomes inactive in the following Q3/Q4;
+    // majority outputs resume at the next Q2 and DEN/DDOUT one quarter later.
+    wait_bus_phase(LOCAL_PHASE_Q1A);
+    hold_n = 1'b1;
+    wait_bus_phase(LOCAL_PHASE_Q2A);
+    check(hlda_n, "HLDA did not become inactive after HOLD release");
+    check_majority_oe(1'b0, "integrated release sample Q2");
+    check_slow_oe(1'b0, "integrated release sample Q2");
+    wait_bus_phase(LOCAL_PHASE_Q3A);
+    check(hlda_n, "HLDA remained active during release Q3/Q4");
+    check_majority_oe(1'b0, "integrated release sample Q3");
+    check_slow_oe(1'b0, "integrated release sample Q3");
+    wait_bus_phase(LOCAL_PHASE_Q2A);
+    check_majority_oe(1'b1, "integrated resume Q2");
+    check_slow_oe(1'b0, "integrated resume Q2");
+    wait_bus_phase(LOCAL_PHASE_Q3A);
+    check_majority_oe(1'b1, "integrated resume Q3");
+    check_slow_oe(1'b1, "integrated resume Q3");
+
+    watchdog = 0;
+    while ((pc == held_pc) && (watchdog < 100)) begin
+      @(posedge core_clk);
+      watchdog++;
+    end
+    check(pc != held_pc, "processor did not resume after physical HOLD");
+
     check(instr_word == 16'h0300, "pin-supplied NOP was not fetched");
     check(!illegal_opcode, "pin-level NOP stream raised illegal opcode");
     check(local_busy || (core_state != CORE_RESET),
