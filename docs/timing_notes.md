@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0148, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0149, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -16,6 +16,7 @@
 | Field-window shift/mask and word merge | Task 0136      | landed, sequenced, unmeasured | preserve the registered word boundary; pipeline only if TimeQuest identifies this path |
 | 8× local-bus phase/pin decode        | Task 0147        | landed/integrated, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the PLL clock and every pin delay before FPGA sign-off |
 | Core↔8× MCP payload/response paths   | Task 0148        | landed, protocol-protected, unconstrained | declare asynchronous clocks, preserve/recognize toggle synchronizers, and cut/waive only the stable MCP payload paths |
+| CPU request classification → field/I/O select | Task 0149 | one registered stage, unmeasured | retain the registered loop break; inspect fanout only if TimeQuest identifies it |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -148,12 +149,21 @@
   RAS-only cycles, each independently extendable by LRDY. This is verified
   both standalone and through the integrated wrapper; no frequency/phase
   relationship to the core clock is assumed by the bridge.
+- **Processor on-chip I/O** — every architectural CPU request first spends
+  one core edge entering the fabric's registered classification stage.
+  External fields then follow their existing sequencer latency; on-chip I/O
+  bypasses it and waits for arbitration, the MCP round trip, and exactly two
+  local clocks in the phase engine. LRDY is ignored. For writes, the internal
+  register owner observes only the returned core-clock completion pulse, not
+  every held request clock. For reads, the command carries the registered
+  internal word and LAD remains released in the physical data phase.
 - **Integrated functional fabric** — `tms34010_system` routes the core's
   architectural field request through `tms34010_field_sequencer`, then joins
   its words with host, screen, and DRAM-refresh traffic in the arbiter. No
-  additional queue or register stage is inserted by
-  `tms34010_memory_fabric`; the controller observes the selection bubbles and
-  held-cycle latency described above. `tms34010_pin_system` adds the MCP
+  one registered request-classification stage precedes either field
+  sequencing or direct processor I/O arbitration. The controller observes
+  the selection bubbles and held-cycle latency described above.
+  `tms34010_pin_system` adds the MCP
   round-trip and 8× phase latency but no new scheduling policy. The wrapper
   has no fixed clock-frequency ratio contract.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
@@ -216,7 +226,8 @@ supplies `clk8x_i`; the QSF/SDC must put that PLL output on a clock network
 and constrain the physical LCLK/LAD/control pins.
 
 Task 0148 connects the core-clock command boundary through
-`tms34010_local_bus_bridge`. The source registers the complete command before
+`tms34010_local_bus_bridge`. The source registers the complete command,
+including internal I/O read data, before
 toggling its request and holds the payload until the acknowledge toggle has
 returned. The destination captures that stable MCP bus only after the request
 passes through a dedicated 2FF synchronizer, holds its local request through

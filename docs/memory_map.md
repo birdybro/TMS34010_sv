@@ -2,11 +2,12 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0148**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0149**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
-> bridge; physical HOLD/host pins and several I/O side effects remain open.
+> bridge, and processor on-chip I/O uses its dedicated cycle kinds; physical
+> HOLD/host pins, host-indirect I/O, and several register side effects remain.
 
 ## Architectural address space
 
@@ -64,6 +65,16 @@ acknowledge toggle returns. The current cacheless core asserts IAQ only for
 the opcode word fetched in `CORE_FETCH`; immediate instruction words and all
 data/vector words drive it low. The integrated reset-vector transaction waits
 behind the controller's eight reset RAS cycles before appearing on LAD.
+
+Task 0149 registers and classifies each architectural CPU memory request in
+`tms34010_memory_fabric`. External 1–32-bit fields continue through
+`tms34010_field_sequencer`; a processor address in
+`C0000000h-C00001FFh` bypasses splitting and selects
+`LOCAL_CYCLE_IO_READ/WRITE`. The coherent command includes the internal
+16-bit register read value, IAQ is inactive, and physical completion produces
+the single processor acknowledge that commits a write/load. The separate
+host-indirect client still needs the same full-address decode and a second
+access path into the I/O register owner.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -200,7 +211,7 @@ pixel output.
 ## Uncertain / partially implemented areas
 
 - Physical HOLD pin release and bus high-impedance behavior.
-- The dedicated on-chip ack path for I/O accesses (A0028).
+- Host-indirect accesses to the on-chip I/O page (remaining A0028 case).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
 - Host HRDY/pin timing and CDC.

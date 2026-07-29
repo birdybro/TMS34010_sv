@@ -62,6 +62,8 @@ module tms34010_bus_arbiter
   input  logic                          cpu_we_i,
   input  logic [ADDR_WIDTH-1:0]         cpu_addr_i,
   input  local_word_t                   cpu_wdata_i,
+  input  logic                          cpu_io_i,
+  input  local_word_t                   cpu_io_rdata_i,
   input  logic                          cpu_iaq_i,
   input  logic                          cpu_rmw_lock_i,
   output local_word_t                   cpu_rdata_o,
@@ -72,6 +74,7 @@ module tms34010_bus_arbiter
   output local_cycle_kind_t             cycle_kind_o,
   output logic [ADDR_WIDTH-1:0]         cycle_addr_o,
   output local_word_t                   cycle_wdata_o,
+  output local_word_t                   cycle_io_rdata_o,
   output logic                          cycle_iaq_o,
   output logic [13:0]                   cycle_srfaddr_o,
   output logic [15:0]                   cycle_dpytap_o,
@@ -210,6 +213,7 @@ module tms34010_bus_arbiter
     cycle_kind_o     = LOCAL_CYCLE_WORD_READ;
     cycle_addr_o     = '0;
     cycle_wdata_o    = '0;
+    cycle_io_rdata_o = '0;
     cycle_iaq_o      = 1'b0;
     cycle_srfaddr_o  = '0;
     cycle_dpytap_o   = '0;
@@ -251,12 +255,19 @@ module tms34010_bus_arbiter
 
       ARB_CPU: begin
         cycle_req_o   = 1'b1;
-        cycle_kind_o  = cpu_we_i
-                      ? LOCAL_CYCLE_WORD_WRITE
-                      : LOCAL_CYCLE_WORD_READ;
+        if (cpu_io_i) begin
+          cycle_kind_o = cpu_we_i
+                       ? LOCAL_CYCLE_IO_WRITE
+                       : LOCAL_CYCLE_IO_READ;
+        end else begin
+          cycle_kind_o = cpu_we_i
+                       ? LOCAL_CYCLE_WORD_WRITE
+                       : LOCAL_CYCLE_WORD_READ;
+        end
         cycle_addr_o  = cpu_addr_i;
         cycle_wdata_o = cpu_wdata_i;
-        cycle_iaq_o   = cpu_iaq_i;
+        cycle_io_rdata_o = cpu_io_rdata_i;
+        cycle_iaq_o   = cpu_io_i ? 1'b0 : cpu_iaq_i;
         cpu_ack_o     = cycle_ack_i;
       end
 

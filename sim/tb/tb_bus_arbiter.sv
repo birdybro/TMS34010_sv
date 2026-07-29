@@ -36,6 +36,8 @@ module tb_bus_arbiter;
   logic                      cpu_we;
   logic [ADDR_WIDTH-1:0]     cpu_addr;
   local_word_t               cpu_wdata;
+  logic                      cpu_io;
+  local_word_t               cpu_io_rdata;
   logic                      cpu_iaq;
   logic                      cpu_rmw_lock;
   local_word_t               cpu_rdata;
@@ -45,6 +47,7 @@ module tb_bus_arbiter;
   local_cycle_kind_t         cycle_kind;
   logic [ADDR_WIDTH-1:0]     cycle_addr;
   local_word_t               cycle_wdata;
+  local_word_t               cycle_io_rdata;
   logic                      cycle_iaq;
   logic [13:0]               cycle_srfaddr;
   logic [15:0]               cycle_dpytap;
@@ -77,6 +80,8 @@ module tb_bus_arbiter;
     .cpu_we_i          (cpu_we),
     .cpu_addr_i        (cpu_addr),
     .cpu_wdata_i       (cpu_wdata),
+    .cpu_io_i          (cpu_io),
+    .cpu_io_rdata_i    (cpu_io_rdata),
     .cpu_iaq_i         (cpu_iaq),
     .cpu_rmw_lock_i    (cpu_rmw_lock),
     .cpu_rdata_o       (cpu_rdata),
@@ -86,6 +91,7 @@ module tb_bus_arbiter;
     .cycle_kind_o      (cycle_kind),
     .cycle_addr_o      (cycle_addr),
     .cycle_wdata_o     (cycle_wdata),
+    .cycle_io_rdata_o  (cycle_io_rdata),
     .cycle_iaq_o       (cycle_iaq),
     .cycle_srfaddr_o   (cycle_srfaddr),
     .cycle_dpytap_o    (cycle_dpytap),
@@ -101,6 +107,7 @@ module tb_bus_arbiter;
   local_cycle_kind_t held_kind_q;
   logic [ADDR_WIDTH-1:0] held_addr_q;
   local_word_t            held_wdata_q;
+  local_word_t            held_io_rdata_q;
   logic                   held_iaq_q;
   logic [13:0]            held_srfaddr_q;
   logic [15:0]            held_dpytap_q;
@@ -116,6 +123,7 @@ module tb_bus_arbiter;
       held_kind_q         <= LOCAL_CYCLE_WORD_READ;
       held_addr_q         <= '0;
       held_wdata_q        <= '0;
+      held_io_rdata_q     <= '0;
       held_iaq_q          <= 1'b0;
       held_srfaddr_q      <= '0;
       held_dpytap_q       <= '0;
@@ -127,6 +135,7 @@ module tb_bus_arbiter;
         held_kind_q     <= cycle_kind;
         held_addr_q     <= cycle_addr;
         held_wdata_q    <= cycle_wdata;
+        held_io_rdata_q <= cycle_io_rdata;
         held_iaq_q      <= cycle_iaq;
         held_srfaddr_q  <= cycle_srfaddr;
         held_dpytap_q   <= cycle_dpytap;
@@ -138,6 +147,7 @@ module tb_bus_arbiter;
           || (cycle_kind != held_kind_q)
           || (cycle_addr != held_addr_q)
           || (cycle_wdata != held_wdata_q)
+          || (cycle_io_rdata != held_io_rdata_q)
           || (cycle_iaq != held_iaq_q)
           || (cycle_srfaddr != held_srfaddr_q)
           || (cycle_dpytap != held_dpytap_q)
@@ -234,6 +244,8 @@ module tb_bus_arbiter;
     cpu_we         = 1'b0;
     cpu_addr       = '0;
     cpu_wdata      = '0;
+    cpu_io         = 1'b0;
+    cpu_io_rdata   = '0;
     cpu_iaq        = 1'b0;
     cpu_rmw_lock   = 1'b0;
     cycle_rdata    = 16'h0000;
@@ -318,6 +330,33 @@ module tb_bus_arbiter;
     ack_cycle("CPU", 1'b0, 1'b0, 1'b0, 1'b1);
     check_word("CPU response routing", cpu_rdata, 16'h2468);
     cpu_req = 1'b0;
+
+    // Processor I/O bypasses word sequencing but retains the CPU priority and
+    // completion route. Read data is on-chip payload, not external LAD data.
+    cpu_req      = 1'b1;
+    cpu_we       = 1'b0;
+    cpu_io       = 1'b1;
+    cpu_addr     = IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PMASK) << 4);
+    cpu_io_rdata = 16'hD00D;
+    wait_cycle("CPU I/O read", LOCAL_CYCLE_IO_READ);
+    check_word("CPU I/O read payload", cycle_io_rdata, 16'hD00D);
+    check_bit("CPU I/O IAQ inactive", cycle_iaq, 1'b0);
+    cycle_rdata = cycle_io_rdata;
+    ack_cycle("CPU I/O read", 1'b0, 1'b0, 1'b0, 1'b1);
+    check_word("CPU I/O response routing", cpu_rdata, 16'hD00D);
+    cpu_req = 1'b0;
+    @(negedge clk);
+
+    cpu_req   = 1'b1;
+    cpu_we    = 1'b1;
+    cpu_addr  = IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PMASK) << 4);
+    cpu_wdata = 16'hBEEF;
+    wait_cycle("CPU I/O write", LOCAL_CYCLE_IO_WRITE);
+    check_word("CPU I/O write payload", cycle_wdata, 16'hBEEF);
+    ack_cycle("CPU I/O write", 1'b0, 1'b0, 1'b0, 1'b1);
+    cpu_req = 1'b0;
+    cpu_we  = 1'b0;
+    cpu_io  = 1'b0;
 
     // A stalled host cycle must finish even when screen and a pulsed DRAM
     // refresh arrive. Payload stability is also checked by the monitor above.

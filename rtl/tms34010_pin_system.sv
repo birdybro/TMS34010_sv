@@ -6,10 +6,10 @@
 // command/response MCP bridge is the only connection to bus_clk8x_i.
 //
 // The synchronous host-register request boundary and abstract HOLD request/
-// acknowledge boundary remain exposed for later pin-wrapper tasks. Likewise,
-// on-chip I/O accesses are still completed inside the core and are not yet
-// emitted as LOCAL_CYCLE_IO_* commands, so the local controller's io_rdata
-// input is tied inactive here.
+// acknowledge boundary remain exposed for later pin-wrapper tasks. Processor
+// on-chip I/O requests already use LOCAL_CYCLE_IO_* and carry their internal
+// read data through the coherent command bundle; host-indirect I/O routing is
+// a following shared-register-port task.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -76,6 +76,7 @@ module tms34010_pin_system
   local_cycle_kind_t                 core_cycle_kind;
   logic [ADDR_WIDTH-1:0]             core_cycle_addr;
   local_word_t                       core_cycle_wdata;
+  local_word_t                       core_cycle_io_rdata;
   logic                              core_cycle_iaq;
   logic [13:0]                       core_cycle_srfaddr;
   logic [15:0]                       core_cycle_dpytap;
@@ -95,6 +96,7 @@ module tms34010_pin_system
     core_command.kind       = core_cycle_kind;
     core_command.addr       = core_cycle_addr;
     core_command.wdata      = core_cycle_wdata;
+    core_command.io_rdata   = core_cycle_io_rdata;
     core_command.iaq        = core_cycle_iaq;
     core_command.srfaddr    = core_cycle_srfaddr;
     core_command.dpytap     = core_cycle_dpytap;
@@ -131,6 +133,7 @@ module tms34010_pin_system
     .cycle_kind_o       (core_cycle_kind),
     .cycle_addr_o       (core_cycle_addr),
     .cycle_wdata_o      (core_cycle_wdata),
+    .cycle_io_rdata_o   (core_cycle_io_rdata),
     .cycle_iaq_o        (core_cycle_iaq),
     .cycle_srfaddr_o    (core_cycle_srfaddr),
     .cycle_dpytap_o     (core_cycle_dpytap),
@@ -172,7 +175,7 @@ module tms34010_pin_system
     .cycle_dpytap_i     (local_command.dpytap),
     .cycle_screen_org_i (local_command.screen_org),
     .cycle_dram_row_i   (local_command.dram_row),
-    .io_rdata_i         (16'h0000),
+    .io_rdata_i         (local_command.io_rdata),
     .cycle_rdata_o      (local_cycle_rdata),
     .cycle_ack_o        (local_cycle_ack),
     .cycle_busy_o       (local_cycle_busy_o),

@@ -2,8 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0148. Task 0148
-connects the core-clock fabric to the 8× original-pin engine through a
+The functional implementation is complete through Task 0149. Task 0149
+routes processor on-chip I/O accesses into dedicated physical I/O read/write
+cycles and qualifies their internal side effects with returned completion.
+Task 0148 connects the core-clock fabric to the 8× original-pin engine through a
 coherent two-phase MCP command/response bridge, propagates IAQ and captured
 screen ORG, and adds the integrated pin-system wrapper. Task 0147 implements
 the 8× original-pin local-bus phase engine, all landed cycle families, LRDY
@@ -4944,6 +4946,56 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 1341f07
+
+---
+
+### Task 0149: Route processor I/O through physical I/O cycles
+Status: complete
+Dependencies:
+- Task 0148 (integrated core-to-8× command/response path).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §6, Figure 6-1
+  (C0000000h-C00001FFh on-chip I/O decode).
+- 1988 TI TMS34010 User's Guide §11.4.8, Figures 11-10/11-11,
+  pages 11-13 through 11-15 (processor/host-indirect I/O cycle selection,
+  two-clock duration, LRDY bypass, address/status, controls, and data phase).
+Acceptance Criteria:
+- Export the core's processor I/O decode, original read/write intent, and
+  internal read word without allowing an I/O write to reach ordinary RAM.
+- Register each architectural CPU request before classification, hold its
+  payload through completion, and avoid a combinational acknowledge/address
+  decode loop.
+- Route non-I/O fields through the existing field sequencer unchanged; route
+  processor I/O directly to the arbiter as `LOCAL_CYCLE_IO_READ` or
+  `LOCAL_CYCLE_IO_WRITE`.
+- Force IAQ inactive for I/O, carry the on-chip read word coherently to the
+  8× controller, and return completion through the existing bridge.
+- Qualify processor I/O writes/live-register loads with the single returned
+  completion pulse so physical waits cannot repeat their side effects.
+- Keep host-indirect I/O routing separate because it requires a second
+  access/ownership path into the shared I/O register owner.
+Tests:
+- Updated `tb_bus_arbiter` PASS with dedicated processor I/O read/write kinds,
+  internal read data, IAQ suppression, response routing, and held-payload
+  checks.
+- Updated `tb_system_fabric` PASS with real program-generated I/O write cycles
+  and stable internal read-data payload.
+- Updated `tb_pin_system` PASS with a real PMASK write/read program, exactly
+  one physical cycle per access, zero I/O address/status, RAS/LAL-only
+  controls, write data on LAD, read-phase LAD release, completion-qualified
+  register update, and returned read value.
+- Updated `tb_local_bus_bridge` PASS with exact full-command comparison,
+  including the new I/O read-data field.
+- Existing focused I/O/core/host tests PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 137/137 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

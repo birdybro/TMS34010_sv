@@ -51,6 +51,7 @@ module tms34010_system
   output local_cycle_kind_t                 cycle_kind_o,
   output logic [ADDR_WIDTH-1:0]             cycle_addr_o,
   output local_word_t                       cycle_wdata_o,
+  output local_word_t                       cycle_io_rdata_o,
   output logic                              cycle_iaq_o,
   output logic [13:0]                       cycle_srfaddr_o,
   output logic [15:0]                       cycle_dpytap_o,
@@ -73,6 +74,9 @@ module tms34010_system
   logic [DATA_WIDTH-1:0]             cpu_field_rdata;
   logic                              cpu_field_ack;
   logic                              cpu_field_iaq;
+  logic                              cpu_field_is_io;
+  logic                              cpu_field_io_we;
+  local_word_t                       cpu_field_io_rdata;
 
   logic                              host_mem_req;
   logic                              host_mem_we;
@@ -100,6 +104,9 @@ module tms34010_system
     .mem_size                (cpu_field_size),
     .mem_wdata               (cpu_field_wdata),
     .mem_iaq                 (cpu_field_iaq),
+    .mem_is_io               (cpu_field_is_io),
+    .mem_io_we               (cpu_field_io_we),
+    .mem_io_rdata            (cpu_field_io_rdata),
     .mem_rdata               (cpu_field_rdata),
     .mem_ack                 (cpu_field_ack),
     .run_emu_n_i             (run_emu_n_i),
@@ -151,6 +158,9 @@ module tms34010_system
     .cpu_field_size_i   (cpu_field_size),
     .cpu_field_wdata_i  (cpu_field_wdata),
     .cpu_field_iaq_i    (cpu_field_iaq),
+    .cpu_field_is_io_i  (cpu_field_is_io),
+    .cpu_field_io_we_i  (cpu_field_io_we),
+    .cpu_field_io_rdata_i(cpu_field_io_rdata),
     .cpu_field_rdata_o  (cpu_field_rdata),
     .cpu_field_ack_o    (cpu_field_ack),
     .host_req_i         (host_mem_req),
@@ -173,6 +183,7 @@ module tms34010_system
     .cycle_kind_o       (cycle_kind_o),
     .cycle_addr_o       (cycle_addr_o),
     .cycle_wdata_o      (cycle_wdata_o),
+    .cycle_io_rdata_o   (cycle_io_rdata_o),
     .cycle_iaq_o        (cycle_iaq_o),
     .cycle_srfaddr_o    (cycle_srfaddr_o),
     .cycle_dpytap_o     (cycle_dpytap_o),

@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0148, with
+> Status: **implemented and ISA/status-audited through Task 0149, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -15,6 +15,9 @@
 > LCLK/LAD/control phases, address/status formats, LRDY waits, and reset
 > initialization. A two-phase MCP bridge coherently connects it to the
 > core-clock fabric, including returned read data, IAQ, and screen ORG.
+> Processor on-chip I/O requests now bypass field splitting and use the
+> integrated physical I/O read/write cycles with completion-qualified side
+> effects; host-indirect I/O routing remains separate.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; VRAM serial-display service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -77,8 +80,8 @@ sequencer and local-cycle arbiter are composed by
 fabric. `tms34010_local_bus_bridge` crosses that held command and its response
 coherently into/out of the 8× domain, while `tms34010_pin_system` composes the
 system, bridge, and `tms34010_local_bus`. Physical HOLD release, the
-asynchronous host pins, on-chip I/O pin cycles, the dedicated VCLK domain, and
-the FPGA clock/constraint project remain planned.
+asynchronous host pins, host-indirect on-chip I/O pin cycles, the dedicated
+VCLK domain, and the FPGA clock/constraint project remain planned.
 
 ## Test substrate
 
@@ -89,8 +92,9 @@ through the synthesizable `tms34010_field_sequencer`, including three-word
 straddles and partial-word read/modify/write preservation. Only the backing
 target is simulation-specific. The original-pin controller has a standalone
 phase-level regression. `tb_pin_system` additionally boots the real core from
-a pin-level LAD target through the integrated CDC and verifies the mandatory
-reset initialization ordering.
+a pin-level LAD target through the integrated CDC, verifies the mandatory
+reset initialization ordering, and executes physical processor I/O
+write/read cycles.
 
 ## Module map
 
@@ -99,7 +103,7 @@ reset initialization ordering.
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
 | `rtl/tms34010_system.sv`                | 6     | **landed (Task 0146)** | functional-system wrapper connecting all core memory clients to one abstract controller boundary |
 | `rtl/tms34010_pin_system.sv`            | 6     | **landed (Task 0148)** | integrated core-clock system, MCP bridge, and 8× original-pin local bus; physical host/HOLD wrappers pending |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0148** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, opcode IAQ, I/O routing, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0149** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, opcode IAQ, processor-I/O sidebands/completion, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -110,8 +114,8 @@ reset initialization ordering.
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
 | `rtl/memory/tms34010_local_bus.sv`      | 6     | **integrated through Task 0148** | 8× original-pin LCLK/row/column/data phases, address/status encoding, LRDY waits, I/O cycles, and eight reset RAS cycles |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
-| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed (Task 0145)** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation and HOLD restart |
-| `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed (Task 0146)** | composes field sequencing and arbitration for CPU/graphics, screen, DRAM refresh, host, and HOLD |
+| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed through Task 0149** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation/HOLD restart; processor I/O cycle selection |
+| `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed through Task 0149** | registered CPU request classification; external field sequencing; processor-I/O bypass; screen/DRAM/host/CPU arbitration |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
 | `rtl/graphics/tms34010_pixblt.sv`       | 7     | not separate | PIXBLT/FILL datapaths and FSM states currently reside in the core |
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
@@ -236,6 +240,17 @@ captures it once in the 8× domain, and uses the reverse acknowledge toggle to
 hold and return read data. `tms34010_pin_system` connects the resulting
 destination request to the local-bus engine. Physical HOLD/host pins and
 Quartus CDC constraints remain distinct exit-gate work.
+
+Task 0149 completes the processor half of the on-chip I/O cycle path. The
+core exports its full-address decode, original direction, and internal read
+word while continuing to suppress ordinary RAM writes. A registered
+classification stage in `tms34010_memory_fabric` holds every architectural
+CPU request, sends external fields through the sequencer, and sends processor
+I/O directly to the arbiter as `LOCAL_CYCLE_IO_READ/WRITE`. The internal read
+word is part of the coherent command; IAQ is forced inactive. The I/O owner
+observes only the returned completion pulse, preventing held physical cycles
+from repeating writes or live-register loads. Host-indirect addresses in the
+I/O page still require their separate shared-owner path.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -362,6 +377,9 @@ the core still emits an external cycle and uses its ack (A0028).
 | `mem_size` | out   | 6     | field size in bits (1–32)              |
 | `mem_wdata`| out   | 32    | write data                             |
 | `mem_iaq`  | out   | 1     | opcode acquisition; low for immediate/data words |
+| `mem_is_io`| out   | 1     | full-address on-chip I/O decode        |
+| `mem_io_we`| out   | 1     | original processor write intent        |
+| `mem_io_rdata`| out| 16    | on-chip I/O read word for physical-cycle completion |
 | `mem_rdata`| in    | 32    | read data, aligned to field            |
 | `mem_ack`  | in    | 1     | one-cycle pulse: data valid / write done |
 
@@ -382,10 +400,13 @@ cycle kind and payload. `tms34010_local_bus_bridge` transfers that held shape
 and its response coherently between clocks; `tms34010_local_bus` then converts
 it into RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY.
 
-`tms34010_memory_fabric` composes those two modules without adding state or a
-second scheduling policy. `tms34010_system` wires the core's four landed
-clients to that fabric, so a functional integration can no longer bypass
-arbitration with separate CPU, host, display, or refresh memories.
+`tms34010_memory_fabric` composes those two modules and adds one registered
+CPU request-classification stage without a second scheduling policy.
+External CPU fields enter the sequencer; processor on-chip I/O
+bypasses it and selects the dedicated cycle kinds. `tms34010_system` wires
+the core's four landed clients to that fabric, so a functional integration can
+no longer bypass arbitration with separate CPU, host, display, or refresh
+memories.
 
 ## Graphics subsystem
 
@@ -475,7 +496,7 @@ its bounded service under physical HOLD and external waits.
 ## Current implementation gaps
 
 - Physical HOLD pin release and the optional instruction cache.
-- Host HRDY/pin timing/CDC and internally completed I/O accesses.
+- Host HRDY/pin timing/CDC and host-indirect accesses to the on-chip I/O page.
 - Remaining non-host I/O side effects.
 - VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured

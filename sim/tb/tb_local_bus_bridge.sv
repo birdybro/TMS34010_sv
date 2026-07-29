@@ -152,6 +152,8 @@ module tb_local_bus_bridge;
             "returned response did not match accepted command");
       check(accepted_count == (accepted_before + 1),
             "command was not accepted exactly once");
+      check(accepted_cmd_q == command,
+            "destination command did not preserve every payload field");
 
       // Hold the request past acknowledge as the real arbiter does. The
       // source-side arming rule must suppress a duplicate launch.
@@ -179,6 +181,7 @@ module tb_local_bus_bridge;
     command.kind       = LOCAL_CYCLE_WORD_READ;
     command.addr       = 32'h1234_5670;
     command.wdata      = 16'hA55A;
+    command.io_rdata   = 16'h3CC3;
     command.iaq        = 1'b1;
     command.srfaddr    = 14'h1234;
     command.dpytap     = 16'h0F3C;
@@ -189,6 +192,7 @@ module tb_local_bus_bridge;
     command.kind       = LOCAL_CYCLE_WORD_WRITE;
     command.addr       = 32'hFEDC_BA90;
     command.wdata      = 16'h5AA5;
+    command.io_rdata   = 16'hC33C;
     command.iaq        = 1'b0;
     command.srfaddr    = 14'h2AAA;
     command.dpytap     = 16'hF0C3;
@@ -199,6 +203,7 @@ module tb_local_bus_bridge;
     command.kind       = LOCAL_CYCLE_SCREEN_REFRESH;
     command.addr       = 32'hCAFE_0010;
     command.wdata      = 16'h1357;
+    command.io_rdata   = 16'h89AB;
     command.iaq        = 1'b1;
     command.srfaddr    = 14'h3E12;
     command.dpytap     = 16'hA63D;
@@ -209,6 +214,7 @@ module tb_local_bus_bridge;
     command.kind       = LOCAL_CYCLE_DRAM_CBR;
     command.addr       = 32'h0BAD_F000;
     command.wdata      = 16'h2468;
+    command.io_rdata   = 16'h7654;
     command.iaq        = 1'b0;
     command.srfaddr    = 14'h0555;
     command.dpytap     = 16'h55AA;
@@ -219,6 +225,7 @@ module tb_local_bus_bridge;
     command.kind       = LOCAL_CYCLE_IO_READ;
     command.addr       = 32'hC000_0140;
     command.wdata      = 16'hBEEF;
+    command.io_rdata   = 16'hD00D;
     command.iaq        = 1'b0;
     command.srfaddr    = 14'h0001;
     command.dpytap     = 16'h0002;

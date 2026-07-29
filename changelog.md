@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0149 — processor on-chip I/O bus cycles)
+- Exported the processor's on-chip I/O decode, original write intent, and
+  internal read word from the core to the memory fabric.
+- Added a registered architectural-request classification stage, preserving
+  a complete request while routing external fields through word sequencing
+  and bypassing processor I/O directly to arbitration.
+- Selected `LOCAL_CYCLE_IO_READ`/`LOCAL_CYCLE_IO_WRITE`, forced IAQ inactive,
+  carried internal I/O read data in the coherent bridge command, and returned
+  completion only after the two-clock physical cycle.
+- Qualified the I/O register owner's processor request with memory
+  completion, eliminating repeated writes/loads while a physical request is
+  held.
+- Extended arbitration, bridge, system-fabric, and pin-system regressions.
+  The pin-level program now writes PMASK with data visible on LAD, reads it
+  back with LAD released, checks RAS/LAL-only control, and verifies exactly
+  one physical cycle per access.
+- Validation: focused I/O/core/fabric/bridge/pin benches PASS;
+  `scripts/lint.sh` clean; full regression 137/137 PASS.
+
 ### Added (Task 0148 — coherent core-to-pin local-bus integration)
 - Added `tms34010_local_bus_bridge`, a two-phase MCP bridge that registers and
   holds each complete command while attributed request/acknowledge toggles

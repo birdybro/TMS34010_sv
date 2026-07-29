@@ -7,6 +7,8 @@
 // bit-addressed request boundary. The field sequencer expands that request
 // into aligned 16-bit words, and the fixed-priority arbiter combines those
 // words with screen refresh, DRAM refresh, host indirect access, and HOLD.
+// Processor on-chip I/O transactions bypass field splitting and select the
+// dedicated I/O read/write cycle kinds with their internal read-data payload.
 // One abstract controller-facing cycle remains held until acknowledgement.
 //
 // This module deliberately stops before original-pin phase generation. A
@@ -34,6 +36,9 @@ module tms34010_memory_fabric
   input  logic [FIELD_SIZE_WIDTH-1:0]       cpu_field_size_i,
   input  logic [DATA_WIDTH-1:0]             cpu_field_wdata_i,
   input  logic                              cpu_field_iaq_i,
+  input  logic                              cpu_field_is_io_i,
+  input  logic                              cpu_field_io_we_i,
+  input  local_word_t                       cpu_field_io_rdata_i,
   output logic [DATA_WIDTH-1:0]             cpu_field_rdata_o,
   output logic                              cpu_field_ack_o,
 
@@ -61,6 +66,7 @@ module tms34010_memory_fabric
   output local_cycle_kind_t                 cycle_kind_o,
   output logic [ADDR_WIDTH-1:0]             cycle_addr_o,
   output local_word_t                       cycle_wdata_o,
+  output local_word_t                       cycle_io_rdata_o,
   output logic                              cycle_iaq_o,
   output logic [13:0]                       cycle_srfaddr_o,
   output logic [15:0]                       cycle_dpytap_o,
@@ -78,17 +84,63 @@ module tms34010_memory_fabric
   logic                          cpu_word_ack;
   logic                          cpu_word_rmw_lock;
   logic                          cpu_word_restart;
+  logic [DATA_WIDTH-1:0]         sequenced_field_rdata;
+  logic                          sequenced_field_ack;
+  logic                          selected_cpu_req;
+  logic                          selected_cpu_we;
+  logic [ADDR_WIDTH-1:0]         selected_cpu_addr;
+  local_word_t                   selected_cpu_wdata;
+  logic                          selected_cpu_rmw_lock;
+  logic                          cpu_request_active_q;
+  logic                          cpu_request_is_io_q;
+  logic                          cpu_request_io_we_q;
+  logic [ADDR_WIDTH-1:0]         cpu_request_addr_q;
+  logic [FIELD_SIZE_WIDTH-1:0]   cpu_request_size_q;
+  logic [DATA_WIDTH-1:0]         cpu_request_wdata_q;
+  logic                          cpu_request_iaq_q;
+  local_word_t                   cpu_request_io_rdata_q;
+
+  // Register the architectural request before classifying it as external
+  // field traffic or an on-chip I/O cycle. Besides holding the complete
+  // transaction, this stage breaks any combinational acknowledge-to-address-
+  // decode path through the core's monolithic control block.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      cpu_request_active_q   <= 1'b0;
+      cpu_request_is_io_q    <= 1'b0;
+      cpu_request_io_we_q    <= 1'b0;
+      cpu_request_addr_q     <= '0;
+      cpu_request_size_q     <= '0;
+      cpu_request_wdata_q    <= '0;
+      cpu_request_iaq_q      <= 1'b0;
+      cpu_request_io_rdata_q <= '0;
+    end else if (cpu_request_active_q) begin
+      if (cpu_field_ack_o)
+        cpu_request_active_q <= 1'b0;
+    end else if (cpu_field_req_i) begin
+      cpu_request_active_q   <= 1'b1;
+      cpu_request_is_io_q    <= cpu_field_is_io_i;
+      cpu_request_io_we_q    <= cpu_field_is_io_i
+                              ? cpu_field_io_we_i
+                              : cpu_field_we_i;
+      cpu_request_addr_q     <= cpu_field_addr_i;
+      cpu_request_size_q     <= cpu_field_size_i;
+      cpu_request_wdata_q    <= cpu_field_wdata_i;
+      cpu_request_iaq_q      <= cpu_field_iaq_i;
+      cpu_request_io_rdata_q <= cpu_field_io_rdata_i;
+    end
+  end
 
   tms34010_field_sequencer u_field_sequencer (
     .clk             (clk),
     .rst             (rst),
-    .field_req_i     (cpu_field_req_i),
-    .field_we_i      (cpu_field_we_i),
-    .field_addr_i    (cpu_field_addr_i),
-    .field_size_i    (cpu_field_size_i),
-    .field_wdata_i   (cpu_field_wdata_i),
-    .field_rdata_o   (cpu_field_rdata_o),
-    .field_ack_o     (cpu_field_ack_o),
+    .field_req_i     (cpu_request_active_q && !cpu_request_is_io_q),
+    .field_we_i      (cpu_request_io_we_q),
+    .field_addr_i    (cpu_request_addr_q),
+    .field_size_i    (cpu_request_size_q),
+    .field_wdata_i   (cpu_request_wdata_q),
+    .field_rdata_o   (sequenced_field_rdata),
+    .field_ack_o     (sequenced_field_ack),
     .word_req_o      (cpu_word_req),
     .word_we_o       (cpu_word_we),
     .word_addr_o     (cpu_word_addr),
@@ -98,6 +150,28 @@ module tms34010_memory_fabric
     .word_restart_i  (cpu_word_restart),
     .word_rmw_lock_o (cpu_word_rmw_lock)
   );
+
+  always_comb begin
+    selected_cpu_req      = cpu_word_req;
+    selected_cpu_we       = cpu_word_we;
+    selected_cpu_addr     = cpu_word_addr;
+    selected_cpu_wdata    = cpu_word_wdata;
+    selected_cpu_rmw_lock = cpu_word_rmw_lock;
+
+    if (cpu_request_is_io_q) begin
+      selected_cpu_req      = cpu_request_active_q;
+      selected_cpu_we       = cpu_request_io_we_q;
+      selected_cpu_addr     = cpu_request_addr_q;
+      selected_cpu_wdata    = cpu_request_wdata_q[LOCAL_WORD_WIDTH-1:0];
+      selected_cpu_rmw_lock = 1'b0;
+    end
+  end
+
+  assign cpu_field_rdata_o = cpu_request_is_io_q
+      ? {{(DATA_WIDTH-LOCAL_WORD_WIDTH){1'b0}}, cpu_request_io_rdata_q}
+      : sequenced_field_rdata;
+  assign cpu_field_ack_o = cpu_request_active_q
+      && (cpu_request_is_io_q ? cpu_word_ack : sequenced_field_ack);
 
   tms34010_bus_arbiter u_arbiter (
     .clk               (clk),
@@ -119,12 +193,14 @@ module tms34010_memory_fabric
     .host_wdata_i      (host_wdata_i),
     .host_rdata_o      (host_rdata_o),
     .host_ack_o        (host_ack_o),
-    .cpu_req_i         (cpu_word_req),
-    .cpu_we_i          (cpu_word_we),
-    .cpu_addr_i        (cpu_word_addr),
-    .cpu_wdata_i       (cpu_word_wdata),
-    .cpu_iaq_i         (cpu_field_iaq_i),
-    .cpu_rmw_lock_i    (cpu_word_rmw_lock),
+    .cpu_req_i         (selected_cpu_req),
+    .cpu_we_i          (selected_cpu_we),
+    .cpu_addr_i        (selected_cpu_addr),
+    .cpu_wdata_i       (selected_cpu_wdata),
+    .cpu_io_i          (cpu_request_is_io_q),
+    .cpu_io_rdata_i    (cpu_request_io_rdata_q),
+    .cpu_iaq_i         (cpu_request_iaq_q),
+    .cpu_rmw_lock_i    (selected_cpu_rmw_lock),
     .cpu_rdata_o       (cpu_word_rdata),
     .cpu_ack_o         (cpu_word_ack),
     .cpu_restart_o     (cpu_word_restart),
@@ -132,6 +208,7 @@ module tms34010_memory_fabric
     .cycle_kind_o      (cycle_kind_o),
     .cycle_addr_o      (cycle_addr_o),
     .cycle_wdata_o     (cycle_wdata_o),
+    .cycle_io_rdata_o  (cycle_io_rdata_o),
     .cycle_iaq_o       (cycle_iaq_o),
     .cycle_srfaddr_o   (cycle_srfaddr_o),
     .cycle_dpytap_o    (cycle_dpytap_o),

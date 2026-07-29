@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0148: architectural widths and register layouts,
+// Current through Task 0149: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
 // FSM states, physical-memory word geometry, local-cycle kinds, and the
 // original local-clock command/phase types are here.
@@ -80,6 +80,7 @@ package tms34010_pkg;
     local_cycle_kind_t             kind;
     logic [ADDR_WIDTH-1:0]         addr;
     local_word_t                   wdata;
+    local_word_t                   io_rdata;
     logic                          iaq;
     logic [13:0]                   srfaddr;
     logic [15:0]                   dpytap;

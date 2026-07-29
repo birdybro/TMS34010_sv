@@ -537,9 +537,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `0xFFFE0002`.
 
 ## A0028 — I/O register integration into the core memory path
-- **Date**: 2026-05-31 (Task 0082).
-- **Status**: implementation choice; faithful at the architectural level,
-  with a deferred refinement noted.
+- **Date**: 2026-05-31; refined 2026-07-28 (Task 0149).
+- **Status**: processor path resolved against the physical-cycle text;
+  host-indirect I/O routing remains.
 - **Source**: SPVU001A §6 "I/O Registers", Figure 6-1; "An access of any
   address in the range C0000000h-C00001FFh is decoded as an access of an
   on-chip register" and "the accompanying memory cycle ... is altered so
@@ -554,16 +554,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `io_is_io_q`) and the effective-read mux uses the combinational decode
   during an active transaction (`mem_req` high) and the latched value after
   it retires.
-- **Deferred refinement**: the core still ISSUES an external bus cycle for
-  I/O accesses (with write disabled), rather than fully suppressing it and
-  generating an on-chip ack. This matches the spec's "RAS output, CAS
-  inhibited" external cycle closely enough and lets the existing external
-  memory model provide the ack. A dedicated memory-fabric module with an
-  on-chip ack path is the eventual home for this. Also: I/O registers are
-  16-bit and the core accesses them with 16-bit fields (the ISA uses 16-bit
-  MOVE to I/O space); sub-16-bit field writes to I/O are not read-modify-
-  write (they write the low 16 bits) and 32-bit accesses would span two
-  registers — neither is exercised by the implemented instruction set.
+- **Field-size boundary**: I/O registers are 16-bit and the core accesses
+  them with 16-bit fields (the ISA uses 16-bit MOVE to I/O space);
+  sub-16-bit field writes to I/O are not read-modify-write (they write the
+  low 16 bits) and 32-bit accesses would span two registers — neither is
+  exercised by the implemented instruction set.
 - **Task 0137 checkpoint**: INTPEND is no longer provisional plain storage.
   Pages 6-36 through 6-42 now directly determine INTENB masking,
   HSTCTLL.INTIN/HIP, synchronized read-only X1P/X2P, and hardware-set,
@@ -581,6 +576,21 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   processor accesses share its HSTADR/HSTDATA state, and its held aligned-word
   client is exposed. Task 0145 lands the standalone arbiter contract; wiring
   this client through it remains memory-fabric integration work.
+- **Task 0149 processor resolution**: §11.4.8 specifies a distinct,
+  always-two-clock cycle for either processor or host-indirect I/O access.
+  The core now exports full-address I/O decode, original direction, and the
+  internal read word. `tms34010_memory_fabric` registers/classifies the
+  architectural request, bypasses field sequencing, and selects
+  `LOCAL_CYCLE_IO_READ/WRITE`; the command bridge carries internal read data
+  and the phase engine ignores LRDY. The I/O owner sees only
+  `mem_req && mem_ack`, so a write/load commits exactly once after physical
+  completion. `tb_pin_system` locks the zero address/status, inactive IAQ,
+  RAS/LAL-only controls, write-data drive, read-phase LAD release, and PMASK
+  round trip.
+- **Remaining host-indirect case**: §11.4.8 explicitly applies the same
+  physical cycle to host-indirect addresses in the I/O page. That path still
+  presents ordinary host word cycles because it needs a second access and
+  ownership path into the shared I/O register block.
 
 ## A0040 — Core-to-8× MCP bridge and common reset
 - **Date**: 2026-07-28 (Task 0148).
@@ -969,7 +979,7 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Physical HOLD pin release and generation/return-data routing for on-chip
-  I/O cycle kinds through the landed phase engine.
-- I/O side effects, on-chip completion timing, and host-visible semantics not
-  yet implemented by `tms34010_io_regs`.
+- Physical HOLD pin release and host-indirect generation/return-data routing
+  for on-chip I/O cycle kinds through the landed phase engine.
+- Remaining I/O side effects and host-visible semantics not yet implemented
+  by `tms34010_io_regs`.

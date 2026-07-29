@@ -58,6 +58,7 @@ module tb_system_fabric;
   local_cycle_kind_t         cycle_kind;
   logic [ADDR_WIDTH-1:0]     cycle_addr;
   local_word_t               cycle_wdata;
+  local_word_t               cycle_io_rdata;
   logic                      cycle_iaq;
   logic [13:0]               cycle_srfaddr;
   logic [15:0]               cycle_dpytap;
@@ -99,6 +100,7 @@ module tb_system_fabric;
     .cycle_kind_o      (cycle_kind),
     .cycle_addr_o      (cycle_addr),
     .cycle_wdata_o     (cycle_wdata),
+    .cycle_io_rdata_o  (cycle_io_rdata),
     .cycle_iaq_o       (cycle_iaq),
     .cycle_srfaddr_o   (cycle_srfaddr),
     .cycle_dpytap_o    (cycle_dpytap),
@@ -124,6 +126,7 @@ module tb_system_fabric;
   local_cycle_kind_t         target_kind_q;
   logic [ADDR_WIDTH-1:0]     target_addr_q;
   local_word_t               target_wdata_q;
+  local_word_t               target_io_rdata_q;
   logic                      target_iaq_q;
   logic [13:0]               target_srfaddr_q;
   logic [15:0]               target_dpytap_q;
@@ -135,6 +138,7 @@ module tb_system_fabric;
   int unsigned               dram_count_q;
   int unsigned               host_word_count_q;
   int unsigned               reset_word_count_q;
+  int unsigned               io_write_count_q;
   int unsigned               protocol_failures_q;
   logic [13:0]               last_screen_srfaddr_q;
   logic [15:0]               last_screen_dpytap_q;
@@ -160,6 +164,8 @@ module tb_system_fabric;
     end else if ((target_kind_q == LOCAL_CYCLE_WORD_READ)
                  && (int'(target_word_index) < DEPTH_WORDS)) begin
       cycle_rdata = memory[target_word_index];
+    end else if (target_kind_q == LOCAL_CYCLE_IO_READ) begin
+      cycle_rdata = target_io_rdata_q;
     end
   end
 
@@ -171,6 +177,7 @@ module tb_system_fabric;
       target_kind_q           <= LOCAL_CYCLE_WORD_READ;
       target_addr_q           <= '0;
       target_wdata_q          <= '0;
+      target_io_rdata_q       <= '0;
       target_iaq_q            <= 1'b0;
       target_srfaddr_q        <= '0;
       target_dpytap_q         <= '0;
@@ -182,6 +189,7 @@ module tb_system_fabric;
       dram_count_q            <= 0;
       host_word_count_q       <= 0;
       reset_word_count_q      <= 0;
+      io_write_count_q        <= 0;
       protocol_failures_q     <= 0;
       last_screen_srfaddr_q   <= '0;
       last_screen_dpytap_q    <= '0;
@@ -195,6 +203,7 @@ module tb_system_fabric;
             target_kind_q     <= cycle_kind;
             target_addr_q     <= cycle_addr;
             target_wdata_q    <= cycle_wdata;
+            target_io_rdata_q <= cycle_io_rdata;
             target_iaq_q      <= cycle_iaq;
             target_srfaddr_q  <= cycle_srfaddr;
             target_dpytap_q   <= cycle_dpytap;
@@ -214,6 +223,8 @@ module tb_system_fabric;
               if (cycle_iaq)
                 protocol_failures_q <= protocol_failures_q + 1;
             end
+            if (cycle_kind == LOCAL_CYCLE_IO_WRITE)
+              io_write_count_q <= io_write_count_q + 1;
             if ((cycle_kind == LOCAL_CYCLE_WORD_READ)
                 && (cycle_addr == 32'h0000_0000)
                 && cycle_iaq)
@@ -242,6 +253,7 @@ module tb_system_fabric;
               || (cycle_kind != target_kind_q)
               || (cycle_addr != target_addr_q)
               || (cycle_wdata != target_wdata_q)
+              || (cycle_io_rdata != target_io_rdata_q)
               || (cycle_iaq != target_iaq_q)
               || (cycle_srfaddr != target_srfaddr_q)
               || (cycle_dpytap != target_dpytap_q)
@@ -446,6 +458,11 @@ module tb_system_fabric;
     end
     if (!first_opcode_iaq_seen_q || !first_immediate_data_seen_q) begin
       $display("TEST_RESULT: FAIL: IAQ did not distinguish opcode/immediate words");
+      failures++;
+    end
+    if (io_write_count_q < 8) begin
+      $display("TEST_RESULT: FAIL: expected physical I/O writes actual=%0d",
+               io_write_count_q);
       failures++;
     end
 

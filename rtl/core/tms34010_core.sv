@@ -41,6 +41,9 @@ module tms34010_core
   output logic [FIELD_SIZE_WIDTH-1:0]         mem_size,
   output logic [DATA_WIDTH-1:0]               mem_wdata,
   output logic                                mem_iaq,
+  output logic                                mem_is_io,
+  output logic                                mem_io_we,
+  output local_word_t                         mem_io_rdata,
   input  logic [DATA_WIDTH-1:0]               mem_rdata,
   input  logic                                mem_ack,
 
@@ -2358,7 +2361,7 @@ module tms34010_core
     .host_mem_wdata_o(host_mem_wdata_o),
     .host_mem_rdata_i(host_mem_rdata_i),
     .host_mem_ack_i(host_mem_ack_i),
-    .req      (mem_req),
+    .req      (mem_req && mem_ack),
     .we       (mem_we_int),    // the access's write intent
     .addr     (mem_addr),
     .wdata    (mem_wdata[15:0]),
@@ -2450,13 +2453,16 @@ module tms34010_core
     end
   end
   assign nmi_clear = (state_q == CORE_INT_DONE) && int_is_nmi_q;
-  // Gate the EXTERNAL write for I/O-space accesses: an I/O write commits into
-  // u_io_regs and must NOT also write external memory (otherwise it would
-  // corrupt RAM — a small external model that only decodes low address bits
-  // would alias 0xC00001xx onto a low word). The external cycle is still
-  // requested (so external memory provides the ack, RAS-style), but with
-  // write disabled for I/O addresses; the read data is muxed below.
+  // Gate the ordinary external-memory write for I/O-space accesses: an I/O
+  // write commits into u_io_regs and must not also write RAM. The original
+  // write intent, on-chip read data, and decode sideband instead let the
+  // memory fabric issue the special RAS/LAL-only I/O cycle. u_io_regs receives
+  // a one-clock completion-qualified request, so held memory waits cannot
+  // repeat a processor write or live-register load.
   assign mem_we = mem_we_int && !io_is_io;
+  assign mem_is_io    = io_is_io;
+  assign mem_io_we    = mem_we_int;
+  assign mem_io_rdata = io_rdata16;
 
   // Effective read data. The external memory model holds mem_rdata stable
   // from the ack cycle through WRITEBACK, but the I/O register's async read
