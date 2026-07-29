@@ -37,6 +37,8 @@ module tms34010_video_subsystem
   input  logic        core_rst_i,
   input  logic        video_clk_i,
   input  logic        video_rst_i,
+  input  logic        hsync_n_i,
+  input  logic        vsync_n_i,
 
   input  logic [15:0] hesync_i,
   input  logic [15:0] heblnk_i,
@@ -69,6 +71,8 @@ module tms34010_video_subsystem
   output logic        hblank_o,
   output logic        vblank_o,
   output logic        blank_o,
+  output logic        hsync_oe_o,
+  output logic        vsync_oe_o,
 
   output logic        screen_req_o,
   input  logic        screen_ack_i,
@@ -256,6 +260,10 @@ module tms34010_video_subsystem
     .dpyint        (config_video_q.dpyint),
     .display_enable(config_video_q.dpyctl[DPYCTL_ENV_BIT]),
     .noninterlaced (config_video_q.dpyctl[DPYCTL_NIL_BIT]),
+    .disable_external_video(config_video_q.dpyctl[DPYCTL_DXV_BIT]),
+    .hsync_direction(config_video_q.dpyctl[DPYCTL_HSD_BIT]),
+    .hsync_n_i     (hsync_n_i),
+    .vsync_n_i     (vsync_n_i),
     .hcount_load   (command_valid_video
                     && command_received.hcount_load),
     .hcount_wdata  (command_received.hcount_wdata),
@@ -269,6 +277,8 @@ module tms34010_video_subsystem
     .hblank        (hblank_o),
     .vblank        (vblank_o),
     .blank         (blank_o),
+    .hsync_oe      (hsync_oe_o),
+    .vsync_oe      (vsync_oe_o),
     .hblank_start  (hblank_start_video),
     .dpyint_pulse  (dpyint_video),
     .odd_field     (odd_field_video)

@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0156, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0157, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -23,6 +23,7 @@
 | Host access/HCS levels → bundled payload | Task 0153        | 2FF-qualified MCP, unconstrained | preserve both synchronizers; constrain host input minima and bundled HFS/HD/control stability through capture; constrain HRDY and HD/OE outputs |
 | Core↔VCLK video configuration/command/status/DIP | Task 0155 | four packed MCP mailboxes, unconstrained | declare core/VCLK asynchronous; recognize every request/ack 2FF; cut only source-held payload paths; retain bounded-stale status and sticky DIP contracts |
 | VCLK→core screen request/completion | Task 0155 | held bundled MCP transaction, unconstrained | preserve request/complete toggles and source payload; keep the core request registered through memory completion |
+| External HSYNC/VSYNC pins → VCLK recognition | Task 0157 | attributed two-stage level synchronizers plus edge history, unconstrained | constrain pin-to-first-stage input delay, preserve/report both chains, and prove no path bypasses delayed edge recognition |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -112,8 +113,8 @@
   Task 0148 routes it through the MCP bridge to the RAS-only or CBR phase
   engine. The final wait/PLL configuration and permitted HOLD duration must
   still prove the one-entry pending latch cannot be overrun.
-- **Integrated video timing** — Task 0155 runs the internally generated timing
-  path on independent `vclk_i`. In NIL=1 mode HCOUNT wraps after HTOTAL and
+- **Integrated video timing** — Task 0155 runs the timing
+  path on independent `vclk_i`. In internal NIL=1 mode HCOUNT wraps after HTOTAL and
   advances/wraps VCOUNT after VTOTAL. Task 0156 adds NIL=0 fields: reset starts
   even; the odd field clears VCOUNT at `floor(HTOTAL/2)` without resetting
   HCOUNT; its VESYNC half-line event advances VCOUNT again; and the next even
@@ -125,6 +126,14 @@
   blank equality remains inactive until the following count. The internal
   positive edge represents the original falling-VCLK update edge; final
   PLL/pin phase mapping remains gate-6 work.
+  Task 0157 adds external mode: each raw active-low sync level uses its own
+  attributed 2FF plus saved history, so a sampled falling input clears its
+  counter on the third update edge (the guide's 2.5-VCLK offset). External
+  HSYNC or HTOTAL, whichever arrives first, begins a line unless HSD keeps
+  horizontal timing internal. External VSYNC clears only VCOUNT; VTOTAL plus
+  line start is its fallback. NIL=0 classifies the next field from
+  `HEBLNK < HCOUNT <= HSBLNK` at recognition, while NIL=1 forces even.
+  DXV/HSD generate separate horizontal and vertical output enables.
 - **Screen-refresh request** — at an eligible start-HBLANK event,
   `screen_refresh_req_o` registers high and captures SRFADR/DPYTAP/ORG. The level
   and payload remain stable for an unbounded number of core clocks until
@@ -334,7 +343,7 @@ capture edge, and close HRDY plus HD/output-enable pin delays.
 
 ## Dedicated video clock boundary
 
-Tasks 0155–0156 close the functional internal-timing VCLK boundary:
+Tasks 0155–0157 close the functional video-timing VCLK boundary:
 
 - HCOUNT/VCOUNT, even/odd field phase, timing compares/outputs, DPYADR, and
   the screen scheduler are wholly in `vclk_i`;
@@ -346,14 +355,20 @@ Tasks 0155–0156 close the functional internal-timing VCLK boundary:
   but never bit-torn;
 - a pending DIP condition crosses through a one-bit toggle mailbox;
 - a dedicated request/completion bridge holds SRFADR/DPYTAP/ORG through
-  arbitrary core-memory waits.
+  arbitrary core-memory waits;
+- raw active-low HSYNC/VSYNC levels pass through individual attributed 2FF
+  synchronizers and edge history in VCLK; DXV/HSD direction resolves to
+  explicit output enables at the pin-system boundary.
 
 The core and VCLK clocks are asynchronous. The final SDC must define both
 clocks, use asynchronous clock groups, preserve and report every toggle 2FF,
-and cut/waive only payload buses proven stable by the MCP protocol. Both
-domains must sample the common synchronous reset asserted so toggle phases
-start at zero. If VCLK stops, status remains at its last coherent snapshot and
-pending commands complete only when it resumes (A0045).
+and cut/waive only payload buses proven stable by the MCP protocol. It must
+also constrain external-sync pin input delays and minimum pulse widths,
+recognize each pin synchronizer, and constrain physical active-low sync data
+and output-enable delays/inversion. Both domains must sample the common
+synchronous reset asserted so toggle phases start at zero. If VCLK stops,
+status remains at its last coherent snapshot and pending commands complete
+only when it resumes (A0045/A0047).
 
 ## Cyclone V-specific notes
 

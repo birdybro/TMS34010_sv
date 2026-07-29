@@ -32,6 +32,10 @@ module tb_io_video;
   logic                  hblank;
   logic                  vblank;
   logic                  blank;
+  logic                  video_hsync_n;
+  logic                  video_vsync_n;
+  logic                  video_hsync_oe;
+  logic                  video_vsync_oe;
 
   localparam logic [ADDR_WIDTH-1:0] A_HESYNC =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HESYNC) << 4);
@@ -70,6 +74,10 @@ module tb_io_video;
     .clk           (clk),
     .vclk_i        (vclk),
     .rst           (rst),
+    .video_hsync_n_i(video_hsync_n),
+    .video_vsync_n_i(video_vsync_n),
+    .video_hsync_oe_o(video_hsync_oe),
+    .video_vsync_oe_o(video_vsync_oe),
     .req           (req),
     .we            (we),
     .addr          (addr),
@@ -202,6 +210,8 @@ module tb_io_video;
     we       = 1'b0;
     addr     = A_HCOUNT;
     wdata    = 16'h0000;
+    video_hsync_n = 1'b1;
+    video_vsync_n = 1'b1;
 
     repeat (3) @(posedge clk);
     @(negedge clk);
@@ -220,6 +230,15 @@ module tb_io_video;
     io_write(A_VSBLNK, 16'd3);
     io_write(A_VTOTAL, 16'd15);
     io_write(A_DPYINT, 16'd2);
+    wait_video_config(16'h0000);
+    check_bit("external HSD=0 selects HSYNC input", video_hsync_oe, 1'b0);
+    check_bit("external mode selects VSYNC input", video_vsync_oe, 1'b0);
+
+    io_write(A_DPYCTL, 16'h0001 << DPYCTL_HSD_BIT);
+    wait_video_config(16'h0001 << DPYCTL_HSD_BIT);
+    check_bit("external HSD=1 selects HSYNC output", video_hsync_oe, 1'b1);
+    check_bit("external HSD=1 leaves VSYNC input", video_vsync_oe, 1'b0);
+    io_write(A_DPYCTL, 16'h0000);
     wait_video_config(16'h0000);
 
     // Writes address the VCLK owners. VCOUNT is stable until a line wrap,
@@ -247,6 +266,8 @@ module tb_io_video;
     // generated compare pulse.
     io_write(A_DPYCTL, ENABLED_INTERNAL_NONINTERLACED);
     wait_video_config(ENABLED_INTERNAL_NONINTERLACED);
+    check_bit("internal mode selects HSYNC output", video_hsync_oe, 1'b1);
+    check_bit("internal mode selects VSYNC output", video_vsync_oe, 1'b1);
     io_write(A_VCOUNT, 16'd2);
     io_write(A_HCOUNT, 16'd5);
     wait_video_position(16'd5, 16'd2);

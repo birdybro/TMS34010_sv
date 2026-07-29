@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0156.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0157.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -34,6 +34,8 @@ module tms34010_core
   input  logic                                clk,
   input  logic                                vclk_i,
   input  logic                                rst,
+  input  logic                                video_hsync_n_i,
+  input  logic                                video_vsync_n_i,
 
   // Architectural bit-addressed memory request/ack interface.
   output logic                                mem_req,
@@ -99,6 +101,8 @@ module tms34010_core
   output logic                                video_hblank_o,
   output logic                                video_vblank_o,
   output logic                                video_blank_o,
+  output logic                                video_hsync_oe_o,
+  output logic                                video_vsync_oe_o,
 
   // Screen-refresh client boundary. Request and payload remain stable until
   // the future memory/VRAM controller acknowledges the completed transfer.
@@ -2349,6 +2353,8 @@ module tms34010_core
     .clk      (clk),
     .vclk_i   (vclk_i),
     .rst      (rst),
+    .video_hsync_n_i(video_hsync_n_i),
+    .video_vsync_n_i(video_vsync_n_i),
     .hcs_n_i  (hcs_n_i),
     .host_req_i(host_req_i),
     .host_we_i(host_we_i),
@@ -2393,6 +2399,8 @@ module tms34010_core
     .video_hblank_o(video_hblank_o),
     .video_vblank_o(video_vblank_o),
     .video_blank_o(video_blank_o),
+    .video_hsync_oe_o(video_hsync_oe_o),
+    .video_vsync_oe_o(video_vsync_oe_o),
     .dpyadr_o (),
     .screen_refresh_req_o(screen_refresh_req_o),
     .screen_refresh_ack_i(screen_refresh_ack_i),

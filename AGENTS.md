@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0156. Task 0124
+The functional implementation is complete through Task 0157. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -96,15 +96,20 @@ Task 0156 consumes DPYCTL.NIL for internally generated interlace: even-to-odd
 starts at HTOTAL/2 without resetting HCOUNT, the odd VESYNC half-line compare
 advances VCOUNT, odd-to-even returns at the full-line boundary, and the
 display owner applies signed DUDATE/2 before each even field.
+Task 0157 consumes DPYCTL.DXV/HSD for external synchronization. Individually
+synchronized active-low HSYNC/VSYNC inputs receive the specified recognition
+delay; external edges or total-register fallbacks control the counters;
+external interlace classifies the next field at the recognition edge; and
+split sync output enables reach the pin-system boundary.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
 fetch, maskable/NMI entry with architectural service-context ST
 initialization, and the illegal-opcode trap. Video timing is integrated in
-its dedicated VCLK domain through coherent CDC, internal
+its dedicated VCLK domain through coherent CDC, internal/external
 noninterlaced/interlaced timing, the screen-refresh client, and its physical
-memory-to-register cycle; external sync and VRAM serial-display service remain
-future work. Host pin timing is functionally
+memory-to-register cycle; VRAM serial-display service remains future work.
+Host pin timing is functionally
 integrated; its final FPGA I/O timing and CDC constraints remain sign-off
 work. Read
 `tasks.md`, `docs/completion_audit.md`, and the current-status sections in
@@ -177,13 +182,15 @@ RTL, tests, task log, changelog, and specification first.
 - `rtl/cdc/tms34010_screen_cdc.sv` — held VCLK-to-core screen transaction;
   bundled SRFADR/DPYTAP/ORG stays stable until physical completion returns.
 - `rtl/video/tms34010_video_subsystem.sv` — dedicated VCLK owner composing
-  noninterlaced/interlaced timing, field-aware display-address scheduling,
-  every core/VCLK mailbox, and the screen transaction bridge.
+  internal/external noninterlaced/interlaced timing, active-low sync
+  recognition and direction, field-aware display-address scheduling, every
+  core/VCLK mailbox, and the screen transaction bridge.
 - `rtl/tms34010_system.sv` — synthesizable functional wrapper connecting the
   core's CPU, host, display, and refresh clients to the memory fabric.
 - `rtl/tms34010_pin_system.sv` — integrated functional system, CDC bridges,
   original local-bus/HOLD/RUN-EMU/host pins, shared HLDA/EMUA output, HRDY,
-  and split HD data/output-enable boundary.
+  split HD data/output-enable boundary, and active-low video-sync
+  inputs/split output enables.
 - `rtl/host/tms34010_host_bus.sv` — asynchronous original-pin host access
   qualification, HCS/HSTCTL and busy wait generation, bundled request
   capture, response retention, and byte-lane HD direction.
@@ -191,7 +198,7 @@ RTL, tests, task log, changelog, and specification first.
   halt level, exact Q1/Q2 phasing, and Q3/Q4 HLDA mux.
 - `rtl/cdc/tms34010_sync_bit.sv` — dedicated, Quartus-recognizable two-flop
   synchronizer used for external interrupt, HOLD, RUN/EMU, and EMUA bridge
-  levels.
+  levels plus raw HSYNC/VSYNC inputs.
 - `sim/models/sim_memory_model.sv` — behavioral, nonsynthesizable bit-addressed
   memory target used by integration tests; its public requests route through
   the field sequencer.

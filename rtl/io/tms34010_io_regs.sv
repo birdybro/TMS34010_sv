@@ -63,6 +63,8 @@ module tms34010_io_regs
   input  logic                  clk,
   input  logic                  vclk_i,
   input  logic                  rst,
+  input  logic                  video_hsync_n_i,
+  input  logic                  video_vsync_n_i,
 
   // Synchronous four-register host boundary. The Task 0153 host-bus wrapper
   // converts physical asynchronous pin cycles into this request/ack port.
@@ -119,6 +121,8 @@ module tms34010_io_regs
   output logic                  video_hblank_o,
   output logic                  video_vblank_o,
   output logic                  video_blank_o,
+  output logic                  video_hsync_oe_o,
+  output logic                  video_vsync_oe_o,
   output logic [15:0]           dpyadr_o, // live LNCNT/SRFADR state
   output logic                  screen_refresh_req_o, // held until ack
   input  logic                  screen_refresh_ack_i,
@@ -325,6 +329,8 @@ module tms34010_io_regs
     .core_rst_i       (rst),
     .video_clk_i      (vclk_i),
     .video_rst_i      (rst),
+    .hsync_n_i        (video_hsync_n_i),
+    .vsync_n_i        (video_vsync_n_i),
     .hesync_i         (io_reg[IO_IDX_HESYNC]),
     .heblnk_i         (io_reg[IO_IDX_HEBLNK]),
     .hsblnk_i         (io_reg[IO_IDX_HSBLNK]),
@@ -353,6 +359,8 @@ module tms34010_io_regs
     .hblank_o         (video_hblank_o),
     .vblank_o         (video_vblank_o),
     .blank_o          (video_blank_o),
+    .hsync_oe_o       (video_hsync_oe_o),
+    .vsync_oe_o       (video_vsync_oe_o),
     .screen_req_o     (screen_refresh_req_o),
     .screen_ack_i     (screen_refresh_ack_i),
     .screen_srfaddr_o (screen_refresh_srfaddr_o),

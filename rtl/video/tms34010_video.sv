@@ -2,8 +2,8 @@
 // tms34010_video.sv
 //
 // Video timing generator for the TMS34010 (1988 User's Guide §9 "Video
-// Timing" and the corresponding Chapter 6 I/O-register pages). Free-running
-// horizontal and vertical counters driven by the video clock (VCLK) produce
+// Timing" and the corresponding Chapter 6 I/O-register pages). Horizontal
+// and vertical counters driven by the video clock (VCLK) produce
 // HSYNC/VSYNC and blanking, plus a display-interrupt strobe.
 //
 //   HCOUNT increments every clock; when HCOUNT == HTOTAL it wraps to 0 and the
@@ -28,16 +28,22 @@
 //   DPYINT_PULSE is a one-clock strobe at the HSBLNK equality event on the
 //   line selected by DPYINT.
 //
-// Scope: internally generated noninterlaced and interlaced timing. Task 0155
-// places this module wholly in the dedicated VCLK domain behind coherent
-// configuration, command, status, interrupt, and screen-transaction crossings.
-// External-sync correction remains separate video work. The active edge of the
-// FPGA video clock represents the original device's falling-VCLK update edge;
-// final phase/pin mapping belongs in the FPGA top.
+//   In external-sync mode, active-low HSYNC/VSYNC inputs pass through
+//   dedicated two-stage synchronizers. A saved synchronized level recognizes
+//   each high-to-low transition on the third state-update edge, matching the
+//   guide's 2.5-VCLK delay from its rising-edge sample to the falling-edge
+//   counter clear. HTOTAL/VTOTAL remain fallback limits. HSD optionally keeps
+//   horizontal timing internally generated while VSYNC remains external.
+//
+// Task 0155 places this module wholly in the dedicated VCLK domain behind
+// coherent configuration, command, status, interrupt, and screen-transaction
+// crossings. The active edge of the FPGA video clock represents the original
+// device's falling-VCLK update edge; final phase/pin mapping belongs in the
+// FPGA top.
 //
 // Spec source:
 //   third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf
-//   pages 6-18..6-25, 6-31, 6-47..6-52, and §§9.6.1.1/9.7.
+//   pages 6-18..6-25, 6-31, 6-47..6-52, §§9.6.1.1/9.7, and §9.9.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -61,6 +67,13 @@ module tms34010_video
   input  logic [15:0] dpyint,
   input  logic        display_enable, // DPYCTL.ENV
   input  logic        noninterlaced,  // DPYCTL.NIL
+  input  logic        disable_external_video, // DPYCTL.DXV
+  input  logic        hsync_direction, // DPYCTL.HSD: 1=output
+
+  // Original active-low synchronization pins. They may be asynchronous to
+  // VCLK and are consumed only when the DPYCTL direction selects an input.
+  input  logic        hsync_n_i,
+  input  logic        vsync_n_i,
 
   // Processor counter writes arrive as destination-domain pulses from the
   // Task 0155 coherent command mailbox.
@@ -76,6 +89,8 @@ module tms34010_video
   output logic        hblank,     // 1 = horizontal blanking
   output logic        vblank,     // 1 = vertical blanking
   output logic        blank,      // 1 = blanked (either axis)
+  output logic        hsync_oe,   // drive HSYNC when 1
+  output logic        vsync_oe,   // drive VSYNC when 1
   output logic        hblank_start,// one clock at HCOUNT == HSBLNK
   output logic        dpyint_pulse,// one-clock strobe at the DPYINT scan line start
   output logic        odd_field   // 0=even/noninterlaced, 1=odd interlaced field
@@ -83,22 +98,72 @@ module tms34010_video
 
   logic [15:0] half_line_count;
   logic        hwrap;
+  logic        line_start;
   logic        even_to_odd;
   logic        odd_sync_end;
+  logic        hsync_n_sync;
+  logic        vsync_n_sync;
+  logic        hsync_n_prev_q;
+  logic        vsync_n_prev_q;
+  logic        external_hsync_start;
+  logic        external_vsync_start;
+  logic        external_odd_field;
 
   assign half_line_count = {1'b0, htotal[15:1]};
   assign hwrap = (hcount == htotal);
+  assign external_hsync_start =
+      !disable_external_video && !hsync_direction
+      && hsync_n_prev_q && !hsync_n_sync;
+  assign external_vsync_start =
+      !disable_external_video
+      && vsync_n_prev_q && !vsync_n_sync;
+  assign line_start =
+      (!disable_external_video && !hsync_direction)
+      ? (external_hsync_start || hwrap)
+      : hwrap;
   assign even_to_odd =
-      !noninterlaced && !odd_field
+      disable_external_video && !noninterlaced && !odd_field
       && (vcount == vtotal) && (hcount == half_line_count);
   assign odd_sync_end =
-      !noninterlaced && odd_field
+      disable_external_video && !noninterlaced && odd_field
       && (vcount == vesync) && (hcount == half_line_count);
+  assign external_odd_field =
+      (hcount > heblnk) && (hcount <= hsblnk);
+
+  // The synchronizer output changes two update edges after an asynchronous
+  // pin transition. Comparing it with one saved level recognizes the falling
+  // edge on the third update edge: the guide's 2.5-VCLK delay measured from
+  // the intervening rising-edge sample to the original falling-edge clear.
+  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_hsync_input_sync (
+    .clk     (clk),
+    .rst     (rst),
+    .async_i (hsync_n_i),
+    .sync_o  (hsync_n_sync)
+  );
+
+  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_vsync_input_sync (
+    .clk     (clk),
+    .rst     (rst),
+    .async_i (vsync_n_i),
+    .sync_o  (vsync_n_sync)
+  );
+
+  // (c) Edge history is destination-domain state that converts each
+  // synchronized active-low level transition into one recognition event.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      hsync_n_prev_q <= 1'b1;
+      vsync_n_prev_q <= 1'b1;
+    end else begin
+      hsync_n_prev_q <= hsync_n_sync;
+      vsync_n_prev_q <= vsync_n_sync;
+    end
+  end
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      hcount <= 16'd0;
-      vcount <= 16'd0;
+      hcount    <= 16'd0;
+      vcount    <= 16'd0;
       odd_field <= 1'b0;
     end else begin
       // Returning to noninterlaced timing deterministically selects the even
@@ -109,7 +174,7 @@ module tms34010_video
 
       if (hcount_load) begin
         hcount <= hcount_wdata;
-      end else if (hwrap) begin
+      end else if (line_start) begin
         hcount <= 16'd0;
       end else begin
         hcount <= hcount + 16'd1;
@@ -117,19 +182,30 @@ module tms34010_video
 
       if (vcount_load) begin
         vcount <= vcount_wdata;
-      end else if (!hcount_load && even_to_odd) begin
+      end else if (!disable_external_video && external_vsync_start) begin
+        // VCOUNT clears independently of horizontal phase. In interlaced
+        // mode, the pre-clear HCOUNT value classifies the field exactly where
+        // the guide samples it: after input recognition and before the clear.
+        vcount <= 16'd0;
+        if (!noninterlaced)
+          odd_field <= external_odd_field;
+      end else if (disable_external_video
+                   && !hcount_load && even_to_odd) begin
         // Start the odd field halfway through the current horizontal line.
         // HCOUNT deliberately continues rather than resetting here.
         vcount    <= 16'd0;
         odd_field <= 1'b1;
-      end else if (!hcount_load && odd_sync_end) begin
+      end else if (disable_external_video
+                   && !hcount_load && odd_sync_end) begin
         // The odd-field VESYNC compare increments VCOUNT at midline. This is
         // architecturally visible and prevents DPYINT=VESYNC from firing in
         // the odd field when HSBLNK is programmed to the same half-line point.
         vcount <= vcount + 16'd1;
-      end else if (!hcount_load && hwrap) begin
+      end else if (!hcount_load && line_start) begin
         if (vcount == vtotal) begin
           vcount <= 16'd0;
+          // An external-mode limit fallback has no field phase to
+          // discriminate, so it recovers deterministically to even.
           odd_field <= 1'b0;
         end else begin
           vcount <= vcount + 16'd1;
@@ -146,6 +222,8 @@ module tms34010_video
   assign hblank = (hcount <= heblnk) || (hcount > hsblnk);
   assign vblank = (vcount <= veblnk) || (vcount > vsblnk);
   assign blank  = !display_enable || hblank || vblank;
+  assign hsync_oe = disable_external_video || hsync_direction;
+  assign vsync_oe = disable_external_video;
   assign hblank_start = (hcount == hsblnk);
 
   // Display interrupt: DPYINT matches VCOUNT at the start of horizontal

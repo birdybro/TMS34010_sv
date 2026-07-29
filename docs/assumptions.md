@@ -599,6 +599,54 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0047 — External video synchronization and split pin direction
+- **Date**: 2026-07-29 (Task 0157).
+- **Status**: specification-derived external synchronization with isolated
+  FPGA edge representation, undefined direction combination, counter-write
+  collision, and physical-pin choices.
+- **Sources**: 1988 TI TMS34010 User's Guide DPYCTL pages 6-18 through 6-22,
+  HESYNC page 6-28, HTOTAL page 6-39, the vertical timing-register pages
+  6-49 through 6-52, and §9.9 pages 9-15 through 9-17; project CDC rules in
+  `docs/hdl-coding-guidelines/23-cdc-single-bit.md`.
+- **Input and direction boundary**: the original HSYNC/VSYNC signals are
+  active low and asynchronous to VCLK. Each raw input passes through its own
+  attributed two-flop level synchronizer. DXV=0/HSD=0 selects both as inputs;
+  DXV=0/HSD=1 keeps HSYNC as an output and VSYNC as an input; DXV=1/HSD=0
+  selects both outputs. The guide marks DXV=1/HSD=1 undefined; this RTL
+  deterministically retains the internal generator and drives both outputs.
+- **Recognition delay**: saved synchronized levels recognize each high-to-low
+  transition on the third project VCLK update edge. Under A0045, that
+  positive edge represents the original falling-edge update, so the result
+  is the guide's 2.5-VCLK delay from the intervening rising-edge sample to
+  counter clear. A transition violating synchronizer setup/hold may move
+  recognition by one complete update, consistent with the guide's
+  asynchronous-input qualification. Final pin delays, minimum pulses, and
+  synchronizer reports remain Quartus sign-off work.
+- **Counter and fallback behavior**: in external-horizontal mode, recognized
+  HSYNC or `HCOUNT=HTOTAL`, whichever occurs first, clears HCOUNT and
+  advances/wraps VCOUNT. A recognized VSYNC clears VCOUNT independently of
+  HCOUNT. If VSYNC is absent, `VCOUNT=VTOTAL` at a line start clears it.
+  HSD=1 ignores the HSYNC input and uses the HTOTAL line boundary. A missing
+  VSYNC fallback recovers deterministically to the even field.
+- **External field discrimination**: with NIL=0, a recognized VSYNC uses the
+  pre-clear count. `HCOUNT > HEBLNK && HCOUNT <= HSBLNK` selects the odd
+  field; every other horizontal phase selects even. NIL=1 always clears the
+  stored odd phase. The functional active-high sync interval outputs remain
+  count-derived; a future FPGA top must invert them for the physical
+  active-low pins while using the explicit output enables.
+- **Collision priority**: a delivered VCOUNT load wins over external VSYNC
+  recognition. A delivered HCOUNT load wins over the same-edge line clear
+  and line-driven VCOUNT update, but does not suppress an independently
+  recognized VSYNC clear. These simultaneous software/asynchronous events
+  are not ordered by the guide, so software should program counters while
+  external sync is quiescent.
+- **Regression evidence**: `tb_video_external_sync` locks the exact
+  recognition edge, absence of early clears, horizontal/vertical independence,
+  both total-register fallbacks, HSD behavior, odd/even classification, NIL
+  suppression, and every defined output-enable combination. `tb_io_video`
+  locks DPYCTL propagation and direction at the integrated I/O boundary;
+  video CDC, fabric, and pin benches retain their previous behavior.
+
 ## A0046 — Internal interlaced field phase and counter programming
 - **Date**: 2026-07-29 (Task 0156).
 - **Status**: specification-derived interlaced timing with isolated
@@ -714,9 +762,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **REFCNT exception**: A0033 already isolates the guide's unspecified
   software-write behavior for REFCNT bits 1:0 and regression-locks their
   retention. Task 0154 deliberately does not rewrite that prior choice.
-- **Consumer boundary**: DPYCTL.NIL is consumed by Task 0156. Defined
-  DPYCTL SRT/HSD/DXV functions remain stored but belong to the video/display
-  completion gate. CONTROL.CD and
+- **Consumer boundary**: DPYCTL.NIL is consumed by Task 0156 and HSD/DXV are
+  consumed by Task 0157. Defined DPYCTL.SRT remains stored but belongs to the
+  video/display completion gate. CONTROL.CD and
   HSTCTL.CF remain stored in the cacheless configuration. These are missing
   consumers or cycle-accuracy features, not missing register masks.
 - **Regression evidence**: `tb_io_regs` writes all ones to each masked
@@ -1064,12 +1112,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   and all deterministic choices above. `tb_io_display` locks register
   integration, generated timing events, held payload, and completion updates.
 
-## A0034 — Internally generated video timing
+## A0034 — Video timing and synchronization
 - **Date**: 2026-07-28 (Task 0139); **resolved/refined 2026-07-28
-  (Task 0155), refined 2026-07-29 (Task 0156)**.
-- **Status**: **RESOLVED** for the dedicated clock/CDC boundary and internal
-  noninterlaced/interlaced modes. External synchronization remains a
-  separate missing mode, not an implicit timing assumption.
+  (Task 0155), refined 2026-07-29 (Tasks 0156–0157)**.
+- **Status**: **RESOLVED** for the dedicated clock/CDC boundary and
+  internal/external noninterlaced/interlaced timing modes.
 - **Source**: 1988 TMS34010 User's Guide pages 6-18 through 6-25, 6-31,
   6-47, and §9.7 define the register behavior and video events. Project
   conventions A0004/A0006 allowed the Task 0139 functional-first checkpoint;
@@ -1089,9 +1136,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   phase mapping and SDC proof remain FPGA-realization work.
 - **Mode scope**: Task 0156 consumes NIL and implements the internal
   half-line field sequence, odd-field VESYNC increment/DIP behavior, and
-  field-aware DPYSTRT half-DUDATE adjustment under A0046. DXV/external-sync
-  correction remains unimplemented rather than being represented by
-  misleading pseudo-support.
+  field-aware DPYSTRT half-DUDATE adjustment under A0046. Task 0157 consumes
+  DXV/HSD and implements external-sync input recognition, fallbacks, field
+  classification, and output enables under A0047. Physical pin inversion,
+  input/output delays, and synchronizer proof remain FPGA-realization work.
 - **Deterministic counter-write choice**: a delivered VCLK command retains the
   original load priority: HCOUNT load suppresses that edge's wrap/VCOUNT step,
   and an independent VCOUNT load wins for VCOUNT. A0045 records coalescing and
@@ -1100,6 +1148,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Regression evidence**: `tb_video` covers noninterlaced counter
   loads/wraps, timing windows, ENV, and the corrected interrupt point.
   `tb_video_interlace` covers complete even/odd field sequences.
+  `tb_video_external_sync` covers external recognition, fallback, direction,
+  and field selection.
   `tb_video_cdc` covers the dedicated domain and every crossing.
   `tb_io_video` covers the live register snapshots, combined blank, timing
   outputs, and integrated hardware-set/write-zero-clear DIP behavior.

@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0157 — external video synchronization)
+- Consumed DPYCTL.DXV/HSD in the VCLK timing owner. DXV selects internal
+  sync generation or external synchronization, while HSD keeps horizontal
+  timing/output internal when VSYNC remains an input.
+- Added separately attributed two-flop synchronizers and edge-history
+  recognition for active-low HSYNC/VSYNC. Counter clearing occurs on the
+  third project update edge, representing the guide's 2.5-VCLK delay from
+  the rising-edge sample to the falling-edge update.
+- Implemented external HSYNC/VSYNC counter control, HTOTAL/VTOTAL
+  missing-sync fallbacks, noninterlaced suppression, and interlaced
+  odd/even field discrimination from the pre-clear horizontal-count window.
+- Propagated raw active-low sync inputs and explicit horizontal/vertical
+  output enables through the video, I/O, core, system, and pin-system
+  hierarchy while retaining active-high functional sync interval outputs.
+- Added `tb_video_external_sync` with exact recognition-latency, fallback,
+  HSD, field-classification, NIL, and output-enable coverage. Extended
+  `tb_io_video` and updated every hierarchy instantiation for the new pins.
+- Validation: focused video/CDC/I/O/fabric/pin benches PASS;
+  `scripts/lint.sh` clean; full regression 143/143 PASS.
+
 ### Added (Task 0156 — internal interlaced video timing)
 - Implemented DPYCTL.NIL selection in the VCLK timing owner. Reset selects
   the even field; the even-to-odd boundary clears VCOUNT at HTOTAL/2 without

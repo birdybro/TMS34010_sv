@@ -2,7 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0156. Task 0156
+The functional implementation is complete through Task 0157. Task 0157
+implements external synchronization with the specified active-low input
+recognition delay, total-register fallbacks, HSD direction, field
+discrimination, and explicit sync output enables. Task 0156
 implements internally generated interlaced fields, including the half-line
 odd-field phase, midline VCOUNT advance, field-aware DIP behavior, and signed
 DUDATE/2 display-address reload. Task 0155 moves timing/display ownership to
@@ -237,6 +240,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0154 | Enforce reserved I/O fields and locations | complete |
 | 0155 | Introduce the dedicated VCLK domain and video CDC | complete |
 | 0156 | Implement internal interlaced video timing | complete |
+| 0157 | Implement external video synchronization | complete |
 
 ---
 
@@ -5379,6 +5383,62 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `f90173728dd69c3b2a5402b1bc1d78db534f04b1`
+
+---
+
+### Task 0157: Implement external video synchronization
+Status: complete
+Dependencies:
+- Task 0155 (dedicated VCLK ownership and coherent video CDC).
+- Task 0156 (internal interlaced field phase and display addressing).
+Spec sources:
+- 1988 TI TMS34010 User's Guide DPYCTL pages 6-18 through 6-22
+  (DXV/HSD direction combinations and NIL mode selection).
+- 1988 TI TMS34010 User's Guide HESYNC page 6-28, HTOTAL page 6-39,
+  and vertical timing-register pages 6-49 through 6-52
+  (counter clearing and total-register fallbacks).
+- 1988 TI TMS34010 User's Guide §9.9, pages 9-15 through 9-17
+  (active-low asynchronous inputs, 2.5-VCLK recognition delay, and
+  interlaced field discrimination).
+Acceptance Criteria:
+- Consume DPYCTL.DXV/HSD in the VCLK timing owner while preserving the
+  existing internal noninterlaced/interlaced paths.
+- Pass each raw active-low asynchronous HSYNC/VSYNC input through its own
+  attributed two-flop synchronizer and edge history; recognize the falling
+  edge on the third project update edge, representing the specified
+  rising-sample-to-falling-clear 2.5-VCLK delay.
+- In external-horizontal mode, start a line at the recognized HSYNC edge or
+  HTOTAL fallback, whichever occurs first. Recognize VSYNC independently and
+  retain the VTOTAL-plus-line fallback. HSD=1 must ignore external HSYNC and
+  keep horizontal timing internally generated.
+- With NIL=0, classify the externally started field from the pre-clear
+  `HEBLNK < HCOUNT <= HSBLNK` window; otherwise select even. With NIL=1,
+  suppress odd-field state.
+- Propagate raw sync inputs and separate horizontal/vertical output enables
+  through the I/O, core, functional-system, and pin-system boundaries.
+  Retain active-high functional sync intervals so a future FPGA I/O wrapper
+  can implement physical active-low bidirectional pins.
+- Document deterministic undefined-direction, counter-write collision,
+  missing-sync recovery, and final FPGA I/O/SDC choices.
+Tests:
+- Added `tb_video_external_sync` PASS with exact third-update-edge
+  recognition and no-early-clear checks, independent horizontal/vertical
+  counter control, HTOTAL/VTOTAL fallbacks, HSD operation, odd/even
+  discrimination, NIL suppression, and output-enable coverage.
+- Extended `tb_io_video` PASS for configuration-mailbox propagation and all
+  defined DXV/HSD directions. Updated every direct video, I/O, core, system,
+  and pin-system instantiation for the explicit new inputs and outputs.
+- `tb_video`, `tb_video_interlace`, `tb_video_cdc`, `tb_io_video`,
+  `tb_system_fabric`, and `tb_pin_system` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 143/143 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

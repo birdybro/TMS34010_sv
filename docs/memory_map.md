@@ -1,8 +1,8 @@
 # Memory map
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
-> HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0156**. The core issues bit-addressed 1–32-bit
+> HSTCTL access, live REFCNT, internal/external video timing, and live DPYADR
+> implemented through Task 0157**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -11,7 +11,8 @@
 > integrated, and the original asynchronous host controls, HRDY, and split
 > HD direction now wrap the four-register engine. Defined reserved fields and
 > locations are enforced on both processor and host-indirect paths. Video
-> counters/display state now live in VCLK behind coherent core-domain views.
+> counters/display state now live in VCLK behind coherent core-domain views,
+> with synchronized active-low HSYNC/VSYNC inputs and explicit direction.
 
 ## Architectural address space
 
@@ -117,6 +118,10 @@ Task 0156 consumes DPYCTL.NIL there: internal interlace starts the odd field
 at HTOTAL/2, advances VCOUNT at the odd VESYNC half-line point, and carries
 field phase to DPYADR. The DPYSTRT reload preceding an even field applies
 signed DUDATE/2; the reload preceding an odd field remains unchanged.
+Task 0157 consumes DPYCTL.DXV/HSD: active-low external sync inputs are
+recognized after the specified 2.5-VCLK delay, total-register fallbacks keep
+the counters progressing when an input is absent, and the corresponding
+output enables propagate to the pin-system boundary.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -199,6 +204,7 @@ paths and makes all four reserved locations explicit non-storage.
 Task 0155 moves live counters and display state into VCLK with coherent
 core-domain views. Task 0156 consumes NIL for internal field sequencing and
 the field-aware half-DUDATE DPYADR reload.
+Task 0157 consumes DXV/HSD for external sync recognition and direction.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -210,7 +216,7 @@ the field-aware half-DUDATE DPYADR reload.
 | C0000050 | 0x05 | VEBLNK  | video timing | Vertical End Blank |
 | C0000060 | 0x06 | VSBLNK  | video timing | Vertical Start Blank |
 | C0000070 | 0x07 | VTOTAL  | video timing | Vertical Total |
-| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; NIL selects internal field sequencing; ENV gates combined blank and new DIP events; DXV external sync and SRT remain subsequent consumers |
+| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; NIL selects internal/external field sequencing; ENV gates combined blank and new DIP events; DXV/HSD select sync input/output operation; SRT remains an unconsumed serial-transfer control |
 | C0000090 | 0x09 | DPYSTRT | video timing | LCSTRT/SRSTRT reload live DPYADR at line/frame boundaries |
 | C00000A0 | 0x0A | DPYINT  | video timing | VCOUNT line selected for DIP at start of horizontal blanking |
 | C00000B0 | 0x0B | CONTROL | graphics ctl | Bits 1:0 read zero; RM/RR, transparency, window, direction, PPOP, CD |
@@ -257,9 +263,11 @@ client request in VCLK with captured SRFADR/DPYTAP/ORG. The Task 0155 MCP
 transaction bridge carries it into the core, and the integrated local-bus MCP
 routes it to the controller's physical memory-to-register pin cycle before
 completion returns to DPYADR. Task 0156 adds the interlaced starting-address
-displacement without changing that completed-transfer contract. There is
-still no VRAM serial-output model or pixel output.
+displacement without changing that completed-transfer contract. Task 0157
+closes the timing-side external synchronization contract without inventing
+serial-display data. There is still no physical bidirectional sync-pin
+wrapper, VRAM serial-output model, or pixel output.
 
 ## Uncertain / partially implemented areas
 
-- External-sync timing, VRAM shift-register behavior, and pixel output.
+- Physical VRAM shift-register behavior and pixel output.

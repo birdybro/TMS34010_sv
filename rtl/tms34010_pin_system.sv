@@ -27,6 +27,8 @@ module tms34010_pin_system
   input  logic                              bus_clk8x_i,
   input  logic                              vclk_i,
   input  logic                              rst,
+  input  logic                              video_hsync_n_i,
+  input  logic                              video_vsync_n_i,
 
   input  logic                              run_emu_n_i,
 
@@ -54,6 +56,8 @@ module tms34010_pin_system
   output logic                              video_hblank_o,
   output logic                              video_vblank_o,
   output logic                              video_blank_o,
+  output logic                              video_hsync_oe_o,
+  output logic                              video_vsync_oe_o,
 
   input  logic                              lrdy_i,
   input  local_word_t                       lad_i,
@@ -188,6 +192,8 @@ module tms34010_pin_system
     .clk                (core_clk_i),
     .vclk_i             (vclk_i),
     .rst                (rst),
+    .video_hsync_n_i    (video_hsync_n_i),
+    .video_vsync_n_i    (video_vsync_n_i),
     .run_emu_n_i        (core_run_emu_n),
     .emua_n_o           (core_emua_n),
     .hcs_n_i            (hcs_n_i),
@@ -210,6 +216,8 @@ module tms34010_pin_system
     .video_hblank_o     (video_hblank_o),
     .video_vblank_o     (video_vblank_o),
     .video_blank_o      (video_blank_o),
+    .video_hsync_oe_o   (video_hsync_oe_o),
+    .video_vsync_oe_o   (video_vsync_oe_o),
     .cycle_req_o        (core_cycle_req),
     .cycle_kind_o       (core_cycle_kind),
     .cycle_addr_o       (core_cycle_addr),

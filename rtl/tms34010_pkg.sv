@@ -384,6 +384,7 @@ package tms34010_pkg;
 
   // Display Control register fields used by the integrated timing generator
   // (1988 User's Guide DPYCTL pages 6-18 through 6-23).
+  parameter int unsigned DPYCTL_HSD_BIT    = 0;  // external HSYNC direction
   parameter int unsigned DPYCTL_DUDATE_LO = 2;  // one-hot display update
   parameter int unsigned DPYCTL_DUDATE_HI = 9;
   parameter int unsigned DPYCTL_ORG_BIT    = 10; // 0=increment, 1=decrement

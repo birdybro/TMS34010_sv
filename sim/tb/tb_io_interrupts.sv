@@ -52,6 +52,8 @@ module tb_io_interrupts;
   tms34010_io_regs u_dut (
     .clk         (clk), .vclk_i(clk),
     .rst         (rst),
+    .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
+    .video_hsync_oe_o(), .video_vsync_oe_o(),
     .hcs_n_i     (1'b0),
     .host_req_i  (host_req),
     .host_we_i   (host_we),

@@ -82,6 +82,8 @@ module tb_system_fabric;
   tms34010_system u_system (
     .clk               (clk), .vclk_i(clk),
     .rst               (rst),
+    .video_hsync_n_i   (1'b1),
+    .video_vsync_n_i   (1'b1),
     .run_emu_n_i       (1'b1),
     .emua_n_o          (),
     .hcs_n_i           (1'b0),
@@ -104,6 +106,8 @@ module tb_system_fabric;
     .video_hblank_o    (),
     .video_vblank_o    (),
     .video_blank_o     (),
+    .video_hsync_oe_o  (),
+    .video_vsync_oe_o  (),
     .cycle_req_o       (cycle_req),
     .cycle_kind_o      (cycle_kind),
     .cycle_addr_o      (cycle_addr),
