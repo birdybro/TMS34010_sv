@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0152, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0153, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -20,6 +20,7 @@
 | Host I/O read mux → grant snapshot      | Task 0150        | grant-registered, unmeasured | retain the host-grant sample; do not let live counters cross the MCP as changing payload |
 | HOLD request/grant CDC → phased output enables | Task 0151 | synchronized levels, unmeasured | preserve both 2FF chains; keep all OE/HOLDA decoding wholly in the 8× domain and constrain final I/O timing |
 | EMU held-event/halt CDC → shared pin     | Task 0152        | source-held/phase-latched, unmeasured | preserve all three 2FF chains; constrain the final Q1/Q2 EMUA and Q3/Q4 HLDA mux at the I/O boundary |
+| Host access/HCS levels → bundled payload | Task 0153        | 2FF-qualified MCP, unconstrained | preserve both synchronizers; constrain host input minima and bundled HFS/HD/control stability through capture; constrain HRDY and HD/OE outputs |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -36,8 +37,9 @@
   all eight cycles retire.
 - **Host-present reset halt** — if HCS is high during reset,
   HSTCTLH.HLT resets to one and `CORE_RESET_HALT` issues no vector or
-  instruction request. A synchronous direct-host high-byte write clearing
-  HLT returns through `CORE_RESET` and begins the level-0 vector transaction.
+  instruction request. In the pin system, a physical high-byte HSTCTL write
+  crosses through Task 0153 before clearing HLT; the core then returns through
+  `CORE_RESET` and begins the level-0 vector transaction.
 - **Run-time HLT** — HSTCTLH.HLT is observed at `CORE_FETCH`, after the
   current instruction finishes. `CORE_HOST_HALT` issues no processor memory
   transaction and accepts no interrupt until HLT clears. Refresh, video, and
@@ -53,8 +55,7 @@
   Later host requests are backpressured until that side effect completes.
   INCR changes HSTADR on the HSTDATA-read acceptance edge before the local
   read; INCW changes it only on local-write acknowledge. These are internal
-  core-clock relationships. The future pin wrapper must reproduce the
-  asynchronous HCS/HRDY timing in §10.3.2.
+  core-clock relationships.
   Task 0144 routes this four-register handshake through the core/I/O boundary
   and exports the held local-word request unchanged. Task 0145 defines the
   arbiter completion contract; integration must acknowledge only completed
@@ -64,6 +65,16 @@
   grant edge; the request then waits for the same MCP/two-local-clock phase
   path as processor I/O. A write changes the internal register only when the
   returned acknowledge retires the host request.
+- **Asynchronous physical host access** — Task 0153 lowers HRDY
+  combinationally as soon as HCS, one legal direction, and a byte strobe form
+  an access. A 2FF-synchronized combined level then captures stable
+  HFS/direction/byte/HD payload into one held core-clock request. Returned
+  data registers before HRDY rises and remains held until the synchronized
+  access level clears. The current access remains ready if its acceptance
+  starts a busy indirect side effect; busy waits the following access.
+  HSTCTL also inserts two core-clock wait counts after synchronized HCS
+  recognition. The host must hold the active access through HRDY and leave
+  the combined access inactive for at least the synchronizer re-arm interval.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
@@ -283,17 +294,33 @@ of the guide's one-to-two-state synchronization delay.
 
 The future SDC must mark the pin-to-first-stage paths asynchronous and the
 Quartus metastability report must recognize both chains. Those checks cannot
-be claimed until the real project exists. The integrated four-register
-`host_*` request/ack interface and supplemental `dpyint_set_i` are currently
-synchronous core-clock transactions/events. The future asynchronous host pin
-wrapper must transfer each completed register cycle coherently and return
-stable read data/HINT under its HRDY protocol. The integrated Task 0139
-display compare is
-same-clock and therefore needs no crossing yet. When it moves to VCLK, DIP
-delivery must use a lossless event handshake or equivalent pending-level
-protocol, timing configuration must use a coherent multi-bit transfer, and
-free-running counter observation must not synchronize binary bits
-independently.
+be claimed until the real project exists. The supplemental `dpyint_set_i`
+remains a synchronous core-clock event. The integrated Task 0139 display
+compare is same-clock and therefore needs no crossing yet. When it moves to
+VCLK, DIP delivery must use a lossless event handshake or equivalent
+pending-level protocol, timing configuration must use a coherent multi-bit
+transfer, and free-running counter observation must not synchronize binary
+bits independently.
+
+## Host pin CDC boundary
+
+Task 0153 treats the combined legal physical access and HCS-active indication
+as asynchronous levels. Each enters the core clock through its own attributed
+2FF `tms34010_sync_bit`. HRDY falls directly from raw active pins before the
+combined level can reach the second stage, requiring the external host to
+hold HFS, direction, byte enables, and HD stable. The core captures that
+bundled MCP payload only after synchronization, holds its request to the
+register engine until acknowledge, registers returned data, and then releases
+HRDY. No individual HFS or HD bit is independently synchronized.
+
+The external access must remain active until HRDY is high, then remain
+inactive long enough for the combined level to cross low through both stages
+and clear the one-access latch. HFS must already be stable when HCS falls so
+the HCS-only HSTCTL wait can be classified. These are functional protocol
+requirements verified by `tb_host_bus`; the final SDC must constrain
+pin-to-first-stage paths, recognize both 2FF chains, prove the host's minimum
+active/inactive strobe widths, constrain the bundled payload relative to the
+capture edge, and close HRDY plus HD/output-enable pin delays.
 
 ## Provisional video clock boundary
 

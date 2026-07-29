@@ -2,7 +2,9 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0152. Task 0152
+The functional implementation is complete through Task 0153. Task 0153 wraps
+the synchronous four-register host engine with the original asynchronous host
+controls, HD direction, and HRDY behavior. Task 0152
 phases the landed EMU handshake into exact Q1/Q2 windows and combines it with
 Q3/Q4 HLDA on the original shared output pin. Task 0151
 connects active-low physical HOLD to the fixed-priority arbiter through
@@ -224,6 +226,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0150 | Route host-indirect I/O through physical cycles | complete |
 | 0151 | Implement physical HOLD/HOLDA bus release | complete |
 | 0152 | Implement the shared physical HLDA/EMUA pin | complete |
+| 0153 | Implement the asynchronous physical host bus | complete |
 
 ---
 
@@ -5157,6 +5160,57 @@ Docs:
   `docs/memory_map.md`, and `docs/timing_notes.md`.
 Commit:
 - `ba9d8d6` — Implement the shared physical HLDA/EMUA pin (Task 0152)
+
+---
+
+### Task 0153: Implement the asynchronous physical host bus
+Status: complete
+Dependencies:
+- Task 0144 (synchronous four-register host boundary).
+- Task 0150 (host-indirect physical I/O completion).
+- Task 0152 (integrated original-pin system boundary).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §2.2, Table 2-2, pages 2-5 through 2-6
+  (HCS/HFS/HREAD/HWRITE/HLDS/HUDS/HRDY/HD pin functions).
+- 1988 TI TMS34010 User's Guide §10.3, pages 10-4 through 10-10
+  (last-active/first-inactive access strobes, byte enables, HD direction,
+  HCS-triggered HRDY, HSTCTL delay, prior-indirect busy wait, and ready hold).
+Acceptance Criteria:
+- Replace `tms34010_pin_system`'s synchronous host request/payload ports with
+  active-low HCS, HREAD, HWRITE, HLDS, HUDS, two HFS inputs, and split HD
+  input/output/byte-enable signals.
+- Recognize only legal read-exclusive or write-exclusive accesses with at
+  least one selected byte; HREAD and HWRITE active together must not launch a
+  transaction.
+- Establish an immediate HRDY wait before capturing the asynchronous bundled
+  HFS/HD/direction/byte payload, then hold one synchronous request and stable
+  payload until the existing host engine acknowledges it.
+- Latch returned read data before raising HRDY and drive only the selected HD
+  byte lanes during a completed read access; never drive HD during writes or
+  waits.
+- Keep HRDY high through the end of an access once that access has been
+  released to complete, even if it starts a new indirect-memory side effect;
+  use that busy state to wait a following selected access.
+- Trigger the mandatory HSTCTL HRDY-low interval from HCS and a stable HFS
+  selection even before a read/write/byte strobe completes the access.
+- Retain HCS reset-strap semantics and active-low HINT.
+Tests:
+- Add a focused host-pin bridge test covering HCS/read/write/byte-strobe
+  starts, waits, payload stability, invalid read+write, HD direction, HSTCTL
+  delay, busy carryover, and back-to-back re-arm.
+- Convert `tb_pin_system` host traffic to physical pins and retain all
+  processor/host I/O, HOLD, and EMU checks.
+- Keep existing `tb_host_if`, `tb_host_integration`, and `tb_host_control`
+  PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `scripts/regress.sh` PASS for every discovered self-checking bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

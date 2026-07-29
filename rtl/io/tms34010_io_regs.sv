@@ -14,7 +14,7 @@
 // HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
 // self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0150):
+// Current scope (Tasks 0081–0153):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -32,8 +32,8 @@
 //     indirect sequencing plus per-side HSTCTL ownership, HINT, NMI/HLT
 //     control, and HCS-selected reset state. Host-indirect accesses to this
 //     I/O page return the shared register view and commit writes only after
-//     their physical I/O cycle. The future pin wrapper owns asynchronous
-//     host-bus timing and CDC.
+//     their physical I/O cycle. The integrated host-pin wrapper now owns
+//     asynchronous host-bus timing and CDC outside this core-clock block.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003); all registers -> 0

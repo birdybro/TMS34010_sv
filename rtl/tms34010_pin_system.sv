@@ -5,10 +5,11 @@
 // phase engine. tms34010_system remains entirely in core_clk_i; a coherent
 // command/response MCP bridge is the only connection to bus_clk8x_i.
 //
-// The synchronous host-register boundary remains exposed for a later
-// asynchronous pin wrapper. Physical active-low HOLD is sampled in the 8×
-// domain, synchronized to the core arbiter, and returned as phased HLDA plus
-// explicit local-bus output enables. RUN/EMU is synchronized into the core;
+// The asynchronous host controls are converted into one held synchronous
+// register request with physical HRDY and byte-lane HD direction. Physical
+// active-low HOLD is sampled in the 8× domain, synchronized to the core
+// arbiter, and returned as phased HLDA plus explicit local-bus output enables.
+// RUN/EMU is synchronized into the core;
 // each architectural EMU event and the halt level cross back to the 8×
 // domain before Q1/Q2 EMUA is combined with Q3/Q4 HLDA on the original shared
 // output. Processor and host-indirect on-chip I/O requests use
@@ -28,14 +29,15 @@ module tms34010_pin_system
   input  logic                              run_emu_n_i,
 
   input  logic                              hcs_n_i,
-  input  logic                              host_req_i,
-  input  logic                              host_we_i,
-  input  host_reg_sel_t                     host_reg_i,
-  input  logic [1:0]                        host_be_i,
-  input  local_word_t                       host_wdata_i,
-  output local_word_t                       host_rdata_o,
-  output logic                              host_ack_o,
-  output logic                              host_busy_o,
+  input  logic                              hread_n_i,
+  input  logic                              hwrite_n_i,
+  input  logic                              hlds_n_i,
+  input  logic                              huds_n_i,
+  input  logic [1:0]                        hfs_i,
+  input  local_word_t                       hd_i,
+  output local_word_t                       hd_o,
+  output logic [1:0]                        hd_oe_o,
+  output logic                              hrdy_o,
   output logic                              hint_n_o,
 
   input  logic                              lint1_n_i,
@@ -109,6 +111,14 @@ module tms34010_pin_system
   logic                              core_emu_event;
   logic                              core_emu_halt;
   logic                              local_hlda_n;
+  logic                              core_host_req;
+  logic                              core_host_we;
+  host_reg_sel_t                     core_host_reg;
+  logic [1:0]                        core_host_be;
+  local_word_t                       core_host_wdata;
+  local_word_t                       core_host_rdata;
+  logic                              core_host_ack;
+  logic                              core_host_busy;
 
   always_comb begin
     core_command            = '0;
@@ -149,20 +159,43 @@ module tms34010_pin_system
     .sync_o  (core_run_emu_n)
   );
 
+  tms34010_host_bus u_host_bus (
+    .clk          (core_clk_i),
+    .rst          (rst),
+    .hcs_n_i      (hcs_n_i),
+    .hread_n_i    (hread_n_i),
+    .hwrite_n_i   (hwrite_n_i),
+    .hlds_n_i     (hlds_n_i),
+    .huds_n_i     (huds_n_i),
+    .hfs_i        (hfs_i),
+    .hd_i         (hd_i),
+    .hd_o         (hd_o),
+    .hd_oe_o      (hd_oe_o),
+    .hrdy_o       (hrdy_o),
+    .host_req_o   (core_host_req),
+    .host_we_o    (core_host_we),
+    .host_reg_o   (core_host_reg),
+    .host_be_o    (core_host_be),
+    .host_wdata_o (core_host_wdata),
+    .host_rdata_i (core_host_rdata),
+    .host_ack_i   (core_host_ack),
+    .host_busy_i  (core_host_busy)
+  );
+
   tms34010_system u_system (
     .clk                (core_clk_i),
     .rst                (rst),
     .run_emu_n_i        (core_run_emu_n),
     .emua_n_o           (core_emua_n),
     .hcs_n_i            (hcs_n_i),
-    .host_req_i         (host_req_i),
-    .host_we_i          (host_we_i),
-    .host_reg_i         (host_reg_i),
-    .host_be_i          (host_be_i),
-    .host_wdata_i       (host_wdata_i),
-    .host_rdata_o       (host_rdata_o),
-    .host_ack_o         (host_ack_o),
-    .host_busy_o        (host_busy_o),
+    .host_req_i         (core_host_req),
+    .host_we_i          (core_host_we),
+    .host_reg_i         (core_host_reg),
+    .host_be_i          (core_host_be),
+    .host_wdata_i       (core_host_wdata),
+    .host_rdata_o       (core_host_rdata),
+    .host_ack_o         (core_host_ack),
+    .host_busy_o        (core_host_busy),
     .hint_n_o           (hint_n_o),
     .lint1_n_i          (lint1_n_i),
     .lint2_n_i          (lint2_n_i),

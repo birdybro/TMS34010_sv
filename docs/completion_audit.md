@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0152, with strict RTL
+> Baseline: functional implementation through Task 0153, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -106,8 +106,9 @@ Task 0142 completed direct HSTCTL semantics and processor halt behavior.
 Complementary low-byte ownership now produces the real HIP/HINT paths, both
 sides share masked HSTCTLH fields, HCS can defer reset-vector fetch, and HLT
 quiesces processor traffic at an instruction boundary without stopping
-refresh/video state. The physical asynchronous host port, HRDY, and indirect
-HSTADR/HSTDATA memory cycles remain in the host/memory-fabric gate.
+refresh/video state. At that checkpoint, the physical asynchronous host port,
+HRDY, and indirect HSTADR/HSTDATA memory cycles remained in the
+host/memory-fabric gate.
 
 Task 0143 implemented the synchronous HSTADR/HSTDATA engine. It now has
 word-aligned address storage, a prefetch/write data buffer, both LBL
@@ -119,8 +120,9 @@ HSTCTL path, and local-word client are connected to the core and arbiter.
 Task 0144 connected the register-side boundary. The core now exposes one
 synchronous four-register host port; processor HSTADR/HSTDATA accesses share
 the engine-owned state without indirect side effects; and the engine's held
-aligned-word client leaves the core. The remaining host-memory work is
-arbiter service plus the asynchronous pin/HRDY/CDC wrapper.
+aligned-word client leaves the core. At that checkpoint, the remaining
+host-memory work was arbiter service plus the asynchronous pin/HRDY/CDC
+wrapper.
 
 Task 0145 landed the specification-priority local-cycle arbiter from §11.3.
 Registered ownership enforces HOLD, screen, DRAM refresh, host, then CPU
@@ -155,7 +157,8 @@ bridge, and 8× controller. Opcode IAQ and captured screen ORG now propagate
 end to end, and the pin-level regression proves reset initialization precedes
 the two-word vector and real instruction fetches. At that checkpoint,
 physical HOLD release, on-chip I/O bus completion, host pins, and Quartus CDC
-sign-off remained; Tasks 0149–0151 close the first two items.
+sign-off remained; Tasks 0149–0153 close every functional pin-side item,
+while Quartus CDC sign-off remains.
 
 Task 0149 completes physical on-chip I/O cycles for processor accesses. A
 registered fabric stage classifies and holds the architectural CPU request;
@@ -193,6 +196,17 @@ LCLK1-high Q1/Q2 half and HLDA owns every LCLK1-low Q3/Q4 half. Focused and
 end-to-end tests lock RUN-mode pulse count, halt/release, simultaneous HOLD,
 and phase exclusivity.
 
+Task 0153 closes the asynchronous physical host port. HCS, exactly one of
+HREAD/HWRITE, and at least one byte strobe qualify an access. HRDY falls
+immediately while a synchronized access level establishes a stable
+HFS/direction/byte/data bundle, then the bridge holds one synchronous request
+through acknowledgement and retains returned data until physical release.
+Reads enable only selected HD lanes. HCS alone starts the HSTCTL wait, a
+completed access remains ready even if it launches a busy indirect operation,
+and that busy state waits the following access. `tb_host_bus` locks these
+rules with clock-offset pin transitions; `tb_pin_system` now performs all
+host register traffic through the physical pins.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -214,7 +228,8 @@ undefined LAD value, and explicit CDC boundary. A0040 records the MCP's
 one-outstanding/common-reset contract and pending Quartus constraint proof.
 A0041 records physical HOLD's synchronized level handshake and phased
 output-enable implementation. A0042 records the one-outstanding EMU-event
-handshake and phase-latched halt indication. These do not excuse
+handshake and phase-latched halt indication. A0043 records the asynchronous
+host bundled-data/re-arm contract and FPGA I/O timing work. These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -227,13 +242,10 @@ deliberate non-pin-compatible boundary.
   behavior for all I/O registers. Current storage is only partially
   specialized.
 
-### Memory, refresh, and host fabric
+### Memory and refresh fabric
 
 - Validate the one-entry DRAM-refresh service bound under the final PLL clock
   ratio, external waits, and physical HOLD behavior.
-- Implement HRDY and the asynchronous physical host wrapper/CDC around the
-  synchronous host-register boundary; Task 0146 completed the host client's
-  abstract arbiter connection.
 
 ### Video/display
 
@@ -260,15 +272,14 @@ deliberate non-pin-compatible boundary.
    MOVE forms and EMU behavior; ensure every §12.3 row has a spec citation and
    named test.
 3. Complete I/O side effects and every interrupt source.
-4. Land the pin-level local memory controller, refresh, host, and arbitration
-   fabric with LRDY/reset tests. Task 0136 completed field-to-word sequencing,
-   Task 0145 completed the standalone priority/RMW arbitration engine, and
-   Task 0146 integrated every core client at the abstract controller boundary.
-   Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine, and Task
-   0148 completed the coherent CDC/system hookup plus IAQ/screen-ORG path.
-   Tasks 0149–0150 completed processor and host-indirect on-chip I/O cycles,
-   Task 0151 completed physical HOLD/HOLDA bus release, and Task 0152 completed
-   the shared physical HLDA/EMUA output. The host-pin portion remains.
+4. **Complete (Tasks 0136, 0145–0153):** land the pin-level local memory
+   controller, refresh, host, and arbitration fabric with LRDY/reset tests.
+   Task 0136 completed field-to-word sequencing; Tasks 0145–0146 landed and
+   integrated arbitration; Tasks 0147–0148 landed the 8× phase engine and
+   coherent CDC/system path; Tasks 0149–0150 completed both on-chip I/O
+   requesters; Tasks 0151–0152 completed HOLD and HLDA/EMUA; and Task 0153
+   completed the asynchronous host pins, HRDY, and HD direction. The final
+   PLL/SDC service-bound proof belongs to FPGA-realization gate 6.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

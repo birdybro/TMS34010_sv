@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0152, with
+> Status: **implemented and ISA/status-audited through Task 0153, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -22,6 +22,9 @@
 > output enable follow the documented Q2/Q3 release and resume boundaries.
 > Physical RUN/EMU is synchronized into the core, and exact Q1/Q2 EMUA is
 > combined with Q3/Q4 HLDA on the original shared output.
+> The asynchronous original-pin host bus qualifies active-low access
+> strobes, inserts HRDY waits, captures one coherent four-register request,
+> and returns latched read data through selected HD byte lanes.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; VRAM serial-display service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -84,9 +87,9 @@ sequencer and local-cycle arbiter are composed by
 fabric. `tms34010_local_bus_bridge` crosses that held command and its response
 coherently into/out of the 8× domain, while `tms34010_pin_system` composes the
 system, bridge, and `tms34010_local_bus`; `tms34010_emu_bridge` closes the
-RUN/EMU event/level CDC and shared output mux. The asynchronous host pins,
-the dedicated VCLK domain, and the FPGA
-clock/constraint project remain planned.
+RUN/EMU event/level CDC and shared output mux, and
+`tms34010_host_bus` closes the asynchronous host-control/data boundary. The
+dedicated VCLK domain and the FPGA clock/constraint project remain planned.
 
 ## Test substrate
 
@@ -98,8 +101,8 @@ straddles and partial-word read/modify/write preservation. Only the backing
 target is simulation-specific. The original-pin controller has a standalone
 phase-level regression. `tb_pin_system` additionally boots the real core from
 a pin-level LAD target through the integrated CDC, verifies the mandatory
-reset initialization ordering, and executes physical processor and
-host-indirect I/O write/read cycles.
+reset initialization ordering, executes external asynchronous host accesses,
+and observes the resulting processor/host-indirect physical I/O cycles.
 
 ## Module map
 
@@ -107,7 +110,7 @@ host-indirect I/O write/read cycles.
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
 | `rtl/tms34010_system.sv`                | 6     | **landed through Task 0150** | functional-system wrapper connecting all core memory clients, including both I/O paths and the arbiter-side HOLD level, to one abstract controller boundary |
-| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0152** | integrated core-clock system, MCP bridge, 8× original-pin local bus, physical HOLD/RUN-EMU CDC, and shared HLDA/EMUA output; host pin wrapper pending |
+| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0153** | integrated core-clock system, MCP bridge, 8× original-pin local bus, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, and shared HLDA/EMUA output |
 | `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0150** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, opcode IAQ, processor/host-I/O sidebands and completion, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
@@ -127,10 +130,11 @@ host-indirect I/O write/read cycles.
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | **integrated through Task 0150** | shared processor/host HSTADR/HSTDATA storage, independent indirect-I/O port, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
-| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0152** | dedicated attributed two-flop synchronizer used for LINT, HOLD, RUN/EMU, and EMUA event/halt handshake levels |
+| `rtl/host/tms34010_host_bus.sv`         | 6     | **landed (Task 0153)** | asynchronous HCS/direction/byte qualification, HCS/HSTCTL and indirect-busy HRDY waits, bundled request capture, latched response, and per-byte HD output enables |
+| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0153** | dedicated attributed two-flop synchronizer used for LINT, HOLD, RUN/EMU, EMUA event/halt handshake levels, and host access/HCS levels |
 | `rtl/cdc/tms34010_local_bus_bridge.sv`  | 6     | **landed (Task 0148)** | two-phase MCP command/response CDC; source-held payloads and returned read data, one outstanding transaction |
 | `rtl/cdc/tms34010_emu_bridge.sv`        | 6     | **landed (Task 0152)** | source-held EMU-event handshake, synchronized halt level, exact Q1/Q2 EMUA windows, and Q3/Q4 HLDA shared-pin mux |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0150** | 32×16-bit memory-mapped I/O register file; processor and host-indirect read/write views with completion-qualified commits; integrated host engine, exact interrupt sources, HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0153** | 32×16-bit memory-mapped I/O register file; processor and host-indirect read/write views with completion-qualified commits; integrated host engine, exact interrupt sources, HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0148** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP/ORG request, and acknowledge-time DUDATE/ORG update; interlaced adjustment remains |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
@@ -286,6 +290,16 @@ halt level crosses separately and is latched only on Q4B-to-Q1A, preventing a
 partial EMUA window. LCLK1 high selects that EMUA result, while LCLK1 low
 selects Task 0151's HLDA component. Simultaneous halt and HOLD therefore drive
 the shared pin low in both halves for their independent reasons.
+
+Task 0153 closes the physical host-register boundary. A legal access is HCS
+active with exactly one active direction and at least one active byte strobe.
+The bridge lowers HRDY immediately, waits for a synchronized access level,
+then captures HFS, direction, byte enables, and HD as one bundled request for
+the existing core-clock engine. Read data is registered before HRDY rises and
+only selected byte lanes receive output-enable intent. A completed current
+access keeps ready even when it launches an indirect side effect; that busy
+state waits the following access. HCS plus stable HFS also starts the
+mandatory HSTCTL delay before the remaining strobes arrive.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -466,7 +480,7 @@ These engines currently share implementation inside `tms34010_core`.
 Extraction into dedicated modules is optional refactoring and must not precede
 functional or synthesis evidence that justifies it.
 
-## Host interface (four-register engine integrated)
+## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control
 and shared-memory access. The core's synchronous completed-cycle boundary
@@ -486,9 +500,15 @@ share the stored values but have no indirect side effects. HSTCTL transactions
 pass through to the I/O block's Task 0142 owner.
 
 The aligned 16-bit host client leaves standalone `tms34010_core` and is
-connected to the shared fabric by `tms34010_system`. HRDY, physical pin
-strobes, and asynchronous CDC remain future work. CF is stored but has no
-cache to flush.
+connected to the shared fabric by `tms34010_system`.
+`tms34010_host_bus` surrounds that synchronous boundary in
+`tms34010_pin_system`: active-low HCS/HREAD/HWRITE/HLDS/HUDS and HFS form a
+held asynchronous access, HRDY waits for coherent capture/response or an
+older indirect side effect, and read data drives only the selected HD byte
+lanes after completion. HSTCTL selection starts its wait from HCS alone.
+The FPGA top must still instantiate physical bidirectional I/O buffers and
+prove the bundled-data/strobe constraints recorded in A0043. CF is stored but
+has no cache to flush.
 
 ## Video / display (timing integrated)
 
@@ -541,7 +561,6 @@ waits.
 ## Current implementation gaps
 
 - Optional instruction cache.
-- Host HRDY/pin timing/CDC.
 - Remaining non-host I/O side effects.
 - VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
@@ -549,5 +568,5 @@ waits.
 - A cycle-accuracy contract against original silicon.
 
 The instruction/status reconciliation is complete. Remaining observable
-compatibility questions are at the physical memory, I/O, host, video, CDC,
-and FPGA realization boundaries recorded in `completion_audit.md`.
+compatibility questions are at the physical memory, I/O, video, CDC, and FPGA
+realization boundaries recorded in `completion_audit.md`.

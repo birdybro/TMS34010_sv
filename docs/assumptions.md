@@ -598,6 +598,50 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0043 — Asynchronous physical host bus CDC and re-arm contract
+- **Date**: 2026-07-28 (Task 0153).
+- **Status**: specification-derived host protocol with an isolated
+  functional-first CDC/strobe-width realization; final FPGA timing and
+  original-cycle latency proof remain open.
+- **Sources**: 1988 TI TMS34010 User's Guide §2.2, Table 2-2, pages 2-5
+  through 2-6; §10.3.2, pages 10-4 through 10-10; and A0006.
+- **Access qualification**: a physical access exists only while HCS is low,
+  exactly one of HREAD/HWRITE is low, and at least one of HLDS/HUDS is low.
+  The last active control starts it and the first inactive control ends it.
+  Both directions low is invalid and launches no internal request.
+- **Bundled-data crossing**: the combined access level passes through an
+  attributed 2FF synchronizer. HRDY falls directly from the raw active pins
+  while that crossing completes, so HFS, direction, byte selection, and HD
+  are a stable MCP payload. The core captures them only after the synchronized
+  level arrives, holds one request through acknowledge, and registers read
+  data before allowing completion. Individual payload bits are not
+  synchronized independently.
+- **External hold/re-arm requirement**: the host must retain the active access
+  and payload until HRDY is high. After ending it, the combined access must
+  remain inactive long enough for both synchronizer stages and the one-access
+  latch to clear before another access begins. This minimum inactive width is
+  an FPGA interface requirement not stated as such for original silicon; the
+  final datasheet/board timing audit must prove it or replace the bridge with
+  a faster asynchronous-front-end handshake.
+- **HRDY policy**: every legal access may receive an extra wait for CDC. A
+  registered response wins over a newly started indirect busy condition so
+  the current access can end; that busy condition then waits the following
+  access. HCS with stable HSTCTL selection lowers HRDY before direction/byte
+  strobes and holds a deterministic two-core-count interval after
+  synchronized recognition. This functionally preserves the mandatory
+  HSTCTL delay but does not yet claim the guide's exact one-to-two-local-clock
+  latency without the final PLL/TimeQuest relationship.
+- **HD direction**: read data remains registered until access re-arm and only
+  captured selected byte lanes receive output-enable intent. Writes, waits,
+  illegal direction combinations, and inactive HCS never enable HD outputs.
+  The FPGA top must map `hd_i`, `hd_o`, and `hd_oe_o` to bidirectional I/O
+  cells.
+- **Regression evidence**: `tb_host_bus` offsets host edges from the core
+  clock and covers access starts, stable capture, byte lanes, illegal
+  direction, HSTCTL HCS-only delay, busy carryover/current-ready priority, and
+  re-arm. `tb_pin_system` routes the full host-indirect PMASK sequence through
+  physical pins while retaining local-bus, HOLD, and EMU checks.
+
 ## A0042 — Physical RUN/EMU event bridge and shared output
 - **Date**: 2026-07-28 (Task 0152).
 - **Status**: specification-derived physical RUN/EMU synchronization and
@@ -740,7 +784,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   Tasks 0149–0150 now generate processor and host-indirect I/O cycle
   kinds/data upstream. Task 0151 adds sampled physical HOLD, phased HOLDA,
   and explicit output-enable release; Task 0152 completes the shared
-  HLDA/EMUA output.
+  HLDA/EMUA output; Task 0153 replaces the integrated wrapper's synchronous
+  host boundary with the original physical controls and split HD direction.
 - **Regression evidence**: `tb_local_bus` verifies both LCLK waveforms, all
   seven cycle kinds, exact word/screen/refresh/I/O address/status values,
   write/read/control ordering, mid-Q4 read data, ordinary and
@@ -800,9 +845,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   transaction can acknowledge the register transfer while its captured
   local-word request continues; later host requests are backpressured until
   that request is acknowledged. This preserves the functional role of HRDY
-  without claiming its asynchronous pin phases or one-to-two-clock HSTCTL
-  pulse timing. The physical wrapper remains responsible for CDC and §10.3
-  strobe behavior.
+  at the synchronous engine boundary. Task 0153 now supplies the physical CDC
+  and §10.3 strobe behavior under A0043; this inner module still makes no pin
+  timing claim.
 - **Collision choices**: §10.3.3.4 requires software to avoid simultaneous
   processor/host HSTADR/HSTDATA accesses and says invalid data may result.
   The isolated FPGA boundary chooses an accepted host access over a
@@ -810,9 +855,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   automatic returning-read or INCW update; an accepted host access would win
   over both. Captured local payload never changes after any later collision.
 - **Integration boundary**: Task 0144 instantiates the engine in the I/O/core
-  hierarchy and exposes its local-word client. The next memory-fabric task
-  must arbitrate and service that client; the physical host wrapper must
-  provide HRDY, pin strobes, and CDC.
+  hierarchy and exposes its local-word client; Tasks 0146/0150 arbitrate and
+  service it; Task 0153 provides HRDY, pin strobes, and CDC around the
+  retained synchronous contract.
 - **Regression evidence**: `tb_host_if` covers reset, processor no-side-effect
   access, HSTCTL forwarding, both LBL orders, prefetch, INCR/INCW timing,
   partial-byte merging, request stability, backpressure, wraparound, and the
@@ -833,12 +878,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   instruction boundary, blocks every interrupt while already halted, and
   leaves refresh/video functions running. A new simultaneous NMI+HLT
   completes NMI entry and halts before the first handler instruction.
-- **FPGA boundary**: the current `host_req_i` transaction carries a register
+- **FPGA boundary**: the inner `host_req_i` transaction carries a register
   selector, direction, byte enables, and write data in the core clock domain;
   registered acknowledge, read data, busy, and HINT complete the synchronous
-  abstraction. The future host-pin wrapper must implement physical strobes,
-  HRDY, and coherent asynchronous CDC. This does not claim original-pin
-  timing.
+  abstraction. Task 0153 wraps it with physical strobes, HRDY, and coherent
+  asynchronous capture under A0043. This inner boundary does not itself claim
+  original-pin timing.
 - **Collision choices**: the guide declares conflicting simultaneous
   host/processor HSTCTLH writes unpredictable; this boundary chooses host
   priority. HSTCTLL remains hazard-free, with producer events winning

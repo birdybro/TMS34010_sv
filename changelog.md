@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0153 — asynchronous physical host bus)
+- Added `tms34010_host_bus` around the synchronous four-register engine and
+  replaced `tms34010_pin_system`'s abstract host request/response ports with
+  active-low HCS/HREAD/HWRITE/HLDS/HUDS, HFS, HRDY, and split HD data/output
+  enables.
+- Qualified only read-exclusive or write-exclusive accesses with a selected
+  byte, lowered HRDY immediately, and synchronized the combined access before
+  capturing the stable HFS/direction/byte/write-data bundle.
+- Held one core-clock request through acknowledge, retained returned read data
+  through physical release, and enabled only the selected HD lanes during a
+  completed read.
+- Added HCS-only HSTCTL wait generation, current-access ready priority over a
+  newly launched indirect side effect, and prior-busy backpressure for the
+  following access.
+- Added `tb_host_bus` for clock-offset pin starts, coherent capture, invalid
+  direction, byte-lane data direction, HSTCTL delay, busy carryover, and CDC
+  re-arm. Converted `tb_pin_system` host traffic to the physical pins while
+  preserving end-to-end I/O, HOLD, and EMU checks.
+- Validation: focused host/physical-pin benches PASS; `scripts/lint.sh`
+  clean; full regression 140/140 PASS.
+
 ### Added (Task 0152 — shared physical HLDA/EMUA pin)
 - Synchronized the active-low physical RUN/EMU input into the core domain
   with RUN as the reset-safe state.

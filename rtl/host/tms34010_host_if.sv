@@ -12,8 +12,9 @@
 // local cycle (§10.3.3.4).
 //
 // This module is entirely in the core clock domain. Its host request/ack
-// boundary represents transactions that have already crossed the future
-// asynchronous pin wrapper; it does not claim HCS/HREAD/HWRITE/HRDY timing.
+// boundary represents transactions that have crossed the Task 0153
+// asynchronous pin wrapper; this module itself does not claim
+// HCS/HREAD/HWRITE/HRDY timing.
 // The local-word request and payload remain stable until acknowledgement.
 //
 // Resource plan:

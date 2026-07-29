@@ -4,9 +4,9 @@
 // End-to-end core-clock to original-pin regression. A pin-level memory target
 // observes the multiplexed row/column address, returns a boot program on LAD,
 // and verifies that the core boots only after the eight automatic reset RAS
-// cycles. The program and synchronous host port both write/read PMASK through
-// physical I/O cycles, while IAQ distinguishes opcode words from vector/
-// immediate data.
+// cycles. The program and asynchronous original-pin host bus both write/read
+// PMASK through physical I/O cycles, while IAQ distinguishes opcode words
+// from vector/immediate data.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -46,18 +46,20 @@ module tb_pin_system;
   logic            run_emu_n = 1'b1;
   logic            hold_n = 1'b1;
   logic            hlda_emua_n;
+  logic            hcs_n = 1'b0;
+  logic            hread_n = 1'b1;
+  logic            hwrite_n = 1'b1;
+  logic            hlds_n = 1'b1;
+  logic            huds_n = 1'b1;
+  logic [1:0]      hfs = HOST_REG_HSTADRL;
+  local_word_t     hd_i = '0;
+  local_word_t     hd_o;
+  logic [1:0]      hd_oe;
+  logic            hrdy;
   local_subphase_t subphase;
   logic            init_done;
   logic            local_busy;
   logic            bridge_busy;
-  logic            host_req;
-  logic            host_we;
-  host_reg_sel_t   host_reg;
-  logic [1:0]      host_be;
-  local_word_t     host_wdata;
-  local_word_t     host_rdata;
-  logic            host_ack;
-  logic            host_busy;
   core_state_t     core_state;
   logic [ADDR_WIDTH-1:0] pc;
   instr_word_t     instr_word;
@@ -97,15 +99,16 @@ module tb_pin_system;
     .bus_clk8x_i       (bus_clk8x),
     .rst               (rst),
     .run_emu_n_i       (run_emu_n),
-    .hcs_n_i           (1'b0),
-    .host_req_i        (host_req),
-    .host_we_i         (host_we),
-    .host_reg_i        (host_reg),
-    .host_be_i         (host_be),
-    .host_wdata_i      (host_wdata),
-    .host_rdata_o      (host_rdata),
-    .host_ack_o        (host_ack),
-    .host_busy_o       (host_busy),
+    .hcs_n_i           (hcs_n),
+    .hread_n_i         (hread_n),
+    .hwrite_n_i        (hwrite_n),
+    .hlds_n_i          (hlds_n),
+    .huds_n_i          (huds_n),
+    .hfs_i             (hfs),
+    .hd_i              (hd_i),
+    .hd_o              (hd_o),
+    .hd_oe_o           (hd_oe),
+    .hrdy_o            (hrdy),
     .hint_n_o          (),
     .lint1_n_i         (1'b1),
     .lint2_n_i         (1'b1),
@@ -323,24 +326,43 @@ module tb_pin_system;
     int unsigned watchdog;
     begin
       @(negedge core_clk);
-      host_req   = 1'b1;
-      host_we    = write_access;
-      host_reg   = selected_reg;
-      host_be    = byte_enable;
-      host_wdata = write_data;
+      hfs      = selected_reg;
+      hd_i     = write_data;
+      hread_n  = write_access;
+      hwrite_n = !write_access;
+      hlds_n   = !byte_enable[0];
+      huds_n   = !byte_enable[1];
+      #2;
+      hcs_n = 1'b0;
+      #1;
+      check(!hrdy, "physical host access did not lower HRDY");
+      check(hd_oe == 2'b00, "physical HD drove before host completion");
+
       watchdog = 0;
-      while (!host_ack && (watchdog < 100)) begin
+      while (!hrdy && (watchdog < 100)) begin
         @(posedge core_clk);
         #1;
         watchdog++;
       end
-      check(host_ack, "pin-system host-register cycle timed out");
-      read_data = host_rdata;
+      check(hrdy, "pin-system physical host cycle timed out");
+      read_data = hd_o;
+      if (write_access)
+        check(hd_oe == 2'b00, "physical host write drove HD");
+      else
+        check(hd_oe == byte_enable,
+              "physical host read enabled the wrong HD lanes");
+
       @(negedge core_clk);
-      host_req = 1'b0;
-      host_we  = 1'b0;
-      host_be  = 2'b00;
-      @(posedge core_clk);
+      hcs_n    = 1'b1;
+      hread_n  = 1'b1;
+      hwrite_n = 1'b1;
+      hlds_n   = 1'b1;
+      huds_n   = 1'b1;
+      hd_i     = '0;
+      #1;
+      check(hrdy, "HRDY remained low after physical HCS release");
+      check(hd_oe == 2'b00, "HD drove after physical HCS release");
+      repeat (3) @(posedge core_clk);
       #1;
     end
   endtask
@@ -365,12 +387,13 @@ module tb_pin_system;
     int unsigned watchdog;
     begin
       watchdog = 0;
-      while (host_busy && (watchdog < 200)) begin
+      while (dut.core_host_busy && (watchdog < 200)) begin
         @(posedge core_clk);
         #1;
         watchdog++;
       end
-      check(!host_busy, "pin-system host-indirect cycle timed out");
+      check(!dut.core_host_busy,
+            "pin-system host-indirect cycle timed out");
     end
   endtask
 
@@ -436,15 +459,13 @@ module tb_pin_system;
     logic [ADDR_WIDTH-1:0] held_pc;
     int unsigned watchdog;
 
-    host_req   = 1'b0;
-    host_we    = 1'b0;
-    host_reg   = HOST_REG_HSTCTL;
-    host_be    = 2'b00;
-    host_wdata = '0;
-
     repeat (6) @(posedge core_clk);
     @(negedge core_clk);
     rst = 1'b0;
+    // HCS was active throughout reset to select self-bootstrap/run. Release
+    // it once the strap has been sampled so later host cycles can use HCS as
+    // the last-active/first-inactive physical access strobe.
+    hcs_n = 1'b1;
 
     // The fixed EMU at address 0090h executes in RUN mode. Its core-clock
     // event must become one and only one complete Q1/Q2 pulse on the shared

@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0152. Task 0124
+Functional implementation work is complete through Task 0153. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -67,6 +67,10 @@ release and reacquisition at the specified Q2/Q3 boundaries.
 Task 0152 synchronizes RUN/EMU, transfers each architectural EMU event into
 the 8× domain with a held handshake, and combines exact Q1/Q2 EMUA with
 Q3/Q4 HLDA on the original shared output pin.
+Task 0153 replaces the integrated wrapper's synchronous host boundary with
+the original active-low HCS/HREAD/HWRITE/HLDS/HUDS controls, HFS selection,
+byte-lane HD direction, immediate HRDY waits, coherent bundled capture, and
+prior-indirect busy backpressure.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -106,18 +110,20 @@ The repository currently contains:
   release/resume sequencing;
 - the original shared HLDA/EMUA output, with lossless EMU-event CDC and
   phase-exclusive EMUA/HLDA selection under simultaneous halt and HOLD;
+- the asynchronous original-pin host bus, with legal-access qualification,
+  HCS-triggered HSTCTL delay, coherent register request/response capture,
+  indirect-busy waits, latched read data, and per-byte HD output enables;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 139 self-checking SystemVerilog testbenches, including an exhaustive
+- 140 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining physical VRAM serial service, host pin
-wrapper/HRDY/CDC, remaining I/O side effects, video
-display-memory behavior and VCLK/CDC, real Quartus project/constraints, and
-timing/resource validation.
+the audit records the remaining physical VRAM serial service, I/O side
+effects, video display-memory behavior and VCLK/CDC, real Quartus
+project/constraints, and timing/resource/CDC validation.
 
 ## Getting started
 

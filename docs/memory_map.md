@@ -2,13 +2,15 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0152**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0153**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
 > bridge, processor/host-indirect on-chip I/O use the dedicated cycle kinds,
 > physical HOLD/HOLDA bus release and the shared HLDA/EMUA output are
-> integrated; host pins and several register side effects remain.
+> integrated, and the original asynchronous host controls, HRDY, and split
+> HD direction now wrap the four-register engine. Several register side
+> effects remain.
 
 ## Architectural address space
 
@@ -94,6 +96,13 @@ is synchronized into the core; a held event bridge turns each architectural
 EMU execution into one complete Q1/Q2 EMUA pulse, and a phase-latched halt
 level repeats it while stopped. LCLK1 selects EMUA in Q1/Q2 and the Task 0151
 HLDA result in Q3/Q4 on one shared output.
+
+Task 0153 adds `tms34010_host_bus` around the synchronous register engine.
+The original active-low HCS/direction/byte strobes and HFS selection now form
+one coherently captured transaction; HRDY waits for the response and any
+older indirect operation, while completed reads retain data and enable only
+the selected HD byte lanes. HCS remains the reset strap presented to the I/O
+owner and independently starts the HSTCTL wait interval.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -211,15 +220,15 @@ integrated.
 
 ## Host-interface-visible registers
 
-The integrated synchronous host boundary selects HSTADRL, HSTADRH, HSTDATA,
-or the combined HSTCTL register and exposes active-low HINT.
-`tms34010_host_if` owns HSTADR/HSTDATA storage and side effects while passing
-HSTCTL through to the I/O register owner. These represent completed
-core-clock-domain transactions, not an asynchronous original-pin bus.
-Host-indirect addresses in the I/O page nevertheless traverse the landed
-arbiter, CDC bridge, and physical RAS/LAL-only cycle before HSTDATA updates or
-a register write commits.
-Physical pin timing/CDC and HRDY generation remain open.
+The physical host boundary maps HFS `00/01/10/11` to HSTADRL, HSTADRH,
+HSTDATA, and combined HSTCTL respectively, with active-low HREAD/HWRITE and
+HLDS/HUDS controls plus active-low HINT. `tms34010_host_bus` establishes a
+coherent core-clock request and returns HRDY/read data; `tms34010_host_if`
+owns HSTADR/HSTDATA storage and side effects while passing HSTCTL through to
+the I/O register owner. Host-indirect addresses in the I/O page traverse the
+landed arbiter, CDC bridge, and physical RAS/LAL-only cycle before HSTDATA
+updates or a register write commits. Final FPGA pin buffers and timing
+constraints remain part of hardware realization, not the register map.
 
 ## Display / video memory behavior
 
@@ -234,6 +243,5 @@ pixel output.
 
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
-- Host HRDY/pin timing and CDC.
 - Dedicated VCLK/CDC, external-sync/interlace timing, VRAM shift-register
   behavior, and pixel output.
