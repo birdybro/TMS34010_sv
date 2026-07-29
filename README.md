@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0147. Task 0124
+Functional implementation work is complete through Task 0148. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -51,6 +51,9 @@ arbiter behind one synthesizable functional-system/controller boundary.
 Task 0147 added the standalone original-pin local-bus phase engine with
 LCLK1/LCLK2, exact address/status multiplexing, LRDY extension, all landed
 word/screen/DRAM/I/O cycle families, and eight post-reset RAS-only cycles.
+Task 0148 connected that engine to the core-clock memory fabric through a
+two-phase coherent command/response bridge, propagated opcode IAQ and
+screen-refresh ORG, and added an integrated pin-system wrapper.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -79,16 +82,18 @@ The repository currently contains:
 - a standalone 8×-clock original-pin local-bus engine covering ordinary word,
   screen-transfer, RAS-only, CAS-before-RAS, and I/O cycles, including LRDY
   waits and reset initialization;
+- an integrated core-clock-to-8× pin-system wrapper using a lossless MCP
+  command/response CDC, including returned read data, IAQ, and screen ORG;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 135 self-checking SystemVerilog testbenches, including an exhaustive
+- 137 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining core-to-8× local-bus CDC/integration and HOLD
-pin release, physical VRAM serial service, host pin wrapper/HRDY/CDC,
+the audit records the remaining physical HOLD pin release, on-chip I/O bus
+completion, physical VRAM serial service, host pin wrapper/HRDY/CDC,
 remaining I/O side effects, video display-memory behavior and VCLK/CDC, real
 Quartus project/constraints, and timing/resource validation.
 

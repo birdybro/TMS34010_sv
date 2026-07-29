@@ -113,6 +113,7 @@ module tms34010_io_regs
   input  logic                  screen_refresh_ack_i,
   output logic [13:0]           screen_refresh_srfaddr_o,
   output logic [15:0]           screen_refresh_dpytap_o,
+  output logic                  screen_refresh_org_o,
   input  logic                  nmi_clear,     // clear HSTCTLH.NMI after NMI entry
   input  logic                  wvp_set,       // synchronous INTPEND.WVP set pulse
   input  logic                  dpyint_set,    // synchronous INTPEND.DIP set pulse
@@ -283,7 +284,8 @@ module tms34010_io_regs
     .refresh_req     (screen_refresh_req_o),
     .refresh_ack     (screen_refresh_ack_i),
     .refresh_srfaddr (screen_refresh_srfaddr_o),
-    .refresh_dpytap  (screen_refresh_dpytap_o)
+    .refresh_dpytap  (screen_refresh_dpytap_o),
+    .refresh_org     (screen_refresh_org_o)
   );
 
   // INTPEND is a composite view, not general storage. External requests and

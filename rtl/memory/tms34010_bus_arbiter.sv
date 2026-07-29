@@ -43,6 +43,7 @@ module tms34010_bus_arbiter
   input  logic                          screen_req_i,
   input  logic [13:0]                   screen_srfaddr_i,
   input  logic [15:0]                   screen_dpytap_i,
+  input  logic                          screen_org_i,
   output logic                          screen_ack_o,
 
   input  logic                          dram_req_i,
@@ -61,6 +62,7 @@ module tms34010_bus_arbiter
   input  logic                          cpu_we_i,
   input  logic [ADDR_WIDTH-1:0]         cpu_addr_i,
   input  local_word_t                   cpu_wdata_i,
+  input  logic                          cpu_iaq_i,
   input  logic                          cpu_rmw_lock_i,
   output local_word_t                   cpu_rdata_o,
   output logic                          cpu_ack_o,
@@ -70,8 +72,10 @@ module tms34010_bus_arbiter
   output local_cycle_kind_t             cycle_kind_o,
   output logic [ADDR_WIDTH-1:0]         cycle_addr_o,
   output local_word_t                   cycle_wdata_o,
+  output logic                          cycle_iaq_o,
   output logic [13:0]                   cycle_srfaddr_o,
   output logic [15:0]                   cycle_dpytap_o,
+  output logic                          cycle_screen_org_o,
   output logic [7:0]                    cycle_dram_row_o,
   input  local_word_t                   cycle_rdata_i,
   input  logic                          cycle_ack_i
@@ -206,8 +210,10 @@ module tms34010_bus_arbiter
     cycle_kind_o     = LOCAL_CYCLE_WORD_READ;
     cycle_addr_o     = '0;
     cycle_wdata_o    = '0;
+    cycle_iaq_o      = 1'b0;
     cycle_srfaddr_o  = '0;
     cycle_dpytap_o   = '0;
+    cycle_screen_org_o = 1'b0;
     cycle_dram_row_o = '0;
 
     unique case (state_q)
@@ -220,6 +226,7 @@ module tms34010_bus_arbiter
         cycle_kind_o    = LOCAL_CYCLE_SCREEN_REFRESH;
         cycle_srfaddr_o = screen_srfaddr_i;
         cycle_dpytap_o  = screen_dpytap_i;
+        cycle_screen_org_o = screen_org_i;
         screen_ack_o    = cycle_ack_i;
       end
 
@@ -249,6 +256,7 @@ module tms34010_bus_arbiter
                       : LOCAL_CYCLE_WORD_READ;
         cycle_addr_o  = cpu_addr_i;
         cycle_wdata_o = cpu_wdata_i;
+        cycle_iaq_o   = cpu_iaq_i;
         cpu_ack_o     = cycle_ack_i;
       end
 

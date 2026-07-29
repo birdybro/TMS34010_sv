@@ -2,10 +2,13 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0147. Task 0147
-implements the standalone 8× original-pin local-bus phase engine, all landed
-cycle families, LRDY waits, exact address/status multiplexing, and eight
-post-reset RAS-only cycles. Task 0146 connects the core's CPU/graphics,
+The functional implementation is complete through Task 0148. Task 0148
+connects the core-clock fabric to the 8× original-pin engine through a
+coherent two-phase MCP command/response bridge, propagates IAQ and captured
+screen ORG, and adds the integrated pin-system wrapper. Task 0147 implements
+the 8× original-pin local-bus phase engine, all landed cycle families, LRDY
+waits, exact address/status multiplexing, and eight post-reset RAS-only
+cycles. Task 0146 connects the core's CPU/graphics,
 screen, DRAM-refresh, and host-indirect clients through the field sequencer
 and fixed-priority arbiter to one abstract controller boundary. Task 0145
 landed that arbiter with active-owner
@@ -4890,6 +4893,57 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 8eff258
+
+---
+
+### Task 0148: Integrate the core and original-pin local bus coherently
+Status: complete
+Dependencies:
+- Task 0146 (integrated core-clock memory-fabric boundary).
+- Task 0147 (standalone 8× original-pin phase engine).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §11.5, pages 11-23 through 11-24
+  (IAQ status and instruction-acquisition scope).
+- 1988 TI TMS34010 User's Guide §9.10.1.2, Figures 9-13/9-14,
+  pages 9-20 through 9-23 (screen-refresh ORG address selection).
+- `docs/hdl-coding-guidelines/23-cdc-single-bit.md` and
+  `24-cdc-multi-bit.md` (Cyclone V synchronizer and MCP contracts).
+Acceptance Criteria:
+- Add a synthesizable lossless command/response crossing between the
+  core-clock fabric and 8× local-bus controller without independently
+  synchronizing any changing multi-bit bus.
+- Register and hold the complete source command until a two-phase request/
+  acknowledge exchange finishes; capture the stable payload in the
+  destination domain and keep its request stable through controller waits.
+- Hold returned read data in the 8× domain until the acknowledge toggle
+  reaches the source, then emit exactly one core-clock completion pulse.
+- Prevent the arbiter's held request from being accepted twice around the
+  completion edge.
+- Generate IAQ only for opcode fetch words with the current cacheless core,
+  capture screen ORG with each refresh request, and propagate both metadata
+  values through the fabric and bridge.
+- Add an integrated synthesizable wrapper joining the functional system,
+  CDC bridge, and original-pin engine while leaving physical HOLD and
+  asynchronous host pins isolated for following tasks.
+- Verify reset ordering so the core's pending vector request cannot reach
+  physical memory until all eight automatic reset RAS cycles complete.
+Tests:
+- `tb_local_bus_bridge` PASS (non-integer clock ratio, every command payload
+  field, variable destination stalls, returned data, one-shot completion,
+  held-source duplicate suppression, and five consecutive toggle phases).
+- `tb_pin_system` PASS (eight reset RAS-only cycles, physical two-word reset
+  vector, pin-returned opcode execution, and IAQ low/high distinction).
+- Updated `tb_display_addr`, `tb_bus_arbiter`, `tb_bus_arbiter_rmw`, and
+  `tb_system_fabric` PASS with captured ORG, IAQ, and payload-stability checks.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 137/137 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

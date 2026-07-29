@@ -16,9 +16,10 @@
 // refreshes occur every LCSTRT+1 eligible scan lines. On completion, SRFADR
 // increments or decrements by DPYCTL.DUDATE and LNCNT reloads.
 //
-// Current scope (Task 0141): same-clock internal/noninterlaced scheduling
-// under A0034. Interlaced half-DUDATE adjustment, VCLK CDC, and the physical
-// VRAM memory-to-register bus cycle remain later tasks.
+// Current scope: same-clock internal/noninterlaced scheduling under A0034.
+// Task 0148 carries the captured ORG direction with each request through the
+// physical-bus bridge. Interlaced half-DUDATE adjustment and VCLK CDC remain
+// later tasks.
 //
 // Spec source:
 //   1988 TI TMS34010 User's Guide pages 6-17..6-24 and §9.10.1.
@@ -47,7 +48,8 @@ module tms34010_display_addr
   output logic        refresh_req,
   input  logic        refresh_ack,
   output logic [13:0] refresh_srfaddr,
-  output logic [15:0] refresh_dpytap
+  output logic [15:0] refresh_dpytap,
+  output logic        refresh_org
 );
 
   logic        sre_prev_q;
@@ -91,6 +93,7 @@ module tms34010_display_addr
       refresh_req         <= 1'b0;
       refresh_srfaddr     <= 14'h0000;
       refresh_dpytap      <= 16'h0000;
+      refresh_org         <= 1'b0;
       sre_prev_q          <= 1'b0;
       first_after_enable_q <= 1'b0;
     end else begin
@@ -112,6 +115,7 @@ module tms34010_display_addr
         refresh_req     <= 1'b1;
         refresh_srfaddr <= dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO];
         refresh_dpytap  <= dpytap & DPYTAP_MASK;
+        refresh_org     <= dpyctl[DPYCTL_ORG_BIT];
       end
 
       // A processor write has deterministic priority over automatic state

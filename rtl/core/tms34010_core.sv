@@ -40,6 +40,7 @@ module tms34010_core
   output logic [ADDR_WIDTH-1:0]               mem_addr,
   output logic [FIELD_SIZE_WIDTH-1:0]         mem_size,
   output logic [DATA_WIDTH-1:0]               mem_wdata,
+  output logic                                mem_iaq,
   input  logic [DATA_WIDTH-1:0]               mem_rdata,
   input  logic                                mem_ack,
 
@@ -98,6 +99,7 @@ module tms34010_core
   input  logic                                screen_refresh_ack_i,
   output logic [13:0]                         screen_refresh_srfaddr_o,
   output logic [15:0]                         screen_refresh_dpytap_o,
+  output logic                                screen_refresh_org_o,
 
   // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
@@ -2386,6 +2388,7 @@ module tms34010_core
     .screen_refresh_ack_i(screen_refresh_ack_i),
     .screen_refresh_srfaddr_o(screen_refresh_srfaddr_o),
     .screen_refresh_dpytap_o(screen_refresh_dpytap_o),
+    .screen_refresh_org_o(screen_refresh_org_o),
     .nmi_clear(nmi_clear),
     .wvp_set  (wvp_set),
     .dpyint_set(dpyint_set_i),
@@ -2643,6 +2646,7 @@ module tms34010_core
     mem_addr      = '0;
     mem_size      = '0;
     mem_wdata     = '0;
+    mem_iaq       = 1'b0;
     pc_advance_en = 1'b0;
 
     unique case (state_q)
@@ -2681,6 +2685,7 @@ module tms34010_core
           mem_we_int   = 1'b0;
           mem_addr = pc_value;
           mem_size = INSTR_WORD_BITS;
+          mem_iaq  = 1'b1;
           if (mem_ack) begin
             state_d       = CORE_DECODE;
             pc_advance_en = 1'b1;       // advance PC by INSTR_WORD_BITS

@@ -2,11 +2,11 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0147**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0148**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
-> The standalone original-pin phase engine is implemented; its CDC/system
-> hookup and several I/O side effects remain open.
+> The original-pin phase engine is connected through a coherent core-to-8×
+> bridge; physical HOLD/host pins and several I/O side effects remain open.
 
 ## Architectural address space
 
@@ -47,15 +47,23 @@ core through `tms34010_system`. CPU/graphics fields, screen refresh, DRAM
 refresh, and host-indirect accesses now converge on one held abstract
 controller cycle.
 
-Task 0147 adds `tms34010_local_bus` at the physical side of that open
+Task 0147 adds `tms34010_local_bus` at the physical side of that
 boundary. From a dedicated 8× timing clock it generates LCLK1/LCLK2 and the
 half-quarter LAD/RAS/CAS/LAL/W/TR/DEN/DDOUT schedule for word reads/writes,
 screen memory-to-register transfers, both DRAM-refresh modes, and I/O cycles.
 It emits the exact §11.5 word/refresh status format plus the §9.10.1.2
 screen-address network, repeats the access period while LRDY is low, and
 performs eight zero-row RAS-only cycles after reset. The controller command
-port is intentionally synchronous to the 8× domain; the coherent bridge from
-the core-clock fabric remains a following task.
+port is intentionally synchronous to the 8× domain.
+
+Task 0148 adds `tms34010_local_bus_bridge` and `tms34010_pin_system`. A
+source-registered `local_cycle_cmd_t` holds kind, address/data, IAQ,
+SRFADR/DPYTAP/ORG, and DRAM row while a request toggle crosses to the 8×
+domain. The completed read word is held in the reverse direction until the
+acknowledge toggle returns. The current cacheless core asserts IAQ only for
+the opcode word fetched in `CORE_FETCH`; immediate instruction words and all
+data/vector words drive it low. The integrated reset-vector transaction waits
+behind the controller's eight reset RAS cycles before appearing on LAD.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -66,9 +74,9 @@ pixel operations similarly drive `mem_size` from PSIZE.
 
 The architectural address is 32 bits; the local-bus controller emits logical
 address bits [29:4] in the original multiplexed format, with RF/TR/IAQ in the
-three status positions. A following CDC/integration layer transfers held
-arbiter commands and completed read/ack responses between the core and 8×
-domains.
+three status positions. The MCP layer transfers held arbiter commands and
+completed read/ack responses between the core and 8× domains without treating
+the multi-bit payload as independently synchronized bits.
 
 ## Architectural vector words
 
@@ -184,19 +192,17 @@ Physical pin timing/CDC and HRDY generation remain open.
 
 The original device interacts with VRAM through random-access and serial-shift
 cycles. The current repository now schedules and holds the screen-refresh
-client request with raw SRFADR/DPYTAP. The standalone controller implements
-its physical memory-to-register pin cycle and address network, but it is not
-yet connected to the held request and there is no VRAM serial-output model or
-pixel output. The held request does reach the abstract local-cycle arbiter in
-`tms34010_system`.
+client request with captured SRFADR/DPYTAP/ORG. The integrated MCP bridge
+routes it to the controller's physical memory-to-register pin cycle and
+returns completion to DPYADR. There is still no VRAM serial-output model or
+pixel output.
 
 ## Uncertain / partially implemented areas
 
-- Core-clock-to-8× local-bus CDC/integration, IAQ propagation from the core,
-  screen ORG payload propagation, and physical HOLD release.
+- Physical HOLD pin release and bus high-impedance behavior.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
 - Host HRDY/pin timing and CDC.
-- Dedicated VCLK/CDC, external-sync/interlace timing, display-address
-  generation, and VRAM shift-register behavior.
+- Dedicated VCLK/CDC, external-sync/interlace timing, VRAM shift-register
+  behavior, and pixel output.

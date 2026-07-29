@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0147, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0148, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -14,7 +14,8 @@
 | PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
 | Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
 | Field-window shift/mask and word merge | Task 0136      | landed, sequenced, unmeasured | preserve the registered word boundary; pipeline only if TimeQuest identifies this path |
-| 8× local-bus phase/pin decode        | Task 0147        | landed standalone, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the PLL clock and every pin delay before integration |
+| 8× local-bus phase/pin decode        | Task 0147        | landed/integrated, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the PLL clock and every pin delay before FPGA sign-off |
+| Core↔8× MCP payload/response paths   | Task 0148        | landed, protocol-protected, unconstrained | declare asynchronous clocks, preserve/recognize toggle synchronizers, and cut/waive only the stable MCP payload paths |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -25,9 +26,10 @@
   acknowledge and the next state is `CORE_FETCH`; there is no stack or data
   write. The field sequencer expands that abstract request into two ascending
   16-bit word reads and holds each request through `word_ack_i`. The eight
-  original-silicon RAS-only initialization cycles are now implemented by the
-  standalone local-bus controller, but do not yet precede this transaction in
-  `tms34010_system` until the core/8× bridge lands.
+  original-silicon RAS-only initialization cycles are implemented by the
+  local-bus controller. In `tms34010_pin_system`, the core request may wait in
+  the bridge while initialization runs and cannot reach physical LAD until
+  all eight cycles retire.
 - **Host-present reset halt** — if HCS is high during reset,
   HSTCTLH.HLT resets to one and `CORE_RESET_HALT` issues no vector or
   instruction request. A synchronous direct-host high-byte write clearing
@@ -73,7 +75,9 @@
   requests are 64 clocks apart. During each request pulse, the row is the
   newly decremented value and `refresh_cbr_o` reflects CONTROL.RM. The
   Task 0145 arbiter captures this event until it performs the physical cycle;
-  its core/client service wiring does not exist yet.
+  Task 0148 routes it through the MCP bridge to the RAS-only or CBR phase
+  engine. The final HOLD/wait/PLL configuration must still prove the one-entry
+  pending latch cannot be overrun.
 - **Integrated video timing** — Task 0139 runs the internal/noninterlaced
   generator on the project `clk` under A0034. HCOUNT advances each positive
   edge and wraps after HTOTAL; that wrap advances VCOUNT and wraps it after
@@ -84,13 +88,15 @@
   inactive until the following count. These are functional clock
   relationships, not the original falling-VCLK pin phase.
 - **Screen-refresh request** — at an eligible start-HBLANK event,
-  `screen_refresh_req_o` registers high and captures SRFADR/DPYTAP. The level
+  `screen_refresh_req_o` registers high and captures SRFADR/DPYTAP/ORG. The level
   and payload remain stable for an unbounded number of core clocks until
   `screen_refresh_ack_i` reports completion of the future physical VRAM
   transfer. That acknowledge clears the request, reloads LNCNT, and updates
   SRFADR by the live DUDATE/ORG value. Processor DPYADR load wins a same-edge
   automatic update. Task 0145's arbiter contract does not acknowledge
   selection alone; acknowledge denotes completed memory-to-register service.
+  Task 0148 carries that held request through the MCP bridge and returns the
+  acknowledge only after the 8× screen-transfer cycle completes.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
@@ -140,14 +146,16 @@
   Screen-transfer TR/QE releases during the original access period and is not
   repeated with RAS/CAS/LAL. Reset release starts eight two-clock, zero-row
   RAS-only cycles, each independently extendable by LRDY. This is verified
-  standalone; no frequency/phase relationship to the core clock is assumed.
+  both standalone and through the integrated wrapper; no frequency/phase
+  relationship to the core clock is assumed by the bridge.
 - **Integrated functional fabric** — `tms34010_system` routes the core's
   architectural field request through `tms34010_field_sequencer`, then joins
   its words with host, screen, and DRAM-refresh traffic in the arbiter. No
   additional queue or register stage is inserted by
   `tms34010_memory_fabric`; the controller observes the selection bubbles and
-  held-cycle latency described above. The wrapper still has no pin-phase or
-  clock-frequency contract.
+  held-cycle latency described above. `tms34010_pin_system` adds the MCP
+  round-trip and 8× phase latency but no new scheduling policy. The wrapper
+  has no fixed clock-frequency ratio contract.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on
@@ -189,8 +197,8 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## FPGA timing concerns
 
-- The integrated functional system still has one core clock; the standalone
-  local-bus engine adds a planned dedicated 8× PLL domain. Target Fmax is
+- The integrated pin system has one core clock and a dedicated 8× local-bus
+  timing domain; a future PLL supplies the latter. Target Fmax is
   **not** set yet. Initial core-clock sanity target:
   clear 50 MHz on the documented Cyclone V `5CSEBA6U23I7`, then set the real
   target from system requirements and measured reports.
@@ -201,20 +209,29 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## Local-bus clock boundary
 
-Task 0147 deliberately keeps the local-bus request, payload, response, and
-acknowledge synchronous to `clk8x_i`. LCLK1/LCLK2 are output waveforms decoded
-from the internal subphase counter and are never used as fabric clocks. A
-future PLL supplies `clk8x_i`; the QSF/SDC must put that PLL output on a clock
-network and constrain the physical LCLK/LAD/control pins.
+Task 0147 keeps the local-bus request, payload, response, and acknowledge
+synchronous to `clk8x_i`. LCLK1/LCLK2 are output waveforms decoded from the
+internal subphase counter and are never used as fabric clocks. A future PLL
+supplies `clk8x_i`; the QSF/SDC must put that PLL output on a clock network
+and constrain the physical LCLK/LAD/control pins.
 
-The `tms34010_system` command boundary remains in the core clock domain. Its
-cycle kind and multi-bit payload must cross coherently with a multi-cycle
-request/acknowledge handshake or a small asynchronous FIFO; independent bit
-synchronizers are forbidden. The return read word and completion event must
-cross in the opposite direction under the same transaction. The bridge must
-also keep the arbiter's held-request contract intact and prevent a controller
-ack pulse from being lost. No async path may be connected until the matching
-SDC exceptions and CDC regression exist.
+Task 0148 connects the core-clock command boundary through
+`tms34010_local_bus_bridge`. The source registers the complete command before
+toggling its request and holds the payload until the acknowledge toggle has
+returned. The destination captures that stable MCP bus only after the request
+passes through a dedicated 2FF synchronizer, holds its local request through
+controller completion, then registers read data before toggling acknowledge.
+The reverse 2FF latency guarantees that response data is stable before source
+capture. One command is outstanding; a source re-arm waits for the arbiter
+request to go low so the held completion cannot launch twice.
+
+The bridge requires common reset assertion and initializes both toggle phases
+to zero. Its RTL does not require a rational or fixed clock ratio, and
+`tb_local_bus_bridge` tests a non-integer ratio with variable service delay.
+The future SDC must declare the clock relationship, identify both
+synchronizers, and cut or waive only the protocol-protected MCP payload paths.
+Until Quartus recognizes those chains and TimeQuest/CDC reports are archived,
+this is functional CDC evidence rather than FPGA timing sign-off.
 
 ## Interrupt input CDC
 

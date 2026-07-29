@@ -44,14 +44,14 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   match the User's Guide.
 
 ## A0004 — Single core clock for the first milestones
-- **Date**: 2026-05-12; refined 2026-07-28 (Task 0147).
+- **Date**: 2026-05-12; refined 2026-07-28 (Task 0148).
 - **Status**: active
 - **Source**: project convention (not in spec).
 - **Assumption**: The integrated functional core hierarchy runs on one core
-  clock. Task 0147 adds a standalone original-pin engine clocked at eight
-  times the local-clock rate; it remains disconnected until a coherent CDC
-  bridge lands. The video output subsystem will separately introduce a pixel
-  clock and a clearly documented CDC boundary.
+  clock. Task 0147 adds an original-pin engine clocked at eight times the
+  local-clock rate, and Task 0148 connects it through the A0040 coherent CDC
+  bridge. The video output subsystem will separately introduce a pixel clock
+  and a clearly documented CDC boundary.
 
 ## A0005 — Bit-addressed memory exposed at the interface boundary
 - **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0136)**.
@@ -124,8 +124,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   integrated. HSTCTLH.HLT samples HCS during reset, `CORE_RESET_HALT` issues
   no vector request while it remains one, and clearing HLT returns to
   `CORE_RESET` for the ordinary vector fetch. The eight prerequisite
-  RAS-only cycles are implemented by the standalone Task 0147 controller and
-  remain to be placed ahead of the core request through CDC/integration.
+  RAS-only cycles are implemented by the Task 0147 controller. Task 0148's
+  integrated wrapper proves they complete before the core's pending vector
+  request appears on the physical bus.
 
 ---
 
@@ -581,6 +582,45 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   client is exposed. Task 0145 lands the standalone arbiter contract; wiring
   this client through it remains memory-fabric integration work.
 
+## A0040 — Core-to-8× MCP bridge and common reset
+- **Date**: 2026-07-28 (Task 0148).
+- **Status**: verified functional CDC architecture; Quartus constraint and
+  metastability-report sign-off remain part of the FPGA project gate.
+- **Sources**: `docs/hdl-coding-guidelines/23-cdc-single-bit.md` and
+  `24-cdc-multi-bit.md`; 1988 TI TMS34010 User's Guide §11.5, pages 11-23
+  through 11-24 (IAQ); and §9.10.1.2, pages 9-20 through 9-23 (screen ORG).
+- **Command crossing**: the core domain registers all of
+  `local_cycle_cmd_t`, toggles one request bit, and does not alter the command
+  until the returned acknowledge completes. Only that toggle passes through
+  a dedicated attributed 2FF synchronizer. The 8× domain captures the
+  unsynchronized but multi-cycle-stable payload into its own registers and
+  holds the controller request until completion.
+- **Response crossing**: the 8× domain registers the returned read word before
+  updating its acknowledge toggle. That word remains stable for the toggle's
+  two-stage return latency; the core domain then captures it and emits one
+  completion pulse. One transaction may be outstanding, matching the existing
+  held arbiter contract; an explicit source re-arm after request deassertion
+  prevents a duplicate acceptance around the completion edge.
+- **Reset contract**: both domains receive the same active-high project reset
+  and reset both toggle phases to zero. They may sample synchronous
+  deassertion on different edges; a request remains held long enough for the
+  later domain to observe it. Independent run-time reset of only one bridge
+  side is unsupported because it could destroy toggle phase or an outstanding
+  transaction.
+- **IAQ and ORG**: the current cacheless core asserts IAQ only for
+  `CORE_FETCH`; immediate extension words and data/vector transactions are
+  low. Screen ORG is captured with SRFADR/DPYTAP when the held refresh request
+  begins, so later DPYCTL changes do not alter an in-flight physical command.
+- **Timing boundary**: the source/destination clocks are treated as
+  asynchronous by the RTL. The future Quartus SDC must identify both clocks,
+  constrain the toggle synchronizers, cut/waive the protocol-protected MCP
+  payload paths, and preserve/recognize both 2FF chains. Simulation does not
+  constitute metastability or TimeQuest evidence.
+- **Regression evidence**: `tb_local_bus_bridge` uses a non-integer clock
+  ratio, variable destination waits, all payload fields, returned data, and
+  consecutive toggle phases. `tb_pin_system` proves that eight reset RAS
+  cycles precede the physical two-word vector and opcode traffic.
+
 ## A0039 — 8× original-pin phase engine boundary
 - **Date**: 2026-07-28 (Task 0147).
 - **Status**: specification-derived pin sequencing with explicit FPGA clock,
@@ -609,11 +649,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   deterministic zero while the controller owns LAD; read data phases are
   explicitly high impedance through `lad_oe_o`. This avoids synthesizable X
   values and does not assign architectural meaning to the zero.
-- **CDC/integration boundary**: command and response signals are synchronous
-  to `clk8x_i`. `tms34010_system` remains core-clocked, so a coherent
-  multi-bit request/acknowledge bridge must land before connection. IAQ,
-  screen ORG, I/O direction/data, and HOLD pin release must also be propagated
-  through that final contract.
+- **CDC/integration checkpoint**: command and response signals remain
+  synchronous to `clk8x_i`. Task 0148 connects them to the core-clock system
+  only through the A0040 MCP bridge and propagates IAQ plus screen ORG.
+  Upstream generation of physical I/O cycle kinds/data and physical HOLD pin
+  release remain separate tasks.
 - **Regression evidence**: `tb_local_bus` verifies both LCLK waveforms, all
   seven cycle kinds, exact word/screen/refresh/I/O address/status values,
   write/read/control ordering, mid-Q4 read data, ordinary and
@@ -929,8 +969,7 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Core-clock-to-8× local-bus CDC/integration, physical HOLD pin release, and
-  propagation of IAQ, screen ORG, and I/O-cycle metadata into the landed
-  phase engine.
+- Physical HOLD pin release and generation/return-data routing for on-chip
+  I/O cycle kinds through the landed phase engine.
 - I/O side effects, on-chip completion timing, and host-visible semantics not
   yet implemented by `tms34010_io_regs`.

@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0147, with
+> Status: **implemented and ISA/status-audited through Task 0148, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -11,11 +11,12 @@
 > the fixed-priority local-cycle arbiter has landed with CPU RMW/HOLD restart
 > semantics. The functional-system wrapper connects every core client through
 > that fabric to one abstract controller boundary.
-> A standalone 8×-clock local-bus engine now generates the original
+> An 8×-clock local-bus engine now generates the original
 > LCLK/LAD/control phases, address/status formats, LRDY waits, and reset
-> initialization. Its CDC and system connection remain open.
+> initialization. A two-phase MCP bridge coherently connects it to the
+> core-clock fabric, including returned read data, IAQ, and screen ORG.
 > Internal/noninterlaced video timing and the held screen-refresh client are
-> integrated on the project clock; physical VRAM transfer service and the real
+> integrated on the project clock; VRAM serial-display service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
 > recorded in `completion_audit.md`.
 
@@ -59,8 +60,10 @@ a `TODO/spec-uncertain` marker.
 │                              │ abstract held local cycle                  │
 └──────────────────────────────│────────────────────────────────────────────┘
                                ▼
-                   future command/response CDC
-                               ▼
+            ┌──── tms34010_local_bus_bridge (toggle MCP) ────┐
+            │ held command → 8×; held read data/ack → core   │
+            └─────────────────────────┬───────────────────────┘
+                                      ▼
              ┌──────── tms34010_local_bus (8× clock) ────────┐
              │ LCLK1/2, LAD, RAS/CAS/LAL/W/TR/DEN/DDOUT      │
              └────────────────────────────────────────────────┘
@@ -71,12 +74,11 @@ video timing/display-address scheduling, and REFCNT refresh requester
 currently live in or directly under `tms34010_core`. The field-to-word
 sequencer and local-cycle arbiter are composed by
 `tms34010_memory_fabric`; `tms34010_system` connects every core client to that
-fabric. The lower host/display-memory integration, refresh service through the
-physical controller, and dedicated VCLK domain remain planned.
-`tms34010_local_bus` has landed separately at the pin-phase side of that open
-boundary. It is not yet connected to `tms34010_system`; the required coherent
-command/response CDC, physical HOLD release, and FPGA clock source belong to
-following tasks.
+fabric. `tms34010_local_bus_bridge` crosses that held command and its response
+coherently into/out of the 8× domain, while `tms34010_pin_system` composes the
+system, bridge, and `tms34010_local_bus`. Physical HOLD release, the
+asynchronous host pins, on-chip I/O pin cycles, the dedicated VCLK domain, and
+the FPGA clock/constraint project remain planned.
 
 ## Test substrate
 
@@ -86,8 +88,9 @@ one-cycle 16-bit backing store. Every arbitrary 1–32-bit request passes
 through the synthesizable `tms34010_field_sequencer`, including three-word
 straddles and partial-word read/modify/write preservation. Only the backing
 target is simulation-specific. The original-pin controller has a standalone
-phase-level regression, but functional core tests do not route through it
-until the CDC/integration task lands.
+phase-level regression. `tb_pin_system` additionally boots the real core from
+a pin-level LAD target through the integrated CDC and verifies the mandatory
+reset initialization ordering.
 
 ## Module map
 
@@ -95,7 +98,8 @@ until the CDC/integration task lands.
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
 | `rtl/tms34010_system.sv`                | 6     | **landed (Task 0146)** | functional-system wrapper connecting all core memory clients to one abstract controller boundary |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0144** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, I/O routing, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
+| `rtl/tms34010_pin_system.sv`            | 6     | **landed (Task 0148)** | integrated core-clock system, MCP bridge, and 8× original-pin local bus; physical host/HOLD wrappers pending |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0148** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, opcode IAQ, I/O routing, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -104,7 +108,7 @@ until the CDC/integration task lands.
 | `rtl/core/tms34010_decode.sv`           | 3+    | **landed through Task 0135** | combinational decoder; per-instruction flag masks; unsupported encodings route to ILLEGAL |
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
-| `rtl/memory/tms34010_local_bus.sv`      | 6     | **landed standalone (Task 0147)** | 8× original-pin LCLK/row/column/data phases, address/status encoding, LRDY waits, I/O cycles, and eight reset RAS cycles; CDC/integration pending |
+| `rtl/memory/tms34010_local_bus.sv`      | 6     | **integrated through Task 0148** | 8× original-pin LCLK/row/column/data phases, address/status encoding, LRDY waits, I/O cycles, and eight reset RAS cycles |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
 | `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed (Task 0145)** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation and HOLD restart |
 | `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed (Task 0146)** | composes field sequencing and arbitration for CPU/graphics, screen, DRAM refresh, host, and HOLD |
@@ -115,9 +119,10 @@ until the CDC/integration task lands.
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | **integrated (Task 0144)** | shared processor/host HSTADR/HSTDATA storage, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
+| `rtl/cdc/tms34010_local_bus_bridge.sv`  | 6     | **landed (Task 0148)** | two-phase MCP command/response CDC; source-held payloads and returned read data, one outstanding transaction |
 | `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0144** | 32×16-bit memory-mapped I/O register file; integrated four-register host engine, exact interrupt sources, direct HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
-| `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated (Task 0141)** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP request, and acknowledge-time DUDATE/ORG update; physical VRAM cycle and interlaced adjustment remain |
+| `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0148** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP/ORG request, and acknowledge-time DUDATE/ORG update; interlaced adjustment remains |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
@@ -222,6 +227,16 @@ zero-row RAS-only cycles after reset. Keeping its command port synchronous to
 the 8× domain makes the remaining CDC explicit rather than embedding an
 unsafe multi-bit crossing.
 
+Task 0148 closed that functional CDC boundary. The core marks only
+`CORE_FETCH` word requests as IAQ in the current cacheless design, and the
+display scheduler captures ORG with SRFADR/DPYTAP. Both sidebands join every
+existing cycle payload in `local_cycle_cmd_t`. The bridge holds that complete
+source register while a request toggle crosses through a 2FF synchronizer,
+captures it once in the 8× domain, and uses the reverse acknowledge toggle to
+hold and return read data. `tms34010_pin_system` connects the resulting
+destination request to the local-bus engine. Physical HOLD/host pins and
+Quartus CDC constraints remain distinct exit-gate work.
+
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -232,9 +247,8 @@ structure rather than claiming project completion.
 
 - **Width**: TMS34010 is a 32-bit architecture with a 16-bit external
   multiplexed bus. Internally, ALU is 32 bits; external bus is 16 bits and
-  cycles are multiphase. Field-to-word splitting and the standalone
-  original-pin phase engine are implemented; the coherent clock-domain bridge
-  between them remains open.
+  cycles are multiphase. Field-to-word splitting, the original-pin phase
+  engine, and the coherent clock-domain bridge between them are implemented.
 - **Pipelining**: initial implementation is multi-cycle FSM, not pipelined.
   This keeps the first ISA implementation reviewable. Pipelining is a
   Phase 10 candidate.
@@ -347,6 +361,7 @@ the core still emits an external cycle and uses its ack (A0028).
 | `mem_addr` | out   | 32    | bit address (low bits = bit-offset)    |
 | `mem_size` | out   | 6     | field size in bits (1–32)              |
 | `mem_wdata`| out   | 32    | write data                             |
+| `mem_iaq`  | out   | 1     | opcode acquisition; low for immediate/data words |
 | `mem_rdata`| in    | 32    | read data, aligned to field            |
 | `mem_ack`  | in    | 1     | one-cycle pulse: data valid / write done |
 
@@ -363,9 +378,9 @@ owner keeps an issued cycle active through controller acknowledge. A CPU RMW
 reservation forces the matching write ahead of other ordinary clients; only
 HOLD can break the pair, in which case `word_restart_i` suppresses the
 not-yet-issued write and repeats the read. The arbiter exposes an abstract
-cycle kind and payload. The landed standalone `tms34010_local_bus` converts
-that shape into RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY once a
-coherent core-clock-to-8× bridge connects the two.
+cycle kind and payload. `tms34010_local_bus_bridge` transfers that held shape
+and its response coherently between clocks; `tms34010_local_bus` then converts
+it into RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY.
 
 `tms34010_memory_fabric` composes those two modules without adding state or a
 second scheduling policy. `tms34010_system` wires the core's four landed
@@ -434,14 +449,17 @@ This is the internal, noninterlaced functional subset and currently uses
 `clk` under A0004/A0034. It does not yet implement the independent VCLK
 domain, falling-edge pin phase, external synchronization, interlaced
 half-lines/half-DUDATE adjustment, physical VRAM shift-register transfers, or
-pixel output. `tms34010_refresh` is separately integrated with REFCNT but
-also awaits service by the memory arbiter.
+pixel output. `tms34010_refresh` is integrated with REFCNT and its request is
+serviced through the pin system; the final FPGA integration must still prove
+its bounded service under physical HOLD and external waits.
 
 ## Clock / reset strategy
 
-- Single core clock (`clk`). All sequential logic is positive-edge.
-- Active-high synchronous reset (`rst`). Reset state is documented per
-  module.
+- One core clock plus a dedicated 8× local-bus timing clock. All sequential
+  logic is positive-edge; LCLK1/LCLK2 are decoded outputs, never fabric clocks.
+- Active-high synchronous reset (`rst`) is sampled in both domains. Reset
+  state and the bridge's common-toggle reset contract are documented per
+  module and in `assumptions.md`.
 - Any clock-domain crossings (host interface, video output) are wrapped
   in a clearly-named CDC module and flagged in `docs/timing_notes.md`.
 
@@ -456,13 +474,10 @@ also awaits service by the memory arbiter.
 
 ## Current implementation gaps
 
-- Core-clock-to-8× command/response CDC and connection of the landed
-  original-pin phase engine to the integrated abstract fabric; physical HOLD
-  pin release and the optional cache also remain.
+- Physical HOLD pin release and the optional instruction cache.
 - Host HRDY/pin timing/CDC and internally completed I/O accesses.
 - Remaining non-host I/O side effects.
-- Integrated DRAM- and screen-refresh service through the phase engine;
-  VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.
+- VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.

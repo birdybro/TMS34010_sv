@@ -51,8 +51,10 @@ module tms34010_system
   output local_cycle_kind_t                 cycle_kind_o,
   output logic [ADDR_WIDTH-1:0]             cycle_addr_o,
   output local_word_t                       cycle_wdata_o,
+  output logic                              cycle_iaq_o,
   output logic [13:0]                       cycle_srfaddr_o,
   output logic [15:0]                       cycle_dpytap_o,
+  output logic                              cycle_screen_org_o,
   output logic [7:0]                        cycle_dram_row_o,
   input  local_word_t                       cycle_rdata_i,
   input  logic                              cycle_ack_i,
@@ -70,6 +72,7 @@ module tms34010_system
   logic [DATA_WIDTH-1:0]             cpu_field_wdata;
   logic [DATA_WIDTH-1:0]             cpu_field_rdata;
   logic                              cpu_field_ack;
+  logic                              cpu_field_iaq;
 
   logic                              host_mem_req;
   logic                              host_mem_we;
@@ -86,6 +89,7 @@ module tms34010_system
   logic                              screen_ack;
   logic [13:0]                       screen_srfaddr;
   logic [15:0]                       screen_dpytap;
+  logic                              screen_org;
 
   tms34010_core u_core (
     .clk                     (clk),
@@ -95,6 +99,7 @@ module tms34010_system
     .mem_addr                (cpu_field_addr),
     .mem_size                (cpu_field_size),
     .mem_wdata               (cpu_field_wdata),
+    .mem_iaq                 (cpu_field_iaq),
     .mem_rdata               (cpu_field_rdata),
     .mem_ack                 (cpu_field_ack),
     .run_emu_n_i             (run_emu_n_i),
@@ -130,6 +135,7 @@ module tms34010_system
     .screen_refresh_ack_i    (screen_ack),
     .screen_refresh_srfaddr_o(screen_srfaddr),
     .screen_refresh_dpytap_o (screen_dpytap),
+    .screen_refresh_org_o    (screen_org),
     .state_o                 (state_o),
     .pc_o                    (pc_o),
     .instr_word_o            (instr_word_o),
@@ -144,6 +150,7 @@ module tms34010_system
     .cpu_field_addr_i   (cpu_field_addr),
     .cpu_field_size_i   (cpu_field_size),
     .cpu_field_wdata_i  (cpu_field_wdata),
+    .cpu_field_iaq_i    (cpu_field_iaq),
     .cpu_field_rdata_o  (cpu_field_rdata),
     .cpu_field_ack_o    (cpu_field_ack),
     .host_req_i         (host_mem_req),
@@ -155,6 +162,7 @@ module tms34010_system
     .screen_req_i       (screen_req),
     .screen_srfaddr_i   (screen_srfaddr),
     .screen_dpytap_i    (screen_dpytap),
+    .screen_org_i       (screen_org),
     .screen_ack_o       (screen_ack),
     .dram_req_i         (refresh_req),
     .dram_row_i         (refresh_row),
@@ -165,8 +173,10 @@ module tms34010_system
     .cycle_kind_o       (cycle_kind_o),
     .cycle_addr_o       (cycle_addr_o),
     .cycle_wdata_o      (cycle_wdata_o),
+    .cycle_iaq_o        (cycle_iaq_o),
     .cycle_srfaddr_o    (cycle_srfaddr_o),
     .cycle_dpytap_o     (cycle_dpytap_o),
+    .cycle_screen_org_o (cycle_screen_org_o),
     .cycle_dram_row_o   (cycle_dram_row_o),
     .cycle_rdata_i      (cycle_rdata_i),
     .cycle_ack_i        (cycle_ack_i)

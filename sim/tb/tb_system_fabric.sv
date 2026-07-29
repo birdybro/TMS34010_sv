@@ -35,9 +35,10 @@ module tb_system_fabric;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYSTRT) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_DPYTAP =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYTAP) << 4);
-  localparam logic [15:0] SRE_DUDATE1 =
+  localparam logic [15:0] SRE_ORG_DUDATE1 =
       (16'h0001 << DPYCTL_SRE_BIT)
-    | (16'h0001 << DPYCTL_DUDATE_LO);
+    | (16'h0001 << DPYCTL_DUDATE_LO)
+    | (16'h0001 << DPYCTL_ORG_BIT);
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -57,8 +58,10 @@ module tb_system_fabric;
   local_cycle_kind_t         cycle_kind;
   logic [ADDR_WIDTH-1:0]     cycle_addr;
   local_word_t               cycle_wdata;
+  logic                      cycle_iaq;
   logic [13:0]               cycle_srfaddr;
   logic [15:0]               cycle_dpytap;
+  logic                      cycle_screen_org;
   logic [7:0]                cycle_dram_row;
   local_word_t               cycle_rdata;
   logic                      cycle_ack;
@@ -96,8 +99,10 @@ module tb_system_fabric;
     .cycle_kind_o      (cycle_kind),
     .cycle_addr_o      (cycle_addr),
     .cycle_wdata_o     (cycle_wdata),
+    .cycle_iaq_o       (cycle_iaq),
     .cycle_srfaddr_o   (cycle_srfaddr),
     .cycle_dpytap_o    (cycle_dpytap),
+    .cycle_screen_org_o(cycle_screen_org),
     .cycle_dram_row_o  (cycle_dram_row),
     .cycle_rdata_i     (cycle_rdata),
     .cycle_ack_i       (cycle_ack),
@@ -119,8 +124,10 @@ module tb_system_fabric;
   local_cycle_kind_t         target_kind_q;
   logic [ADDR_WIDTH-1:0]     target_addr_q;
   local_word_t               target_wdata_q;
+  logic                      target_iaq_q;
   logic [13:0]               target_srfaddr_q;
   logic [15:0]               target_dpytap_q;
+  logic                      target_screen_org_q;
   logic [7:0]                target_dram_row_q;
   int unsigned               total_cycle_count_q;
   int unsigned               word_read_count_q;
@@ -131,6 +138,9 @@ module tb_system_fabric;
   int unsigned               protocol_failures_q;
   logic [13:0]               last_screen_srfaddr_q;
   logic [15:0]               last_screen_dpytap_q;
+  logic                      last_screen_org_q;
+  logic                      first_opcode_iaq_seen_q;
+  logic                      first_immediate_data_seen_q;
 
   logic [$clog2(DEPTH_WORDS)-1:0] target_word_index;
   assign target_word_index =
@@ -161,8 +171,10 @@ module tb_system_fabric;
       target_kind_q           <= LOCAL_CYCLE_WORD_READ;
       target_addr_q           <= '0;
       target_wdata_q          <= '0;
+      target_iaq_q            <= 1'b0;
       target_srfaddr_q        <= '0;
       target_dpytap_q         <= '0;
+      target_screen_org_q     <= 1'b0;
       target_dram_row_q       <= '0;
       total_cycle_count_q     <= 0;
       word_read_count_q       <= 0;
@@ -173,6 +185,9 @@ module tb_system_fabric;
       protocol_failures_q     <= 0;
       last_screen_srfaddr_q   <= '0;
       last_screen_dpytap_q    <= '0;
+      last_screen_org_q       <= 1'b0;
+      first_opcode_iaq_seen_q <= 1'b0;
+      first_immediate_data_seen_q <= 1'b0;
     end else begin
       unique case (target_state_q)
         TARGET_IDLE: begin
@@ -180,8 +195,10 @@ module tb_system_fabric;
             target_kind_q     <= cycle_kind;
             target_addr_q     <= cycle_addr;
             target_wdata_q    <= cycle_wdata;
+            target_iaq_q      <= cycle_iaq;
             target_srfaddr_q  <= cycle_srfaddr;
             target_dpytap_q   <= cycle_dpytap;
+            target_screen_org_q <= cycle_screen_org;
             target_dram_row_q <= cycle_dram_row;
             total_cycle_count_q <= total_cycle_count_q + 1;
 
@@ -192,12 +209,24 @@ module tb_system_fabric;
               host_word_count_q <= host_word_count_q + 1;
             if ((cycle_kind == LOCAL_CYCLE_WORD_READ)
                 && ((cycle_addr == RESET_VECTOR_ADDR)
-                    || (cycle_addr == RESET_VECTOR_HIGH_ADDR)))
+                    || (cycle_addr == RESET_VECTOR_HIGH_ADDR))) begin
               reset_word_count_q <= reset_word_count_q + 1;
+              if (cycle_iaq)
+                protocol_failures_q <= protocol_failures_q + 1;
+            end
+            if ((cycle_kind == LOCAL_CYCLE_WORD_READ)
+                && (cycle_addr == 32'h0000_0000)
+                && cycle_iaq)
+              first_opcode_iaq_seen_q <= 1'b1;
+            if ((cycle_kind == LOCAL_CYCLE_WORD_READ)
+                && (cycle_addr == 32'h0000_0010)
+                && !cycle_iaq)
+              first_immediate_data_seen_q <= 1'b1;
             if (cycle_kind == LOCAL_CYCLE_SCREEN_REFRESH) begin
               screen_count_q        <= screen_count_q + 1;
               last_screen_srfaddr_q <= cycle_srfaddr;
               last_screen_dpytap_q  <= cycle_dpytap;
+              last_screen_org_q     <= cycle_screen_org;
             end
             if ((cycle_kind == LOCAL_CYCLE_DRAM_RAS)
                 || (cycle_kind == LOCAL_CYCLE_DRAM_CBR))
@@ -213,8 +242,10 @@ module tb_system_fabric;
               || (cycle_kind != target_kind_q)
               || (cycle_addr != target_addr_q)
               || (cycle_wdata != target_wdata_q)
+              || (cycle_iaq != target_iaq_q)
               || (cycle_srfaddr != target_srfaddr_q)
               || (cycle_dpytap != target_dpytap_q)
+              || (cycle_screen_org != target_screen_org_q)
               || (cycle_dram_row != target_dram_row_q)) begin
             protocol_failures_q <= protocol_failures_q + 1;
           end
@@ -369,7 +400,7 @@ module tb_system_fabric;
     p = place_io_write(p, 4'd0, 16'd3, A_VTOTAL);
     p = place_io_write(p, 4'd0, {14'h0120, 2'b00}, A_DPYSTRT);
     p = place_io_write(p, 4'd0, 16'hBEEF, A_DPYTAP);
-    p = place_io_write(p, 4'd0, SRE_DUDATE1, A_DPYCTL);
+    p = place_io_write(p, 4'd0, SRE_ORG_DUDATE1, A_DPYCTL);
     p = place_movi_il(p, 4'd5, 32'h0000_0146);
 
     repeat (3) @(posedge clk);
@@ -397,9 +428,11 @@ module tb_system_fabric;
       $display("TEST_RESULT: FAIL: integrated screen client was not serviced");
       failures++;
     end else if ((last_screen_srfaddr_q !== 14'h0120)
-                 || (last_screen_dpytap_q !== 16'h3EEF)) begin
-      $display("TEST_RESULT: FAIL: screen payload expected=0120/3eef actual=%04h/%04h",
-               last_screen_srfaddr_q, last_screen_dpytap_q);
+                 || (last_screen_dpytap_q !== 16'h3EEF)
+                 || !last_screen_org_q) begin
+      $display("TEST_RESULT: FAIL: screen payload expected=0120/3eef/1 actual=%04h/%04h/%0b",
+               last_screen_srfaddr_q, last_screen_dpytap_q,
+               last_screen_org_q);
       failures++;
     end
     if (dram_count_q == 0) begin
@@ -409,6 +442,10 @@ module tb_system_fabric;
     if (reset_word_count_q != 2) begin
       $display("TEST_RESULT: FAIL: reset vector expected two words actual=%0d",
                reset_word_count_q);
+      failures++;
+    end
+    if (!first_opcode_iaq_seen_q || !first_immediate_data_seen_q) begin
+      $display("TEST_RESULT: FAIL: IAQ did not distinguish opcode/immediate words");
       failures++;
     end
 

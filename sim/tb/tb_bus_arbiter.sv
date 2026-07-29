@@ -20,6 +20,7 @@ module tb_bus_arbiter;
   logic                      screen_req;
   logic [13:0]               screen_srfaddr;
   logic [15:0]               screen_dpytap;
+  logic                      screen_org;
   logic                      screen_ack;
   logic                      dram_req;
   logic [7:0]                dram_row;
@@ -35,6 +36,7 @@ module tb_bus_arbiter;
   logic                      cpu_we;
   logic [ADDR_WIDTH-1:0]     cpu_addr;
   local_word_t               cpu_wdata;
+  logic                      cpu_iaq;
   logic                      cpu_rmw_lock;
   local_word_t               cpu_rdata;
   logic                      cpu_ack;
@@ -43,8 +45,10 @@ module tb_bus_arbiter;
   local_cycle_kind_t         cycle_kind;
   logic [ADDR_WIDTH-1:0]     cycle_addr;
   local_word_t               cycle_wdata;
+  logic                      cycle_iaq;
   logic [13:0]               cycle_srfaddr;
   logic [15:0]               cycle_dpytap;
+  logic                      cycle_screen_org;
   logic [7:0]                cycle_dram_row;
   local_word_t               cycle_rdata;
   logic                      cycle_ack;
@@ -57,6 +61,7 @@ module tb_bus_arbiter;
     .screen_req_i      (screen_req),
     .screen_srfaddr_i  (screen_srfaddr),
     .screen_dpytap_i   (screen_dpytap),
+    .screen_org_i      (screen_org),
     .screen_ack_o      (screen_ack),
     .dram_req_i        (dram_req),
     .dram_row_i        (dram_row),
@@ -72,6 +77,7 @@ module tb_bus_arbiter;
     .cpu_we_i          (cpu_we),
     .cpu_addr_i        (cpu_addr),
     .cpu_wdata_i       (cpu_wdata),
+    .cpu_iaq_i         (cpu_iaq),
     .cpu_rmw_lock_i    (cpu_rmw_lock),
     .cpu_rdata_o       (cpu_rdata),
     .cpu_ack_o         (cpu_ack),
@@ -80,8 +86,10 @@ module tb_bus_arbiter;
     .cycle_kind_o      (cycle_kind),
     .cycle_addr_o      (cycle_addr),
     .cycle_wdata_o     (cycle_wdata),
+    .cycle_iaq_o       (cycle_iaq),
     .cycle_srfaddr_o   (cycle_srfaddr),
     .cycle_dpytap_o    (cycle_dpytap),
+    .cycle_screen_org_o(cycle_screen_org),
     .cycle_dram_row_o  (cycle_dram_row),
     .cycle_rdata_i     (cycle_rdata),
     .cycle_ack_i       (cycle_ack)
@@ -93,8 +101,10 @@ module tb_bus_arbiter;
   local_cycle_kind_t held_kind_q;
   logic [ADDR_WIDTH-1:0] held_addr_q;
   local_word_t            held_wdata_q;
+  logic                   held_iaq_q;
   logic [13:0]            held_srfaddr_q;
   logic [15:0]            held_dpytap_q;
+  logic                   held_screen_org_q;
   logic [7:0]             held_dram_row_q;
 
   // The controller-facing request and every payload field must remain stable
@@ -106,8 +116,10 @@ module tb_bus_arbiter;
       held_kind_q         <= LOCAL_CYCLE_WORD_READ;
       held_addr_q         <= '0;
       held_wdata_q        <= '0;
+      held_iaq_q          <= 1'b0;
       held_srfaddr_q      <= '0;
       held_dpytap_q       <= '0;
+      held_screen_org_q   <= 1'b0;
       held_dram_row_q     <= '0;
     end else if (!cycle_open_q) begin
       if (cycle_req) begin
@@ -115,8 +127,10 @@ module tb_bus_arbiter;
         held_kind_q     <= cycle_kind;
         held_addr_q     <= cycle_addr;
         held_wdata_q    <= cycle_wdata;
+        held_iaq_q      <= cycle_iaq;
         held_srfaddr_q  <= cycle_srfaddr;
         held_dpytap_q   <= cycle_dpytap;
+        held_screen_org_q <= cycle_screen_org;
         held_dram_row_q <= cycle_dram_row;
       end
     end else begin
@@ -124,8 +138,10 @@ module tb_bus_arbiter;
           || (cycle_kind != held_kind_q)
           || (cycle_addr != held_addr_q)
           || (cycle_wdata != held_wdata_q)
+          || (cycle_iaq != held_iaq_q)
           || (cycle_srfaddr != held_srfaddr_q)
           || (cycle_dpytap != held_dpytap_q)
+          || (cycle_screen_org != held_screen_org_q)
           || (cycle_dram_row != held_dram_row_q)) begin
         protocol_failures_q <= protocol_failures_q + 1;
       end
@@ -206,6 +222,7 @@ module tb_bus_arbiter;
     screen_req     = 1'b0;
     screen_srfaddr = 14'h0000;
     screen_dpytap  = 16'h0000;
+    screen_org     = 1'b0;
     dram_req       = 1'b0;
     dram_row       = 8'h00;
     dram_cbr       = 1'b0;
@@ -217,6 +234,7 @@ module tb_bus_arbiter;
     cpu_we         = 1'b0;
     cpu_addr       = '0;
     cpu_wdata      = '0;
+    cpu_iaq        = 1'b0;
     cpu_rmw_lock   = 1'b0;
     cycle_rdata    = 16'h0000;
     cycle_ack      = 1'b0;
@@ -235,6 +253,7 @@ module tb_bus_arbiter;
     screen_req     = 1'b1;
     screen_srfaddr = 14'h1234;
     screen_dpytap  = 16'h05A0;
+    screen_org     = 1'b1;
     dram_req       = 1'b1;
     dram_row       = 8'hA5;
     dram_cbr       = 1'b0;
@@ -245,6 +264,7 @@ module tb_bus_arbiter;
     cpu_req        = 1'b1;
     cpu_we         = 1'b0;
     cpu_addr       = 32'h0000_0300;
+    cpu_iaq        = 1'b1;
     @(negedge clk);
     dram_req = 1'b0;
     check_bit("HOLD has highest priority", hold_ack, 1'b1);
@@ -258,9 +278,10 @@ module tb_bus_arbiter;
     hold_req = 1'b0;
     wait_cycle("screen after HOLD", LOCAL_CYCLE_SCREEN_REFRESH);
     if ((cycle_srfaddr !== 14'h1234)
-        || (cycle_dpytap !== 16'h05A0)) begin
-      $display("TEST_RESULT: FAIL: screen payload expected=1234/05a0 actual=%04h/%04h",
-               cycle_srfaddr, cycle_dpytap);
+        || (cycle_dpytap !== 16'h05A0)
+        || (cycle_screen_org !== 1'b1)) begin
+      $display("TEST_RESULT: FAIL: screen payload expected=1234/05a0/1 actual=%04h/%04h/%0b",
+               cycle_srfaddr, cycle_dpytap, cycle_screen_org);
       failures++;
     end
     ack_cycle("screen", 1'b1, 1'b0, 1'b0, 1'b0);
@@ -292,6 +313,7 @@ module tb_bus_arbiter;
                cycle_addr);
       failures++;
     end
+    check_bit("CPU IAQ routing", cycle_iaq, 1'b1);
     cycle_rdata = 16'h2468;
     ack_cycle("CPU", 1'b0, 1'b0, 1'b0, 1'b1);
     check_word("CPU response routing", cpu_rdata, 16'h2468);
@@ -307,6 +329,7 @@ module tb_bus_arbiter;
     screen_req     = 1'b1;
     screen_srfaddr = 14'h2BCD;
     screen_dpytap  = 16'h03C0;
+    screen_org     = 1'b0;
     dram_req       = 1'b1;
     dram_row       = 8'h3C;
     dram_cbr       = 1'b1;

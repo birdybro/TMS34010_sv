@@ -33,6 +33,7 @@ module tms34010_memory_fabric
   input  logic [ADDR_WIDTH-1:0]             cpu_field_addr_i,
   input  logic [FIELD_SIZE_WIDTH-1:0]       cpu_field_size_i,
   input  logic [DATA_WIDTH-1:0]             cpu_field_wdata_i,
+  input  logic                              cpu_field_iaq_i,
   output logic [DATA_WIDTH-1:0]             cpu_field_rdata_o,
   output logic                              cpu_field_ack_o,
 
@@ -46,6 +47,7 @@ module tms34010_memory_fabric
   input  logic                              screen_req_i,
   input  logic [13:0]                       screen_srfaddr_i,
   input  logic [15:0]                       screen_dpytap_i,
+  input  logic                              screen_org_i,
   output logic                              screen_ack_o,
 
   input  logic                              dram_req_i,
@@ -59,8 +61,10 @@ module tms34010_memory_fabric
   output local_cycle_kind_t                 cycle_kind_o,
   output logic [ADDR_WIDTH-1:0]             cycle_addr_o,
   output local_word_t                       cycle_wdata_o,
+  output logic                              cycle_iaq_o,
   output logic [13:0]                       cycle_srfaddr_o,
   output logic [15:0]                       cycle_dpytap_o,
+  output logic                              cycle_screen_org_o,
   output logic [7:0]                        cycle_dram_row_o,
   input  local_word_t                       cycle_rdata_i,
   input  logic                              cycle_ack_i
@@ -103,6 +107,7 @@ module tms34010_memory_fabric
     .screen_req_i      (screen_req_i),
     .screen_srfaddr_i  (screen_srfaddr_i),
     .screen_dpytap_i   (screen_dpytap_i),
+    .screen_org_i      (screen_org_i),
     .screen_ack_o      (screen_ack_o),
     .dram_req_i        (dram_req_i),
     .dram_row_i        (dram_row_i),
@@ -118,6 +123,7 @@ module tms34010_memory_fabric
     .cpu_we_i          (cpu_word_we),
     .cpu_addr_i        (cpu_word_addr),
     .cpu_wdata_i       (cpu_word_wdata),
+    .cpu_iaq_i         (cpu_field_iaq_i),
     .cpu_rmw_lock_i    (cpu_word_rmw_lock),
     .cpu_rdata_o       (cpu_word_rdata),
     .cpu_ack_o         (cpu_word_ack),
@@ -126,8 +132,10 @@ module tms34010_memory_fabric
     .cycle_kind_o      (cycle_kind_o),
     .cycle_addr_o      (cycle_addr_o),
     .cycle_wdata_o     (cycle_wdata_o),
+    .cycle_iaq_o       (cycle_iaq_o),
     .cycle_srfaddr_o   (cycle_srfaddr_o),
     .cycle_dpytap_o    (cycle_dpytap_o),
+    .cycle_screen_org_o(cycle_screen_org_o),
     .cycle_dram_row_o  (cycle_dram_row_o),
     .cycle_rdata_i     (cycle_rdata_i),
     .cycle_ack_i       (cycle_ack_i)

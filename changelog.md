@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0148 — coherent core-to-pin local-bus integration)
+- Added `tms34010_local_bus_bridge`, a two-phase MCP bridge that registers and
+  holds each complete command while attributed request/acknowledge toggles
+  cross the core and 8× domains through dedicated 2FF synchronizers.
+- Returned read data coherently under the reverse acknowledge handshake,
+  emitted a one-core-clock completion pulse, and prevented duplicate launch
+  while the arbiter's completed request remains asserted.
+- Propagated opcode IAQ from `CORE_FETCH` and captured screen-refresh ORG
+  through the core, memory fabric, arbiter, bridge, and pin controller.
+- Added `tms34010_pin_system`, which integrates the functional system, CDC
+  bridge, and original-pin phase engine while retaining the synchronous host
+  and abstract HOLD boundaries for later physical wrappers.
+- Added `tb_local_bus_bridge` for non-integer clock ratios, every payload
+  field, arbitrary destination stalls, returned data, and held-request
+  duplicate suppression. Added `tb_pin_system` for eight reset RAS cycles,
+  physical two-word reset-vector service, IAQ, and real opcode execution.
+- Validation: focused bridge/pin/display/arbiter/system benches PASS;
+  `scripts/lint.sh` clean; full regression 137/137 PASS.
+
 ### Added (Task 0147 — original-pin local-bus phase engine)
 - Added `tms34010_local_bus`, a standalone controller clocked at eight times
   the local-clock rate so half-quarter control transitions and the middle-Q4

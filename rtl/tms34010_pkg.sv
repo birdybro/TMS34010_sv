@@ -11,10 +11,10 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0147: architectural widths and register layouts,
+// Current through Task 0148: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
 // FSM states, physical-memory word geometry, local-cycle kinds, and the
-// original local-clock subphases are here.
+// original local-clock command/phase types are here.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -72,6 +72,20 @@ package tms34010_pkg;
     LOCAL_PHASE_Q4A = 3'd6,
     LOCAL_PHASE_Q4B = 3'd7
   } local_subphase_t;
+
+  // Coherent command payload transferred from the core-clock memory fabric to
+  // the dedicated 8x local-bus domain. The CDC bridge registers and holds this
+  // entire bundle while only a request toggle crosses through a synchronizer.
+  typedef struct packed {
+    local_cycle_kind_t             kind;
+    logic [ADDR_WIDTH-1:0]         addr;
+    local_word_t                   wdata;
+    logic                          iaq;
+    logic [13:0]                   srfaddr;
+    logic [15:0]                   dpytap;
+    logic                          screen_org;
+    logic [7:0]                    dram_row;
+  } local_cycle_cmd_t;
 
   // ---------------------------------------------------------------------------
   // Instruction-stream constants

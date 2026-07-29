@@ -30,6 +30,7 @@ module tb_display_addr;
   logic        refresh_ack;
   logic [13:0] refresh_srfaddr;
   logic [15:0] refresh_dpytap;
+  logic        refresh_org;
 
   localparam logic [15:0] SRE_DUDATE4 =
       (16'h0001 << DPYCTL_SRE_BIT)
@@ -53,7 +54,8 @@ module tb_display_addr;
     .refresh_req     (refresh_req),
     .refresh_ack     (refresh_ack),
     .refresh_srfaddr (refresh_srfaddr),
-    .refresh_dpytap  (refresh_dpytap)
+    .refresh_dpytap  (refresh_dpytap),
+    .refresh_org     (refresh_org)
   );
 
   int unsigned failures;
@@ -146,6 +148,7 @@ module tb_display_addr;
     @(negedge clk);
     check_value("DPYADR reset", dpyadr, 16'h0000);
     check_bit("request reset", refresh_req, 1'b0);
+    check_bit("ORG payload reset", refresh_org, 1'b0);
     rst = 1'b0;
 
     // Processor writes load all 16 live bits.
@@ -170,12 +173,14 @@ module tb_display_addr;
     check_addr("starting SRFADR payload", refresh_srfaddr, 14'h0123);
     check_value("starting DPYTAP payload masks reserved bits",
                 refresh_dpytap, 16'h2BCD);
+    check_bit("starting ORG payload", refresh_org, 1'b0);
 
     dpytap = 16'h5555;
     repeat (6) @(negedge clk);
     check_bit("request held through stall", refresh_req, 1'b1);
     check_addr("stalled SRFADR stable", refresh_srfaddr, 14'h0123);
     check_value("stalled DPYTAP stable", refresh_dpytap, 16'h2BCD);
+    check_bit("stalled ORG stable", refresh_org, 1'b0);
 
     // Completion, not request, advances SRFADR and reloads LNCNT.
     pulse_ack();
@@ -193,6 +198,7 @@ module tb_display_addr;
 
     // ORG reverses the completion update direction.
     dpyctl = SRE_ORG_DUDATE4;
+    check_bit("pending request retains captured ORG", refresh_org, 1'b0);
     pulse_ack();
     check_value("ORG decrement on completion",
                 dpyadr, {14'h0123, 2'd1});
@@ -204,11 +210,12 @@ module tb_display_addr;
     pulse_hblank(16'd5);
     check_bit("SRE disabled", refresh_req, 1'b0);
     check_value("disabled LNCNT holds", dpyadr, {14'h0333, 2'd3});
-    dpyctl = SRE_DUDATE4;
+    dpyctl = SRE_ORG_DUDATE4;
     repeat (2) @(negedge clk);
     pulse_hblank(16'd6);
     check_bit("SRE re-enable requests next eligible line", refresh_req, 1'b1);
     check_addr("re-enabled request address", refresh_srfaddr, 14'h0333);
+    check_bit("re-enabled request captures ORG", refresh_org, 1'b1);
 
     // Processor load wins a same-edge completion while the request still
     // retires. This deterministic collision rule keeps split-screen writes
@@ -229,6 +236,7 @@ module tb_display_addr;
     @(negedge clk);
     check_value("reset recovery DPYADR", dpyadr, 16'h0000);
     check_bit("reset recovery request", refresh_req, 1'b0);
+    check_bit("reset recovery ORG payload", refresh_org, 1'b0);
 
     if (failures == 0)
       $display("TEST_RESULT: PASS (display address: frame/line scheduling, held request, ack update)");

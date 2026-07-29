@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0147, with strict RTL
+> Baseline: functional implementation through Task 0148, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -145,9 +145,16 @@ LCLK1/LCLK2 plus the documented LAD/RAS/CAS/LAL/W/TR/DEN/DDOUT phases for
 ordinary word, screen memory-to-register, RAS-only, CAS-before-RAS, and I/O
 cycles. It implements word/refresh/screen address-status formats, end-Q1 LRDY
 sampling and whole-clock extensions, mid-Q4 read capture, I/O LRDY bypass,
-and eight zero-row RAS-only cycles after reset. The core-to-8× CDC and system
-connection, physical HOLD release, and upstream IAQ/screen-ORG/I/O metadata
-remain the next memory-fabric gate.
+and eight zero-row RAS-only cycles after reset.
+
+Task 0148 connected that phase engine to the functional system.
+`tms34010_local_bus_bridge` uses a source-held two-phase MCP command and
+reverse response handshake; only request/ack toggles pass through attributed
+2FF synchronizers. `tms34010_pin_system` composes the core-clock system,
+bridge, and 8× controller. Opcode IAQ and captured screen ORG now propagate
+end to end, and the pin-level regression proves reset initialization precedes
+the two-word vector and real instruction fetches. Physical HOLD release,
+on-chip I/O bus completion, host pins, and Quartus CDC sign-off remain.
 
 ## Active architectural assumptions requiring closure
 
@@ -166,7 +173,9 @@ isolates host-engine collisions and the pre-pin synchronous protocol. A0038
 isolates the one-entry DRAM-refresh retention bound until the physical
 controller proves service before the next interval. A0039 records the 8×
 phase representation, synchronous-reset phase origin, deterministic
-undefined LAD value, and explicit CDC boundary. These do not excuse
+undefined LAD value, and explicit CDC boundary. A0040 records the MCP's
+one-outstanding/common-reset contract and pending Quartus constraint proof.
+These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
@@ -183,14 +192,12 @@ deliberate non-pin-compatible boundary.
 
 ### Memory, refresh, and host fabric
 
-- Connect the core-clock fabric to the landed 8× original-pin controller
-  through a coherent command/response CDC, including IAQ, I/O direction/data,
-  screen ORG, completion/read data, reset ordering, and physical HOLD release.
-- Route the held screen-refresh client through that connection to the landed
-  VRAM memory-to-register cycle and completion acknowledge.
-- Route retained DRAM-refresh requests through that connection to the landed
-  RAS-only or CAS-before-RAS cycles, then validate the one-entry service
-  bound under the final clock ratio, waits, and HOLD behavior.
+- Convert on-chip I/O requests into the landed physical I/O cycle kinds and
+  return on-chip read data through the final controller contract.
+- Implement original-pin HOLD/HOLDA release around the integrated controller,
+  including the specified bus-control/LAD high-impedance behavior.
+- Validate the one-entry DRAM-refresh service bound under the final PLL clock
+  ratio, external waits, and physical HOLD behavior.
 - Implement HRDY and the asynchronous physical host wrapper/CDC around the
   synchronous host-register boundary; Task 0146 completed the host client's
   abstract arbiter connection.
@@ -224,8 +231,9 @@ deliberate non-pin-compatible boundary.
    fabric with LRDY/reset tests. Task 0136 completed field-to-word sequencing,
    Task 0145 completed the standalone priority/RMW arbitration engine, and
    Task 0146 integrated every core client at the abstract controller boundary.
-   Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine; its CDC,
-   system hookup, physical HOLD release, and host-pin portion remain.
+   Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine, and Task
+   0148 completed the coherent CDC/system hookup plus IAQ/screen-ORG path.
+   Physical HOLD, on-chip I/O cycles, and the host-pin portion remain.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,
