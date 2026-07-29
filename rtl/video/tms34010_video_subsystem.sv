@@ -6,8 +6,8 @@
 //
 // Clock-domain ownership:
 //   * core_clk_i owns the memory-mapped I/O storage and memory-fabric client;
-//   * video_clk_i owns HCOUNT, VCOUNT, all timing compares, DPYADR, and the
-//     screen-refresh scheduler.
+//   * video_clk_i owns HCOUNT, VCOUNT, interlaced field phase, all timing
+//     compares, DPYADR, and the screen-refresh scheduler.
 //
 // CDC patterns:
 //   * complete timing/display configuration crosses as one atomic MCP mailbox
@@ -130,6 +130,7 @@ module tms34010_video_subsystem
   logic [15:0] dpyadr_video;
   logic        hblank_start_video;
   logic        dpyint_video;
+  logic        odd_field_video;
 
   logic        dip_pending_q;
   logic        dip_accept;
@@ -254,6 +255,7 @@ module tms34010_video_subsystem
     .vtotal        (config_video_q.vtotal),
     .dpyint        (config_video_q.dpyint),
     .display_enable(config_video_q.dpyctl[DPYCTL_ENV_BIT]),
+    .noninterlaced (config_video_q.dpyctl[DPYCTL_NIL_BIT]),
     .hcount_load   (command_valid_video
                     && command_received.hcount_load),
     .hcount_wdata  (command_received.hcount_wdata),
@@ -268,7 +270,8 @@ module tms34010_video_subsystem
     .vblank        (vblank_o),
     .blank         (blank_o),
     .hblank_start  (hblank_start_video),
-    .dpyint_pulse  (dpyint_video)
+    .dpyint_pulse  (dpyint_video),
+    .odd_field     (odd_field_video)
   );
 
   tms34010_display_addr u_display_addr (
@@ -276,6 +279,7 @@ module tms34010_video_subsystem
     .rst             (video_rst_i),
     .hblank_start    (hblank_start_video),
     .vcount          (vcount_video),
+    .odd_field       (odd_field_video),
     .veblnk          (config_video_q.veblnk),
     .vsblnk          (config_video_q.vsblnk),
     .dpystart        (config_video_q.dpystart),

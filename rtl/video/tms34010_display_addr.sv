@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_display_addr.sv
 //
-// Live DPYADR state and automatic noninterlaced screen-refresh scheduler.
+// Live DPYADR state and automatic screen-refresh scheduler.
 // A request is generated at an eligible start-of-horizontal-blanking event
 // and held, with a stable SRFADR/DPYTAP payload, until the future memory
 // controller acknowledges completion. DPYADR advances only on that completion.
@@ -16,10 +16,14 @@
 // refreshes occur every LCSTRT+1 eligible scan lines. On completion, SRFADR
 // increments or decrements by DPYCTL.DUDATE and LNCNT reloads.
 //
-// Current scope: internal/noninterlaced scheduling in the dedicated VCLK
-// domain. Task 0148 carries captured ORG through the physical-bus bridge, and
-// Task 0155 wraps this held request in a coherent VCLK-to-core transaction.
-// Interlaced half-DUDATE adjustment remains later work.
+// In interlaced mode, the vertical blanking interval in the odd field
+// precedes the next even field. That reload uses DPYSTRT plus or minus
+// DUDATE/2 so the even field starts on the alternate display-memory line.
+// The blanking interval in the even field precedes the odd field and reloads
+// DPYSTRT without the half-line displacement.
+//
+// Task 0148 carries captured ORG through the physical-bus bridge, and Task
+// 0155 wraps this held request in a coherent VCLK-to-core transaction.
 //
 // Spec source:
 //   1988 TI TMS34010 User's Guide pages 6-17..6-24 and §9.10.1.
@@ -34,6 +38,7 @@ module tms34010_display_addr
 
   input  logic        hblank_start,
   input  logic [15:0] vcount,
+  input  logic        odd_field,
   input  logic [15:0] veblnk,
   input  logic [15:0] vsblnk,
 
@@ -60,7 +65,10 @@ module tms34010_display_addr
   logic        start_request;
   logic [7:0]  dudate;
   logic [13:0] dudate_step;
+  logic [13:0] half_dudate_step;
   logic [13:0] next_srfaddr;
+  logic [13:0] interlaced_even_srfaddr;
+  logic [13:0] frame_srfaddr;
 
   assign eligible_hblank =
       hblank_start && (vcount >= veblnk) && (vcount < vsblnk);
@@ -71,9 +79,17 @@ module tms34010_display_addr
 
   assign dudate = dpyctl[DPYCTL_DUDATE_HI:DPYCTL_DUDATE_LO];
   assign dudate_step = {6'h00, dudate};
+  assign half_dudate_step = {1'b0, dudate_step[13:1]};
   assign next_srfaddr = dpyctl[DPYCTL_ORG_BIT]
       ? dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO] - dudate_step
       : dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO] + dudate_step;
+  assign interlaced_even_srfaddr = dpyctl[DPYCTL_ORG_BIT]
+      ? dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO] - half_dudate_step
+      : dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO] + half_dudate_step;
+  assign frame_srfaddr =
+      (!dpyctl[DPYCTL_NIL_BIT] && odd_field)
+      ? interlaced_even_srfaddr
+      : dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO];
 
   // SRE rising during the active region forces the next eligible HBLANK to
   // request a refresh regardless of the old LNCNT state. The first active
@@ -126,7 +142,7 @@ module tms34010_display_addr
       end else begin
         if (frame_blank_start) begin
           dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO]
-              <= dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO];
+              <= frame_srfaddr;
         end else if (refresh_ack && refresh_req) begin
           dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO] <= next_srfaddr;
         end

@@ -53,7 +53,9 @@ module tb_io_display;
   localparam logic [ADDR_WIDTH-1:0] A_DPYADR =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYADR) << 4);
   localparam logic [15:0] SRE_DUDATE1 =
-      (16'h0001 << DPYCTL_SRE_BIT)
+      (16'h0001 << DPYCTL_DXV_BIT)
+    | (16'h0001 << DPYCTL_NIL_BIT)
+    | (16'h0001 << DPYCTL_SRE_BIT)
     | (16'h0001 << DPYCTL_DUDATE_LO);
 
   tms34010_io_regs u_dut (

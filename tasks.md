@@ -2,9 +2,12 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0155. Task 0155 moves
-timing/display ownership to independent VCLK and closes every core/video
-crossing with coherent MCP/event/transaction handshakes. Task 0154 closes
+The functional implementation is complete through Task 0156. Task 0156
+implements internally generated interlaced fields, including the half-line
+odd-field phase, midline VCOUNT advance, field-aware DIP behavior, and signed
+DUDATE/2 display-address reload. Task 0155 moves timing/display ownership to
+independent VCLK and closes every core/video crossing with coherent
+MCP/event/transaction handshakes. Task 0154 closes
 the remaining reserved I/O field/location behavior for both processor and
 host-indirect accesses. Task 0153 wraps
 the synchronous four-register host engine with the original asynchronous host
@@ -232,6 +235,8 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0152 | Implement the shared physical HLDA/EMUA pin | complete |
 | 0153 | Implement the asynchronous physical host bus | complete |
 | 0154 | Enforce reserved I/O fields and locations | complete |
+| 0155 | Introduce the dedicated VCLK domain and video CDC | complete |
+| 0156 | Implement internal interlaced video timing | complete |
 
 ---
 
@@ -5317,6 +5322,63 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `04ddaf4c057b24315cd4745a04c4f75bbfb1d6ab`
+
+---
+
+### Task 0156: Implement internal interlaced video timing
+Status: complete
+Dependencies:
+- Task 0155 (dedicated VCLK ownership and coherent video CDC).
+Spec sources:
+- 1988 TI TMS34010 User's Guide HTOTAL page 6-39, VCOUNT page 6-47,
+  VESYNC page 6-49, and VTOTAL page 6-52 (half-line counter events and the
+  odd-field VESYNC advance).
+- 1988 TI TMS34010 User's Guide DPYCTL pages 6-19 through 6-22
+  (DUDATE/ORG and NIL definitions).
+- 1988 TI TMS34010 User's Guide §9.6.1.1, pages 9-11/9-12
+  (even/odd field ordering, half-line phase, and display-address behavior).
+- 1988 TI TMS34010 User's Guide §9.7, page 9-13 (odd-field VCOUNT advance
+  and DPYINT suppression when HSBLNK equals the half-line point).
+- 1988 TI TMS34010 User's Guide §9.10.1.3, page 9-25
+  (interlaced DUDATE/2 starting displacement).
+Acceptance Criteria:
+- Consume DPYCTL.NIL in the VCLK timing owner while preserving the existing
+  internally generated noninterlaced path when NIL is one.
+- Reset into the specified even-field phase; begin the odd field by clearing
+  VCOUNT at `HCOUNT=floor(HTOTAL/2)` without resetting HCOUNT, advance VCOUNT
+  again at the odd-field VESYNC half-line compare, and return to the even
+  field at the normal full-line VTOTAL boundary.
+- Retain the existing count-derived sync/blank endpoints and suppress the
+  documented odd-field `DPYINT=VESYNC` collision when HSBLNK is the half-line
+  compare, without suppressing the even-field event.
+- Carry the field phase directly inside VCLK to the display scheduler. Reload
+  DPYSTRT unchanged before an odd field and apply signed DUDATE/2 before an
+  even field; keep ordinary completion updates at full DUDATE.
+- Document deterministic mode-change/write precedence and the requirement to
+  reposition equality-based counters when programming a smaller total while
+  the FPGA VCLK remains running.
+- Leave DPYCTL.DXV external synchronization and physical VRAM serial output
+  to subsequent numbered tasks.
+Tests:
+- Added `tb_video_interlace` PASS with a cycle-by-cycle two-field model,
+  half-line HCOUNT preservation, both field boundaries, the odd VESYNC
+  VCOUNT advance, sync/blank intervals, even-field DIP, and odd-field DIP
+  suppression.
+- Extended `tb_display_addr` PASS with unchanged odd-field DPYSTRT reload,
+  incrementing DUDATE/2 even-field reload, decrementing ORG/DUDATE/2 reload,
+  and preserved LNCNT.
+- Updated noninterlaced VCLK/I/O/fabric benches to program DXV/NIL explicitly;
+  `tb_video`, `tb_video_cdc`, `tb_io_video`, `tb_io_display`,
+  `tb_system_fabric`, and `tb_pin_system` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 142/142 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

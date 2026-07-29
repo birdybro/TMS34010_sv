@@ -35,8 +35,16 @@ module tb_system_fabric;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYSTRT) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_DPYTAP =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYTAP) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_HCOUNT =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HCOUNT) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_VCOUNT =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_VCOUNT) << 4);
+  localparam logic [15:0] INTERNAL_NONINTERLACED =
+      (16'h0001 << DPYCTL_DXV_BIT)
+    | (16'h0001 << DPYCTL_NIL_BIT);
   localparam logic [15:0] SRE_ORG_DUDATE1 =
-      (16'h0001 << DPYCTL_SRE_BIT)
+      INTERNAL_NONINTERLACED
+    | (16'h0001 << DPYCTL_SRE_BIT)
     | (16'h0001 << DPYCTL_DUDATE_LO)
     | (16'h0001 << DPYCTL_ORG_BIT);
 
@@ -422,9 +430,13 @@ module tb_system_fabric;
 
     for (i = 0; i < DEPTH_WORDS; i++) memory[i] = 16'h0300;
 
-    // Configure a compact noninterlaced frame. SRE is written last so no
-    // screen request can capture partially programmed timing/tap state.
+    // Configure a compact noninterlaced frame. Select that mode before
+    // changing totals, then explicitly reposition the free-running counters;
+    // equality-based counters do not retroactively wrap if a newly programmed
+    // total is below their old value. SRE is written last so no request can
+    // capture partially programmed timing/tap state.
     p = 0;
+    p = place_io_write(p, 4'd0, INTERNAL_NONINTERLACED, A_DPYCTL);
     p = place_io_write(p, 4'd0, 16'd6, A_HSBLNK);
     p = place_io_write(p, 4'd0, 16'd7, A_HTOTAL);
     p = place_io_write(p, 4'd0, 16'd1, A_VEBLNK);
@@ -432,6 +444,8 @@ module tb_system_fabric;
     p = place_io_write(p, 4'd0, 16'd3, A_VTOTAL);
     p = place_io_write(p, 4'd0, {14'h0120, 2'b00}, A_DPYSTRT);
     p = place_io_write(p, 4'd0, 16'hBEEF, A_DPYTAP);
+    p = place_io_write(p, 4'd0, 16'd5, A_HCOUNT);
+    p = place_io_write(p, 4'd0, 16'd3, A_VCOUNT);
     p = place_io_write(p, 4'd0, SRE_ORG_DUDATE1, A_DPYCTL);
     p = place_movi_il(p, 4'd5, 32'h0000_0146);
 
@@ -457,7 +471,10 @@ module tb_system_fabric;
       watchdog++;
     end
     if (screen_count_q == 0) begin
-      $display("TEST_RESULT: FAIL: integrated screen client was not serviced");
+      $display("TEST_RESULT: FAIL: integrated screen client was not serviced dpyctl=%04h H=%0d V=%0d",
+               u_system.u_core.u_io_regs.io_reg[IO_IDX_DPYCTL],
+               u_system.u_core.u_io_regs.u_video_subsystem.hcount_video,
+               u_system.u_core.u_io_regs.u_video_subsystem.vcount_video);
       failures++;
     end else if ((last_screen_srfaddr_q !== 14'h0120)
                  || (last_screen_dpytap_q !== 16'h3EEF)
@@ -480,7 +497,7 @@ module tb_system_fabric;
       $display("TEST_RESULT: FAIL: IAQ did not distinguish opcode/immediate words");
       failures++;
     end
-    if (io_write_count_q < 8) begin
+    if (io_write_count_q < 11) begin
       $display("TEST_RESULT: FAIL: expected physical I/O writes actual=%0d",
                io_write_count_q);
       failures++;

@@ -1,10 +1,11 @@
 // -----------------------------------------------------------------------------
 // tb_display_addr.sv
 //
-// Direct regression for live DPYADR and the held noninterlaced screen-refresh
-// request. Covers frame reload, vertical-blank suppression, first-active-line
-// scheduling, LCSTRT+1 cadence, request/payload stability, acknowledge-time
-// DUDATE/ORG updates, SRE re-enable, processor load precedence, and reset.
+// Direct regression for live DPYADR and the held screen-refresh request.
+// Covers noninterlaced frame reload, vertical-blank suppression,
+// first-active-line scheduling, LCSTRT+1 cadence, request/payload stability,
+// acknowledge-time DUDATE/ORG updates, SRE re-enable, processor load
+// precedence, interlaced DPYSTRT +/- DUDATE/2 reloads, and reset.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -18,6 +19,7 @@ module tb_display_addr;
 
   logic        hblank_start;
   logic [15:0] vcount;
+  logic        odd_field;
   logic [15:0] veblnk;
   logic [15:0] vsblnk;
   logic [15:0] dpystart;
@@ -32,17 +34,27 @@ module tb_display_addr;
   logic [15:0] refresh_dpytap;
   logic        refresh_org;
 
+  localparam logic [15:0] INTERNAL_NONINTERLACED =
+      (16'h0001 << DPYCTL_DXV_BIT)
+    | (16'h0001 << DPYCTL_NIL_BIT);
   localparam logic [15:0] SRE_DUDATE4 =
-      (16'h0001 << DPYCTL_SRE_BIT)
+      INTERNAL_NONINTERLACED
+    | (16'h0001 << DPYCTL_SRE_BIT)
     | (16'h0004 << DPYCTL_DUDATE_LO);
   localparam logic [15:0] SRE_ORG_DUDATE4 =
       SRE_DUDATE4 | (16'h0001 << DPYCTL_ORG_BIT);
+  localparam logic [15:0] INTERLACED_DUDATE4 =
+      (16'h0001 << DPYCTL_DXV_BIT)
+    | (16'h0004 << DPYCTL_DUDATE_LO);
+  localparam logic [15:0] INTERLACED_ORG_DUDATE4 =
+      INTERLACED_DUDATE4 | (16'h0001 << DPYCTL_ORG_BIT);
 
   tms34010_display_addr u_dut (
     .clk             (clk),
     .rst             (rst),
     .hblank_start    (hblank_start),
     .vcount          (vcount),
+    .odd_field       (odd_field),
     .veblnk          (veblnk),
     .vsblnk          (vsblnk),
     .dpystart        (dpystart),
@@ -135,10 +147,11 @@ module tb_display_addr;
     failures      = 0;
     hblank_start = 1'b0;
     vcount       = 16'h0000;
+    odd_field    = 1'b0;
     veblnk       = 16'd2;
     vsblnk       = 16'd8;
     dpystart     = {14'h0123, 2'd1};
-    dpyctl       = 16'h0000;
+    dpyctl       = INTERNAL_NONINTERLACED;
     dpytap       = 16'hABCD;
     dpyadr_load  = 1'b0;
     dpyadr_wdata = 16'h0000;
@@ -205,7 +218,7 @@ module tb_display_addr;
 
     // Disabling SRE prevents new requests and holds LNCNT. Re-enabling forces
     // the next eligible HBLANK regardless of the processor-loaded count.
-    dpyctl = 16'h0000;
+    dpyctl = INTERNAL_NONINTERLACED;
     load_dpyadr({14'h0333, 2'd3});
     pulse_hblank(16'd5);
     check_bit("SRE disabled", refresh_req, 1'b0);
@@ -229,6 +242,30 @@ module tb_display_addr;
     refresh_ack = 1'b0;
     check_value("processor load wins completion", dpyadr, {14'h02AA, 2'd2});
     check_bit("collision still retires request", refresh_req, 1'b0);
+
+    // In interlaced timing the vertical blank in the even field precedes the
+    // odd field and reloads DPYSTRT unchanged. The blank in the odd field
+    // precedes the next even field and applies signed DUDATE/2 so that field
+    // starts on the alternate display-memory line.
+    dpystart = {14'h0100, 2'd1};
+    dpyctl   = INTERLACED_DUDATE4;
+    odd_field = 1'b0;
+    load_dpyadr({14'h0300, 2'd3});
+    pulse_hblank(vsblnk);
+    check_value("interlace reload preceding odd field",
+                dpyadr, {14'h0100, 2'd3});
+
+    odd_field = 1'b1;
+    load_dpyadr({14'h0300, 2'd2});
+    pulse_hblank(vsblnk);
+    check_value("interlace reload preceding even field adds DUDATE/2",
+                dpyadr, {14'h0102, 2'd2});
+
+    dpyctl = INTERLACED_ORG_DUDATE4;
+    load_dpyadr({14'h0300, 2'd1});
+    pulse_hblank(vsblnk);
+    check_value("interlace ORG reload subtracts DUDATE/2",
+                dpyadr, {14'h00FE, 2'd1});
 
     // Synchronous reset clears live state and any held request.
     @(negedge clk);

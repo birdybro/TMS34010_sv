@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0155**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0156**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -111,6 +111,13 @@ ignore completed writes and return zero through either read view; this
 includes the documented no-effect PMASK compatibility word at `C0000170h`.
 REFCNT bits 1:0 retain the separate deterministic A0033 policy.
 
+Task 0155 moves all live timing/display state into VCLK behind coherent
+configuration, command, status, event, and screen-transaction crossings.
+Task 0156 consumes DPYCTL.NIL there: internal interlace starts the odd field
+at HTOTAL/2, advances VCOUNT at the odd VESYNC half-line point, and carries
+field phase to DPYADR. The DPYSTRT reload preceding an even field applies
+signed DUDATE/2; the reload preceding an odd field remains unchanged.
+
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
 through the synthesizable sequencer into a one-cycle aligned 16-bit target.
@@ -166,7 +173,7 @@ CONTROL.RR, with CONTROL.RM and request/row outputs for the future memory
 fabric.
 
 Task 0139 connects the horizontal/vertical timing values and DPYINT/DPYCTL
-to the internal noninterlaced generator. HCOUNT/VCOUNT are now live writable
+to the internally generated timing path. HCOUNT/VCOUNT are now live writable
 counters, and its start-of-HBLANK compare sets the existing DIP latch.
 Task 0141 makes DPYADR live: DPYSTRT supplies its frame/line reloads,
 DPYCTL.SRE/DUDATE/ORG controls held screen-refresh scheduling and
@@ -189,6 +196,9 @@ wires that client to the shared arbiter, and Tasks 0149–0150 select the exact
 physical I/O cycle for either requester as documented in A0028.
 Task 0154 applies the final ordinary reserved masks to both completed write
 paths and makes all four reserved locations explicit non-storage.
+Task 0155 moves live counters and display state into VCLK with coherent
+core-domain views. Task 0156 consumes NIL for internal field sequencing and
+the field-aware half-DUDATE DPYADR reload.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -200,7 +210,7 @@ paths and makes all four reserved locations explicit non-storage.
 | C0000050 | 0x05 | VEBLNK  | video timing | Vertical End Blank |
 | C0000060 | 0x06 | VSBLNK  | video timing | Vertical Start Blank |
 | C0000070 | 0x07 | VTOTAL  | video timing | Vertical Total |
-| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; ENV gates combined blank and new DIP events |
+| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; NIL selects internal field sequencing; ENV gates combined blank and new DIP events; DXV external sync and SRT remain subsequent consumers |
 | C0000090 | 0x09 | DPYSTRT | video timing | LCSTRT/SRSTRT reload live DPYADR at line/frame boundaries |
 | C00000A0 | 0x0A | DPYINT  | video timing | VCOUNT line selected for DIP at start of horizontal blanking |
 | C00000B0 | 0x0B | CONTROL | graphics ctl | Bits 1:0 read zero; RM/RR, transparency, window, direction, PPOP, CD |
@@ -219,7 +229,7 @@ paths and makes all four reserved locations explicit non-storage.
 | C00001B0 | 0x1B | DPYTAP  | video timing | Bits 13:0 captured per screen-refresh request; reserved bits 15:14 read zero |
 | C00001C0 | 0x1C | HCOUNT  | video timing | VCLK-owned writable counter; core reads a coherent bounded-stale snapshot and writes use the A0045 command mailbox |
 | C00001D0 | 0x1D | VCOUNT  | video timing | VCLK-owned writable scan-line counter with the same coherent snapshot/command contract |
-| C00001E0 | 0x1E | DPYADR  | video timing | VCLK-owned LNCNT/SRFADR; coherent core snapshot, command writes, frame reload, and acknowledged screen-refresh updates |
+| C00001E0 | 0x1E | DPYADR  | video timing | VCLK-owned LNCNT/SRFADR; coherent core snapshot, command writes, field-aware DPYSTRT/DUDATE/2 reload, and acknowledged screen-refresh updates |
 | C00001F0 | 0x1F | REFCNT  | refresh      | Live writable RINTVL/ROWADR down-counter; RR=00/01 requests every 32/64 clocks |
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
@@ -242,14 +252,14 @@ constraints remain part of hardware realization, not the register map.
 ## Display / video memory behavior
 
 The original device interacts with VRAM through random-access and serial-shift
-cycles. The current repository now schedules and holds the screen-refresh
+cycles. The current repository schedules and holds the screen-refresh
 client request in VCLK with captured SRFADR/DPYTAP/ORG. The Task 0155 MCP
 transaction bridge carries it into the core, and the integrated local-bus MCP
 routes it to the controller's physical memory-to-register pin cycle before
-completion returns to DPYADR. There is still no VRAM serial-output model or
-pixel output.
+completion returns to DPYADR. Task 0156 adds the interlaced starting-address
+displacement without changing that completed-transfer contract. There is
+still no VRAM serial-output model or pixel output.
 
 ## Uncertain / partially implemented areas
 
-- External-sync/interlace timing, VRAM shift-register behavior, and pixel
-  output.
+- External-sync timing, VRAM shift-register behavior, and pixel output.

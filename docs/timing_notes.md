@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0155, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0156, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -112,16 +112,19 @@
   Task 0148 routes it through the MCP bridge to the RAS-only or CBR phase
   engine. The final wait/PLL configuration and permitted HOLD duration must
   still prove the one-entry pending latch cannot be overrun.
-- **Integrated video timing** — Task 0155 runs the internal/noninterlaced
-  generator on independent `vclk_i`. HCOUNT advances each active edge and
-  wraps after HTOTAL; that wrap advances VCOUNT and wraps it after VTOTAL.
-  Delivered counter loads take destination-edge priority. The display event
-  is the `HCOUNT=HSBLNK && VCOUNT=DPYINT && ENV` interval and enters a sticky
-  source event before its toggle crosses to the core DIP latch. Sync/end blank
-  equality remains active for that count; start blank equality remains
-  inactive until the following count. The internal positive edge represents
-  the original falling-VCLK update edge; final PLL/pin phase mapping remains
-  gate-6 work.
+- **Integrated video timing** — Task 0155 runs the internally generated timing
+  path on independent `vclk_i`. In NIL=1 mode HCOUNT wraps after HTOTAL and
+  advances/wraps VCOUNT after VTOTAL. Task 0156 adds NIL=0 fields: reset starts
+  even; the odd field clears VCOUNT at `floor(HTOTAL/2)` without resetting
+  HCOUNT; its VESYNC half-line event advances VCOUNT again; and the next even
+  field starts at the ordinary full-line VTOTAL event. Delivered counter
+  loads take destination-edge priority. The display event is normally the
+  `HCOUNT=HSBLNK && VCOUNT=DPYINT && ENV` interval; the coincident odd-field
+  VESYNC half-line advance suppresses that one stale compare as §9.7
+  requires. Sync/end blank equality remains active for that count; start
+  blank equality remains inactive until the following count. The internal
+  positive edge represents the original falling-VCLK update edge; final
+  PLL/pin phase mapping remains gate-6 work.
 - **Screen-refresh request** — at an eligible start-HBLANK event,
   `screen_refresh_req_o` registers high and captures SRFADR/DPYTAP/ORG. The level
   and payload remain stable for an unbounded number of core clocks until
@@ -134,6 +137,9 @@
   selection alone; acknowledge denotes completed memory-to-register service.
   Task 0148 carries that held request through the MCP bridge and returns the
   acknowledge only after the 8× screen-transfer cycle completes.
+  Task 0156 keeps the field phase in VCLK: a DPYSTRT reload preceding the odd
+  field is unchanged, while one preceding the even field applies signed
+  DUDATE/2. Per-line completion still applies full DUDATE.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
@@ -328,10 +334,10 @@ capture edge, and close HRDY plus HD/output-enable pin delays.
 
 ## Dedicated video clock boundary
 
-Task 0155 closes the functional VCLK boundary:
+Tasks 0155–0156 close the functional internal-timing VCLK boundary:
 
-- HCOUNT/VCOUNT, timing compares/outputs, DPYADR, and the screen scheduler are
-  wholly in `vclk_i`;
+- HCOUNT/VCOUNT, even/odd field phase, timing compares/outputs, DPYADR, and
+  the screen scheduler are wholly in `vclk_i`;
 - one source-held packed mailbox carries all twelve timing/display
   configuration words atomically, and a second carries coalesced live-owner
   commands;

@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0155: architectural widths and register layouts,
+// Current through Task 0156: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
 // FSM states, physical-memory word geometry, local-cycle kinds, and the
 // original local-clock command/phase types are here.
@@ -390,7 +390,7 @@ package tms34010_pkg;
   parameter int unsigned DPYCTL_SRT_BIT    = 11; // programmed pixel transfers
   parameter int unsigned DPYCTL_SRE_BIT    = 12; // automatic screen refresh
   parameter int unsigned DPYCTL_DXV_BIT    = 13; // 1=internal video timing
-  parameter int unsigned DPYCTL_NIL_BIT    = 14; // 1=noninterlaced
+  parameter int unsigned DPYCTL_NIL_BIT    = 14; // 0=interlaced, 1=noninterlaced
   parameter int unsigned DPYCTL_ENV_BIT    = 15; // enable video/display IRQ
   parameter logic [15:0] DPYCTL_WRITABLE_MASK = 16'hFFFD;
 

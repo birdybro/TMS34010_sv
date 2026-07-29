@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0155.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0156.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -11,7 +11,7 @@
 //
 // The external request/ack interface is an architectural bit-addressed
 // interface, not the original physical 16-bit bus. REFCNT requests and the
-// dedicated-VCLK internal/noninterlaced video timing/screen scheduler are
+// dedicated-VCLK internal video timing/screen scheduler are
 // integrated. The synchronous four-register host engine, HINT, and HLT
 // behavior are also integrated; the enclosing system/pin wrappers provide
 // host/local arbitration and the original physical bus phases.

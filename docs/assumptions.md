@@ -599,6 +599,49 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0046 — Internal interlaced field phase and counter programming
+- **Date**: 2026-07-29 (Task 0156).
+- **Status**: specification-derived interlaced timing with isolated
+  deterministic mode-change and write-collision choices.
+- **Sources**: 1988 TI TMS34010 User's Guide HTOTAL page 6-39, VCOUNT page
+  6-47, VESYNC page 6-49, VTOTAL page 6-52, DPYCTL pages 6-19 through 6-22,
+  §9.6.1.1 pages 9-11/9-12, §9.7 page 9-13, and §9.10.1.3 page 9-25.
+- **Field phase**: reset selects the even field, matching the guide's stated
+  scan order. With NIL=0 and legal odd HTOTAL, the even-to-odd boundary
+  occurs at `floor(HTOTAL/2)`: VCOUNT clears, VSYNC starts, and HCOUNT
+  deliberately continues. The odd-to-even boundary occurs at the ordinary
+  `HCOUNT=HTOTAL && VCOUNT=VTOTAL` event and resets both counts/phases.
+- **Odd-field VCOUNT event**: during the odd field,
+  `HCOUNT=floor(HTOTAL/2) && VCOUNT=VESYNC` increments VCOUNT a second time
+  within that line. This directly implements §9.7, shifts the end of VSYNC,
+  and prevents `DPYINT=VESYNC` from firing in the odd field when HSBLNK is
+  that same half-line point. Earlier/later HSBLNK programming retains the
+  ordinary count-compare behavior.
+- **Display start address**: the vertical blank in the odd field precedes the
+  next even field and reloads SRFADR from DPYSTRT plus DUDATE/2 for ORG=0 or
+  minus DUDATE/2 for ORG=1. The blank in the even field precedes the odd
+  field and reloads DPYSTRT unchanged. Acknowledged per-line updates remain
+  full DUDATE. Conforming interlace software programs DUDATE to twice the
+  noninterlaced line step, so the right shift is exact.
+- **Deterministic mode/write choices**: selecting NIL=1 clears the stored
+  odd-field phase on the next VCLK; changing back to NIL=0 therefore begins
+  from the even phase. Delivered HCOUNT/VCOUNT loads retain A0034 priority
+  over a coincident automatic half/full-line event and do not invent a new
+  field phase. The guide does not define arbitrary live mode/write
+  collisions, so software should program timing while video is quiescent.
+- **Equality-counter programming**: HCOUNT/VCOUNT wrap on equality, as the
+  register pages specify. If software lowers HTOTAL/VTOTAL below a current
+  free-running count, the counter is not asynchronously coerced into range;
+  it must also reposition the live counter. This matters under A0045 because
+  the FPGA VCLK remains running rather than being held high. The
+  `tb_system_fabric` setup explicitly selects internal/noninterlaced mode,
+  programs timing, positions both counters, and enables SRE last.
+- **Regression evidence**: `tb_video_interlace` checks every counter/output
+  cycle across repeated even/odd fields and the deterministic NIL recovery.
+  `tb_display_addr` covers unchanged, incremented, and decremented
+  half-DUDATE reloads. The existing noninterlaced, CDC, I/O, system, and pin
+  benches retain their prior behavior with explicit DXV/NIL programming.
+
 ## A0045 — Dedicated VCLK ownership and coherent CDC contract
 - **Date**: 2026-07-28 (Task 0155).
 - **Status**: specification-derived clock ownership with isolated FPGA CDC,
@@ -671,8 +714,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **REFCNT exception**: A0033 already isolates the guide's unspecified
   software-write behavior for REFCNT bits 1:0 and regression-locks their
   retention. Task 0154 deliberately does not rewrite that prior choice.
-- **Consumer boundary**: defined DPYCTL SRT/HSD/DXV/NIL functions remain
-  stored but belong to the video/display completion gate. CONTROL.CD and
+- **Consumer boundary**: DPYCTL.NIL is consumed by Task 0156. Defined
+  DPYCTL SRT/HSD/DXV functions remain stored but belong to the video/display
+  completion gate. CONTROL.CD and
   HSTCTL.CF remain stored in the cacheless configuration. These are missing
   consumers or cycle-accuracy features, not missing register masks.
 - **Regression evidence**: `tb_io_regs` writes all ones to each masked
@@ -1020,12 +1064,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   and all deterministic choices above. `tb_io_display` locks register
   integration, generated timing events, held payload, and completion updates.
 
-## A0034 — Internal/noninterlaced video timing
+## A0034 — Internally generated video timing
 - **Date**: 2026-07-28 (Task 0139); **resolved/refined 2026-07-28
-  (Task 0155)**.
-- **Status**: **RESOLVED** for the dedicated clock/CDC boundary. External
-  synchronization and interlaced timing remain separate missing modes, not
-  an implicit same-clock assumption.
+  (Task 0155), refined 2026-07-29 (Task 0156)**.
+- **Status**: **RESOLVED** for the dedicated clock/CDC boundary and internal
+  noninterlaced/interlaced modes. External synchronization remains a
+  separate missing mode, not an implicit timing assumption.
 - **Source**: 1988 TMS34010 User's Guide pages 6-18 through 6-25, 6-31,
   6-47, and §9.7 define the register behavior and video events. Project
   conventions A0004/A0006 allowed the Task 0139 functional-first checkpoint;
@@ -1043,19 +1087,22 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   command/status, DIP, and completed-screen-transaction crossings. The active
   FPGA edge represents the original falling-VCLK update edge; final physical
   phase mapping and SDC proof remain FPGA-realization work.
-- **Mode scope**: the integrated timing path is internal and noninterlaced.
-  DXV/external-sync correction and NIL=0 interlaced half-line behavior remain
-  unimplemented rather than being represented by misleading pseudo-support.
+- **Mode scope**: Task 0156 consumes NIL and implements the internal
+  half-line field sequence, odd-field VESYNC increment/DIP behavior, and
+  field-aware DPYSTRT half-DUDATE adjustment under A0046. DXV/external-sync
+  correction remains unimplemented rather than being represented by
+  misleading pseudo-support.
 - **Deterministic counter-write choice**: a delivered VCLK command retains the
   original load priority: HCOUNT load suppresses that edge's wrap/VCOUNT step,
   and an independent VCOUNT load wins for VCOUNT. A0045 records coalescing and
   the stopped-VCLK access difference; this collision precedence remains an
   FPGA-model choice rather than an original-silicon guarantee.
-- **Regression evidence**: `tb_video` covers counter loads/wraps, timing
-  windows, ENV, and the corrected interrupt point. `tb_video_cdc` covers the
-  dedicated domain and every crossing. `tb_io_video` covers the live register
-  snapshots, combined blank, timing outputs, and integrated
-  hardware-set/write-zero-clear DIP behavior.
+- **Regression evidence**: `tb_video` covers noninterlaced counter
+  loads/wraps, timing windows, ENV, and the corrected interrupt point.
+  `tb_video_interlace` covers complete even/odd field sequences.
+  `tb_video_cdc` covers the dedicated domain and every crossing.
+  `tb_io_video` covers the live register snapshots, combined blank, timing
+  outputs, and integrated hardware-set/write-zero-clear DIP behavior.
 
 ## A0033 — REFCNT reserved mode and deterministic write collision
 - **Date**: 2026-07-28 (Task 0138).

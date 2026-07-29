@@ -36,12 +36,13 @@ module tb_video;
     .hesync(HESYNC), .heblnk(HEBLNK), .hsblnk(HSBLNK), .htotal(HTOTAL),
     .vesync(VESYNC), .veblnk(VEBLNK), .vsblnk(VSBLNK), .vtotal(VTOTAL),
     .dpyint(DPYINT), .display_enable(display_enable),
+    .noninterlaced(1'b1),
     .hcount_load(hcount_load), .hcount_wdata(hcount_wdata),
     .vcount_load(vcount_load), .vcount_wdata(vcount_wdata),
     .hcount(hcount), .vcount(vcount),
     .hsync(hsync), .vsync(vsync), .hblank(hblank), .vblank(vblank),
     .blank(blank), .hblank_start(hblank_start),
-    .dpyint_pulse(dpyint_pulse)
+    .dpyint_pulse(dpyint_pulse), .odd_field()
   );
 
   int unsigned failures;

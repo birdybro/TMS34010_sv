@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0155. Task 0124
+Functional implementation work is complete through Task 0156. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -78,6 +78,10 @@ Task 0155 introduces the independent VCLK domain: HCOUNT/VCOUNT, timing
 compares, DPYADR, and automatic screen scheduling now live there, while
 atomic configuration/command/status mailboxes, lossless DIP delivery, and a
 bundled held screen-request bridge isolate every core/VCLK crossing.
+Task 0156 implements internally generated interlaced video: the odd field
+starts at HTOTAL/2, performs the specified VESYNC midline VCOUNT advance,
+returns to the even field at the full-line boundary, and applies signed
+DUDATE/2 to the DPYSTRT reload preceding that even field.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -121,18 +125,19 @@ The repository currently contains:
 - the asynchronous original-pin host bus, with legal-access qualification,
   HCS-triggered HSTCTL delay, coherent register request/response capture,
   indirect-busy waits, latched read data, and per-byte HD output enables;
-- integrated dedicated-VCLK internal/noninterlaced video timing with live
-  HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR, and held
+- integrated dedicated-VCLK internal noninterlaced/interlaced video timing
+  with live HCOUNT/VCOUNT, DPYCTL.ENV blanking, field-aware DIP, live DPYADR,
+  signed half-DUDATE field starts, and held
   screen-refresh scheduling; coherent MCP configuration/command/status,
   event, and completed-screen-transaction crossings; plus integrated
   REFCNT/refresh-request generation;
-- 141 self-checking SystemVerilog testbenches, including non-integer-clock
-  video CDC coverage and an exhaustive
+- 142 self-checking SystemVerilog testbenches, including non-integer-clock
+  video CDC, cycle-by-cycle interlace coverage, and an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
 the audit records the remaining physical VRAM serial service, video
-display-memory/pixel behavior, external-sync/interlaced modes, real Quartus
+display-memory/pixel behavior, external-sync mode, real Quartus
 project/constraints, and timing/resource/CDC validation.
 
 ## Getting started

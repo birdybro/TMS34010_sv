@@ -64,6 +64,9 @@ module tb_video_cdc;
       16'h0001 << DPYCTL_ENV_BIT;
   localparam logic [15:0] SRE_MASK =
       16'h0001 << DPYCTL_SRE_BIT;
+  localparam logic [15:0] INTERNAL_NONINTERLACED =
+      (16'h0001 << DPYCTL_DXV_BIT)
+    | (16'h0001 << DPYCTL_NIL_BIT);
 
   tms34010_video_subsystem dut (
     .core_clk_i       (core_clk),
@@ -310,7 +313,7 @@ module tb_video_cdc;
     vtotal   = 16'd15;
     dpyint   = 16'd2;
     dpystart = 16'h0003;
-    dpyctl   = ENV_MASK;
+    dpyctl   = INTERNAL_NONINTERLACED | ENV_MASK;
     dpytap   = 16'h1234;
     pulse_config();
     wait_video_config(16'd7);
@@ -329,7 +332,7 @@ module tb_video_cdc;
 
     // Enable automatic screen refresh and place the live owners immediately
     // before the first-active-line HBLANK event.
-    dpyctl = ENV_MASK | SRE_MASK | 16'h0004;
+    dpyctl = INTERNAL_NONINTERLACED | ENV_MASK | SRE_MASK | 16'h0004;
     pulse_config();
     wait_video_config(16'd7);
     write_dpyadr(16'h4800);

@@ -59,7 +59,11 @@ module tb_io_video;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HCOUNT) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_VCOUNT =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_VCOUNT) << 4);
-  localparam logic [15:0] ENV_MASK = 16'h0001 << DPYCTL_ENV_BIT;
+  localparam logic [15:0] INTERNAL_NONINTERLACED =
+      (16'h0001 << DPYCTL_DXV_BIT)
+    | (16'h0001 << DPYCTL_NIL_BIT);
+  localparam logic [15:0] ENABLED_INTERNAL_NONINTERLACED =
+      INTERNAL_NONINTERLACED | (16'h0001 << DPYCTL_ENV_BIT);
   localparam logic [15:0] DIP_MASK = 16'h0001 << INT_DI_BIT;
 
   tms34010_io_regs u_dut (
@@ -241,8 +245,8 @@ module tb_io_video;
     // Enable video, position one count before horizontal blanking on the
     // selected line, and allow the registered pending latch to sample the
     // generated compare pulse.
-    io_write(A_DPYCTL, ENV_MASK);
-    wait_video_config(ENV_MASK);
+    io_write(A_DPYCTL, ENABLED_INTERNAL_NONINTERLACED);
+    wait_video_config(ENABLED_INTERNAL_NONINTERLACED);
     io_write(A_VCOUNT, 16'd2);
     io_write(A_HCOUNT, 16'd5);
     wait_video_position(16'd5, 16'd2);
@@ -257,8 +261,8 @@ module tb_io_video;
 
     // A processor zero clears the latch. Disabling video before recreating
     // the same compare prevents it from being set again.
-    io_write(A_DPYCTL, 16'h0000);
-    wait_video_config(16'h0000);
+    io_write(A_DPYCTL, INTERNAL_NONINTERLACED);
+    wait_video_config(INTERNAL_NONINTERLACED);
     repeat (8) @(posedge clk);
     io_write(A_INTPEND, 16'h0000);
     check_value("processor cleared DIP", intpend & DIP_MASK, 16'h0000);
@@ -271,8 +275,8 @@ module tb_io_video;
                 intpend & DIP_MASK, 16'h0000);
 
     // Reload a visible coordinate to exercise the integrated output windows.
-    io_write(A_DPYCTL, ENV_MASK);
-    wait_video_config(ENV_MASK);
+    io_write(A_DPYCTL, ENABLED_INTERNAL_NONINTERLACED);
+    wait_video_config(ENABLED_INTERNAL_NONINTERLACED);
     io_write(A_VCOUNT, 16'd2);
     io_write(A_HCOUNT, 16'd4);
     wait_video_position(16'd4, 16'd2);

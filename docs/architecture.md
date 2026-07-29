@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0155, with
+> Status: **implemented and ISA/status-audited through Task 0156, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -27,10 +27,10 @@
 > and returns latched read data through selected HD byte lanes.
 > Ordinary I/O storage now enforces every documented reserved field and
 > reserved register location consistently for processor and host access.
-> Internal/noninterlaced video timing and the held screen-refresh client now
-> live in a dedicated VCLK domain. Atomic configuration/command/status
+> Internal noninterlaced/interlaced video timing and the held screen-refresh
+> client now live in a dedicated VCLK domain. Atomic configuration/command/status
 > mailboxes, lossless DIP delivery, and a completed bundled screen-transaction
-> bridge isolate it from the core clock. External sync, interlace, and VRAM
+> bridge isolate it from the core clock. External sync and VRAM
 > serial-display/pixel service remain open. The remaining system-level exit
 > gates are recorded in `completion_audit.md`.
 
@@ -115,9 +115,9 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/tms34010_system.sv`                | 6     | **landed through Task 0155** | functional-system wrapper connecting all core memory clients and the explicit VCLK input to the core/fabric boundary |
-| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0155** | integrated core/VCLK/8× system, MCP bridges, original-pin local bus, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, and shared HLDA/EMUA output |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0155** | multicycle CPU, memory/host/interrupt/graphics engines, explicit VCLK, and coherent DRAM/screen/video boundaries |
+| `rtl/tms34010_system.sv`                | 6     | **landed through Task 0156** | functional-system wrapper connecting all core memory clients and the explicit VCLK input to the core/fabric boundary |
+| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0156** | integrated core/VCLK/8× system, MCP bridges, original-pin local bus, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, and shared HLDA/EMUA output |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0156** | multicycle CPU, memory/host/interrupt/graphics engines, explicit VCLK, and coherent DRAM/screen/video boundaries |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -137,15 +137,15 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | **integrated through Task 0150** | shared processor/host HSTADR/HSTDATA storage, independent indirect-I/O port, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
 | `rtl/host/tms34010_host_bus.sv`         | 6     | **landed (Task 0153)** | asynchronous HCS/direction/byte qualification, HCS/HSTCTL and indirect-busy HRDY waits, bundled request capture, latched response, and per-byte HD output enables |
-| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0155** | dedicated attributed two-flop synchronizer used for external levels and every MCP request/acknowledge toggle |
+| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0156** | dedicated attributed two-flop synchronizer used for external levels and every MCP request/acknowledge toggle |
 | `rtl/cdc/tms34010_local_bus_bridge.sv`  | 6     | **landed (Task 0148)** | two-phase MCP command/response CDC; source-held payloads and returned read data, one outstanding transaction |
 | `rtl/cdc/tms34010_emu_bridge.sv`        | 6     | **landed (Task 0152)** | source-held EMU-event handshake, synchronized halt level, exact Q1/Q2 EMUA windows, and Q3/Q4 HLDA shared-pin mux |
 | `rtl/cdc/tms34010_cdc_mailbox.sv`       | 9     | **landed (Task 0155)** | one-entry packed MCP word crossing with source-ready/accept and destination-valid pulse |
 | `rtl/cdc/tms34010_screen_cdc.sv`        | 9     | **landed (Task 0155)** | VCLK-to-core held screen transaction; bundled payload stable until returned physical completion |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0155** | memory-mapped I/O/host/interrupt/refresh storage plus the explicit VCLK subsystem boundary and coherent live-register read views |
-| `rtl/video/tms34010_video_subsystem.sv` | 9     | **landed (Task 0155)** | VCLK-domain timing/display composition with atomic config, coalesced live commands, coherent status, DIP event, and screen transaction CDC |
-| `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0155** | VCLK internal/noninterlaced timing: writable counters, exact delayed sync/blank endpoints, ENV gating, and HSBLNK-positioned DPYINT; external-sync/interlace remain |
-| `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0155** | VCLK-owned live DPYADR, frame/line reloads, LCSTRT+1 scheduling, and acknowledged SRFADR/DPYTAP/ORG transfer; interlaced adjustment remains |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0156** | memory-mapped I/O/host/interrupt/refresh storage plus the explicit VCLK subsystem boundary and coherent live-register read views |
+| `rtl/video/tms34010_video_subsystem.sv` | 9     | **integrated through Task 0156** | VCLK-domain noninterlaced/interlaced timing and display composition with atomic config, coalesced live commands, coherent status, DIP event, and screen transaction CDC |
+| `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0156** | internally generated timing: writable counters, exact sync/blank endpoints, even/odd half-line sequencing, ENV gating, and field-aware DPYINT; external sync remains |
+| `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0156** | VCLK-owned live DPYADR, frame/line reloads, signed interlaced DUDATE/2 start, LCSTRT+1 scheduling, and acknowledged SRFADR/DPYTAP/ORG transfer |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
@@ -196,7 +196,8 @@ display-interrupt event from line start to start-of-HBLANK and integrated the
 timing registers, live HCOUNT/VCOUNT, DPYCTL.ENV, DIP latch, and timing
 outputs. At that checkpoint A0034 recorded a deliberate
 same-clock/noninterlaced boundary; Task 0155 later resolves the VCLK half,
-while external sync and interlace remain open. Task 0140 then
+and Task 0156 closes internal interlace while external sync remains open.
+Task 0140 then
 corrected the inherited interval endpoints: end compares remain active at
 equality and blank-start compares take effect on the following count, matching
 the one-VCLK delay in §§9.5/9.6.
@@ -317,7 +318,7 @@ completed requester path. Reserved indices 17h–1Ah are explicit non-storage:
 writes do nothing and both read views return zero, including the PMASK
 compatibility word called out by the guide. Defined fields are unchanged;
 REFCNT's previously documented A0033 reserved-bit retention remains isolated.
-The remaining SRT/external-sync/interlace consumers belong to the video gate,
+The remaining SRT/external-sync consumers belong to the video gate,
 and CD/CF have no cache consumer in the current cacheless implementation.
 
 Task 0155 closes the provisional core/VCLK boundary from A0034.
@@ -329,6 +330,17 @@ snapshots. A sticky DIP event mailbox and a separate bundled screen
 transaction return interrupt and completed memory service without sampling
 changing multi-bit buses. `tb_video_cdc` verifies the full crossing set under
 unrelated clocks.
+
+Task 0156 completes internally generated interlace. NIL selects the existing
+noninterlaced sequence or a two-field sequence that resets VCOUNT halfway
+through the last even-field line without resetting HCOUNT. The odd-field
+VESYNC half-line compare performs the separately documented VCOUNT increment,
+so VSYNC ends at the shifted phase and `DPYINT=VESYNC` does not duplicate the
+even-field event when HSBLNK is the half-line point. The odd field returns to
+the even field at the ordinary full-line VTOTAL boundary. That field phase
+feeds the display-address owner directly in VCLK: the DPYSTRT reload preceding
+an even field applies signed DUDATE/2, while the reload preceding an odd field
+is unchanged and completed scan-line transfers still use full DUDATE.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -542,22 +554,26 @@ has no cache to flush.
 ## Video / display (timing integrated)
 
 `tms34010_video` consumes the Chapter 6 timing registers and owns live,
-processor-writable HCOUNT/VCOUNT. It produces active-high HSYNC/VSYNC and
-horizontal/vertical/combined blank intervals. In count space, sync and the
-leading blank interval remain active through their programmed end values,
-while trailing blank begins after HSBLNK/VSBLNK; this represents the
-specified one-VCLK equality-to-pin delay. DPYCTL.ENV=0 forces combined blank
-and inhibits new display interrupts; when enabled, the DPYINT line compare
-sets INTPEND.DIP at the `HCOUNT=HSBLNK` event. The outputs are visible at the
-core boundary.
+processor-writable HCOUNT/VCOUNT plus the internal field phase. It produces
+active-high HSYNC/VSYNC and horizontal/vertical/combined blank intervals. In
+count space, sync and the leading blank interval remain active through their
+programmed end values, while trailing blank begins after HSBLNK/VSBLNK; this
+represents the specified one-VCLK equality-to-pin delay. NIL=0 starts odd
+fields at HTOTAL/2, performs the odd VESYNC midline VCOUNT step, and returns
+to even fields at the full-line VTOTAL event. DPYCTL.ENV=0 forces combined
+blank and inhibits new display interrupts; when enabled, the DPYINT line
+compare sets INTPEND.DIP at `HCOUNT=HSBLNK`, except for the specified
+odd-field VESYNC collision. The outputs are visible at the core boundary.
 
 `tms34010_display_addr` consumes the start-HBLANK event and owns live DPYADR.
-In the current noninterlaced mode, SRFADR reloads at the beginning of vertical
-blanking, LNCNT reloads before the first active line, and SRE schedules a held
-screen-refresh request every LCSTRT+1 active lines. The request captures
-SRFADR/DPYTAP (with DPYTAP reserved bits forced zero) and remains stable until
-the memory controller acknowledges a completed VRAM memory-to-register cycle.
-Only that acknowledge applies DUDATE/ORG and reloads LNCNT.
+SRFADR reloads at the beginning of vertical blanking, LNCNT reloads before
+the first active line, and SRE schedules a held screen-refresh request every
+LCSTRT+1 active lines. In interlace, the reload preceding the even field adds
+or subtracts DUDATE/2; the one preceding the odd field uses DPYSTRT unchanged.
+The request captures SRFADR/DPYTAP (with DPYTAP reserved bits forced zero) and
+remains stable until the memory controller acknowledges a completed VRAM
+memory-to-register cycle. Only that acknowledge applies full DUDATE/ORG and
+reloads LNCNT.
 
 `tms34010_video_subsystem` clocks both blocks from independent `vclk_i`.
 Configuration arrives atomically; counter/address writes are coalesced
@@ -568,9 +584,9 @@ core until physical completion returns to VCLK. A0045 records the internal
 active-edge representation, common synchronous-reset contract, and behavior
 when VCLK is stopped.
 
-This remains the internal, noninterlaced functional subset. External
-synchronization, interlaced half-lines/half-DUDATE adjustment, physical VRAM
-shift-register transfers, and pixel output are not yet implemented.
+This remains the internally generated timing subset. External synchronization,
+physical VRAM shift-register transfers, and pixel output are not yet
+implemented.
 `tms34010_refresh` is integrated with REFCNT and its request is serviced
 through the pin system; final FPGA integration must still prove its bounded
 service under the PLL ratio, physical HOLD, and external waits.
@@ -599,7 +615,7 @@ service under the PLL ratio, physical HOLD, and external waits.
 ## Current implementation gaps
 
 - Optional instruction cache.
-- External sync, interlace, VRAM serial behavior, and pixel output.
+- External sync, VRAM serial behavior, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.

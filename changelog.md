@@ -5,6 +5,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-07-29
+
+### Added (Task 0156 — internal interlaced video timing)
+- Implemented DPYCTL.NIL selection in the VCLK timing owner. Reset selects
+  the even field; the even-to-odd boundary clears VCOUNT at HTOTAL/2 without
+  resetting HCOUNT, and odd-to-even returns at the normal full-line boundary.
+- Added the specified odd-field `VCOUNT=VESYNC` half-line increment, which
+  ends the shifted VSYNC interval and suppresses the matching odd-field
+  display interrupt when HSBLNK is programmed to HTOTAL/2.
+- Propagated field phase wholly within VCLK to the display-address owner.
+  DPYSTRT reloads unchanged before the odd field and applies signed
+  DUDATE/2 before the even field; acknowledged line updates retain full
+  DUDATE/ORG behavior.
+- Added `tb_video_interlace` with a cycle-by-cycle field model and extended
+  `tb_display_addr` with both signed half-DUDATE directions. Updated existing
+  internal/noninterlaced integration programs to set DXV/NIL explicitly and
+  to reposition equality-based counters during timing reprogramming.
+- Validation: focused video/display/CDC/I/O/fabric/pin benches PASS;
+  `scripts/lint.sh` clean; full regression 142/142 PASS.
+
 ## 2026-07-28
 
 ### Added (Task 0155 — dedicated VCLK domain and coherent video CDC)
