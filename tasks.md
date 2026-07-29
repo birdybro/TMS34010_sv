@@ -2,7 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0149. Task 0149
+The functional implementation is complete through Task 0150. Task 0150
+routes host-indirect accesses to the on-chip I/O page through the same
+two-clock physical cycle contract, shared register owner, and returned
+completion as processor accesses. Task 0149
 routes processor on-chip I/O accesses into dedicated physical I/O read/write
 cycles and qualifies their internal side effects with returned completion.
 Task 0148 connects the core-clock fabric to the 8× original-pin engine through a
@@ -211,6 +214,9 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0145 | Implement specification-priority local-bus arbitration | complete |
 | 0146 | Integrate the core memory clients and arbiter | complete |
 | 0147 | Implement the original-pin local-bus phase engine | complete |
+| 0148 | Integrate the core and local-bus clocks | complete |
+| 0149 | Route processor I/O through physical I/O cycles | complete |
+| 0150 | Route host-indirect I/O through physical cycles | complete |
 
 ---
 
@@ -4996,6 +5002,59 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `9d6a5bf` — Route processor I/O through physical cycles (Task 0149)
+
+---
+
+### Task 0150: Route host-indirect I/O through physical cycles
+Status: complete
+Dependencies:
+- Task 0149 (processor physical I/O cycle path and coherent read-data
+  command).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §6.1, page 6-2 (host-indirect access to the
+  complete on-chip I/O register page).
+- 1988 TI TMS34010 User's Guide §10.3.3.4, page 10-18
+  (host-indirect access to every internal I/O register and simultaneous
+  HSTADR/HSTDATA collision rule).
+- 1988 TI TMS34010 User's Guide §11.4.8, Figures 11-10/11-11,
+  pages 11-13 through 11-15 (host-indirect I/O cycle selection,
+  two-clock duration, LRDY bypass, address/status, controls, and data phase).
+Acceptance Criteria:
+- Decode the held host-indirect address against
+  `C0000000h-C00001FFh` without changing ordinary aligned-word requests.
+- Provide an independent internal-register read view so a waiting processor
+  access and a host-indirect access do not share a combinational selector.
+- Select `LOCAL_CYCLE_IO_READ` or `LOCAL_CYCLE_IO_WRITE` for the host owner,
+  sample live read data when the host wins arbitration, and hold the complete
+  command through controller/CDC stalls.
+- Return I/O read data through the existing phase engine and host prefetch
+  buffer; commit I/O writes exactly once on the returned physical completion.
+- Preserve host-side HSTCTLL field ownership and shared HSTADR/HSTDATA state
+  for indirect accesses into the host-register portion of the I/O page.
+- Retain the existing host priority, LBL, INCR/INCW, and backpressure
+  contracts.
+Tests:
+- Updated `tb_bus_arbiter` PASS with host I/O read/write kinds, sampled live
+  read data, payload stability, response routing, and inactive IAQ.
+- Updated `tb_host_integration` PASS with full-address I/O classification,
+  PSIZE read/write completion, pre-ack state preservation, and indirect
+  HSTCTLL host ownership.
+- Updated `tb_system_fabric` PASS with host-indirect DPYTAP prefetch/read/write
+  cycles, internal read payloads, and completion-qualified state.
+- Updated `tb_pin_system` PASS with two processor and three host PMASK I/O
+  cycles, exact zero address/status, RAS/LAL-only controls, LAD write data/
+  read release, returned BEEF, and final acknowledged 1234 state.
+- Existing focused host-interface, I/O-register, RMW, bridge, and local-bus
+  tests PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 137/137 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

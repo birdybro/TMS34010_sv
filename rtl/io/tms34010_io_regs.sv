@@ -14,7 +14,7 @@
 // HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
 // self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0144):
+// Current scope (Tasks 0081–0150):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -30,18 +30,22 @@
 //     screen-refresh requests and update its address/count after acknowledge.
 //   - The synchronous four-register host boundary implements HSTADR/HSTDATA
 //     indirect sequencing plus per-side HSTCTL ownership, HINT, NMI/HLT
-//     control, and HCS-selected reset state. The future pin wrapper owns
-//     asynchronous host-bus timing and CDC.
+//     control, and HCS-selected reset state. Host-indirect accesses to this
+//     I/O page return the shared register view and commit writes only after
+//     their physical I/O cycle. The future pin wrapper owns asynchronous
+//     host-bus timing and CDC.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003); all registers -> 0
 //     except HSTCTLH.HLT, which samples hcs_n_i.
-//   - One synchronous write port (req & we & is_io).
+//   - One completion-qualified processor write port plus the acknowledged
+//     host-indirect I/O write path.
 //   - One combinational (async) read port. The 32x16 array is tiny (512
 //     bits) and async read keeps this composable with the core's existing
 //     register-style reads; FPGA maps it to flops + a 32:1 mux.
 //   - `is_io` tells the caller whether `addr` decoded as I/O space, so the
 //     surrounding memory fabric can route reads/writes here vs. external RAM.
+//     The held host client has matching decode/read-data outputs.
 //
 // Spec source:
 //   third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf
@@ -75,6 +79,8 @@ module tms34010_io_regs
   output logic                  host_mem_we_o,
   output logic [ADDR_WIDTH-1:0] host_mem_addr_o,
   output local_word_t           host_mem_wdata_o,
+  output logic                  host_mem_is_io_o,
+  output local_word_t           host_mem_io_rdata_o,
   input  local_word_t           host_mem_rdata_i,
   input  logic                  host_mem_ack_i,
 
@@ -147,6 +153,14 @@ module tms34010_io_regs
   logic        cpu_host_we;
   host_reg_sel_t cpu_host_reg;
   local_word_t cpu_host_rdata;
+  logic        host_indirect_we;
+  logic [IO_REG_IDX_W-1:0] host_mem_idx;
+  host_reg_sel_t host_mem_host_reg;
+  local_word_t host_mem_host_rdata;
+  logic        io_write_commit;
+  logic        io_write_from_host;
+  logic [IO_REG_IDX_W-1:0] io_write_idx;
+  local_word_t io_write_data;
 
   // Map the processor's three memory-mapped host registers onto the same
   // storage owned by tms34010_host_if. HSTCTL remains in io_reg because its
@@ -165,6 +179,51 @@ module tms34010_io_regs
                     && ((idx == IO_IDX_HSTADRL)
                         || (idx == IO_IDX_HSTADRH)
                         || (idx == IO_IDX_HSTDATA));
+
+  // The held host-indirect address is already a full bit address. Decode it
+  // independently of the processor port so both clients retain their own
+  // combinational read views while arbitration serializes physical cycles.
+  assign host_mem_is_io_o =
+      (host_mem_addr_o[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
+      && (host_mem_addr_o[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
+  assign host_mem_idx =
+      host_mem_addr_o[IO_REG_IDX_W+3:4];
+
+  always_comb begin
+    host_mem_host_reg = HOST_REG_HSTDATA;
+    unique case (host_mem_idx)
+      IO_IDX_HSTADRL: host_mem_host_reg = HOST_REG_HSTADRL;
+      IO_IDX_HSTADRH: host_mem_host_reg = HOST_REG_HSTADRH;
+      IO_IDX_HSTDATA: host_mem_host_reg = HOST_REG_HSTDATA;
+      default: ;
+    endcase
+  end
+
+  // A host-indirect I/O write changes architectural state only on the
+  // returned physical-cycle completion. The arbiter cannot acknowledge a
+  // processor and host cycle together; host selection is nevertheless made
+  // explicit here for a deterministic shared-port rule.
+  assign host_indirect_we =
+      host_mem_req_o && host_mem_we_o
+      && host_mem_is_io_o && host_mem_ack_i
+      && ((host_mem_idx == IO_IDX_HSTADRL)
+          || (host_mem_idx == IO_IDX_HSTADRH)
+          || (host_mem_idx == IO_IDX_HSTDATA));
+
+  always_comb begin
+    io_write_commit    = req && we && is_io;
+    io_write_from_host = 1'b0;
+    io_write_idx       = idx;
+    io_write_data      = wdata;
+
+    if (host_mem_req_o && host_mem_we_o
+        && host_mem_is_io_o && host_mem_ack_i) begin
+      io_write_commit    = 1'b1;
+      io_write_from_host = 1'b1;
+      io_write_idx       = host_mem_idx;
+      io_write_data      = host_mem_wdata_o;
+    end
+  end
 
   tms34010_host_if u_host_if (
     .clk           (clk),
@@ -186,6 +245,10 @@ module tms34010_io_regs
     .cpu_reg_i     (cpu_host_reg),
     .cpu_wdata_i   (wdata),
     .cpu_rdata_o   (cpu_host_rdata),
+    .indirect_io_we_i   (host_indirect_we),
+    .indirect_io_reg_i  (host_mem_host_reg),
+    .indirect_io_wdata_i(host_mem_wdata_o),
+    .indirect_io_rdata_o(host_mem_host_rdata),
     .local_req_o   (host_mem_req_o),
     .local_we_o    (host_mem_we_o),
     .local_addr_o  (host_mem_addr_o),
@@ -209,24 +272,24 @@ module tms34010_io_regs
   );
 
   assign refcnt_load =
-      req && we && is_io && (idx == IO_IDX_REFCNT);
+      io_write_commit && (io_write_idx == IO_IDX_REFCNT);
   assign hcount_load =
-      req && we && is_io && (idx == IO_IDX_HCOUNT);
+      io_write_commit && (io_write_idx == IO_IDX_HCOUNT);
   assign vcount_load =
-      req && we && is_io && (idx == IO_IDX_VCOUNT);
+      io_write_commit && (io_write_idx == IO_IDX_VCOUNT);
   assign dpyadr_load =
-      req && we && is_io && (idx == IO_IDX_DPYADR);
+      io_write_commit && (io_write_idx == IO_IDX_DPYADR);
 
   // REFCNT is owned by the refresh block rather than mirrored in io_reg.
   // CONTROL.RR clocks its continuous interval/row counter, while a processor
-  // write loads the full value. The Task 0145 arbiter consumes request/row/mode
-  // after the memory-fabric integration boundary is connected.
+  // write loads the full value. The integrated arbiter consumes
+  // request/row/mode alongside the other local-cycle clients.
   tms34010_refresh u_refresh (
     .clk          (clk),
     .rst          (rst),
     .rr           (io_reg[IO_IDX_CONTROL][CTRL_RR_HI:CTRL_RR_LO]),
     .refcnt_load  (refcnt_load),
-    .refcnt_wdata (wdata),
+    .refcnt_wdata (io_write_data),
     .refcnt       (refcnt_o),
     .refresh_row  (refresh_row_o),
     .refresh_req  (refresh_req_o)
@@ -251,9 +314,9 @@ module tms34010_io_regs
     .dpyint        (io_reg[IO_IDX_DPYINT]),
     .display_enable(io_reg[IO_IDX_DPYCTL][DPYCTL_ENV_BIT]),
     .hcount_load   (hcount_load),
-    .hcount_wdata  (wdata),
+    .hcount_wdata  (io_write_data),
     .vcount_load   (vcount_load),
-    .vcount_wdata  (wdata),
+    .vcount_wdata  (io_write_data),
     .hcount        (hcount_o),
     .vcount        (vcount_o),
     .hsync         (video_hsync_o),
@@ -265,9 +328,9 @@ module tms34010_io_regs
     .dpyint_pulse  (video_dpyint_pulse)
   );
 
-  // Live display address and held screen-refresh client request. The future
-  // memory controller maps SRFADR/DPYTAP onto the physical VRAM row/column
-  // phases and acknowledges only after the memory-to-register cycle ends.
+  // Live display address and held screen-refresh client request. The local
+  // controller maps SRFADR/DPYTAP onto the physical VRAM row/column phases
+  // and acknowledges only after the memory-to-register cycle ends.
   tms34010_display_addr u_display_addr (
     .clk             (clk),
     .rst             (rst),
@@ -279,7 +342,7 @@ module tms34010_io_regs
     .dpyctl          (io_reg[IO_IDX_DPYCTL]),
     .dpytap          (io_reg[IO_IDX_DPYTAP]),
     .dpyadr_load     (dpyadr_load),
-    .dpyadr_wdata    (wdata),
+    .dpyadr_wdata    (io_write_data),
     .dpyadr          (dpyadr_o),
     .refresh_req     (screen_refresh_req_o),
     .refresh_ack     (screen_refresh_ack_i),
@@ -321,6 +384,25 @@ module tms34010_io_regs
     end
   end
 
+  // Independent host-indirect read view. The selected word is carried in the
+  // coherent local-cycle command and returned during the physical I/O read.
+  always_comb begin
+    host_mem_io_rdata_o = 16'h0000;
+    if (host_mem_is_io_o) begin
+      unique case (host_mem_idx)
+        IO_IDX_INTPEND: host_mem_io_rdata_o = intpend_value;
+        IO_IDX_REFCNT:  host_mem_io_rdata_o = refcnt_o;
+        IO_IDX_HCOUNT:  host_mem_io_rdata_o = hcount_o;
+        IO_IDX_VCOUNT:  host_mem_io_rdata_o = vcount_o;
+        IO_IDX_DPYADR:  host_mem_io_rdata_o = dpyadr_o;
+        IO_IDX_HSTADRL,
+        IO_IDX_HSTADRH,
+        IO_IDX_HSTDATA: host_mem_io_rdata_o = host_mem_host_rdata;
+        default:        host_mem_io_rdata_o = io_reg[host_mem_idx];
+      endcase
+    end
+  end
+
   // Dedicated graphics taps.
   assign psize_o   = io_reg[IO_IDX_PSIZE];
   assign convdp_o  = io_reg[IO_IDX_CONVDP];
@@ -348,11 +430,11 @@ module tms34010_io_regs
       // host-present state in which vector fetch waits for a host HLT clear.
       io_reg[IO_IDX_HSTCTLH][HSTCTL_HLT_BIT] <= hcs_n_i;
     end else begin
-      if (req && we && is_io) begin
-        unique case (idx)
+      if (io_write_commit) begin
+        unique case (io_write_idx)
           IO_IDX_INTENB: begin
             // Reserved bits read zero and cannot create interrupt sources.
-            io_reg[IO_IDX_INTENB] <= wdata & INT_SOURCE_MASK;
+            io_reg[IO_IDX_INTENB] <= io_write_data & INT_SOURCE_MASK;
           end
 
           IO_IDX_INTPEND: begin
@@ -360,35 +442,46 @@ module tms34010_io_regs
             // the old latch; X1P/X2P/HIP and reserved bits are read-only.
             io_reg[IO_IDX_INTPEND][INT_DI_BIT] <=
                 io_reg[IO_IDX_INTPEND][INT_DI_BIT]
-                & wdata[INT_DI_BIT];
+                & io_write_data[INT_DI_BIT];
             io_reg[IO_IDX_INTPEND][INT_WV_BIT] <=
                 io_reg[IO_IDX_INTPEND][INT_WV_BIT]
-                & wdata[INT_WV_BIT];
+                & io_write_data[INT_WV_BIT];
           end
 
           IO_IDX_HSTCTLL: begin
-            // Processor-side HSTCTLL rules (pages 6-36/6-37): MSGIN is
-            // read-only, zero clears INTIN, MSGOUT is writable, and one sets
-            // INTOUT. Host-side complementary operations land with host_if.
-            io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <=
-                io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT]
-                & wdata[HSTCTL_INTIN_BIT];
-            io_reg[IO_IDX_HSTCTLL][6:4] <= wdata[6:4];
-            io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <=
-                io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT]
-                | wdata[HSTCTL_INTOUT_BIT];
+            if (io_write_from_host) begin
+              // A host-indirect access retains the host side's complementary
+              // field ownership: MSGIN is writable, one sets INTIN, and zero
+              // clears INTOUT.
+              io_reg[IO_IDX_HSTCTLL][2:0] <= io_write_data[2:0];
+              if (io_write_data[HSTCTL_INTIN_BIT])
+                io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <= 1'b1;
+              if (!io_write_data[HSTCTL_INTOUT_BIT])
+                io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <= 1'b0;
+            end else begin
+              // Processor side: MSGIN is read-only, zero clears INTIN,
+              // MSGOUT is writable, and one sets INTOUT.
+              io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <=
+                  io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT]
+                  & io_write_data[HSTCTL_INTIN_BIT];
+              io_reg[IO_IDX_HSTCTLL][6:4] <= io_write_data[6:4];
+              io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <=
+                  io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT]
+                  | io_write_data[HSTCTL_INTOUT_BIT];
+            end
           end
 
           IO_IDX_HSTCTLH: begin
             // Both sides may write all seven defined high-byte fields.
             // Reserved bits 10 and 7:0 always remain zero.
             io_reg[IO_IDX_HSTCTLH] <=
-                wdata & HSTCTLH_WRITABLE_MASK;
+                io_write_data & HSTCTLH_WRITABLE_MASK;
           end
 
           IO_IDX_HSTADRL, IO_IDX_HSTADRH, IO_IDX_HSTDATA: begin
-            // tms34010_host_if owns these registers. cpu_host_we consumes the
-            // completed processor write without launching an indirect cycle.
+            // tms34010_host_if owns these registers. Its two completion
+            // inputs consume processor or host-indirect writes without
+            // recursively launching another indirect cycle.
           end
 
           IO_IDX_REFCNT: begin
@@ -398,15 +491,15 @@ module tms34010_io_regs
 
           IO_IDX_DPYTAP: begin
             // Bits 14-15 are reserved/not used by the display address path.
-            io_reg[IO_IDX_DPYTAP] <= wdata & DPYTAP_MASK;
+            io_reg[IO_IDX_DPYTAP] <= io_write_data & DPYTAP_MASK;
           end
 
           IO_IDX_HCOUNT, IO_IDX_VCOUNT, IO_IDX_DPYADR: begin
             // Video/display submodules own these live registers. Their load
-            // ports consume processor writes, so no mirror is updated.
+            // ports consume completed I/O writes, so no mirror is updated.
           end
 
-          default: io_reg[idx] <= wdata;
+          default: io_reg[io_write_idx] <= io_write_data;
         endcase
       end
 
@@ -437,14 +530,15 @@ module tms34010_io_regs
 
       // The HSTCTLL arbitration guarantees hazard-free simultaneous access.
       // Producer-side sets win consumer-side clears for both interrupt bits.
-      if (req && we && is_io && (idx == IO_IDX_HSTCTLL)
-          && wdata[HSTCTL_INTOUT_BIT])
+      if (io_write_commit && !io_write_from_host
+          && (io_write_idx == IO_IDX_HSTCTLL)
+          && io_write_data[HSTCTL_INTOUT_BIT])
         io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <= 1'b1;
 
       // A same-cycle host or processor high-byte write wins over the
       // automatic NMI clear.
       if (nmi_clear
-          && !(req && we && is_io && (idx == IO_IDX_HSTCTLH))
+          && !(io_write_commit && (io_write_idx == IO_IDX_HSTCTLH))
           && !(host_ctl_we && host_ctl_be[1]))
         io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
     end

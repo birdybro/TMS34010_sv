@@ -4,9 +4,9 @@
 // End-to-end regression for tms34010_system and tms34010_memory_fabric.
 // Real core instructions boot through the aligned-word controller boundary,
 // program a screen-refresh event, and run alongside automatic DRAM refresh.
-// The synchronous host port performs indirect local reads through the same
-// arbiter, and external HOLD quiesces the shared controller after the active
-// cycle completes.
+// The synchronous host port performs indirect external-memory and on-chip
+// I/O reads/writes through the same arbiter, and external HOLD quiesces the
+// shared controller after the active cycle completes.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -139,6 +139,10 @@ module tb_system_fabric;
   int unsigned               host_word_count_q;
   int unsigned               reset_word_count_q;
   int unsigned               io_write_count_q;
+  int unsigned               dpytap_io_read_count_q;
+  int unsigned               dpytap_io_write_count_q;
+  local_word_t               last_dpytap_io_rdata_q;
+  local_word_t               last_dpytap_io_wdata_q;
   int unsigned               protocol_failures_q;
   logic [13:0]               last_screen_srfaddr_q;
   logic [15:0]               last_screen_dpytap_q;
@@ -190,6 +194,10 @@ module tb_system_fabric;
       host_word_count_q       <= 0;
       reset_word_count_q      <= 0;
       io_write_count_q        <= 0;
+      dpytap_io_read_count_q  <= 0;
+      dpytap_io_write_count_q <= 0;
+      last_dpytap_io_rdata_q  <= '0;
+      last_dpytap_io_wdata_q  <= '0;
       protocol_failures_q     <= 0;
       last_screen_srfaddr_q   <= '0;
       last_screen_dpytap_q    <= '0;
@@ -225,6 +233,16 @@ module tb_system_fabric;
             end
             if (cycle_kind == LOCAL_CYCLE_IO_WRITE)
               io_write_count_q <= io_write_count_q + 1;
+            if ((cycle_kind == LOCAL_CYCLE_IO_READ)
+                && (cycle_addr == A_DPYTAP)) begin
+              dpytap_io_read_count_q <= dpytap_io_read_count_q + 1;
+              last_dpytap_io_rdata_q <= cycle_io_rdata;
+            end
+            if ((cycle_kind == LOCAL_CYCLE_IO_WRITE)
+                && (cycle_addr == A_DPYTAP)) begin
+              dpytap_io_write_count_q <= dpytap_io_write_count_q + 1;
+              last_dpytap_io_wdata_q <= cycle_wdata;
+            end
             if ((cycle_kind == LOCAL_CYCLE_WORD_READ)
                 && (cycle_addr == 32'h0000_0000)
                 && cycle_iaq)
@@ -390,6 +408,8 @@ module tb_system_fabric;
     int unsigned p;
     int unsigned watchdog;
     int unsigned cycles_before_hold;
+    int unsigned dpytap_reads_before;
+    int unsigned dpytap_writes_before;
     local_word_t rd;
 
     failures   = 0;
@@ -479,6 +499,53 @@ module tb_system_fabric;
     if (host_word_count_q < 2) begin
       $display("TEST_RESULT: FAIL: expected two host fabric reads actual=%0d",
                host_word_count_q);
+      failures++;
+    end
+
+    // Repoint the same engine into the on-chip I/O page. Address completion
+    // and HSTDATA read each issue an I/O read carrying the internal DPYTAP
+    // word; the following HSTDATA write emits an I/O write and commits only
+    // when the shared controller acknowledges it.
+    dpytap_reads_before  = dpytap_io_read_count_q;
+    dpytap_writes_before = dpytap_io_write_count_q;
+    host_write(HOST_REG_HSTADRL, 2'b11, A_DPYTAP[15:0]);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_DPYTAP[31:16]);
+    wait_host_idle();
+    host_read(HOST_REG_HSTDATA, rd);
+    if (rd !== 16'h3EEF) begin
+      $display("TEST_RESULT: FAIL: host I/O prefetch expected=3eef actual=%04h",
+               rd);
+      failures++;
+    end
+    wait_host_idle();
+    if ((dpytap_io_read_count_q - dpytap_reads_before) != 2) begin
+      $display("TEST_RESULT: FAIL: host I/O expected two reads actual=%0d",
+               dpytap_io_read_count_q - dpytap_reads_before);
+      failures++;
+    end
+    if (last_dpytap_io_rdata_q !== 16'h3EEF) begin
+      $display("TEST_RESULT: FAIL: host I/O read payload expected=3eef actual=%04h",
+               last_dpytap_io_rdata_q);
+      failures++;
+    end
+
+    host_write(HOST_REG_HSTDATA, 2'b11, 16'h1234);
+    if (u_system.u_core.u_io_regs.io_reg[IO_IDX_DPYTAP] !== 16'h3EEF) begin
+      $display("TEST_RESULT: FAIL: host I/O write committed before controller ack");
+      failures++;
+    end
+    wait_host_idle();
+    if ((dpytap_io_write_count_q - dpytap_writes_before) != 1) begin
+      $display("TEST_RESULT: FAIL: host I/O expected one write actual=%0d",
+               dpytap_io_write_count_q - dpytap_writes_before);
+      failures++;
+    end
+    if ((last_dpytap_io_wdata_q !== 16'h1234)
+        || (u_system.u_core.u_io_regs.io_reg[IO_IDX_DPYTAP]
+            !== 16'h1234)) begin
+      $display("TEST_RESULT: FAIL: host I/O DPYTAP write payload/state expected=1234 actual=%04h/%04h",
+               last_dpytap_io_wdata_q,
+               u_system.u_core.u_io_regs.io_reg[IO_IDX_DPYTAP]);
       failures++;
     end
 

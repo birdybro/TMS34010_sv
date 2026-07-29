@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0149: architectural widths and register layouts,
+// Current through Task 0150: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
 // FSM states, physical-memory word geometry, local-cycle kinds, and the
 // original local-clock command/phase types are here.

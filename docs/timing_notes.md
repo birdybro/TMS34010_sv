@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0149, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0150, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -17,6 +17,7 @@
 | 8× local-bus phase/pin decode        | Task 0147        | landed/integrated, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the PLL clock and every pin delay before FPGA sign-off |
 | Core↔8× MCP payload/response paths   | Task 0148        | landed, protocol-protected, unconstrained | declare asynchronous clocks, preserve/recognize toggle synchronizers, and cut/waive only the stable MCP payload paths |
 | CPU request classification → field/I/O select | Task 0149 | one registered stage, unmeasured | retain the registered loop break; inspect fanout only if TimeQuest identifies it |
+| Host I/O read mux → grant snapshot      | Task 0150        | grant-registered, unmeasured | retain the host-grant sample; do not let live counters cross the MCP as changing payload |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -56,6 +57,11 @@
   and exports the held local-word request unchanged. Task 0145 defines the
   arbiter completion contract; integration must acknowledge only completed
   local service, not selection.
+  Task 0150 decodes that held address as ordinary memory or on-chip I/O.
+  When it is I/O, arbitration snapshots the live internal read word on the
+  grant edge; the request then waits for the same MCP/two-local-clock phase
+  path as processor I/O. A write changes the internal register only when the
+  returned acknowledge retires the host request.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
@@ -157,11 +163,18 @@
   register owner observes only the returned core-clock completion pulse, not
   every held request clock. For reads, the command carries the registered
   internal word and LAD remains released in the physical data phase.
+- **Host-indirect on-chip I/O** — the host engine already registers address,
+  direction, and write data before raising its held local request. The arbiter
+  samples the independently selected internal read word when that request
+  wins, then uses the same two-clock, LRDY-independent phase engine and MCP
+  response. Address completion and each last-byte HSTDATA access retain their
+  existing prefetch/INCR/INCW ordering; a write commits internal state only on
+  the returned host acknowledge.
 - **Integrated functional fabric** — `tms34010_system` routes the core's
   architectural field request through `tms34010_field_sequencer`, then joins
-  its words with host, screen, and DRAM-refresh traffic in the arbiter. No
-  one registered request-classification stage precedes either field
-  sequencing or direct processor I/O arbitration. The controller observes
+  its words with host, screen, and DRAM-refresh traffic in the arbiter. One
+  registered request-classification stage precedes both field sequencing and
+  direct processor I/O arbitration. The controller observes
   the selection bubbles and held-cycle latency described above.
   `tms34010_pin_system` adds the MCP
   round-trip and 8× phase latency but no new scheduling policy. The wrapper

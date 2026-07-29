@@ -96,6 +96,8 @@ module tb_bus_arbiter_rmw;
     .host_we_i         (host_we),
     .host_addr_i       (host_addr),
     .host_wdata_i      (host_wdata),
+    .host_io_i         (1'b0),
+    .host_io_rdata_i   (16'h0000),
     .host_rdata_o      (host_rdata),
     .host_ack_o        (host_ack),
     .cpu_req_i         (cpu_req),

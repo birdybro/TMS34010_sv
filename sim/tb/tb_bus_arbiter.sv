@@ -30,6 +30,8 @@ module tb_bus_arbiter;
   logic                      host_we;
   logic [ADDR_WIDTH-1:0]     host_addr;
   local_word_t               host_wdata;
+  logic                      host_io;
+  local_word_t               host_io_rdata;
   local_word_t               host_rdata;
   logic                      host_ack;
   logic                      cpu_req;
@@ -74,6 +76,8 @@ module tb_bus_arbiter;
     .host_we_i         (host_we),
     .host_addr_i       (host_addr),
     .host_wdata_i      (host_wdata),
+    .host_io_i         (host_io),
+    .host_io_rdata_i   (host_io_rdata),
     .host_rdata_o      (host_rdata),
     .host_ack_o        (host_ack),
     .cpu_req_i         (cpu_req),
@@ -240,6 +244,8 @@ module tb_bus_arbiter;
     host_we        = 1'b0;
     host_addr      = '0;
     host_wdata     = '0;
+    host_io        = 1'b0;
+    host_io_rdata  = '0;
     cpu_req        = 1'b0;
     cpu_we         = 1'b0;
     cpu_addr       = '0;
@@ -357,6 +363,38 @@ module tb_bus_arbiter;
     cpu_req = 1'b0;
     cpu_we  = 1'b0;
     cpu_io  = 1'b0;
+
+    // Host-indirect I/O retains host priority and completion routing, but
+    // selects the special cycle kinds. Live internal read data is sampled
+    // when the host wins and must not change during a stalled command.
+    host_req      = 1'b1;
+    host_we       = 1'b0;
+    host_io       = 1'b1;
+    host_addr     = IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PSIZE) << 4);
+    host_io_rdata = 16'hA55A;
+    wait_cycle("host I/O read", LOCAL_CYCLE_IO_READ);
+    check_word("host I/O read payload", cycle_io_rdata, 16'hA55A);
+    host_io_rdata = 16'hFFFF;
+    @(negedge clk);
+    check_word("host I/O sampled payload remains stable",
+               cycle_io_rdata, 16'hA55A);
+    cycle_rdata = cycle_io_rdata;
+    ack_cycle("host I/O read", 1'b0, 1'b0, 1'b1, 1'b0);
+    check_word("host I/O response routing", host_rdata, 16'hA55A);
+    host_req = 1'b0;
+    @(negedge clk);
+
+    host_req   = 1'b1;
+    host_we    = 1'b1;
+    host_addr  = IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PSIZE) << 4);
+    host_wdata = 16'h1234;
+    wait_cycle("host I/O write", LOCAL_CYCLE_IO_WRITE);
+    check_word("host I/O write payload", cycle_wdata, 16'h1234);
+    check_bit("host I/O IAQ inactive", cycle_iaq, 1'b0);
+    ack_cycle("host I/O write", 1'b0, 1'b0, 1'b1, 1'b0);
+    host_req = 1'b0;
+    host_we  = 1'b0;
+    host_io  = 1'b0;
 
     // A stalled host cycle must finish even when screen and a pulsed DRAM
     // refresh arrive. Payload stability is also checked by the monitor above.

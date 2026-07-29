@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0149, with strict RTL
+> Baseline: functional implementation through Task 0150, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -162,8 +162,15 @@ external fields still use the field sequencer, while I/O bypasses it and
 selects the landed two-clock I/O cycle kinds with internal read data. IAQ is
 inactive, physical completion returns through the MCP bridge, and I/O writes
 commit only on that single completion. The guide separately requires the same
-cycle for host-indirect I/O addresses; that second register-owner path remains
-the next I/O/fabric task.
+cycle for host-indirect I/O addresses.
+
+Task 0150 completes that host-indirect half. The held host word address now
+selects the I/O cycle kinds for the complete internal page, and an independent
+register-owner read view supplies its data. Arbitration samples live read data
+at host selection; the existing MCP/phase path returns it to HSTDATA. Writes
+commit only on physical completion, including live registers and the
+host-side HSTCTLL ownership rules. Pin-level regression locks one processor
+write/read plus host prefetch/read/write as exactly five RAS/LAL-only cycles.
 
 ## Active architectural assumptions requiring closure
 
@@ -196,13 +203,9 @@ deliberate non-pin-compatible boundary.
 - Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Route host-indirect accesses to the on-chip I/O page through the same
-  internal register owner and physical I/O cycle contract as processor
-  accesses.
 
 ### Memory, refresh, and host fabric
 
-- Complete the host-indirect half of on-chip I/O cycle selection/read data.
 - Implement original-pin HOLD/HOLDA release around the integrated controller,
   including the specified bus-control/LAD high-impedance behavior.
 - Validate the one-entry DRAM-refresh service bound under the final PLL clock
@@ -242,8 +245,8 @@ deliberate non-pin-compatible boundary.
    Task 0146 integrated every core client at the abstract controller boundary.
    Task 0147 completed the standalone 8× pin-phase/LRDY/reset engine, and Task
    0148 completed the coherent CDC/system hookup plus IAQ/screen-ORG path.
-   Task 0149 completed processor on-chip I/O cycles. Physical HOLD,
-   host-indirect I/O, and the host-pin portion remain.
+   Tasks 0149–0150 completed processor and host-indirect on-chip I/O cycles.
+   Physical HOLD and the host-pin portion remain.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

@@ -16,9 +16,10 @@
 // boundary. HOLD is the only exception: when accepted in that boundary, the
 // arbiter pulses cpu_restart_o so the field sequencer repeats the entire pair.
 //
-// Screen, host, and CPU clients already hold their requests and payload stable
-// until acknowledgement. DRAM refresh is a one-clock event, so this block
-// captures one pending row/mode until the future physical controller completes
+// Screen, host, and CPU clients hold their requests and address/write payloads
+// stable until acknowledgement. A host I/O read's live internal word is
+// sampled when it wins arbitration. DRAM refresh is a one-clock event, so this
+// block captures one pending row/mode until the physical controller completes
 // it. The controller-facing cycle is likewise held with stable payload until
 // cycle_ack_i.
 //
@@ -55,6 +56,8 @@ module tms34010_bus_arbiter
   input  logic                          host_we_i,
   input  logic [ADDR_WIDTH-1:0]         host_addr_i,
   input  local_word_t                   host_wdata_i,
+  input  logic                          host_io_i,
+  input  local_word_t                   host_io_rdata_i,
   output local_word_t                   host_rdata_o,
   output logic                          host_ack_o,
 
@@ -106,8 +109,10 @@ module tms34010_bus_arbiter
   logic       dram_cbr_q;
 
   logic select_cpu;
+  logic select_host;
   logic retire_dram;
   logic capture_dram;
+  local_word_t host_io_rdata_q;
 
   assign retire_dram =
       (state_q == ARB_DRAM) && cycle_ack_i;
@@ -119,6 +124,7 @@ module tms34010_bus_arbiter
   always_comb begin
     state_d    = state_q;
     select_cpu = 1'b0;
+    select_host = 1'b0;
 
     unique case (state_q)
       ARB_IDLE: begin
@@ -133,6 +139,7 @@ module tms34010_bus_arbiter
           state_d = ARB_DRAM;
         end else if (host_req_i) begin
           state_d = ARB_HOST;
+          select_host = 1'b1;
         end else if (cpu_req_i) begin
           state_d    = ARB_CPU;
           select_cpu = 1'b1;
@@ -157,6 +164,17 @@ module tms34010_bus_arbiter
   always_ff @(posedge clk) begin
     if (rst) state_q <= ARB_IDLE;
     else     state_q <= state_d;
+  end
+
+  // Host-indirect I/O read data can originate in a live on-chip register.
+  // Sample it when the host wins arbitration so the complete physical command
+  // remains stable through controller/CDC stalls.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      host_io_rdata_q <= '0;
+    end else if ((state_q == ARB_IDLE) && select_host && host_io_i) begin
+      host_io_rdata_q <= host_io_rdata_i;
+    end
   end
 
   // HOLD accepted between a partial read and its write cancels the
@@ -245,11 +263,18 @@ module tms34010_bus_arbiter
 
       ARB_HOST: begin
         cycle_req_o   = 1'b1;
-        cycle_kind_o  = host_we_i
-                      ? LOCAL_CYCLE_WORD_WRITE
-                      : LOCAL_CYCLE_WORD_READ;
+        if (host_io_i) begin
+          cycle_kind_o = host_we_i
+                       ? LOCAL_CYCLE_IO_WRITE
+                       : LOCAL_CYCLE_IO_READ;
+        end else begin
+          cycle_kind_o = host_we_i
+                       ? LOCAL_CYCLE_WORD_WRITE
+                       : LOCAL_CYCLE_WORD_READ;
+        end
         cycle_addr_o  = host_addr_i;
         cycle_wdata_o = host_wdata_i;
+        cycle_io_rdata_o = host_io_i ? host_io_rdata_q : '0;
         host_ack_o    = cycle_ack_i;
       end
 

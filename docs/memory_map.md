@@ -2,12 +2,12 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0149**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0150**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
-> bridge, and processor on-chip I/O uses its dedicated cycle kinds; physical
-> HOLD/host pins, host-indirect I/O, and several register side effects remain.
+> bridge, and processor/host-indirect on-chip I/O use the dedicated cycle
+> kinds; physical HOLD/host pins and several register side effects remain.
 
 ## Architectural address space
 
@@ -72,9 +72,14 @@ Task 0149 registers and classifies each architectural CPU memory request in
 `C0000000h-C00001FFh` bypasses splitting and selects
 `LOCAL_CYCLE_IO_READ/WRITE`. The coherent command includes the internal
 16-bit register read value, IAQ is inactive, and physical completion produces
-the single processor acknowledge that commits a write/load. The separate
-host-indirect client still needs the same full-address decode and a second
-access path into the I/O register owner.
+the single processor acknowledge that commits a write/load.
+
+Task 0150 applies that same full-address decode to the held host-indirect word
+client. It has an independent read view into all 32 internal registers; the
+arbiter snapshots live read data on selection and emits
+`LOCAL_CYCLE_IO_READ/WRITE`. Returned completion fills HSTDATA or commits the
+write once. Host-indirect HSTCTLL writes use host-side field ownership, and
+HSTADR/HSTDATA retain shared storage through an independent selector.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -149,9 +154,9 @@ order. Processor accesses cause no indirect side effect.
 
 Task 0144 instantiates the engine in the I/O/core path. Processor and host
 therefore observe the same HSTADR/HSTDATA state, while the host's indirect
-aligned-word request leaves the core on a held request/ack client. It is not
-wired to the shared arbiter by Task 0146's system wrapper. I/O accesses still
-rely on an external request/ack cycle as documented in A0028.
+aligned-word request leaves the core on a held request/ack client. Task 0146
+wires that client to the shared arbiter, and Tasks 0149–0150 select the exact
+physical I/O cycle for either requester as documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -187,8 +192,8 @@ rely on an external request/ack cycle as documented in A0028.
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
 fields for graphics and interrupt behavior are also named in the package.
-Remaining host-indirect and video-mode fields must be documented as their
-consuming blocks are integrated.
+Remaining video-mode fields must be documented as their consuming blocks are
+integrated.
 
 ## Host-interface-visible registers
 
@@ -197,6 +202,9 @@ or the combined HSTCTL register and exposes active-low HINT.
 `tms34010_host_if` owns HSTADR/HSTDATA storage and side effects while passing
 HSTCTL through to the I/O register owner. These represent completed
 core-clock-domain transactions, not an asynchronous original-pin bus.
+Host-indirect addresses in the I/O page nevertheless traverse the landed
+arbiter, CDC bridge, and physical RAS/LAL-only cycle before HSTDATA updates or
+a register write commits.
 Physical pin timing/CDC and HRDY generation remain open.
 
 ## Display / video memory behavior
@@ -211,7 +219,6 @@ pixel output.
 ## Uncertain / partially implemented areas
 
 - Physical HOLD pin release and bus high-impedance behavior.
-- Host-indirect accesses to the on-chip I/O page (remaining A0028 case).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
 - Host HRDY/pin timing and CDC.

@@ -57,6 +57,14 @@ module tms34010_host_if
   input  local_word_t               cpu_wdata_i,
   output local_word_t               cpu_rdata_o,
 
+  // The host-indirect client's completed on-chip I/O access to HSTADR or
+  // HSTDATA. It reaches the same architectural storage as the processor port;
+  // the read view is independent so a waiting CPU request remains observable.
+  input  logic                      indirect_io_we_i,
+  input  host_reg_sel_t             indirect_io_reg_i,
+  input  local_word_t               indirect_io_wdata_i,
+  output local_word_t               indirect_io_rdata_o,
+
   // Held aligned 16-bit local-memory client.
   output logic                      local_req_o,
   output logic                      local_we_o,
@@ -145,9 +153,10 @@ module tms34010_host_if
   end
 
   // HSTADR update priority for otherwise-unspecified simultaneous accesses:
-  // local INCW completion, then processor write, then accepted host access.
-  // Explicit register accesses therefore win an automatic completion update;
-  // a host access wins a simultaneous processor access.
+  // local INCW completion, processor write, completed host-indirect I/O write,
+  // then accepted direct-host access. Explicit register accesses therefore
+  // win an automatic completion update. The device documents simultaneous
+  // processor/host access as invalid; this order keeps simulation deterministic.
   always_comb begin
     hstadr_d = hstadr_q;
 
@@ -161,6 +170,15 @@ module tms34010_host_if
       hstadr_d[31:16] = cpu_wdata_i;
     end
 
+    if (indirect_io_we_i
+        && (indirect_io_reg_i == HOST_REG_HSTADRL)) begin
+      hstadr_d[15:0] = indirect_io_wdata_i;
+      hstadr_d[LOCAL_WORD_ADDR_LSB-1:0] = '0;
+    end else if (indirect_io_we_i
+                 && (indirect_io_reg_i == HOST_REG_HSTADRH)) begin
+      hstadr_d[31:16] = indirect_io_wdata_i;
+    end
+
     if (host_accept && host_we_i
         && ((host_reg_i == HOST_REG_HSTADRL)
             || (host_reg_i == HOST_REG_HSTADRH))) begin
@@ -170,8 +188,8 @@ module tms34010_host_if
     end
   end
 
-  // HSTDATA update priority mirrors HSTADR: an explicit processor access
-  // overrides a returning prefetch, and an accepted host write overrides both.
+  // HSTDATA update priority mirrors HSTADR: explicit I/O accesses override a
+  // returning prefetch, and an accepted direct-host write has final priority.
   always_comb begin
     hstdata_d = hstdata_q;
 
@@ -180,6 +198,10 @@ module tms34010_host_if
 
     if (cpu_we_i && (cpu_reg_i == HOST_REG_HSTDATA))
       hstdata_d = cpu_wdata_i;
+
+    if (indirect_io_we_i
+        && (indirect_io_reg_i == HOST_REG_HSTDATA))
+      hstdata_d = indirect_io_wdata_i;
 
     if (host_accept && host_we_i
         && (host_reg_i == HOST_REG_HSTDATA))
@@ -273,6 +295,18 @@ module tms34010_host_if
       HOST_REG_HSTADRL: cpu_rdata_o = hstadr_q[15:0];
       HOST_REG_HSTADRH: cpu_rdata_o = hstadr_q[31:16];
       HOST_REG_HSTDATA: cpu_rdata_o = hstdata_q;
+      default: ;
+    endcase
+  end
+
+  // A host-indirect I/O cycle can address these same three registers while
+  // the processor-facing selector independently follows the core address.
+  always_comb begin
+    indirect_io_rdata_o = '0;
+    unique case (indirect_io_reg_i)
+      HOST_REG_HSTADRL: indirect_io_rdata_o = hstadr_q[15:0];
+      HOST_REG_HSTADRH: indirect_io_rdata_o = hstadr_q[31:16];
+      HOST_REG_HSTDATA: indirect_io_rdata_o = hstdata_q;
       default: ;
     endcase
   end

@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0149. Task 0124
+The functional implementation is complete through Task 0150. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -66,23 +66,23 @@ handshake to transfer complete commands and returned read data coherently
 between the core and 8× domains. `tms34010_pin_system` connects that bridge
 to the functional system and local-bus engine, with IAQ and captured screen
 ORG propagated end to end. Task 0149 registers and classifies each processor
-memory request in the
-memory fabric, bypasses field splitting for on-chip I/O addresses, selects
+memory request in the memory fabric, bypasses field splitting for on-chip
+I/O addresses, selects
 the dedicated I/O cycle kinds, carries on-chip read data through the bridge,
 and qualifies every processor I/O write with returned physical completion.
-The implementation includes the
-multicycle CPU core, the currently tracked instruction set, bit-field memory
-operations, graphics
-operations through LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O
-registers, reset-vector fetch, maskable/NMI entry with architectural
-service-context ST initialization, and the illegal-opcode trap. Video timing
-is functionally integrated through its screen-refresh client and physical
-memory-to-register cycle; a dedicated VCLK/CDC boundary, external sync,
-interlace, and VRAM serial-display service remain future work. Physical HOLD
-release, host-indirect I/O routing, HRDY, and the asynchronous host pin wrapper
-remain future memory-fabric work. Read
-`tasks.md`,
-`docs/completion_audit.md`, and the current-status sections in
+Task 0150 gives the held host-indirect client the same I/O decode/cycle path,
+samples its live internal read word at arbitration, and commits host-side
+register writes only when physical completion returns.
+The implementation includes the multicycle CPU core, the currently tracked
+instruction set, bit-field memory operations, graphics operations through
+LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
+fetch, maskable/NMI entry with architectural service-context ST
+initialization, and the illegal-opcode trap. Video timing is functionally
+integrated through its screen-refresh client and physical memory-to-register
+cycle; a dedicated VCLK/CDC boundary, external sync, interlace, and VRAM
+serial-display service remain future work. Physical HOLD release, HRDY, and
+the asynchronous host pin wrapper remain future memory-fabric work. Read
+`tasks.md`, `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 
 ## Specification source of truth

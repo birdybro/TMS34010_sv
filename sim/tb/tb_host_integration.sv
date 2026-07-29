@@ -1,10 +1,11 @@
 // -----------------------------------------------------------------------------
 // tb_host_integration.sv
 //
-// Core/I/O integration regression for the Task 0144 four-register host port.
+// Core/I/O integration regression for the four-register host port.
 // It verifies that processor HSTADR/HSTDATA accesses share the host engine
 // without local side effects, host HSTCTL accesses retain Task 0142 ownership,
-// and host-indirect reads/writes leave the core as held aligned-word cycles.
+// and host-indirect memory/I/O reads and writes leave the core as held aligned
+// word clients with completion-qualified shared-register side effects.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -38,6 +39,8 @@ module tb_host_integration;
   logic                          host_mem_we;
   logic [ADDR_WIDTH-1:0]         host_mem_addr;
   local_word_t                   host_mem_wdata;
+  logic                          host_mem_is_io;
+  local_word_t                   host_mem_io_rdata;
   local_word_t                   host_mem_rdata;
   logic                          host_mem_ack;
 
@@ -54,6 +57,8 @@ module tb_host_integration;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HSTADRH) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_HSTCTLL =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HSTCTLL) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_PSIZE =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PSIZE) << 4);
   localparam logic [15:0] INCREMENT_MASK =
       (16'h0001 << HSTCTL_INCR_BIT)
     | (16'h0001 << HSTCTL_INCW_BIT);
@@ -84,6 +89,8 @@ module tb_host_integration;
     .host_mem_we_o   (host_mem_we),
     .host_mem_addr_o (host_mem_addr),
     .host_mem_wdata_o(host_mem_wdata),
+    .host_mem_is_io_o(host_mem_is_io),
+    .host_mem_io_rdata_o(host_mem_io_rdata),
     .host_mem_rdata_i(host_mem_rdata),
     .host_mem_ack_i  (host_mem_ack),
     .lint1_n_i       (1'b1),
@@ -130,34 +137,46 @@ module tb_host_integration;
   target_state_t target_state_q;
   logic [ADDR_WIDTH-1:0] target_addr_q;
   logic                  target_we_q;
+  logic                  target_is_io_q;
   local_word_t           target_wdata_q;
+  local_word_t           target_io_rdata_q;
   local_word_t           host_words [0:15];
   int unsigned           host_mem_request_count;
+  int unsigned           host_io_request_count;
 
   assign host_mem_ack = (target_state_q == TARGET_RESPONSE);
-  assign host_mem_rdata = host_words[target_addr_q[7:4]];
+  assign host_mem_rdata = target_is_io_q
+      ? target_io_rdata_q
+      : host_words[target_addr_q[7:4]];
 
   always_ff @(posedge clk) begin
     if (rst) begin
       target_state_q        <= TARGET_IDLE;
       target_addr_q         <= '0;
       target_we_q           <= 1'b0;
+      target_is_io_q        <= 1'b0;
       target_wdata_q        <= '0;
+      target_io_rdata_q     <= '0;
       host_mem_request_count <= 0;
+      host_io_request_count  <= 0;
     end else begin
       unique case (target_state_q)
         TARGET_IDLE: begin
           if (host_mem_req) begin
             target_addr_q          <= host_mem_addr;
             target_we_q            <= host_mem_we;
+            target_is_io_q         <= host_mem_is_io;
             target_wdata_q         <= host_mem_wdata;
+            target_io_rdata_q      <= host_mem_io_rdata;
             host_mem_request_count <= host_mem_request_count + 1;
+            if (host_mem_is_io)
+              host_io_request_count <= host_io_request_count + 1;
             target_state_q         <= TARGET_RESPONSE;
           end
         end
 
         TARGET_RESPONSE: begin
-          if (target_we_q)
+          if (target_we_q && !target_is_io_q)
             host_words[target_addr_q[7:4]] <= target_wdata_q;
           target_state_q <= TARGET_WAIT_DROP;
         end
@@ -350,6 +369,8 @@ module tb_host_integration;
     p = place_load_abs(p, 4'd3, A_HSTDATA);
     p = place_movi_il(p, 4'd4, 32'h0000_00D0);
     p = place_store_abs(p, 4'd4, A_HSTCTLL);
+    p = place_movi_il(p, 4'd6, 32'h0000_0007);
+    p = place_store_abs(p, 4'd6, A_PSIZE);
     p = place_movi_il(p, 4'd5, 32'h0000_0144);
     u_mem.mem[p] = 16'hC0FF;
 
@@ -414,6 +435,48 @@ module tb_host_integration;
     check_word("integrated INCW postincrement", rd, 16'h00A0);
     check_addr("integrated local request count",
                ADDR_WIDTH'(host_mem_request_count), 32'd4);
+
+    // §6.1 permits the host to indirect through the same I/O page. HSTCTLL
+    // retains host-side field ownership even through that route: MSGIN is
+    // replaced while processor-owned MSGOUT remains intact.
+    host_write(HOST_REG_HSTCTL, 2'b10, 16'h0000);
+    host_write(HOST_REG_HSTADRL, 2'b11, A_HSTCTLL[15:0]);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_HSTCTLL[31:16]);
+    wait_host_idle();
+    host_write(HOST_REG_HSTDATA, 2'b11, 16'h0003);
+    wait_host_idle();
+    host_read(HOST_REG_HSTCTL, rd);
+    check_word("host-indirect HSTCTLL ownership", rd, 16'h005B);
+
+    // Point at PSIZE and prove the internal word is returned, then prove a
+    // write changes PSIZE only through the acknowledged physical client.
+    host_write(HOST_REG_HSTADRL, 2'b11, A_PSIZE[15:0]);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_PSIZE[31:16]);
+    wait_host_idle();
+    check_bit("host-indirect PSIZE classified as I/O",
+              target_is_io_q, 1'b1);
+    check_addr("host-indirect PSIZE read address",
+               target_addr_q, A_PSIZE);
+    check_word("host-indirect PSIZE internal read payload",
+               target_io_rdata_q, 16'h0007);
+    host_read(HOST_REG_HSTDATA, rd);
+    check_word("host receives host-indirect PSIZE", rd, 16'h0007);
+    wait_host_idle();
+
+    host_write(HOST_REG_HSTDATA, 2'b11, 16'h0009);
+    check_word("host-indirect PSIZE unchanged before physical ack",
+               u_core.u_io_regs.io_reg[IO_IDX_PSIZE], 16'h0007);
+    wait_host_idle();
+    check_bit("host-indirect PSIZE write remains I/O",
+              target_is_io_q, 1'b1);
+    check_bit("host-indirect PSIZE write intent",
+              target_we_q, 1'b1);
+    check_word("host-indirect PSIZE write payload",
+               target_wdata_q, 16'h0009);
+    check_word("host-indirect PSIZE write commits on ack",
+               u_core.u_io_regs.io_reg[IO_IDX_PSIZE], 16'h0009);
+    check_addr("host-indirect I/O request count",
+               ADDR_WIDTH'(host_io_request_count), 32'd5);
 
     check_bit("no illegal opcode", illegal_w, 1'b0);
     if (failures == 0) begin

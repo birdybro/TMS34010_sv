@@ -7,9 +7,8 @@
 //
 // The synchronous host-register request boundary and abstract HOLD request/
 // acknowledge boundary remain exposed for later pin-wrapper tasks. Processor
-// on-chip I/O requests already use LOCAL_CYCLE_IO_* and carry their internal
-// read data through the coherent command bundle; host-indirect I/O routing is
-// a following shared-register-port task.
+// and host-indirect on-chip I/O requests use LOCAL_CYCLE_IO_* and carry their
+// internal read data through the coherent command bundle.
 // -----------------------------------------------------------------------------
 
 `default_nettype none

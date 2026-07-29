@@ -4,8 +4,9 @@
 // End-to-end core-clock to original-pin regression. A pin-level memory target
 // observes the multiplexed row/column address, returns a boot program on LAD,
 // and verifies that the core boots only after the eight automatic reset RAS
-// cycles. The program writes and reads PMASK through physical I/O cycles,
-// while IAQ distinguishes opcode words from vector/immediate data.
+// cycles. The program and synchronous host port both write/read PMASK through
+// physical I/O cycles, while IAQ distinguishes opcode words from vector/
+// immediate data.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -39,6 +40,14 @@ module tb_pin_system;
   logic            init_done;
   logic            local_busy;
   logic            bridge_busy;
+  logic            host_req;
+  logic            host_we;
+  host_reg_sel_t   host_reg;
+  logic [1:0]      host_be;
+  local_word_t     host_wdata;
+  local_word_t     host_rdata;
+  logic            host_ack;
+  logic            host_busy;
   core_state_t     core_state;
   logic [ADDR_WIDTH-1:0] pc;
   instr_word_t     instr_word;
@@ -58,8 +67,12 @@ module tb_pin_system;
   logic   saw_bridge_busy = 1'b0;
   logic   saw_first_opcode_iaq = 1'b0;
   logic   io_cycle_pending = 1'b0;
+  local_cycle_kind_t io_kind_q = LOCAL_CYCLE_WORD_READ;
   logic   saw_io_address = 1'b0;
-  logic   saw_io_write_data = 1'b0;
+  integer io_write_address_count = 0;
+  integer io_read_address_count = 0;
+  logic   saw_cpu_io_write_data = 1'b0;
+  logic   saw_host_io_write_data = 1'b0;
   logic   saw_io_read_data_phase = 1'b0;
 
   always #8 core_clk = ~core_clk;
@@ -74,14 +87,14 @@ module tb_pin_system;
     .run_emu_n_i       (1'b1),
     .emua_n_o          (),
     .hcs_n_i           (1'b0),
-    .host_req_i        (1'b0),
-    .host_we_i         (1'b0),
-    .host_reg_i        (HOST_REG_HSTCTL),
-    .host_be_i         (2'b00),
-    .host_wdata_i      (16'h0000),
-    .host_rdata_o      (),
-    .host_ack_o        (),
-    .host_busy_o       (),
+    .host_req_i        (host_req),
+    .host_we_i         (host_we),
+    .host_reg_i        (host_reg),
+    .host_be_i         (host_be),
+    .host_wdata_i      (host_wdata),
+    .host_rdata_o      (host_rdata),
+    .host_ack_o        (host_ack),
+    .host_busy_o       (host_busy),
     .hint_n_o          (),
     .lint1_n_i         (1'b1),
     .lint2_n_i         (1'b1),
@@ -158,6 +171,10 @@ module tb_pin_system;
       row_valid_q    = 1'b0;
       read_data_q    = '0;
       io_cycle_pending = 1'b0;
+      io_kind_q = LOCAL_CYCLE_WORD_READ;
+      io_address_count = 0;
+      io_write_address_count = 0;
+      io_read_address_count = 0;
     end else begin
       if (bridge_busy)
         saw_bridge_busy = 1'b1;
@@ -194,10 +211,22 @@ module tb_pin_system;
           saw_io_address = 1'b1;
           io_address_count = io_address_count + 1;
           io_cycle_pending = 1'b1;
-          if (io_address_count == 1)
-            check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK]
-                  == 16'h0000,
-                  "PMASK changed before physical I/O cycle completion");
+          io_kind_q = dut.local_command.kind;
+          if (dut.local_command.kind == LOCAL_CYCLE_IO_WRITE) begin
+            io_write_address_count = io_write_address_count + 1;
+            if (io_write_address_count == 1)
+              check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK]
+                    == 16'h0000,
+                    "PMASK changed before processor I/O completion");
+            else if (io_write_address_count == 2)
+              check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK]
+                    == 16'hBEEF,
+                    "PMASK changed before host I/O completion");
+          end else if (dut.local_command.kind == LOCAL_CYCLE_IO_READ) begin
+            io_read_address_count = io_read_address_count + 1;
+          end else begin
+            check(1'b0, "I/O address phase used a non-I/O cycle kind");
+          end
         end else begin
           word_cycle_count = word_cycle_count + 1;
 
@@ -233,11 +262,21 @@ module tb_pin_system;
 
       if (io_cycle_pending && (subphase == LOCAL_PHASE_Q2A)
           && !ras_n && !lal_n && cas_n) begin
-        if (io_address_count == 1) begin
-          check(lad_oe && (lad_o == 16'hBEEF),
-                "I/O write data phase must expose PMASK value");
-          saw_io_write_data = 1'b1;
+        if (io_kind_q == LOCAL_CYCLE_IO_WRITE) begin
+          check(lad_oe,
+                "I/O write data phase must drive LAD");
+          if (io_write_address_count == 1) begin
+            check(lad_o == 16'hBEEF,
+                  "processor I/O write data must expose BEEF");
+            saw_cpu_io_write_data = 1'b1;
+          end else if (io_write_address_count == 2) begin
+            check(lad_o == 16'h1234,
+                  "host I/O write data must expose 1234");
+            saw_host_io_write_data = 1'b1;
+          end
         end else begin
+          check(io_kind_q == LOCAL_CYCLE_IO_READ,
+                "I/O data phase kind must be read or write");
           check(!lad_oe,
                 "I/O read data phase must release LAD");
           saw_io_read_data_phase = 1'b1;
@@ -249,7 +288,76 @@ module tb_pin_system;
     end
   end
 
+  task automatic host_cycle(
+    input  logic          write_access,
+    input  host_reg_sel_t selected_reg,
+    input  logic [1:0]    byte_enable,
+    input  local_word_t   write_data,
+    output local_word_t   read_data
+  );
+    int unsigned watchdog;
+    begin
+      @(negedge core_clk);
+      host_req   = 1'b1;
+      host_we    = write_access;
+      host_reg   = selected_reg;
+      host_be    = byte_enable;
+      host_wdata = write_data;
+      watchdog = 0;
+      while (!host_ack && (watchdog < 100)) begin
+        @(posedge core_clk);
+        #1;
+        watchdog++;
+      end
+      check(host_ack, "pin-system host-register cycle timed out");
+      read_data = host_rdata;
+      @(negedge core_clk);
+      host_req = 1'b0;
+      host_we  = 1'b0;
+      host_be  = 2'b00;
+      @(posedge core_clk);
+      #1;
+    end
+  endtask
+
+  task automatic host_write(
+    input host_reg_sel_t selected_reg,
+    input logic [1:0]    byte_enable,
+    input local_word_t   write_data
+  );
+    local_word_t ignored;
+    host_cycle(1'b1, selected_reg, byte_enable, write_data, ignored);
+  endtask
+
+  task automatic host_read(
+    input  host_reg_sel_t selected_reg,
+    output local_word_t   read_data
+  );
+    host_cycle(1'b0, selected_reg, 2'b11, 16'h0000, read_data);
+  endtask
+
+  task automatic wait_host_idle;
+    int unsigned watchdog;
+    begin
+      watchdog = 0;
+      while (host_busy && (watchdog < 200)) begin
+        @(posedge core_clk);
+        #1;
+        watchdog++;
+      end
+      check(!host_busy, "pin-system host-indirect cycle timed out");
+    end
+  endtask
+
   initial begin
+    local_word_t rd;
+
+    host_req   = 1'b0;
+    host_we    = 1'b0;
+    host_reg   = HOST_REG_HSTCTL;
+    host_be    = 2'b00;
+    host_wdata = '0;
+
     repeat (6) @(posedge core_clk);
     @(negedge core_clk);
     rst = 1'b0;
@@ -274,13 +382,45 @@ module tb_pin_system;
     check(saw_io_address, "processor write did not emit an I/O address cycle");
     check(io_address_count == 2,
           "processor I/O write/read must each emit one physical cycle");
-    check(saw_io_write_data, "processor I/O write data was not driven on LAD");
+    check(io_write_address_count == 1,
+          "processor must emit exactly one I/O write cycle");
+    check(io_read_address_count == 1,
+          "processor must emit exactly one I/O read cycle");
+    check(saw_cpu_io_write_data,
+          "processor I/O write data was not driven on LAD");
     check(saw_io_read_data_phase,
           "processor I/O read did not release LAD during its data phase");
     check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK] == 16'hBEEF,
           "processor I/O write did not commit PMASK exactly once");
     check(dut.u_system.u_core.u_regfile.a_regs[1] == 32'h0000_BEEF,
           "processor I/O read did not return on-chip PMASK data");
+
+    // A host address completion and HSTDATA read must now use the same
+    // RAS/LAL-only physical I/O read path. The following HSTDATA write must
+    // drive 1234 on LAD and update PMASK only after the response crosses back.
+    host_write(HOST_REG_HSTADRL, 2'b11, PMASK_ADDR[15:0]);
+    host_write(HOST_REG_HSTADRH, 2'b11, PMASK_ADDR[31:16]);
+    wait_host_idle();
+    host_read(HOST_REG_HSTDATA, rd);
+    check(rd == 16'hBEEF,
+          "host-indirect PMASK read did not return BEEF");
+    wait_host_idle();
+    host_write(HOST_REG_HSTDATA, 2'b11, 16'h1234);
+    check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK] == 16'hBEEF,
+          "host-indirect PMASK write committed before physical completion");
+    wait_host_idle();
+    repeat (3) @(posedge core_clk);
+
+    check(io_address_count == 5,
+          "processor and host I/O operations must emit five physical cycles");
+    check(io_write_address_count == 2,
+          "processor and host must emit two physical I/O writes");
+    check(io_read_address_count == 3,
+          "processor and host must emit three physical I/O reads");
+    check(saw_host_io_write_data,
+          "host-indirect I/O write data was not driven on LAD");
+    check(dut.u_system.u_core.u_io_regs.io_reg[IO_IDX_PMASK] == 16'h1234,
+          "host-indirect I/O write did not commit PMASK on completion");
     check(instr_word == 16'h0300, "pin-supplied NOP was not fetched");
     check(!illegal_opcode, "pin-level NOP stream raised illegal opcode");
     check(local_busy || (core_state != CORE_RESET),

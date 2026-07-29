@@ -71,6 +71,8 @@ module tms34010_core
   output logic                                host_mem_we_o,
   output logic [ADDR_WIDTH-1:0]               host_mem_addr_o,
   output local_word_t                         host_mem_wdata_o,
+  output logic                                host_mem_is_io_o,
+  output local_word_t                         host_mem_io_rdata_o,
   input  local_word_t                         host_mem_rdata_i,
   input  logic                                host_mem_ack_i,
 
@@ -2359,6 +2361,8 @@ module tms34010_core
     .host_mem_we_o(host_mem_we_o),
     .host_mem_addr_o(host_mem_addr_o),
     .host_mem_wdata_o(host_mem_wdata_o),
+    .host_mem_is_io_o(host_mem_is_io_o),
+    .host_mem_io_rdata_o(host_mem_io_rdata_o),
     .host_mem_rdata_i(host_mem_rdata_i),
     .host_mem_ack_i(host_mem_ack_i),
     .req      (mem_req && mem_ack),

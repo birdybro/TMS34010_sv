@@ -537,13 +537,13 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `0xFFFE0002`.
 
 ## A0028 — I/O register integration into the core memory path
-- **Date**: 2026-05-31; refined 2026-07-28 (Task 0149).
-- **Status**: processor path resolved against the physical-cycle text;
-  host-indirect I/O routing remains.
+- **Date**: 2026-05-31; refined 2026-07-28 (Tasks 0149–0150).
+- **Status**: resolved for processor and host-indirect physical I/O paths.
 - **Source**: SPVU001A §6 "I/O Registers", Figure 6-1; "An access of any
   address in the range C0000000h-C00001FFh is decoded as an access of an
   on-chip register" and "the accompanying memory cycle ... is altered so
-  that RAS is output but CAS is inhibited".
+  that RAS is output but CAS is inhibited"; 1988 User's Guide §6.1,
+  §10.3.3.4, and §11.4.8.
 - **Choice**: `tms34010_io_regs` is instantiated inside `tms34010_core`.
   An access whose address decodes as I/O space (`io_is_io`) is serviced
   on-chip: the external write is gated off (`mem_we = mem_we_int &&
@@ -587,10 +587,16 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   completion. `tb_pin_system` locks the zero address/status, inactive IAQ,
   RAS/LAL-only controls, write-data drive, read-phase LAD release, and PMASK
   round trip.
-- **Remaining host-indirect case**: §11.4.8 explicitly applies the same
-  physical cycle to host-indirect addresses in the I/O page. That path still
-  presents ordinary host word cycles because it needs a second access and
-  ownership path into the shared I/O register block.
+- **Task 0150 host resolution**: the held host address is independently
+  decoded and reads the same register owner. The arbiter snapshots live
+  internal read data when the host wins and selects
+  `LOCAL_CYCLE_IO_READ/WRITE`; completion returns through the existing MCP
+  path to HSTDATA. Host-indirect writes commit only with that returned
+  acknowledge. HSTCTLL applies host-side field ownership, while a second
+  HSTADR/HSTDATA selector preserves the documented shared state without
+  coupling processor and host read addresses. `tb_host_integration`,
+  `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
+  returned data, pin phases, and exact-once writes.
 
 ## A0040 — Core-to-8× MCP bridge and common reset
 - **Date**: 2026-07-28 (Task 0148).
@@ -662,8 +668,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **CDC/integration checkpoint**: command and response signals remain
   synchronous to `clk8x_i`. Task 0148 connects them to the core-clock system
   only through the A0040 MCP bridge and propagates IAQ plus screen ORG.
-  Upstream generation of physical I/O cycle kinds/data and physical HOLD pin
-  release remain separate tasks.
+  Tasks 0149–0150 now generate processor and host-indirect I/O cycle
+  kinds/data upstream; physical HOLD pin release remains separate.
 - **Regression evidence**: `tb_local_bus` verifies both LCLK waveforms, all
   seven cycle kinds, exact word/screen/refresh/I/O address/status values,
   write/read/control ordering, mid-Q4 read data, ordinary and
@@ -979,7 +985,6 @@ Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Resolve
 that ordered ledger before declaring the TMS34010 implementation complete.
 
-- Physical HOLD pin release and host-indirect generation/return-data routing
-  for on-chip I/O cycle kinds through the landed phase engine.
+- Physical HOLD pin release through the landed phase engine.
 - Remaining I/O side effects and host-visible semantics not yet implemented
   by `tms34010_io_regs`.

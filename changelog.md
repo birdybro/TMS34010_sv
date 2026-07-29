@@ -7,6 +7,26 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0150 — host-indirect on-chip I/O bus cycles)
+- Decoded the held host-indirect address against the complete on-chip I/O
+  page and exported an independent internal-register read view alongside the
+  existing aligned-word client.
+- Extended the fixed-priority host owner to select
+  `LOCAL_CYCLE_IO_READ`/`LOCAL_CYCLE_IO_WRITE`; live read data is sampled
+  when the host wins arbitration and remains stable through physical/CDC
+  stalls.
+- Routed host-indirect I/O responses through the existing MCP bridge and
+  committed register writes only on returned completion.
+- Preserved host-side HSTCTLL field ownership for indirect accesses and
+  provided an independent HSTADR/HSTDATA read/write port for self-page
+  accesses.
+- Extended arbiter, core/host, system-fabric, and pin-system regressions.
+  The pin-level test now proves the processor and host share the exact
+  RAS/LAL-only I/O cycle contract, including three reads, two writes, LAD
+  direction/data, returned PMASK, and completion-qualified state.
+- Validation: focused host/I/O/fabric/pin benches PASS;
+  `scripts/lint.sh` clean; full regression 137/137 PASS.
+
 ### Added (Task 0149 — processor on-chip I/O bus cycles)
 - Exported the processor's on-chip I/O decode, original write intent, and
   internal read word from the core to the memory fabric.

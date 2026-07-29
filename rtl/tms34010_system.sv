@@ -82,6 +82,8 @@ module tms34010_system
   logic                              host_mem_we;
   logic [ADDR_WIDTH-1:0]             host_mem_addr;
   local_word_t                       host_mem_wdata;
+  logic                              host_mem_is_io;
+  local_word_t                       host_mem_io_rdata;
   local_word_t                       host_mem_rdata;
   logic                              host_mem_ack;
 
@@ -125,6 +127,8 @@ module tms34010_system
     .host_mem_we_o           (host_mem_we),
     .host_mem_addr_o         (host_mem_addr),
     .host_mem_wdata_o        (host_mem_wdata),
+    .host_mem_is_io_o        (host_mem_is_io),
+    .host_mem_io_rdata_o     (host_mem_io_rdata),
     .host_mem_rdata_i        (host_mem_rdata),
     .host_mem_ack_i          (host_mem_ack),
     .lint1_n_i               (lint1_n_i),
@@ -167,6 +171,8 @@ module tms34010_system
     .host_we_i          (host_mem_we),
     .host_addr_i        (host_mem_addr),
     .host_wdata_i       (host_mem_wdata),
+    .host_is_io_i       (host_mem_is_io),
+    .host_io_rdata_i    (host_mem_io_rdata),
     .host_rdata_o       (host_mem_rdata),
     .host_ack_o         (host_mem_ack),
     .screen_req_i       (screen_req),

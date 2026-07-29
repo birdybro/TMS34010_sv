@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0149. Task 0124
+Functional implementation work is complete through Task 0150. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -57,6 +57,9 @@ screen-refresh ORG, and added an integrated pin-system wrapper.
 Task 0149 routes processor accesses to on-chip registers around field
 sequencing into the specified two-clock physical I/O read/write cycles and
 commits writes exactly once on returned completion.
+Task 0150 routes host-indirect accesses through those same physical cycles,
+adds an independent shared-register read view, and commits host-side writes
+only after their returned completion.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -87,8 +90,9 @@ The repository currently contains:
   waits and reset initialization;
 - an integrated core-clock-to-8× pin-system wrapper using a lossless MCP
   command/response CDC, including returned read data, IAQ, and screen ORG;
-- processor on-chip I/O access through dedicated RAS/LAL-only physical cycles,
-  including internal read data and completion-qualified register writes;
+- processor and host-indirect on-chip I/O access through dedicated
+  RAS/LAL-only physical cycles, including internal read data and
+  completion-qualified register writes;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
@@ -97,11 +101,10 @@ The repository currently contains:
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining physical HOLD pin release, host-indirect
-on-chip I/O bus completion, physical VRAM serial service, host pin
-wrapper/HRDY/CDC,
-remaining I/O side effects, video display-memory behavior and VCLK/CDC, real
-Quartus project/constraints, and timing/resource validation.
+the audit records the remaining physical HOLD pin release, physical VRAM
+serial service, host pin wrapper/HRDY/CDC, remaining I/O side effects, video
+display-memory behavior and VCLK/CDC, real Quartus project/constraints, and
+timing/resource validation.
 
 ## Getting started
 

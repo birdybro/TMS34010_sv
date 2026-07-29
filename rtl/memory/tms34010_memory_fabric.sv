@@ -9,6 +9,8 @@
 // words with screen refresh, DRAM refresh, host indirect access, and HOLD.
 // Processor on-chip I/O transactions bypass field splitting and select the
 // dedicated I/O read/write cycle kinds with their internal read-data payload.
+// Host-indirect requests arrive as aligned words and select those same I/O
+// kinds when their held address decodes into the internal register page.
 // One abstract controller-facing cycle remains held until acknowledgement.
 //
 // This module deliberately stops before original-pin phase generation. A
@@ -46,6 +48,8 @@ module tms34010_memory_fabric
   input  logic                              host_we_i,
   input  logic [ADDR_WIDTH-1:0]             host_addr_i,
   input  local_word_t                       host_wdata_i,
+  input  logic                              host_is_io_i,
+  input  local_word_t                       host_io_rdata_i,
   output local_word_t                       host_rdata_o,
   output logic                              host_ack_o,
 
@@ -191,6 +195,8 @@ module tms34010_memory_fabric
     .host_we_i         (host_we_i),
     .host_addr_i       (host_addr_i),
     .host_wdata_i      (host_wdata_i),
+    .host_io_i         (host_is_io_i),
+    .host_io_rdata_i   (host_io_rdata_i),
     .host_rdata_o      (host_rdata_o),
     .host_ack_o        (host_ack_o),
     .cpu_req_i         (selected_cpu_req),
