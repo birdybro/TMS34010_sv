@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0153. Task 0124
+The functional implementation is complete through Task 0154. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -84,6 +84,9 @@ Task 0153 wraps the synchronous four-register host engine with the original
 active-low HCS/HREAD/HWRITE/HLDS/HUDS controls, HFS selection, immediate HRDY
 waits, coherent bundled capture, latched read data, and byte-lane HD output
 enables.
+Task 0154 masks the remaining CONTROL/DPYCTL/DPYTAP reserved fields and makes
+all four reserved I/O register locations ignore processor/host-indirect writes
+and read as zero.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector

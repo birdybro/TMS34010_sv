@@ -14,10 +14,12 @@
 // HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
 // self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0153):
+// Current scope (Tasks 0081–0154):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
+//     Defined reserved fields remain zero, and the four reserved register
+//     locations ignore writes and return zero.
 //   - Dedicated taps drive graphics and interrupt control. Sideband inputs
 //     auto-clear HSTCTLH.NMI and set the internal interrupt latches.
 //   - INTPEND implements the source-specific semantics from pages 6-41/6-42:
@@ -59,7 +61,7 @@ module tms34010_io_regs
   input  logic                  clk,
   input  logic                  rst,
 
-  // Synchronous four-register host boundary. A later host-bus wrapper
+  // Synchronous four-register host boundary. The Task 0153 host-bus wrapper
   // converts physical asynchronous pin cycles into this request/ack port.
   input  logic                  hcs_n_i,          // reset strap: 0=run, 1=halt
   input  logic                  host_req_i,
@@ -371,6 +373,10 @@ module tms34010_io_regs
     rdata = 16'h0000;
     if (is_io) begin
       unique case (idx)
+        IO_IDX_RESERVED_17,
+        IO_IDX_RESERVED_18,
+        IO_IDX_RESERVED_19,
+        IO_IDX_RESERVED_1A: rdata = 16'h0000;
         IO_IDX_INTPEND: rdata = intpend_value;
         IO_IDX_REFCNT:  rdata = refcnt_o;
         IO_IDX_HCOUNT:  rdata = hcount_o;
@@ -390,6 +396,10 @@ module tms34010_io_regs
     host_mem_io_rdata_o = 16'h0000;
     if (host_mem_is_io_o) begin
       unique case (host_mem_idx)
+        IO_IDX_RESERVED_17,
+        IO_IDX_RESERVED_18,
+        IO_IDX_RESERVED_19,
+        IO_IDX_RESERVED_1A: host_mem_io_rdata_o = 16'h0000;
         IO_IDX_INTPEND: host_mem_io_rdata_o = intpend_value;
         IO_IDX_REFCNT:  host_mem_io_rdata_o = refcnt_o;
         IO_IDX_HCOUNT:  host_mem_io_rdata_o = hcount_o;
@@ -432,6 +442,18 @@ module tms34010_io_regs
     end else begin
       if (io_write_commit) begin
         unique case (io_write_idx)
+          IO_IDX_CONTROL: begin
+            // Bits 1:0 are reserved/not used.
+            io_reg[IO_IDX_CONTROL] <=
+                io_write_data & CONTROL_WRITABLE_MASK;
+          end
+
+          IO_IDX_DPYCTL: begin
+            // Bit 1 is reserved.
+            io_reg[IO_IDX_DPYCTL] <=
+                io_write_data & DPYCTL_WRITABLE_MASK;
+          end
+
           IO_IDX_INTENB: begin
             // Reserved bits read zero and cannot create interrupt sources.
             io_reg[IO_IDX_INTENB] <= io_write_data & INT_SOURCE_MASK;
@@ -492,6 +514,14 @@ module tms34010_io_regs
           IO_IDX_DPYTAP: begin
             // Bits 14-15 are reserved/not used by the display address path.
             io_reg[IO_IDX_DPYTAP] <= io_write_data & DPYTAP_MASK;
+          end
+
+          IO_IDX_RESERVED_17,
+          IO_IDX_RESERVED_18,
+          IO_IDX_RESERVED_19,
+          IO_IDX_RESERVED_1A: begin
+            // Figure 6-1 reserves these locations. The PMASK description
+            // explicitly says the compatibility write at 17h has no effect.
           end
 
           IO_IDX_HCOUNT, IO_IDX_VCOUNT, IO_IDX_DPYADR: begin

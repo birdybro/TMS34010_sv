@@ -59,6 +59,10 @@ module tb_host_integration;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HSTCTLL) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_PSIZE =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PSIZE) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_CONTROL =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONTROL) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_RESERVED_17 =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_RESERVED_17) << 4);
   localparam logic [15:0] INCREMENT_MASK =
       (16'h0001 << HSTCTL_INCR_BIT)
     | (16'h0001 << HSTCTL_INCW_BIT);
@@ -341,6 +345,7 @@ module tb_host_integration;
   initial begin : main
     int unsigned p;
     int unsigned i;
+    int unsigned io_requests_before;
     local_word_t rd;
 
     failures   = 0;
@@ -477,6 +482,49 @@ module tb_host_integration;
                u_core.u_io_regs.io_reg[IO_IDX_PSIZE], 16'h0009);
     check_addr("host-indirect I/O request count",
                ADDR_WIDTH'(host_io_request_count), 32'd5);
+
+    // Host-indirect accesses observe the same ordinary-register write masks
+    // as processor accesses. Re-prefetch after the write so HSTDATA contains
+    // the stored, masked CONTROL value rather than the raw write buffer.
+    io_requests_before = host_io_request_count;
+    host_write(HOST_REG_HSTADRL, 2'b11, A_CONTROL[15:0]);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_CONTROL[31:16]);
+    wait_host_idle();
+    host_write(HOST_REG_HSTDATA, 2'b11, 16'hFFFF);
+    wait_host_idle();
+    check_word("host-indirect CONTROL stored reserved bits low",
+               u_core.u_io_regs.io_reg[IO_IDX_CONTROL],
+               CONTROL_WRITABLE_MASK);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_CONTROL[31:16]);
+    wait_host_idle();
+    host_read(HOST_REG_HSTDATA, rd);
+    check_word("host-indirect CONTROL read returns masked value",
+               rd, CONTROL_WRITABLE_MASK);
+    wait_host_idle();
+
+    // Figure 6-1 reserves 17h and the PMASK description says its compatibility
+    // write has no effect. Both the prefetched read and state after an
+    // acknowledged write must remain zero.
+    host_write(HOST_REG_HSTADRL, 2'b11, A_RESERVED_17[15:0]);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_RESERVED_17[31:16]);
+    wait_host_idle();
+    host_read(HOST_REG_HSTDATA, rd);
+    check_word("host-indirect reserved prefetch returns zero",
+               rd, 16'h0000);
+    wait_host_idle();
+    host_write(HOST_REG_HSTDATA, 2'b11, 16'hBEEF);
+    wait_host_idle();
+    check_word("host-indirect reserved write has no storage effect",
+               u_core.u_io_regs.io_reg[IO_IDX_RESERVED_17], 16'h0000);
+    host_write(HOST_REG_HSTADRH, 2'b11, A_RESERVED_17[31:16]);
+    wait_host_idle();
+    host_read(HOST_REG_HSTDATA, rd);
+    check_word("host-indirect reserved reread remains zero",
+               rd, 16'h0000);
+    wait_host_idle();
+    check_addr("host-indirect mask/reserved request count",
+               ADDR_WIDTH'(host_io_request_count - io_requests_before),
+               32'd9);
 
     check_bit("no illegal opcode", illegal_w, 1'b0);
     if (failures == 0) begin

@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0153, with strict RTL
+> Baseline: functional implementation through Task 0154, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -207,6 +207,16 @@ and that busy state waits the following access. `tb_host_bus` locks these
 rules with clock-offset pin transitions; `tb_pin_system` now performs all
 host register traffic through the physical pins.
 
+Task 0154 closes the remaining unscoped I/O-register storage behavior.
+CONTROL bits 1:0, DPYCTL bit 1, and DPYTAP bits 15:14 are masked on both
+processor and host-indirect completion paths. Reserved indices 17h–1Ah ignore
+writes and return zero, including the PMASK future-compatibility word whose
+write the guide explicitly says has no effect. Existing specialized owners
+for host, interrupt, refresh, counter, and display registers are unchanged;
+A0033 continues to isolate REFCNT bits 1:0. Defined DPYCTL modes awaiting
+consumers are assigned to the video gate rather than left as ambiguous I/O
+state.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -229,18 +239,13 @@ one-outstanding/common-reset contract and pending Quartus constraint proof.
 A0041 records physical HOLD's synchronized level handshake and phased
 output-enable implementation. A0042 records the one-outstanding EMU-event
 handshake and phase-latched halt indication. A0043 records the asynchronous
-host bundled-data/re-arm contract and FPGA I/O timing work. These do not excuse
+host bundled-data/re-arm contract and FPGA I/O timing work. A0044 records the
+reserved-location read-zero choice and REFCNT exception. These do not excuse
 missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
 
 ## System integration gaps
-
-### I/O and interrupt sources
-
-- Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
-  behavior for all I/O registers. Current storage is only partially
-  specialized.
 
 ### Memory and refresh fabric
 
@@ -271,7 +276,13 @@ deliberate non-pin-compatible boundary.
 2. **Complete (Tasks 0126–0128):** implement and directly test the two missing
    MOVE forms and EMU behavior; ensure every §12.3 row has a spec citation and
    named test.
-3. Complete I/O side effects and every interrupt source.
+3. **Complete (Tasks 0137, 0139, 0141–0144, 0149–0150, 0154):** complete
+   I/O side effects and every interrupt source. Source-specific pending bits,
+   live video/refresh/display registers, host ownership, completion-qualified
+   processor/host I/O paths, and every documented reserved field/location now
+   have direct tests. Defined SRT/external-sync/interlace consumers remain in
+   video gate 5; cache controls remain in the optional cache/cycle-accuracy
+   scope.
 4. **Complete (Tasks 0136, 0145–0153):** land the pin-level local memory
    controller, refresh, host, and arbitration fabric with LRDY/reset tests.
    Task 0136 completed field-to-word sequencing; Tasks 0145–0146 landed and

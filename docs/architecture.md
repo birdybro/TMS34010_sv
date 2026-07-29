@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0153, with
+> Status: **implemented and ISA/status-audited through Task 0154, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -25,6 +25,8 @@
 > The asynchronous original-pin host bus qualifies active-low access
 > strobes, inserts HRDY waits, captures one coherent four-register request,
 > and returns latched read data through selected HD byte lanes.
+> Ordinary I/O storage now enforces every documented reserved field and
+> reserved register location consistently for processor and host access.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; VRAM serial-display service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -134,7 +136,7 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **integrated through Task 0153** | dedicated attributed two-flop synchronizer used for LINT, HOLD, RUN/EMU, EMUA event/halt handshake levels, and host access/HCS levels |
 | `rtl/cdc/tms34010_local_bus_bridge.sv`  | 6     | **landed (Task 0148)** | two-phase MCP command/response CDC; source-held payloads and returned read data, one outstanding transaction |
 | `rtl/cdc/tms34010_emu_bridge.sv`        | 6     | **landed (Task 0152)** | source-held EMU-event handshake, synchronized halt level, exact Q1/Q2 EMUA windows, and Q3/Q4 HLDA shared-pin mux |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0153** | 32×16-bit memory-mapped I/O register file; processor and host-indirect read/write views with completion-qualified commits; integrated host engine, exact interrupt sources, HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0154** | 32×16-bit memory-mapped I/O register file; defined reserved masks/locations; processor and host-indirect read/write views with completion-qualified commits; integrated host engine, exact interrupt sources, HSTCTL/HINT/HCS behavior, graphics taps, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0148** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP/ORG request, and acknowledge-time DUDATE/ORG update; interlaced adjustment remains |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
@@ -300,6 +302,15 @@ only selected byte lanes receive output-enable intent. A completed current
 access keeps ready even when it launches an indirect side effect; that busy
 state waits the following access. HCS plus stable HFS also starts the
 mandatory HSTCTL delay before the remaining strobes arrive.
+
+Task 0154 closes the ordinary register-storage audit. CONTROL bits 1:0,
+DPYCTL bit 1, and DPYTAP bits 15:14 now use shared package masks on either
+completed requester path. Reserved indices 17h–1Ah are explicit non-storage:
+writes do nothing and both read views return zero, including the PMASK
+compatibility word called out by the guide. Defined fields are unchanged;
+REFCNT's previously documented A0033 reserved-bit retention remains isolated.
+The remaining SRT/external-sync/interlace consumers belong to the video gate,
+and CD/CF have no cache consumer in the current cacheless implementation.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -561,12 +572,11 @@ waits.
 ## Current implementation gaps
 
 - Optional instruction cache.
-- Remaining non-host I/O side effects.
 - VCLK/CDC, external sync, interlace, VRAM serial behavior, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured
   Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.
 
 The instruction/status reconciliation is complete. Remaining observable
-compatibility questions are at the physical memory, I/O, video, CDC, and FPGA
+compatibility questions are at the physical memory, video, CDC, and FPGA
 realization boundaries recorded in `completion_audit.md`.

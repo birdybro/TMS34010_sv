@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0153: architectural widths and register layouts,
+// Current through Task 0154: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
 // FSM states, physical-memory word geometry, local-cycle kinds, and the
 // original local-clock command/phase types are here.
@@ -364,7 +364,10 @@ package tms34010_pkg;
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_CONVDP  = 5'h14; // Destination Conversion Pitch
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_PSIZE   = 5'h15; // Pixel Size
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_PMASK   = 5'h16; // Plane Mask
-  // 0x17-0x1A reserved
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_RESERVED_17 = 5'h17;
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_RESERVED_18 = 5'h18;
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_RESERVED_19 = 5'h19;
+  parameter logic [IO_REG_IDX_W-1:0] IO_IDX_RESERVED_1A = 5'h1A;
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYTAP  = 5'h1B; // Display Tap Point
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_HCOUNT  = 5'h1C; // Horizontal Count
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VCOUNT  = 5'h1D; // Vertical Count
@@ -389,6 +392,7 @@ package tms34010_pkg;
   parameter int unsigned DPYCTL_DXV_BIT    = 13; // 1=internal video timing
   parameter int unsigned DPYCTL_NIL_BIT    = 14; // 1=noninterlaced
   parameter int unsigned DPYCTL_ENV_BIT    = 15; // enable video/display IRQ
+  parameter logic [15:0] DPYCTL_WRITABLE_MASK = 16'hFFFD;
 
   // DPYADR/DPYSTRT split into a two-bit line count and 14-bit screen address.
   parameter int unsigned DPY_LNCNT_LO  = 0;
@@ -453,6 +457,7 @@ package tms34010_pkg;
   parameter int unsigned CTRL_PBV_BIT  = 9;   // PixBlt vertical direction
   parameter int unsigned CTRL_PPOP_LO  = 10;  // pixel-processing operation select
   parameter int unsigned CTRL_PPOP_HI  = 14;
+  parameter logic [15:0] CONTROL_WRITABLE_MASK = 16'hFFFC;
 
   // ---------------------------------------------------------------------------
   // Instruction word + decoded-instruction control

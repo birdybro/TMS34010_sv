@@ -2,7 +2,9 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0153. Task 0153 wraps
+The functional implementation is complete through Task 0154. Task 0154 closes
+the remaining reserved I/O field/location behavior for both processor and
+host-indirect accesses. Task 0153 wraps
 the synchronous four-register host engine with the original asynchronous host
 controls, HD direction, and HRDY behavior. Task 0152
 phases the landed EMU handshake into exact Q1/Q2 windows and combines it with
@@ -227,6 +229,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0151 | Implement physical HOLD/HOLDA bus release | complete |
 | 0152 | Implement the shared physical HLDA/EMUA pin | complete |
 | 0153 | Implement the asynchronous physical host bus | complete |
+| 0154 | Enforce reserved I/O fields and locations | complete |
 
 ---
 
@@ -5211,6 +5214,50 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `85ac04a68fa53fcd45e0ccab6404cfd3e74e44e6`
+
+---
+
+### Task 0154: Enforce reserved I/O fields and locations
+Status: complete
+Dependencies:
+- Task 0137 (interrupt-register reserved fields).
+- Task 0141 (DPYTAP reserved fields).
+- Task 0150 (host-indirect I/O completion).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §6.1, Figure 6-1, pages 6-2 through
+  6-3 (reserved register locations `C0000170h`–`C00001A0h`).
+- CONTROL register, pages 6-10 through 6-14 (bits 1:0 reserved/not used).
+- DPYCTL register, pages 6-18 through 6-22 (bit 1 reserved).
+- DPYTAP register, pages 6-24 through 6-25 (bits 15:14 reserved/not used).
+- PMASK register, pages 6-43 through 6-44 (`C0000170h` compatibility write
+  has no effect on the TMS34010).
+Acceptance Criteria:
+- Add shared package masks for all ordinary stored I/O registers containing
+  reserved bits that must remain zero: CONTROL bits 1:0, DPYCTL bit 1, and
+  DPYTAP bits 15:14.
+- Apply those masks on every completed processor or host-indirect write
+  without altering the defined fields or their existing consumers.
+- Treat all four reserved register indices 17h through 1Ah as non-storage:
+  writes have no effect and processor/host-indirect reads return zero.
+- Retain the explicit A0033 choice that software-written REFCNT bits 1:0
+  persist; do not silently change an already isolated undefined behavior.
+- Keep HSTCTL, INTENB, INTPEND, and live-register ownership unchanged.
+Tests:
+- Extend `tb_io_regs` to cover CONTROL/DPYCTL/DPYTAP masks and all four
+  reserved locations.
+- Extend `tb_host_integration` to prove host-indirect reads/writes observe
+  the same CONTROL mask and reserved-location behavior after physical
+  completion.
+- Keep `tb_io_display`, `tb_io_refresh`, `tb_io_interrupts`, and
+  `tb_system_fabric` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `scripts/regress.sh` PASS for every discovered self-checking bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/memory_map.md`.
+Commit:
+- pending
 
 ---
 

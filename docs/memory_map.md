@@ -2,15 +2,15 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0153**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0154**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
 > bridge, processor/host-indirect on-chip I/O use the dedicated cycle kinds,
 > physical HOLD/HOLDA bus release and the shared HLDA/EMUA output are
 > integrated, and the original asynchronous host controls, HRDY, and split
-> HD direction now wrap the four-register engine. Several register side
-> effects remain.
+> HD direction now wrap the four-register engine. Defined reserved fields and
+> locations are enforced on both processor and host-indirect paths.
 
 ## Architectural address space
 
@@ -104,6 +104,12 @@ older indirect operation, while completed reads retain data and enable only
 the selected HD byte lanes. HCS remains the reset strap presented to the I/O
 owner and independently starts the HSTCTL wait interval.
 
+Task 0154 completes the ordinary I/O storage masks. CONTROL bits 1:0,
+DPYCTL bit 1, and DPYTAP bits 15:14 remain zero. Reserved indices 17h–1Ah
+ignore completed writes and return zero through either read view; this
+includes the documented no-effect PMASK compatibility word at `C0000170h`.
+REFCNT bits 1:0 retain the separate deterministic A0033 policy.
+
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
 through the synthesizable sequencer into a one-cycle aligned 16-bit target.
@@ -180,6 +186,8 @@ therefore observe the same HSTADR/HSTDATA state, while the host's indirect
 aligned-word request leaves the core on a held request/ack client. Task 0146
 wires that client to the shared arbiter, and Tasks 0149–0150 select the exact
 physical I/O cycle for either requester as documented in A0028.
+Task 0154 applies the final ordinary reserved masks to both completed write
+paths and makes all four reserved locations explicit non-storage.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -191,10 +199,10 @@ physical I/O cycle for either requester as documented in A0028.
 | C0000050 | 0x05 | VEBLNK  | video timing | Vertical End Blank |
 | C0000060 | 0x06 | VSBLNK  | video timing | Vertical Start Blank |
 | C0000070 | 0x07 | VTOTAL  | video timing | Vertical Total |
-| C0000080 | 0x08 | DPYCTL  | video timing | DUDATE/ORG/SRE drive screen refresh; ENV gates combined blank and new DIP events |
+| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; ENV gates combined blank and new DIP events |
 | C0000090 | 0x09 | DPYSTRT | video timing | LCSTRT/SRSTRT reload live DPYADR at line/frame boundaries |
 | C00000A0 | 0x0A | DPYINT  | video timing | VCOUNT line selected for DIP at start of horizontal blanking |
-| C00000B0 | 0x0B | CONTROL | graphics ctl | Control (transparency, window, PPOP, ...) |
+| C00000B0 | 0x0B | CONTROL | graphics ctl | Bits 1:0 read zero; RM/RR, transparency, window, direction, PPOP, CD |
 | C00000C0 | 0x0C | HSTDATA | host         | Host Data |
 | C00000D0 | 0x0D | HSTADRL | host         | Host Address (LSBs) |
 | C00000E0 | 0x0E | HSTADRH | host         | Host Address (MSBs) |
@@ -206,7 +214,7 @@ physical I/O cycle for either requester as documented in A0028.
 | C0000140 | 0x14 | CONVDP  | graphics ctl | Destination Conversion Pitch |
 | C0000150 | 0x15 | PSIZE   | graphics ctl | Pixel Size (1/2/4/8/16) |
 | C0000160 | 0x16 | PMASK   | graphics ctl | Plane Mask |
-| C0000170–C00001A0 | 0x17–0x1A | — | reserved | (storage present, no defined function) |
+| C0000170–C00001A0 | 0x17–0x1A | — | reserved | Writes ignored; reads return zero |
 | C00001B0 | 0x1B | DPYTAP  | video timing | Bits 13:0 captured per screen-refresh request; reserved bits 15:14 read zero |
 | C00001C0 | 0x1C | HCOUNT  | video timing | Live writable horizontal counter; original VCLK access restriction is deferred with A0034 |
 | C00001D0 | 0x1D | VCOUNT  | video timing | Live writable scan-line counter; original VCLK access restriction is deferred with A0034 |
@@ -241,7 +249,5 @@ pixel output.
 
 ## Uncertain / partially implemented areas
 
-- Read-only, write-to-clear, and hardware-driven behavior for registers not
-  yet consumed by host/video-mode logic.
 - Dedicated VCLK/CDC, external-sync/interlace timing, VRAM shift-register
   behavior, and pixel output.

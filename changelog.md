@@ -7,6 +7,21 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0154 — reserved I/O fields and locations)
+- Added shared CONTROL and DPYCTL writable masks alongside the existing
+  DPYTAP mask, keeping CONTROL bits 1:0, DPYCTL bit 1, and DPYTAP bits 15:14
+  zero after every processor or host-indirect write.
+- Made reserved I/O indices 17h through 1Ah ignore writes and return zero;
+  this implements the PMASK compatibility requirement that a write to
+  `C0000170h` has no effect.
+- Preserved A0033's explicit software-written REFCNT bits 1:0 behavior rather
+  than silently broadening the new ordinary-storage mask rule.
+- Extended `tb_io_regs` across every remaining mask/location and
+  `tb_host_integration` across completion-qualified host-indirect CONTROL and
+  reserved-location reads/writes.
+- Validation: focused I/O/host/display/refresh/interrupt/fabric benches PASS;
+  `scripts/lint.sh` clean; full regression 140/140 PASS.
+
 ### Added (Task 0153 — asynchronous physical host bus)
 - Added `tms34010_host_bus` around the synchronous four-register engine and
   replaced `tms34010_pin_system`'s abstract host request/response ports with

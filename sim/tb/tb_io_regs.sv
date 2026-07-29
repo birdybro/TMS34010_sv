@@ -3,9 +3,9 @@
 //
 // Unit test for tms34010_io_regs — the on-chip memory-mapped I/O register
 // file (1988 UG Figure 6-1). Drives the access interface directly (no core):
-// checks reset-to-0, per-register write/read-back, the I/O-space address
-// decode (is_io), index mapping (addr[8:4]), and that writes to non-I/O
-// addresses are ignored.
+// checks reset-to-0, per-register write/read-back, reserved fields/locations,
+// the I/O-space address decode (is_io), index mapping (addr[8:4]), and that
+// writes to non-I/O addresses are ignored.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -45,8 +45,10 @@ module tb_io_regs;
     .video_hblank_o(), .video_vblank_o(), .video_blank_o(),
     .dpyadr_o(), .screen_refresh_req_o(), .screen_refresh_ack_i(1'b0),
     .screen_refresh_srfaddr_o(), .screen_refresh_dpytap_o(),
+    .screen_refresh_org_o(),
     .nmi_clear(1'b0), .wvp_set(1'b0),
     .dpyint_set(1'b0), .hcs_n_i(1'b0), .host_req_i(1'b0), .host_we_i(1'b0), .host_reg_i(HOST_REG_HSTCTL), .host_be_i(2'b00), .host_wdata_i(16'h0000), .host_rdata_o(), .host_ack_o(), .host_busy_o(), .hint_n_o(), .host_mem_req_o(), .host_mem_we_o(), .host_mem_addr_o(), .host_mem_wdata_o(), .host_mem_rdata_i(16'h0000), .host_mem_ack_i(1'b0), .hlt_o(),
+    .host_mem_is_io_o(), .host_mem_io_rdata_o(),
     .lint1_n_i(1'b1), .lint2_n_i(1'b1)
   );
 
@@ -100,6 +102,18 @@ module tb_io_regs;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONVDP) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_CONTROL =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONTROL) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_DPYCTL =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYCTL) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_DPYTAP =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYTAP) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_RESERVED_17 =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_RESERVED_17) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_RESERVED_18 =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_RESERVED_18) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_RESERVED_19 =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_RESERVED_19) << 4);
+  localparam logic [ADDR_WIDTH-1:0] A_RESERVED_1A =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_RESERVED_1A) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_HESYNC =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_HESYNC) << 4); // idx 0
   localparam logic [ADDR_WIDTH-1:0] A_REFCNT =
@@ -130,7 +144,7 @@ module tb_io_regs;
     io_write(A_PMASK,  16'hFF00);
     io_write(A_CONVSP, 16'h000B);
     io_write(A_CONVDP, 16'h000A);
-    io_write(A_CONTROL,16'h1234);
+    io_write(A_CONTROL,16'hFFFF);
     check_read("2: PSIZE = 0x0008",   A_PSIZE,   16'h0008);
     if (psize_w !== 16'h0008) begin
       $display("TEST_RESULT: FAIL: 2: psize_o tap = %04h, expected 0008", psize_w);
@@ -139,28 +153,54 @@ module tb_io_regs;
     check_read("2: PMASK = 0xFF00",   A_PMASK,   16'hFF00);
     check_read("2: CONVSP = 0x000B",  A_CONVSP,  16'h000B);
     check_read("2: CONVDP = 0x000A",  A_CONVDP,  16'h000A);
-    check_read("2: CONTROL = 0x1234", A_CONTROL, 16'h1234);
+    check_read("2: CONTROL reserved bits zero",
+               A_CONTROL, CONTROL_WRITABLE_MASK);
+    if (control_w !== CONTROL_WRITABLE_MASK) begin
+      $display("TEST_RESULT: FAIL: 2: control_o tap = %04h, expected %04h",
+               control_w, CONTROL_WRITABLE_MASK);
+      failures++;
+    end
 
-    // 3) Boundary registers (index 0 and 31).
+    // 3) Every remaining stored reserved field is forced low. REFCNT's
+    // software-written bits 1:0 intentionally follow A0033 and are tested in
+    // tb_refresh/tb_io_refresh instead of this ordinary-storage rule.
+    io_write(A_DPYCTL, 16'hFFFF);
+    check_read("3: DPYCTL reserved bit zero",
+               A_DPYCTL, DPYCTL_WRITABLE_MASK);
+    io_write(A_DPYTAP, 16'hFFFF);
+    check_read("3: DPYTAP reserved bits zero", A_DPYTAP, DPYTAP_MASK);
+
+    // 4) Figure 6-1 reserves indices 17h-1Ah. In particular, the PMASK
+    // compatibility word at 17h must ignore writes.
+    io_write(A_RESERVED_17, 16'h1111);
+    io_write(A_RESERVED_18, 16'h2222);
+    io_write(A_RESERVED_19, 16'h4444);
+    io_write(A_RESERVED_1A, 16'h8888);
+    check_read("4: reserved 17h remains zero", A_RESERVED_17, 16'h0000);
+    check_read("4: reserved 18h remains zero", A_RESERVED_18, 16'h0000);
+    check_read("4: reserved 19h remains zero", A_RESERVED_19, 16'h0000);
+    check_read("4: reserved 1Ah remains zero", A_RESERVED_1A, 16'h0000);
+
+    // 5) Boundary registers (index 0 and 31).
     io_write(A_HESYNC, 16'hABCD);
     io_write(A_REFCNT, 16'h5A5A);
-    check_read("3: HESYNC = 0xABCD", A_HESYNC, 16'hABCD);
-    check_read("3: REFCNT = 0x5A5A", A_REFCNT, 16'h5A5A);
+    check_read("5: HESYNC = 0xABCD", A_HESYNC, 16'hABCD);
+    check_read("5: REFCNT = 0x5A5A", A_REFCNT, 16'h5A5A);
 
-    // 4) is_io address decode.
-    check_isio("4: PSIZE in I/O space",     A_PSIZE,        1'b1);
-    check_isio("4: top of range C00001F0",  32'hC000_01F0,  1'b1);
-    check_isio("4: just past range C0000200",32'hC000_0200, 1'b0);
-    check_isio("4: wrong MSBs 0x40000150",  32'h4000_0150,  1'b0);
-    check_isio("4: low memory 0x00001000",  32'h0000_1000,  1'b0);
+    // 6) is_io address decode.
+    check_isio("6: PSIZE in I/O space",     A_PSIZE,        1'b1);
+    check_isio("6: top of range C00001F0",  32'hC000_01F0,  1'b1);
+    check_isio("6: just past range C0000200",32'hC000_0200, 1'b0);
+    check_isio("6: wrong MSBs 0x40000150",  32'h4000_0150,  1'b0);
+    check_isio("6: low memory 0x00001000",  32'h0000_1000,  1'b0);
 
-    // 5) A write to a NON-I/O address must not disturb I/O storage.
+    // 7) A write to a NON-I/O address must not disturb I/O storage.
     //    0x00000150 shares the low bits with PSIZE but is not I/O space.
     io_write(32'h0000_0150, 16'hAAAA);
-    check_read("5: PSIZE unchanged (0x0008)", A_PSIZE, 16'h0008);
+    check_read("7: PSIZE unchanged (0x0008)", A_PSIZE, 16'h0008);
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (io_regs: reset-0, write/read-back, is_io decode, non-I/O ignored)");
+      $display("TEST_RESULT: PASS (io_regs: storage, reserved fields/locations, decode)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

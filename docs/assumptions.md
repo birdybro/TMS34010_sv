@@ -598,6 +598,34 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0044 — Reserved I/O fields and register locations
+- **Date**: 2026-07-28 (Task 0154).
+- **Status**: specification-derived write masking plus a deterministic
+  read-zero choice for otherwise unspecified reserved locations.
+- **Sources**: 1988 TI TMS34010 User's Guide §6.1 Figure 6-1, pages 6-2/6-3;
+  CONTROL pages 6-10 through 6-14; DPYCTL pages 6-18 through 6-22; DPYTAP
+  pages 6-24/6-25; and PMASK pages 6-43/6-44.
+- **Stored reserved fields**: CONTROL bits 1:0, DPYCTL bit 1, and DPYTAP bits
+  15:14 are identified as reserved/not used and remain zero after either a
+  processor or completion-qualified host-indirect write. Their defined fields
+  retain full read/write storage.
+- **Reserved locations**: Figure 6-1 reserves indices 17h through 1Ah. The
+  PMASK description specifically says a compatibility write to `C0000170h`
+  has no effect. This implementation treats all four uniformly as
+  non-storage and returns deterministic zero to both read views. The read
+  value for otherwise reserved 18h–1Ah is not architecturally relied upon.
+- **REFCNT exception**: A0033 already isolates the guide's unspecified
+  software-write behavior for REFCNT bits 1:0 and regression-locks their
+  retention. Task 0154 deliberately does not rewrite that prior choice.
+- **Consumer boundary**: defined DPYCTL SRT/HSD/DXV/NIL functions remain
+  stored but belong to the video/display completion gate. CONTROL.CD and
+  HSTCTL.CF remain stored in the cacheless configuration. These are missing
+  consumers or cycle-accuracy features, not missing register masks.
+- **Regression evidence**: `tb_io_regs` writes all ones to each masked
+  register and writes all four reserved locations. `tb_host_integration`
+  proves the same CONTROL mask and reserved-location behavior through the
+  acknowledged host-indirect I/O path.
+
 ## A0043 — Asynchronous physical host bus CDC and re-arm contract
 - **Date**: 2026-07-28 (Task 0153).
 - **Status**: specification-derived host protocol with an isolated
@@ -1097,8 +1125,6 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 ## TODO / spec-uncertain (waiting on detailed read)
 
 Task 0124 consolidates the assumptions that still affect observable
-compatibility and all system-level work into `completion_audit.md`. Resolve
-that ordered ledger before declaring the TMS34010 implementation complete.
-
-- Remaining I/O side effects and host-visible semantics not yet implemented
-  by `tms34010_io_regs`.
+compatibility and all system-level work into `completion_audit.md`. Task 0154
+closed the unscoped I/O-register-state item; remaining uncertainty is assigned
+to the explicit video, cache/cycle-accuracy, CDC, and FPGA-realization gates.

@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0153. Task 0124
+Functional implementation work is complete through Task 0154. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -71,6 +71,9 @@ Task 0153 replaces the integrated wrapper's synchronous host boundary with
 the original active-low HCS/HREAD/HWRITE/HLDS/HUDS controls, HFS selection,
 byte-lane HD direction, immediate HRDY waits, coherent bundled capture, and
 prior-indirect busy backpressure.
+Task 0154 closes the remaining ordinary I/O-register reserved behavior:
+CONTROL/DPYCTL/DPYTAP masks apply identically to processor and host-indirect
+writes, and the four reserved register locations ignore writes and read zero.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -81,7 +84,8 @@ The repository currently contains:
 - PIXT, FILL, PIXBLT, DRAV, and LINE graphics datapaths with pixel processing,
   plane masking, transparency, and all window modes;
 - on-chip I/O-register storage plus every maskable pending-source boundary
-  and maskable/nonmaskable entry path;
+  and maskable/nonmaskable entry path, including defined reserved-field and
+  reserved-location behavior;
 - architectural reset and illegal-opcode vector entry, including
   HCS-selected host-present reset halt;
 - a synchronous direct-host HSTCTL boundary with complementary host/processor
@@ -121,8 +125,8 @@ The repository currently contains:
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining physical VRAM serial service, I/O side
-effects, video display-memory behavior and VCLK/CDC, real Quartus
+the audit records the remaining physical VRAM serial service, video
+display-memory behavior and VCLK/CDC, real Quartus
 project/constraints, and timing/resource/CDC validation.
 
 ## Getting started
