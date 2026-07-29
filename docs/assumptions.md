@@ -565,6 +565,47 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   A synchronous direct HSTCTL transaction now implements host-side MSGIN,
   INTIN, and INTOUT behavior plus HINT and shared high-byte fields. Physical
   pin timing and CDC remain isolated from this on-chip I/O-cycle choice.
+- **Task 0143 checkpoint**: `tms34010_host_if` now implements the
+  HSTADR/HSTDATA register and indirect-cycle semantics behind a synchronous
+  request/ack boundary. Its I/O-block and memory-fabric connections remain
+  the next integration task.
+
+## A0037 — Synchronous host-indirect boundary and invalid-access collisions
+- **Date**: 2026-07-28 (Task 0143).
+- **Status**: specification-derived host-register behavior with isolated
+  deterministic choices for pre-pin flow control and invalid collisions.
+- **Source**: 1988 TMS34010 User's Guide §10.2 and §10.3.2 through §10.3.5,
+  pages 10-2 through 10-21.
+- **Specification-derived behavior**: HSTADRL/HSTADRH form one 32-bit pointer
+  whose low nibble is forced to zero. Completing the address in the
+  LBL-selected byte order prefetches HSTDATA without increment. A last-byte
+  HSTDATA read returns the buffered value, optionally increments HSTADR
+  before launching the next read, and later replaces HSTDATA on acknowledge.
+  A last-byte write launches the merged HSTDATA value at the current address
+  and optionally increments only after write completion. Pointer addition
+  wraps at 32 bits. Processor-side HSTADR/HSTDATA accesses never cause these
+  local-memory side effects.
+- **Synchronous boundary**: one host request and its register/byte/data
+  payload remain stable until a registered acknowledge. A side-effecting
+  transaction can acknowledge the register transfer while its captured
+  local-word request continues; later host requests are backpressured until
+  that request is acknowledged. This preserves the functional role of HRDY
+  without claiming its asynchronous pin phases or one-to-two-clock HSTCTL
+  pulse timing. The physical wrapper remains responsible for CDC and §10.3
+  strobe behavior.
+- **Collision choices**: §10.3.3.4 requires software to avoid simultaneous
+  processor/host HSTADR/HSTDATA accesses and says invalid data may result.
+  The isolated FPGA boundary chooses an accepted host access over a
+  same-edge processor access. An explicit processor access wins over an
+  automatic returning-read or INCW update; an accepted host access would win
+  over both. Captured local payload never changes after any later collision.
+- **Integration boundary**: the engine is synthesizable and directly tested,
+  but Task 0143 does not yet instantiate it in the I/O/core hierarchy or
+  arbitrate its local-word client. Task 0144 owns those connections.
+- **Regression evidence**: `tb_host_if` covers reset, processor no-side-effect
+  access, HSTCTL forwarding, both LBL orders, prefetch, INCR/INCW timing,
+  partial-byte merging, request stability, backpressure, wraparound, and the
+  deterministic invalid-collision rule.
 
 ## A0036 — Synchronous direct-host boundary and collision precedence
 - **Date**: 2026-07-28 (Task 0142).
@@ -594,6 +635,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Deferred field consumers**: INCW, INCR, LBL, and CF are stored and read
   correctly, but host-indirect cycles and the instruction cache do not yet
   exist, so those fields have no downstream behavioral effect.
+- **Task 0143 checkpoint**: the standalone host-indirect engine now consumes
+  INCW, INCR, and LBL. They gain system-level effect when Task 0144 connects
+  the engine to the current HSTCTL register and local-memory fabric. CF still
+  has no instruction-cache consumer.
 - **Regression evidence**: `tb_host_control` covers the direct register
   contract and collisions; `tb_host_halt` covers reset/run-time halt,
   quiescence, refresh/video continuation, pending NMI, and NMI+HLT ordering.

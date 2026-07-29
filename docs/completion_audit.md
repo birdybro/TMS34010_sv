@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0142, with strict RTL
+> Baseline: functional implementation through Task 0143, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -109,6 +109,13 @@ quiesces processor traffic at an instruction boundary without stopping
 refresh/video state. The physical asynchronous host port, HRDY, and indirect
 HSTADR/HSTDATA memory cycles remain in the host/memory-fabric gate.
 
+Task 0143 implemented the synchronous HSTADR/HSTDATA engine. It now has
+word-aligned address storage, a prefetch/write data buffer, both LBL
+byte-last conventions, before-read INCR, after-write INCW, held local-word
+requests, and serialization of host side effects. The module remains an
+integration boundary until its processor-visible register port, Task 0142
+HSTCTL path, and local-word client are connected to the core and arbiter.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -120,9 +127,10 @@ A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), A0006 (functional-first timing), and A0034 (provisional same-clock
 internal/noninterlaced video timing) are intentional design choices. A0035
 isolates deterministic collision/undefined behavior around the screen-refresh
-handshake, and A0036 isolates the direct synchronous host boundary and
-otherwise-unpredictable simultaneous high-byte write choice. These do not
-excuse missing architectural state or interface
+handshake, A0036 isolates the direct synchronous host boundary and
+otherwise-unpredictable simultaneous high-byte write choice, and A0037
+isolates host-engine collisions and the pre-pin synchronous protocol. These
+do not excuse missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
 
@@ -133,7 +141,7 @@ deliberate non-pin-compatible boundary.
 - Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Complete HSTADR/HSTDATA host-indirect register side effects.
+- Integrate the landed HSTADR/HSTDATA engine with the I/O register file.
 - Replace the provisional external-ack dependency for on-chip I/O accesses
   with the final bus/controller contract.
 
@@ -149,8 +157,9 @@ deliberate non-pin-compatible boundary.
 - Service the exported refresh request in the local-memory arbiter/controller,
   retaining or acknowledging requests through contention and issuing the
   selected RAS-only or CAS-before-RAS cycle.
-- Implement host-indirect accesses, HRDY and the asynchronous physical host
-  wrapper/CDC around the completed direct HSTCTL boundary.
+- Connect the landed host-indirect local-word client to arbitration; implement
+  HRDY and the asynchronous physical host wrapper/CDC around the synchronous
+  host-register boundary.
 
 ### Video/display
 

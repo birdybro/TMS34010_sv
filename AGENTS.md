@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0142. Task 0124
+The functional implementation is complete through Task 0143. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -44,7 +44,10 @@ after each equality compare. Task 0141 made DPYADR live and added held
 screen-refresh request/acknowledge scheduling with frame reload, line cadence,
 and DUDATE/ORG completion updates. Task 0142 completed the direct synchronous
 HSTCTL boundary, per-side message/interrupt ownership, active-low HINT,
-HCS-selected reset halt, and instruction-boundary HLT/NMI behavior. The
+HCS-selected reset halt, and instruction-boundary HLT/NMI behavior. Task 0143
+landed the synchronous HSTADR/HSTDATA register and indirect-memory engine,
+including LBL byte ordering, INCR/INCW sequencing, prefetch buffering,
+backpressure, and held local-word requests. The
 implementation includes the
 multicycle CPU core, the currently tracked instruction set, bit-field memory
 operations, graphics
@@ -54,8 +57,8 @@ service-context ST initialization, and the illegal-opcode trap. Video timing
 is functionally integrated through its screen-refresh client; a dedicated
 VCLK/CDC boundary, external sync, interlace, and the physical VRAM transfer
 cycle remain future work. Physical refresh service remains part of the future
-memory fabric; host-indirect memory access and the asynchronous pin wrapper
-also remain future work. Read `tasks.md`,
+memory fabric; host-engine integration/arbitration and the asynchronous pin
+wrapper also remain future work. Read `tasks.md`,
 `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 

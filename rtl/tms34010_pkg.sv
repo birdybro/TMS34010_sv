@@ -290,7 +290,7 @@ package tms34010_pkg;
   // 0xC0000000-0xC00001FF. Each register sits at a 0x10-bit-aligned address
   // (16 bits apart). An address is in I/O space when its two MSBs are 11 and
   // bits[29:9] are 0; the register index is addr[8:4]. All registers reset to
-  // 0 (UG page 6-?: "All I/O registers ... are cleared to 0 at reset").
+  // 0 except HSTCTLH.HLT, whose reset value is selected by HCS (UG §6.1).
   // ---------------------------------------------------------------------------
   parameter logic [ADDR_WIDTH-1:0] IO_BASE_ADDR  = 32'hC000_0000;
   parameter int unsigned           IO_REG_COUNT  = 32;
@@ -325,6 +325,14 @@ package tms34010_pkg;
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_VCOUNT  = 5'h1D; // Vertical Count
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_DPYADR  = 5'h1E; // Display Address
   parameter logic [IO_REG_IDX_W-1:0] IO_IDX_REFCNT  = 5'h1F; // DRAM Refresh Count
+
+  // Host-interface register selected by HFS1:HFS0 (User's Guide Table 10-1).
+  typedef enum logic [1:0] {
+    HOST_REG_HSTADRL = 2'b00,
+    HOST_REG_HSTADRH = 2'b01,
+    HOST_REG_HSTDATA = 2'b10,
+    HOST_REG_HSTCTL  = 2'b11
+  } host_reg_sel_t;
 
   // Display Control register fields used by the integrated timing generator
   // (1988 User's Guide DPYCTL pages 6-18 through 6-23).

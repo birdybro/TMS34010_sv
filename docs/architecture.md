@@ -1,13 +1,14 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0142, with
+> Status: **implemented and ISA/status-audited through Task 0143, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Direct HSTCTL access, HINT, HCS-selected reset halt, and HLT
-> are also integrated. Architectural fields are sequenced onto aligned
-> 16-bit words; REFCNT and the refresh requester are integrated at the core
-> boundary.
+> are also integrated. The synchronous HSTADR/HSTDATA engine is implemented
+> and awaits core/fabric integration. Architectural fields are sequenced onto
+> aligned 16-bit words; REFCNT and the refresh requester are integrated at
+> the core boundary.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; physical VRAM transfer service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -108,7 +109,7 @@ has not landed.
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
-| `rtl/host/tms34010_host_if.sv`          | 6     | direct control lives in I/O block | future HSTADR/HSTDATA indirect client and asynchronous physical wrapper |
+| `rtl/host/tms34010_host_if.sv`          | 6     | **landed (Task 0143), integration pending** | synchronous HSTADR/HSTDATA storage, LBL byte completion, prefetch, INCR/INCW, held local-word client, and HSTCTL pass-through |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
 | `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0142** | 32×16-bit memory-mapped I/O register file; graphics taps, exact interrupt sources, direct HSTCTL/HINT/HCS behavior, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
@@ -177,8 +178,15 @@ Task 0142 completed the synchronous direct-host HSTCTL boundary. Host and
 processor writes now obey their complementary low-byte ownership, HINT
 reflects INTOUT, and defined high-byte fields are shared. HCS selects a
 pre-vector reset halt; run-time HLT stops only at an instruction boundary.
-Physical host-pin timing/CDC and HSTADR/HSTDATA indirect memory cycles remain
-with the future host/memory fabric.
+Physical host-pin timing/CDC and integration of the HSTADR/HSTDATA engine
+remain with the future host/memory fabric.
+
+Task 0143 landed the synchronous host-indirect engine as a separate module.
+It owns aligned HSTADR and buffered HSTDATA state, implements both LBL
+byte-last conventions, launches the specified address prefetch/read/write
+cycles, orders INCR before reads and INCW after acknowledged writes, and
+holds its local-word client stable through stalls. Core I/O-register and
+memory-arbiter integration are deliberately the next bounded task.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -331,7 +339,7 @@ These engines currently share implementation inside `tms34010_core`.
 Extraction into dedicated modules is optional refactoring and must not precede
 functional or synthesis evidence that justifies it.
 
-## Host interface (direct control integrated)
+## Host interface (direct control integrated; indirect engine landed)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control
 and shared-memory access. Task 0142 provides a synchronous completed-cycle
@@ -341,10 +349,17 @@ INTIN, and clears INTOUT; the processor owns MSGOUT, clears INTIN, and sets
 INTOUT. Both can write the seven defined HSTCTLH fields. HCS initializes HLT,
 and separate reset/run-time halt states preserve the correct resume point.
 
-This is not yet the physical host port. HSTADRL/HSTADRH/HSTDATA indirect
-memory cycles, HRDY, LBL-triggered byte sequencing, host/local arbitration,
-pin strobes, and asynchronous CDC remain future work. CF is stored but has no
-cache to flush; INCW/INCR/LBL are stored for their future consumers.
+`tms34010_host_if` now supplies the synchronous HSTADRL/HSTADRH/HSTDATA
+engine described in §10.3.3. It forces word alignment, buffers prefetched
+data, implements both LBL byte completion orders, applies INCR before reads
+and INCW after acknowledged writes, and holds its local-word request during
+backpressure. Processor-side accesses have no indirect side effects.
+
+The new engine is not yet instantiated in `tms34010_core`; Task 0144 will
+connect its HSTCTL pass-through and processor-visible registers to the I/O
+block and route its local-word client into the memory fabric. HRDY, physical
+pin strobes, asynchronous CDC, and host/local arbitration remain future
+work. CF is stored but has no cache to flush.
 
 ## Video / display (timing integrated)
 

@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0142, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0143, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -38,6 +38,15 @@
   fetch. A host write completing on the same edge as an already-acknowledged
   instruction fetch can take effect at the following boundary, matching the
   direct synchronous transaction abstraction rather than claiming pin phase.
+- **Synchronous host-indirect engine** — one idle host request is accepted
+  and acknowledged on the next registered response cycle. A completed address
+  load or last-byte HSTDATA access launches one aligned 16-bit local request;
+  request, direction, address, and write data remain stable until local ack.
+  Later host requests are backpressured until that side effect completes.
+  INCR changes HSTADR on the HSTDATA-read acceptance edge before the local
+  read; INCW changes it only on local-write acknowledge. These are internal
+  core-clock relationships. The future pin wrapper must reproduce the
+  asynchronous HCS/HRDY timing in §10.3.2.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle

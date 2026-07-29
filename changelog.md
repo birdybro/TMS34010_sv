@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0143 — synchronous host-indirect engine)
+- Added `tms34010_host_if`, which owns word-aligned HSTADRL/HSTADRH and the
+  HSTDATA prefetch/write buffer behind a synchronous host request/ack port.
+- Implemented both LBL byte-last conventions, address-load prefetch,
+  before-read INCR, after-write INCW, 32-bit pointer wraparound, and exact
+  16-bit local-word transactions.
+- Held every local request and payload through arbitrary stalls and
+  backpressured later host transactions until the prior side effect retired.
+- Preserved the specified processor rule: direct processor HSTADR/HSTDATA
+  accesses alter only register state and never initiate local-memory work.
+- Kept HSTCTL storage in the I/O block through a dedicated pass-through,
+  preparing the engine for Task 0144 integration without duplicating control
+  state.
+- Added `tb_host_if` for reset, direct processor access, HSTCTL forwarding,
+  both byte orders, prefetch, increment timing, stalls, backpressure,
+  wraparound, partial-byte merging, and deterministic invalid collisions.
+- Validation: `tb_host_if` PASS; `scripts/lint.sh` clean; full regression
+  130/130 PASS.
+
 ### Added (Task 0142 — direct host control and halt semantics)
 - Replaced the provisional host-interrupt pulse with a synchronous direct
   HSTCTL transaction boundary, combined host read data, byte enables, and

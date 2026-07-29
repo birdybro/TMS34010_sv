@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0142. Task 0124
+Functional implementation work is complete through Task 0143. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -37,7 +37,10 @@ one-VCLK equality-to-output delay. Task 0141 made DPYADR live and added a
 held screen-refresh request/acknowledge client with frame reload, line
 cadence, and completion-time address updates. Task 0142 completed direct
 host-side HSTCTL ownership, HINT, HCS-selected reset halt, and
-instruction-boundary HLT/NMI behavior. The repository currently
+instruction-boundary HLT/NMI behavior. Task 0143 added the synchronous
+HSTADR/HSTDATA indirect-memory engine, including LBL byte ordering,
+INCR/INCW address sequencing, prefetch buffering, and held local-word
+requests. The repository currently
 contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -53,6 +56,8 @@ contains:
   HCS-selected host-present reset halt;
 - a synchronous direct-host HSTCTL boundary with complementary host/processor
   field ownership, active-low HINT, and instruction-boundary HLT;
+- an integration-ready synchronous HSTADR/HSTDATA engine with byte-order
+  triggers, pre-read/post-write incrementing, and stalled-request stability;
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
 - a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
   partial-word RMW locking, and arbitrary word-side stalls;
@@ -60,14 +65,14 @@ contains:
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 129 self-checking SystemVerilog testbenches, including an exhaustive
+- 130 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
 the audit records the remaining pin-level local-bus controller, indirect-host
-memory path and pin wrapper, bus arbitration and physical refresh service,
-remaining I/O side effects, video display-memory behavior and VCLK/CDC, real
-Quartus project/constraints, and timing/resource validation.
+engine integration and pin wrapper, bus arbitration and physical refresh
+service, remaining I/O side effects, video display-memory behavior and
+VCLK/CDC, real Quartus project/constraints, and timing/resource validation.
 
 ## Getting started
 

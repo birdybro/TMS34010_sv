@@ -2,7 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0142. Task 0142
+The functional implementation is complete through Task 0143. Task 0143
+implemented the synchronous HSTADR/HSTDATA indirect engine with LBL byte
+completion, prefetch buffering, INCR/INCW ordering, held local-word requests,
+and host backpressure. Task 0142
 completed direct host-side HSTCTL access, HINT, HCS-selected reset halt, and
 instruction-boundary HLT/NMI behavior. Task 0141 made
 DPYADR live and added held, acknowledged screen-refresh scheduling with exact
@@ -188,6 +191,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0140 | Correct sync and blank interval endpoints | complete |
 | 0141 | Integrate DPYADR and screen-refresh scheduling | complete |
 | 0142 | Integrate direct host control and halt semantics | complete |
+| 0143 | Implement the synchronous host-indirect engine | complete |
 
 ---
 
@@ -4635,6 +4639,53 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 81a889f
+
+---
+
+### Task 0143: Implement the synchronous host-indirect engine
+Status: complete
+Dependencies:
+- Task 0142 (defined HSTCTL high-byte fields and direct host-control boundary).
+- Task 0136 (defined the aligned 16-bit local-word transaction contract).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §10.2, pages 10-2 through 10-3
+  (four host registers and HFS selection).
+- 1988 TI TMS34010 User's Guide §10.3.2 through §10.3.3.4, pages 10-8
+  through 10-18 (host backpressure, indirect prefetch/read/write operation,
+  increment ordering, processor access, and unsupported collisions).
+- 1988 TI TMS34010 User's Guide §10.3.5, pages 10-20 through 10-21
+  (LBL-selected last-byte side-effect triggers).
+Acceptance Criteria:
+- Add a synthesizable synchronous host-register request/ack module that owns
+  word-aligned HSTADRL/HSTADRH and buffered HSTDATA state while forwarding
+  HSTCTL accesses to the existing I/O-register owner.
+- Trigger one no-increment prefetch when the host completes an address load
+  in either LBL byte order.
+- Return the buffered word on a host HSTDATA read, then launch a new held
+  local read; apply INCR before selecting its address.
+- Merge selected HSTDATA bytes on a host write, launch the held local write
+  only on the LBL-selected last byte, and apply INCW after acknowledgement.
+- Hold local direction/address/write-data stable through arbitrary stalls,
+  serialize later host requests behind an outstanding side effect, and wrap
+  pointer increments at 32 bits.
+- Preserve the rule that processor HSTADR/HSTDATA accesses have no indirect
+  side effect, and isolate a deterministic policy for simultaneous accesses
+  that the guide requires software to avoid.
+- Leave I/O/core instantiation, local-memory arbitration, and asynchronous
+  physical host strobes/HRDY/CDC to following tasks.
+Tests:
+- `tb_host_if` PASS (reset, processor access, HSTCTL pass-through, LBL=0/1,
+  address prefetch, HSTDATA buffering, INCR/INCW ordering, partial bytes,
+  request stalls/stability, backpressure, wraparound, and collision policy).
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 130/130 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 
