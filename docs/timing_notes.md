@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0145, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0146, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -129,6 +129,13 @@
   its write. A pulsed DRAM refresh occupies a one-entry pending latch until
   physical completion. These are internal arbitration clocks, not original
   LAD/RAS/CAS pin phases.
+- **Integrated functional fabric** — `tms34010_system` routes the core's
+  architectural field request through `tms34010_field_sequencer`, then joins
+  its words with host, screen, and DRAM-refresh traffic in the arbiter. No
+  additional queue or register stage is inserted by
+  `tms34010_memory_fabric`; the controller observes the selection bubbles and
+  held-cycle latency described above. The wrapper still has no pin-phase or
+  clock-frequency contract.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on

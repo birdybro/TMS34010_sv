@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0145. Task 0124
+Functional implementation work is complete through Task 0146. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -46,6 +46,8 @@ synchronous four-register host port plus an exposed held local-word client.
 Task 0145 added the specification-priority local-bus arbiter, including
 held-owner completion, pulsed DRAM-refresh retention, CPU partial-word RMW
 reservation, inter-word preemption, and the external-HOLD restart exception.
+Task 0146 connected every core memory client through the field sequencer and
+arbiter behind one synthesizable functional-system/controller boundary.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -69,18 +71,20 @@ The repository currently contains:
   partial-word RMW locking/restart, and arbitrary word-side stalls;
 - a synthesizable fixed-priority HOLD/screen/DRAM/host/CPU local-cycle
   arbiter with held grants and a captured DRAM-refresh event;
+- an integrated functional-system wrapper that converges CPU/graphics,
+  screen, DRAM-refresh, and host-indirect traffic on one abstract controller;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 133 self-checking SystemVerilog testbenches, including an exhaustive
+- 134 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining pin-level local-bus controller, arbiter/client
-fabric integration and physical refresh service, host pin wrapper/HRDY/CDC,
-remaining I/O side effects, video display-memory behavior and VCLK/CDC, real
-Quartus project/constraints, and timing/resource validation.
+the audit records the remaining pin-level local-bus controller and physical
+refresh/VRAM service, host pin wrapper/HRDY/CDC, remaining I/O side effects,
+video display-memory behavior and VCLK/CDC, real Quartus project/constraints,
+and timing/resource validation.
 
 ## Getting started
 

@@ -2,10 +2,12 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0145. Task 0145
-landed the fixed-priority local-cycle arbiter with active-owner retention,
-DRAM-refresh event capture, CPU RMW reservation, inter-word preemption, and
-the HOLD restart exception. Task 0144 integrated the four-register host
+The functional implementation is complete through Task 0146. Task 0146
+connects the core's CPU/graphics, screen, DRAM-refresh, and host-indirect
+clients through the field sequencer and fixed-priority arbiter to one abstract
+controller boundary. Task 0145 landed that arbiter with active-owner
+retention, DRAM-refresh event capture, CPU RMW reservation, inter-word
+preemption, and the HOLD restart exception. Task 0144 integrated the host
 engine into the I/O/core hierarchy, made HSTADR/HSTDATA common processor/host
 state, and exposed its held local-word client. Task 0143
 implemented the synchronous HSTADR/HSTDATA indirect engine with LBL byte
@@ -4781,6 +4783,55 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 5c7aedd
+
+---
+
+### Task 0146: Integrate the core memory clients and arbiter
+Status: complete
+Dependencies:
+- Task 0136 (architectural-field to aligned-word sequencer).
+- Task 0144 (integrated held host-indirect client).
+- Task 0145 (fixed-priority arbiter and RMW/HOLD contract).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §4.1, pages 4-2 through 4-5
+  (architectural fields and aligned 16-bit physical words).
+- 1988 TI TMS34010 User's Guide §11.3, page 11-4
+  (shared CPU/display/refresh/host ownership and HOLD behavior).
+- 1988 TI TMS34010 User's Guide §9.10.1, pages 9-18 through 9-25
+  (screen-refresh request retention and completed-cycle update).
+- 1988 TI TMS34010 User's Guide §10.3.3, pages 10-11 through 10-18
+  (host-indirect local-memory access and backpressure).
+Acceptance Criteria:
+- Add a reusable synthesizable memory-fabric module that composes the landed
+  field sequencer and arbiter without adding another scheduling policy.
+- Add a synthesizable functional-system wrapper that connects the core's
+  architectural CPU/graphics, host-indirect, screen-refresh, and DRAM-refresh
+  clients plus external HOLD through that fabric.
+- Expose one held abstract controller cycle carrying the selected word,
+  screen, or DRAM-refresh payload and route completion/read data to the
+  originating client.
+- Preserve the synchronous host, interrupt, emulation, functional-video, and
+  core observability boundaries without claiming physical host, VCLK, or
+  local-bus pin timing.
+- Boot and execute real instructions through the integrated field/arbiter
+  path; directly observe all four memory clients and HOLD at the shared
+  controller boundary.
+Tests:
+- `tb_system_fabric` PASS (two-word reset vector, real instruction execution,
+  CPU field traffic, programmed screen refresh/payload, automatic DRAM
+  refresh, host-indirect prefetch/read, controller stalls/payload stability,
+  active-cycle completion, HOLD quiescence, and release recovery).
+- Existing `tb_bus_arbiter`, `tb_bus_arbiter_rmw`, `tb_field_sequencer`, and
+  `tb_host_integration` focused regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 134/134 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

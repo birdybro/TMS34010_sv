@@ -604,6 +604,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   active-owner/payload retention, response routing, and pulsed-refresh capture.
   `tb_bus_arbiter_rmw` integrates the real field sequencer and locks the
   ordinary RMW reservation, legal inter-word preemption, and HOLD restart.
+- **Task 0146 integration**: `tms34010_memory_fabric` composes the sequencer
+  and arbiter, while `tms34010_system` connects all four core clients. No new
+  scheduling policy or buffering is introduced. `tb_system_fabric` boots real
+  instructions and directly observes CPU, host, screen, DRAM-refresh, and
+  HOLD behavior at the shared controller boundary.
 
 ## A0037 — Synchronous host-indirect boundary and invalid-access collisions
 - **Date**: 2026-07-28 (Task 0143).

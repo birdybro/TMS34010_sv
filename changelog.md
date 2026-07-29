@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0146 — integrated core memory fabric)
+- Added `tms34010_memory_fabric`, which composes architectural field-to-word
+  sequencing with the fixed-priority local-cycle arbiter.
+- Added `tms34010_system`, a synthesizable functional wrapper that routes the
+  core's CPU/graphics, screen-refresh, DRAM-refresh, and host-indirect clients
+  plus HOLD through one controller-facing request/ack boundary.
+- Preserved the existing synchronous host, emulation, interrupt, video, and
+  observability interfaces while keeping host pins/HRDY/CDC, VCLK/CDC, and
+  physical local-bus phases outside this integration layer.
+- Added `tb_system_fabric`, which boots real instructions through the
+  controller boundary, programs and services screen refresh, observes
+  automatic DRAM refresh, performs host-indirect reads, checks stalled payload
+  stability, and verifies HOLD quiescence/recovery.
+- Validation: focused system/fabric/arbitration/field/host benches PASS;
+  `scripts/lint.sh` clean; full regression 134/134 PASS.
+
 ### Added (Task 0145 — specification-priority local-bus arbitration)
 - Added `tms34010_bus_arbiter` with the User's Guide §11.3 fixed order:
   external HOLD, screen refresh, DRAM refresh, host indirect, then CPU.

@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0145, with
+> Status: **implemented and ISA/status-audited through Task 0146, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -9,8 +9,8 @@
 > HSTADR/HSTDATA with processor I/O accesses and exports its held local-word
 > client. Architectural fields are sequenced onto aligned 16-bit words, and
 > the fixed-priority local-cycle arbiter has landed with CPU RMW/HOLD restart
-> semantics. REFCNT and the refresh requester are integrated at the core
-> boundary.
+> semantics. The functional-system wrapper connects every core client through
+> that fabric to one abstract controller boundary.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; physical VRAM transfer service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -42,47 +42,30 @@ a `TODO/spec-uncertain` marker.
 ## Top-level block diagram
 
 ```
-                              tms34010_core
-        ┌──────────────────────────────────────────────────────┐
-        │                                                      │
-clk ───▶│  ┌─────────┐    ┌──────────┐    ┌─────────┐          │
-rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ Decode  │          │
-        │  └─────────┘    └──────────┘    └────┬────┘          │
-        │       ▲                              │               │
-        │       │                              ▼               │
-        │  ┌────┴────┐    ┌──────────┐    ┌─────────┐          │
-        │  │  Flags  │◀───│  ALU /   │◀───│ Control │          │
-        │  │   (ST)  │    │ Shifter  │    │  FSM    │          │
-        │  └─────────┘    └──────────┘    └────┬────┘          │
-        │                       ▲              │               │
-        │                       │              ▼               │
-        │                  ┌────┴────┐    ┌─────────┐          │
-        │                  │ Regfile │◀──▶│ Mem IF  │──┐       │
-        │                  │ (A,B,SP)│    └─────────┘  │       │
-        │                  └─────────┘                 │       │
-        └─────────────────────────────────────────────│───────┘
-                                                       │
-                                     ┌─────────────────▼───────────────┐
-                                     │ field_sequencer (1–32 → 16-bit)│
-                                     └─────────────────┬───────────────┘
-                                                       │
-                            ┌──────────────────────────▼────┐
-                            │ fixed-priority local arbiter   │
-                            └──────────────────────────┬────┘
-                                                       │
-                            ┌──────────────────────────▼────┐
-                            │ future physical local bus /    │
-                            │ host / video / refresh fabric  │
-                            └────────────────────────────────┘
+┌──────────────────────────── tms34010_system ─────────────────────────────┐
+│                                                                         │
+│  ┌────────────── tms34010_core ──────────────┐                           │
+│  │ PC / decode / datapath / graphics / I/O   │                           │
+│  │                                           │                           │
+│  │ CPU fields   host   screen   DRAM refresh │                           │
+│  └──────┬────────┬────────┬────────────┬──────┘                           │
+│         │        │        │            │                                  │
+│  ┌──────▼────────▼────────▼────────────▼────── tms34010_memory_fabric ─┐ │
+│  │ field sequencer (CPU 1–32 → 16-bit) → fixed-priority local arbiter │ │
+│  └───────────────────────────┬─────────────────────────────────────────┘ │
+│                              │ abstract held local cycle                  │
+└──────────────────────────────│────────────────────────────────────────────┘
+                               ▼
+                 future physical local-bus controller
 ```
 
 The CPU, graphics execution engines, I/O register storage, interrupt entry,
 video timing/display-address scheduling, and REFCNT refresh requester
 currently live in or directly under `tms34010_core`. The field-to-word
-sequencer and standalone local-cycle arbiter have landed below that core
-boundary. Their full client integration, the lower physical
-local-bus/host/display-memory fabric, refresh service, and dedicated VCLK
-domain remain planned.
+sequencer and local-cycle arbiter are composed by
+`tms34010_memory_fabric`; `tms34010_system` connects every core client to that
+fabric. The lower physical local-bus/host/display-memory controller, refresh
+pin service, and dedicated VCLK domain remain planned.
 
 ## Test substrate
 
@@ -99,6 +82,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
+| `rtl/tms34010_system.sv`                | 6     | **landed (Task 0146)** | functional-system wrapper connecting all core memory clients to one abstract controller boundary |
 | `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0144** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, I/O routing, four-register host and local-word boundaries, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
@@ -111,6 +95,7 @@ has not landed.
 | `rtl/memory/tms34010_local_bus.sv`      | 6     | not started | original-pin row/column/data phases, LRDY waits, and reset initialization |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
 | `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed (Task 0145)** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation and HOLD restart |
+| `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **landed (Task 0146)** | composes field sequencing and arbitration for CPU/graphics, screen, DRAM refresh, host, and HOLD |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
 | `rtl/graphics/tms34010_pixblt.sv`       | 7     | not separate | PIXBLT/FILL datapaths and FSM states currently reside in the core |
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
@@ -207,6 +192,14 @@ event, reserves the CPU between a partial-word read and write, permits
 preemption between different field words, and restarts the complete RMW pair
 when HOLD intervenes. Wiring all core clients through it remains separate
 from defining its verified arbitration contract.
+
+Task 0146 composed the field sequencer and arbiter in
+`tms34010_memory_fabric`, then connected the core's architectural memory,
+host-indirect, screen-refresh, and DRAM-refresh boundaries through it in
+`tms34010_system`. The resulting wrapper is synthesizable and exposes only the
+synchronous host/interrupt/control inputs, functional video outputs, HOLD,
+and one abstract local-cycle controller interface. It is not the final FPGA
+top or a claim of original-pin timing.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -352,6 +345,11 @@ not-yet-issued write and repeats the read. The arbiter exposes an abstract
 cycle kind and payload; a later local-bus controller converts it into
 RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY.
 
+`tms34010_memory_fabric` composes those two modules without adding state or a
+second scheduling policy. `tms34010_system` wires the core's four landed
+clients to that fabric, so a functional integration can no longer bypass
+arbitration with separate CPU, host, display, or refresh memories.
+
 ## Graphics subsystem
 
 PIXT, PIXBLT, FILL, DRAV, and LINE are implemented as hardware datapaths and
@@ -385,10 +383,10 @@ holds its local-word request during backpressure. Processor-side accesses
 share the stored values but have no indirect side effects. HSTCTL transactions
 pass through to the I/O block's Task 0142 owner.
 
-The aligned 16-bit host client now leaves `tms34010_core`, and the standalone
-arbiter contract that will consume it has landed. Core-level wiring, HRDY,
-physical pin strobes, and asynchronous CDC remain future work. CF is stored
-but has no cache to flush.
+The aligned 16-bit host client leaves standalone `tms34010_core` and is
+connected to the shared fabric by `tms34010_system`. HRDY, physical pin
+strobes, and asynchronous CDC remain future work. CF is stored but has no
+cache to flush.
 
 ## Video / display (timing integrated)
 
@@ -437,9 +435,8 @@ also awaits service by the memory arbiter.
 ## Current implementation gaps
 
 - Original-pin external-bus phase generation, LRDY validation, reset
-  initialization, cache, and integration of the landed local-cycle arbiter.
-- Host/local-memory fabric wiring, HRDY/pin timing/CDC, and internally
-  completed I/O accesses.
+  initialization, cache, and connection to the integrated abstract fabric.
+- Host HRDY/pin timing/CDC and internally completed I/O accesses.
 - Remaining non-host I/O side effects.
 - DRAM- and screen-refresh request service in the memory fabric; VCLK/CDC,
   external sync, interlace, physical VRAM transfer, and pixel output.

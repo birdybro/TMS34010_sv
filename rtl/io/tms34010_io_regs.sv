@@ -69,8 +69,8 @@ module tms34010_io_regs
   output logic                  hint_n_o,
   output logic                  hlt_o,
 
-  // Held host-indirect local-word client. The future memory arbiter grants
-  // and acknowledges this alongside CPU, display, and refresh clients.
+  // Held host-indirect local-word client. tms34010_system connects this to
+  // the memory fabric alongside CPU, display, and refresh clients.
   output logic                  host_mem_req_o,
   output logic                  host_mem_we_o,
   output logic [ADDR_WIDTH-1:0] host_mem_addr_o,

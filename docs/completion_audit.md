@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0145, with strict RTL
+> Baseline: functional implementation through Task 0146, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -131,6 +131,15 @@ between the partial read and write suppresses that write and restarts the
 complete pair after release. Physical cycle generation and integration of the
 landed clients with this arbiter remain in the memory-fabric gate.
 
+Task 0146 closed that abstract integration gap. `tms34010_memory_fabric`
+composes field-to-word sequencing with fixed-priority arbitration, and
+`tms34010_system` connects the core's CPU/graphics, screen, DRAM-refresh, and
+host-indirect clients through it. End-to-end regression boots real
+instructions, programs and services screen refresh, retains automatic DRAM
+refresh, completes host-indirect reads, and verifies HOLD quiescence at one
+controller-facing request/ack boundary. Original-pin cycle generation remains
+the next memory-fabric gate.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -144,8 +153,10 @@ internal/noninterlaced video timing) are intentional design choices. A0035
 isolates deterministic collision/undefined behavior around the screen-refresh
 handshake, A0036 isolates the direct synchronous host boundary and
 otherwise-unpredictable simultaneous high-byte write choice, and A0037
-isolates host-engine collisions and the pre-pin synchronous protocol. These
-do not excuse missing architectural state or interface
+isolates host-engine collisions and the pre-pin synchronous protocol. A0038
+isolates the one-entry DRAM-refresh retention bound until the physical
+controller proves service before the next interval. These do not excuse
+missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
 
@@ -164,16 +175,14 @@ deliberate non-pin-compatible boundary.
 - Connect the landed field sequencer to an original-pin local memory-cycle
   controller: row/column/address/data phases, LRDY-controlled waits, and the
   eight post-reset RAS-only initialization cycles.
-- Integrate the landed specification-priority arbiter with the CPU/graphics,
-  display, refresh, and host clients plus the physical controller.
 - Service the held screen-refresh client with the highest-priority physical
   VRAM memory-to-register cycle and completion acknowledge.
 - Service the exported refresh request in the local-memory arbiter/controller,
   retaining or acknowledging requests through contention and issuing the
   selected RAS-only or CAS-before-RAS cycle.
-- Connect the exported host-indirect local-word client to arbitration;
-  implement HRDY and the asynchronous physical host wrapper/CDC around the
-  synchronous host-register boundary.
+- Implement HRDY and the asynchronous physical host wrapper/CDC around the
+  synchronous host-register boundary; Task 0146 completed the host client's
+  abstract arbiter connection.
 
 ### Video/display
 
@@ -202,7 +211,8 @@ deliberate non-pin-compatible boundary.
 3. Complete I/O side effects and every interrupt source.
 4. Land the pin-level local memory controller, refresh, host, and arbitration
    fabric with LRDY/reset tests. Task 0136 completed field-to-word sequencing,
-   and Task 0145 completed the standalone priority/RMW arbitration engine.
+   Task 0145 completed the standalone priority/RMW arbitration engine, and
+   Task 0146 integrated every core client at the abstract controller boundary.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,
