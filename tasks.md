@@ -5054,7 +5054,7 @@ Docs:
   `docs/completion_audit.md`, `docs/memory_map.md`, and
   `docs/timing_notes.md`.
 Commit:
-- pending
+- `fc1e47e` — Route host-indirect I/O through physical cycles (Task 0150)
 
 ---
 
