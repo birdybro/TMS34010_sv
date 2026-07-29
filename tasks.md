@@ -5631,7 +5631,7 @@ Docs:
   `docs/completion_audit.md`, `docs/timing_notes.md`, and add the board
   pinout/report evidence documents under `fpga/`.
 Commit:
-- pending
+- `8b34d9b7db68081f796f8bcb86d3b029c6f60d20`
 
 ---
 
