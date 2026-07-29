@@ -52,7 +52,7 @@ module tb_pixel_srt;
   tms34010_system u_system (
     .clk               (clk),
     .vclk_i            (clk),
-    .rst               (rst),
+    .rst               (rst), .vclk_rst_i(rst),
     .video_hsync_n_i   (1'b1),
     .video_vsync_n_i   (1'b1),
     .run_emu_n_i       (1'b1),

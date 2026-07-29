@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0158. Task 0124
+Functional implementation work is complete through Task 0159. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -95,6 +95,12 @@ instruction/data/I/O/host traffic, and avoids unnecessary destination reads
 for direct replace operations. This also corrects the completion boundary:
 the TMS34010 has no pixel-data output pins; attached VRAM supplies pixels
 through its serial port.
+Task 0159 adds the Cyclone V realization boundary: wrapped core/bus and
+phase-separated video PLLs, independent continuous VCLK, per-domain
+active-high reset release, actual HD/LAD/control/sync tri-states, active-low
+sync inversion, and a DE10-Nano top-level port surface. The reusable
+hierarchy now carries separate core, bus, and video resets so every clock
+domain releases synchronously.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -147,17 +153,20 @@ The repository currently contains:
   REFCNT/refresh-request generation;
 - DPYCTL.SRT classification for every graphics engine, with explicit
   program-controlled VRAM MTR/RTM pin cycles and unaffected nonpixel traffic;
-- 144 self-checking SystemVerilog testbenches, including non-integer-clock
+- a Cyclone V top-level adapter with vendor-isolated PLLs, three reset
+  conditioners, active-low video-clock/sync phase mapping, and IOE-ready
+  bidirectional host/local/video pads;
+- 146 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
-  end-to-end SRT graphics-cycle coverage, and an exhaustive 65,536-opcode
-  static status-policy sweep.
+  end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
+  an exhaustive 65,536-opcode static status-policy sweep.
 
-This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the TMS34010 functional/video/local-bus boundary is complete, and the audit
-records the remaining real Quartus project/constraints plus
-timing/resource/CDC validation. A board-level design still needs external
-VRAM or an equivalent memory/video subsystem to consume the landed transfer
-cycles and emit pixels; that device behavior is not part of this processor.
+This is not yet a fully signed-off FPGA system. ISA/status reconciliation and
+the synthesizable Cyclone V adapter are complete; the audit records the
+remaining real Quartus project/constraints plus timing/resource/CDC
+validation. A board-level design still needs external VRAM or an equivalent
+memory/video subsystem to consume the landed transfer cycles and emit pixels;
+that device behavior is not part of this processor.
 
 ## Getting started
 
@@ -172,8 +181,9 @@ scripts/sim.sh tb_pixt_win
 The scripts prefer Questa/ModelSim and fall back to Verilator. Testbenches must
 print `TEST_RESULT: PASS`; the simulator exit code alone is not treated as a
 pass. `scripts/regress.sh` discovers and runs all testbenches; set
-`REGRESS_JOBS` to parallelize the Verilator flow. `scripts/synth_quartus.sh` is
-still a placeholder and does not perform a real synthesis or timing run.
+`REGRESS_JOBS` to parallelize the Verilator flow. `scripts/synth_quartus.sh`
+remains a placeholder until Task 0160 and does not yet perform a real
+synthesis or timing run.
 
 Before changing RTL, read [AGENTS.md](AGENTS.md), [tasks.md](tasks.md),
 [architecture.md](docs/architecture.md), and the relevant specification in the

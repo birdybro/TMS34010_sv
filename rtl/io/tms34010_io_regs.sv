@@ -63,6 +63,7 @@ module tms34010_io_regs
   input  logic                  clk,
   input  logic                  vclk_i,
   input  logic                  rst,
+  input  logic                  vclk_rst_i,
   input  logic                  video_hsync_n_i,
   input  logic                  video_vsync_n_i,
 
@@ -330,7 +331,7 @@ module tms34010_io_regs
     .core_clk_i       (clk),
     .core_rst_i       (rst),
     .video_clk_i      (vclk_i),
-    .video_rst_i      (rst),
+    .video_rst_i      (vclk_rst_i),
     .hsync_n_i        (video_hsync_n_i),
     .vsync_n_i        (video_vsync_n_i),
     .hesync_i         (io_reg[IO_IDX_HESYNC]),

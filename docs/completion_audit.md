@@ -1,8 +1,8 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0158, with strict RTL
-> lint clean. This ledger defines what “complete” still requires for the
-> TMS34010-only scope in A0002.
+> Baseline: functional implementation and the Cyclone V clock/reset/pad
+> adapter through Task 0159, with strict RTL lint clean. This ledger defines
+> what “complete” still requires for the TMS34010-only scope in A0002.
 
 ## Official ISA reconciliation
 
@@ -287,8 +287,10 @@ interlaced phase recovery, counter-write priority, and equality-counter
 programming requirements. A0047 records external-sync sampling, recognition,
 fallback, field classification, direction, and final FPGA I/O choices. A0048
 records explicit SRT transfer classification/phases, the deterministic
-no-LAD read result, and the processor/external-VRAM scope boundary. These
-do not excuse missing architectural state or interface
+no-LAD read result, and the processor/external-VRAM scope boundary. Task
+0159's A0049 records the Cyclone V clock ratio, independent board VCLK,
+per-domain reset release, physical video-clock phase, and top-level-only
+tri-state choices. These do not excuse missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
 
@@ -307,7 +309,8 @@ deliberate non-pin-compatible boundary.
 
 ### FPGA realization
 
-- Add the synthesizable FPGA top level and required memory/clock/CDC wrappers.
+- **Complete (Task 0159):** add the synthesizable Cyclone V top, wrapped
+  PLL, per-domain reset release, and physical HD/LAD/control/sync pads.
 - Add a real Quartus project for `5CSEBA6U23I7`, QSF assignments, and SDC
   constraints.
 - Make `scripts/synth_quartus.sh` run analysis/synthesis, fitting, and
@@ -342,7 +345,8 @@ deliberate non-pin-compatible boundary.
    path have direct/asynchronous-clock and physical-phase tests. Pixel data is
    emitted by attached VRAM, not by a TMS34010 pin, so external serial-memory
    behavior is outside the processor implementation gate.
-6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
+6. **In progress (Task 0159 adapter complete):** land the Cyclone V project
+   and close synthesis, fit, setup, hold, I/O timing, and CDC reporting.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,
    and a final spec/documentation audit from a clean worktree.
 

@@ -51,7 +51,7 @@ module tb_host_control;
 
   tms34010_io_regs u_dut (
     .clk           (clk), .vclk_i(clk),
-    .rst           (rst),
+    .rst           (rst), .vclk_rst_i(rst),
     .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
     .video_hsync_oe_o(), .video_vsync_oe_o(),
     .hcs_n_i       (hcs_n),

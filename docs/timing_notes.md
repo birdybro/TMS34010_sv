@@ -1,9 +1,9 @@
 # Timing notes
 
-> Status: **functional latency notes only**. RTL is implemented through Task
-> 0158, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
-> Every path/resource assessment below is therefore a watch item, not measured
-> Cyclone V evidence.
+> Status: **functional latency notes plus the Task 0159 FPGA adapter**. The
+> clock/reset/pad boundary exists, but no real Quartus project, SDC, fit, or
+> TimeQuest report exists yet. Every path/resource assessment below is
+> therefore a watch item, not measured Cyclone V evidence.
 
 ## Known long paths (planned watchlist)
 
@@ -14,7 +14,7 @@
 | PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
 | Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
 | Field-window shift/mask and word merge | Task 0136      | landed, sequenced, unmeasured | preserve the registered word boundary; pipeline only if TimeQuest identifies this path |
-| 8× local-bus phase/pin decode        | Task 0147        | landed/integrated, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the PLL clock and every pin delay before FPGA sign-off |
+| 8× local-bus phase/pin decode        | Tasks 0147/0159   | landed through physical pads, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the 200 MHz PLL clock and every pin delay before FPGA sign-off |
 | Core↔8× MCP payload/response paths   | Task 0148        | landed, protocol-protected, unconstrained | declare asynchronous clocks, preserve/recognize toggle synchronizers, and cut/waive only the stable MCP payload paths |
 | CPU request classification → field/I/O select | Task 0149 | one registered stage, unmeasured | retain the registered loop break; inspect fanout only if TimeQuest identifies it |
 | Host I/O read mux → grant snapshot      | Task 0150        | grant-registered, unmeasured | retain the host-grant sample; do not let live counters cross the MCP as changing payload |
@@ -25,6 +25,8 @@
 | VCLK→core screen request/completion | Task 0155 | held bundled MCP transaction, unconstrained | preserve request/complete toggles and source payload; keep the core request registered through memory completion |
 | External HSYNC/VSYNC pins → VCLK recognition | Task 0157 | attributed two-stage level synchronizers plus edge history, unconstrained | constrain pin-to-first-stage input delay, preserve/report both chains, and prove no path bypasses delayed edge recognition |
 | Graphics-state/SRT decode → registered CPU request | Task 0158 | one-bit sideband captured with request, unmeasured | retain the registered fabric ingress; inspect graphics-state and DPYCTL fanout if TimeQuest identifies it |
+| Board reset / PLL locks → three release chains | Task 0159 | attributed two-stage chains, unmeasured | constrain async assertion into each first stage; prove recovery/removal and synchronizer recognition for core, bus, and VCLK |
+| Split signals → HD/LAD/control/sync IOEs | Task 0159 | top-level tri-states landed, unmeasured | assign legal GPIO pins/I/O standards, constrain data and output enables, and inspect IOE packing plus hold/release timing |
 | SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
 | MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
 
@@ -279,12 +281,18 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## FPGA timing concerns
 
-- The integrated pin system has a core clock, a dedicated 8× local-bus timing
-  domain, and independent VCLK; a future PLL supplies/maps the FPGA clocks.
-  Target Fmax is
-  **not** set yet. Initial core-clock sanity target:
-  clear 50 MHz on the documented Cyclone V `5CSEBA6U23I7`, then set the real
-  target from system requirements and measured reports.
+- The Task 0159 Cyclone V adapter fixes the initial clock plan:
+  `FPGA_CLK1_50` enters an Intel PLL that emits 50 MHz core and 200 MHz 8×
+  local-bus timing clocks; independent continuously running
+  `FPGA_CLK2_50` feeds a second PLL with phase-zero 50 MHz internal VCLK and
+  a 180-degree 50 MHz pin clock. The phase engine divides its 200 MHz clock
+  into eight subphases, so each LCLK waveform has a 25 MHz period. Task 0160
+  must prove those exact generated clocks and clear 50/200/50 MHz
+  setup/hold on `5CSEBA6U23I7`.
+- `VIDEO_VCLK` uses the second PLL's 180-degree output, mapping the internal
+  positive edge to the original falling-edge update phase without a fabric
+  clock inverter. TimeQuest must constrain this output path and confirm that
+  sync/blank changes meet the selected external video-device relationship.
 - Avoid combinational paths longer than ~10 LUT levels. If a path goes
   longer, register it or note the exception here.
 - All clock-domain crossings (local bus, host interface, video) must be
@@ -294,9 +302,9 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 Task 0147 keeps the local-bus request, payload, response, and acknowledge
 synchronous to `clk8x_i`. LCLK1/LCLK2 are output waveforms decoded from the
-internal subphase counter and are never used as fabric clocks. A future PLL
-supplies `clk8x_i`; the QSF/SDC must put that PLL output on a clock network
-and constrain the physical LCLK/LAD/control pins.
+internal subphase counter and are never used as fabric clocks. Task 0159's
+PLL supplies `clk8x_i` at 200 MHz; the QSF/SDC must prove that generated
+clock is on a clock network and constrain the physical LCLK/LAD/control pins.
 
 Task 0148 connects the core-clock command boundary through
 `tms34010_local_bus_bridge`. The source registers the complete command,
@@ -379,10 +387,11 @@ clocks, use asynchronous clock groups, preserve and report every toggle 2FF,
 and cut/waive only payload buses proven stable by the MCP protocol. It must
 also constrain external-sync pin input delays and minimum pulse widths,
 recognize each pin synchronizer, and constrain physical active-low sync data
-and output-enable delays/inversion. Both domains must sample the common
-synchronous reset asserted so toggle phases start at zero. If VCLK stops,
-status remains at its last coherent snapshot and pending commands complete
-only when it resumes (A0045/A0047).
+and output-enable delays/inversion. Task 0159 gives each domain a separately
+synchronized active-high reset release from one common assertion request, so
+toggle phases start at zero without an asynchronously released shared net.
+If VCLK stops, status remains at its last coherent snapshot and pending
+commands complete only when it resumes (A0045/A0047/A0049).
 
 Task 0158 adds no new clock crossing: its SRT value and graphics request are
 both core-clock signals captured before the already landed core-to-8× MCP.
@@ -392,6 +401,8 @@ payload. Quartus must nevertheless include the MTR/RTM pin paths in the same
 
 ## Cyclone V-specific notes
 
-To be filled in once `scripts/synth_quartus.sh` produces real reports.
-Anticipated items: M10K inference style, DSP usage for the shifter,
-clock network choice (regional vs. global) for the core clock.
+Task 0159 isolates `altera_pll` under `rtl/fpga/`, isolates every high
+impedance assignment in `tms34010_fpga_io`, and provides one reset-release
+chain per clock domain. Task 0160 must fill in measured ALM/register/M10K/DSP
+use, clock-network placement, synchronizer statistics, I/O register packing,
+and worst setup/hold/recovery/removal slack from real reports.

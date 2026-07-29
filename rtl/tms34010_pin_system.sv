@@ -26,7 +26,9 @@ module tms34010_pin_system
   input  logic                              core_clk_i,
   input  logic                              bus_clk8x_i,
   input  logic                              vclk_i,
-  input  logic                              rst,
+  input  logic                              core_rst_i,
+  input  logic                              bus_rst_i,
+  input  logic                              video_rst_i,
   input  logic                              video_hsync_n_i,
   input  logic                              video_vsync_n_i,
 
@@ -144,14 +146,14 @@ module tms34010_pin_system
   // grant returns through an independent 2FF level synchronizer.
   tms34010_sync_bit #(.RESET_VALUE(1'b0)) u_hold_req_sync (
     .clk     (core_clk_i),
-    .rst     (rst),
+    .rst     (core_rst_i),
     .async_i (local_hold_req),
     .sync_o  (core_hold_req)
   );
 
   tms34010_sync_bit #(.RESET_VALUE(1'b0)) u_hold_grant_sync (
     .clk     (bus_clk8x_i),
-    .rst     (rst),
+    .rst     (bus_rst_i),
     .async_i (core_hold_ack),
     .sync_o  (local_hold_grant)
   );
@@ -160,14 +162,14 @@ module tms34010_pin_system
   // value, and only the synchronized result is sampled by the core.
   tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_run_emu_sync (
     .clk     (core_clk_i),
-    .rst     (rst),
+    .rst     (core_rst_i),
     .async_i (run_emu_n_i),
     .sync_o  (core_run_emu_n)
   );
 
   tms34010_host_bus u_host_bus (
     .clk          (core_clk_i),
-    .rst          (rst),
+    .rst          (core_rst_i),
     .hcs_n_i      (hcs_n_i),
     .hread_n_i    (hread_n_i),
     .hwrite_n_i   (hwrite_n_i),
@@ -191,7 +193,8 @@ module tms34010_pin_system
   tms34010_system u_system (
     .clk                (core_clk_i),
     .vclk_i             (vclk_i),
-    .rst                (rst),
+    .rst                (core_rst_i),
+    .vclk_rst_i         (video_rst_i),
     .video_hsync_n_i    (video_hsync_n_i),
     .video_vsync_n_i    (video_vsync_n_i),
     .run_emu_n_i        (core_run_emu_n),
@@ -238,14 +241,14 @@ module tms34010_pin_system
 
   tms34010_local_bus_bridge u_local_bus_bridge (
     .src_clk_i   (core_clk_i),
-    .src_rst_i   (rst),
+    .src_rst_i   (core_rst_i),
     .src_req_i   (core_cycle_req),
     .src_cmd_i   (core_command),
     .src_rdata_o (core_cycle_rdata),
     .src_ack_o   (core_cycle_ack),
     .src_busy_o  (bridge_busy_o),
     .dst_clk_i   (bus_clk8x_i),
-    .dst_rst_i   (rst),
+    .dst_rst_i   (bus_rst_i),
     .dst_req_o   (local_cycle_req),
     .dst_cmd_o   (local_command),
     .dst_rdata_i (local_cycle_rdata),
@@ -254,7 +257,7 @@ module tms34010_pin_system
 
   tms34010_local_bus u_local_bus (
     .clk8x_i            (bus_clk8x_i),
-    .rst                (rst),
+    .rst                (bus_rst_i),
     .cycle_req_i        (local_cycle_req),
     .cycle_kind_i       (local_command.kind),
     .cycle_addr_i       (local_command.addr),
@@ -308,11 +311,11 @@ module tms34010_pin_system
 
   tms34010_emu_bridge u_emu_bridge (
     .src_clk_i       (core_clk_i),
-    .src_rst_i       (rst),
+    .src_rst_i       (core_rst_i),
     .src_event_i     (core_emu_event),
     .src_halt_i      (core_emu_halt),
     .dst_clk_i       (bus_clk8x_i),
-    .dst_rst_i       (rst),
+    .dst_rst_i       (bus_rst_i),
     .dst_subphase_i  (subphase_o),
     .dst_lclk1_i     (lclk1_o),
     .dst_hlda_n_i    (local_hlda_n),

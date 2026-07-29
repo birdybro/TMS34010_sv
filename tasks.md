@@ -2,7 +2,11 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0158. Task 0158
+The functional implementation and Cyclone V adapter are complete through
+Task 0159. Task 0159 adds the wrapped PLL, independent board VCLK,
+per-domain reset release, and top-level host/local/video pad direction.
+The remaining mandatory work is the Task 0160 Quartus project, constraints,
+fit/timing/CDC reports, followed by the clean-tree final audit. Task 0158
 consumes DPYCTL.SRT: graphics pixel reads/writes become explicit VRAM
 memory-to-register/register-to-memory cycles with exact local-bus phases,
 while instruction, ordinary data, I/O, and host traffic remain unchanged.
@@ -5510,6 +5514,66 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - `59c3e0d28ecade26fd59910a0b8bb2efb64e5236`
+
+---
+
+### Task 0159: Add the Cyclone V clock, reset, and pad boundary
+Status: complete
+Dependencies:
+- Tasks 0147–0148 (8× physical local-bus engine and coherent CDC).
+- Task 0153 (split physical host data direction).
+- Tasks 0155–0157 (independent VCLK and split sync direction).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §2.4, page 2-9
+  (processor local/host/video pin groups).
+- 1988 TI TMS34010 User's Guide §9.9, pages 9-15 through 9-17
+  (active-low bidirectional video synchronization).
+- SPVS002C pin descriptions and local/host/video AC timing diagrams
+  (physical pad directions and signal polarity).
+- Cyclone V HDL guidelines 11, 12, 23, 24, and 40
+  (PLL-only derived clocks, top-level-only tri-state, reset release, CDC,
+  and eventual SDC proof).
+Acceptance Criteria:
+- Add a vendor-isolated Cyclone V PLL wrapper driven from the DE10-Nano
+  50 MHz oscillator. The synthesis path emits a 50 MHz core clock and
+  200 MHz 8× local-bus timing clock; portable simulation has an explicit
+  elaboration-only bypass rather than a fabric divider.
+- Keep VCLK independent and continuously running from the second board clock.
+  Use a second PLL for phase-zero internal VCLK and a 180-degree physical
+  output so the falling video-clock edge corresponds to the internal
+  positive-edge state update selected by A0045 without fabric inversion.
+- Condition active-low board reset and both PLL locks into separate active-high
+  reset releases for core, bus, and video. Each reset may assert
+  asynchronously at the boundary but deasserts only after two destination
+  clock edges; all downstream owners retain synchronous active-high reset.
+- Carry those separate resets through the pin/system/core/I/O hierarchy so
+  no domain consumes a reset released by another clock.
+- Instantiate actual top-level bidirectional pads for HD, LAD, HSYNC/VSYNC,
+  and HOLD-released local controls. Keep every `Z` assignment in one FPGA
+  pad adapter, honor independent host byte lanes, and invert functional sync
+  intervals onto active-low pins.
+- Expose one synthesizable DE10-Nano top-level boundary. Leave QSF pin
+  assignments, complete SDC, real fit/timing/CDC reports, and the production
+  Quartus script to Task 0160.
+Tests:
+- Added `tb_fpga_io` PASS for released pads, external input capture,
+  independent HD byte lanes, complete LAD direction, individual local-control
+  output enables, and active-low bidirectional sync conversion.
+- Added `tb_reset_sync` PASS for immediate assertion, two-edge synchronous
+  release, and repeated runtime assertion/release.
+- Existing `tb_pin_system` and `tb_video_cdc` PASS with separate hierarchy
+  reset ports and their prior non-integer clock behavior.
+- Quartus Prime Lite 17.0.2 Analysis & Synthesis independently elaborates
+  both `altera_pll` wrapper paths for `5CSEBA6U23I7` with the intended
+  50/200 MHz and 0/180-degree parameters (0 errors in each focused probe).
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 146/146 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

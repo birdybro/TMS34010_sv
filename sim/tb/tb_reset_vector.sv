@@ -28,7 +28,7 @@ module tb_reset_vector;
   logic                          illegal_w;
 
   tms34010_core u_core (
-    .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1), .rst(rst),
+    .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr),
     .mem_size(mem_size), .mem_wdata(mem_wdata), .mem_srt(),
     .mem_rdata(mem_rdata), .mem_ack(mem_ack),

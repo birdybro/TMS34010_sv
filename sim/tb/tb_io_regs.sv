@@ -32,7 +32,7 @@ module tb_io_regs;
   logic [15:0]           hstctlh_w;
 
   tms34010_io_regs u_io (
-    .clk(clk), .vclk_i(clk), .rst(rst),
+    .clk(clk), .vclk_i(clk), .rst(rst), .vclk_rst_i(rst),
     .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
     .video_hsync_oe_o(), .video_vsync_oe_o(),
     .req(req), .we(we), .addr(addr), .wdata(wdata),

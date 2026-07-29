@@ -7,6 +7,30 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0159 — Cyclone V clock, reset, and pad boundary)
+- Added `tms34010_cyclone_v_top`, selecting independent DE10-Nano
+  `FPGA_CLK1_50` and `FPGA_CLK2_50` sources, a wrapped Intel PLL for 50 MHz
+  core and 200 MHz 8× local-bus clocks, and a second PLL whose phase-zero
+  internal VCLK plus 180-degree physical output make the pin's falling edge
+  match the internal update edge without fabric clock inversion.
+- Added three active-high reset-release conditioners. Board reset or loss of
+  either PLL lock asserts every domain chain; core, bus, and video reset
+  release occurs only after two edges of the respective destination clock.
+- Split the integrated hierarchy's reset boundary by clock domain while
+  preserving the existing synchronous active-high reset convention inside
+  each owner. Direct unit benches tie the new video reset to their existing
+  reset; the FPGA adapter supplies independent domain releases.
+- Added `tms34010_fpga_io`, the sole top-level tri-state owner for HD byte
+  lanes, LAD, HOLD-released local controls, and bidirectional active-low
+  HSYNC/VSYNC. Functional sync intervals are inverted only at this pad
+  boundary.
+- Added `tb_fpga_io` and `tb_reset_sync`; existing pin-system and
+  asynchronous-video CDC tests remain passing.
+- Confirmed both vendor-enabled PLL wrappers elaborate with the intended
+  frequencies/phases under Quartus Prime Lite 17.0.2 for `5CSEBA6U23I7`.
+- Validation: focused FPGA/reset/pin/video tests PASS; `scripts/lint.sh`
+  clean; full regression 146/146 PASS.
+
 ### Added (Task 0158 — program-controlled VRAM register transfers)
 - Exported DPYCTL.SRT from the I/O owner and captured it with the registered
   architectural CPU request. Only PIXT/DRAV/LINE/FILL/PIXBLT pixel accesses

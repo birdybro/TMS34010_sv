@@ -34,6 +34,7 @@ module tms34010_core
   input  logic                                clk,
   input  logic                                vclk_i,
   input  logic                                rst,
+  input  logic                                vclk_rst_i,
   input  logic                                video_hsync_n_i,
   input  logic                                video_vsync_n_i,
 
@@ -2388,6 +2389,7 @@ module tms34010_core
     .clk      (clk),
     .vclk_i   (vclk_i),
     .rst      (rst),
+    .vclk_rst_i(vclk_rst_i),
     .video_hsync_n_i(video_hsync_n_i),
     .video_vsync_n_i(video_vsync_n_i),
     .hcs_n_i  (hcs_n_i),

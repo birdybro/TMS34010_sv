@@ -73,7 +73,7 @@ module tb_io_video;
   tms34010_io_regs u_dut (
     .clk           (clk),
     .vclk_i        (vclk),
-    .rst           (rst),
+    .rst           (rst), .vclk_rst_i(rst),
     .video_hsync_n_i(video_hsync_n),
     .video_vsync_n_i(video_vsync_n),
     .video_hsync_oe_o(video_hsync_oe),

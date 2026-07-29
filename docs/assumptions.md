@@ -599,6 +599,48 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0049 — Cyclone V clock, reset, and physical-pad realization
+- **Date**: 2026-07-29 (Task 0159).
+- **Status**: active board-realization choice; the logical clock/CDC and
+  original signal-direction behavior are implemented, while QSF/SDC/report
+  proof remains Task 0160.
+- **Sources**: 1988 TI TMS34010 User's Guide §2.4 and §9.9; SPVS002C pin and
+  AC-timing descriptions; Cyclone V HDL guidelines 11, 12, 23, 24, and 40.
+- **Board clock plan**: DE10-Nano `FPGA_CLK1_50` feeds a wrapped Intel PLL
+  whose synthesis outputs are 50 MHz for the core and 200 MHz for the local
+  phase engine. Eight bus subphases therefore produce 25 MHz LCLK periods.
+  No fabric divider or generated LCLK waveform clocks sequential logic.
+- **Independent video clock**: continuously running `FPGA_CLK2_50` feeds a
+  second Intel PLL. Its phase-zero output owns internal VCLK, while a
+  180-degree output drives `VIDEO_VCLK`, so the physical falling edge is the
+  internal positive state-update edge selected by A0045 without fabric clock
+  inversion. This DE10-Nano adapter selects an output-clock system
+  configuration; the reusable pin system still accepts any independent
+  `vclk_i`.
+- **Reset boundary**: active-low board reset and loss of either PLL lock feed three
+  two-stage release conditioners. Each can assert from the asynchronous
+  boundary and emits an active-high reset that deasserts only on its own
+  core, bus, or video clock. Downstream blocks retain A0003's synchronous
+  active-high reset style. The separate releases may differ by cycles, but
+  the common request asserts every domain and no bridge launches work until
+  its local reset has released.
+- **Pad boundary**: `tms34010_fpga_io` is the only synthesizable module that
+  assigns high impedance. HD honors independent lower/upper byte enables;
+  LAD and every HOLD-released local control have explicit enables; HSYNC and
+  VSYNC invert active-high functional intervals onto active-low
+  bidirectional pins. External voltage translation and attached
+  DRAM/VRAM/host circuitry remain board responsibilities.
+- **Portable simulation choice**: without `TMS34010_QUARTUS`, the PLL wrapper
+  passes the reference clock to both logical outputs and models lock from
+  reset. This branch exists only so ordinary lint/simulation can elaborate
+  vendor-isolated RTL; all clock-ratio behavior is tested below
+  `tms34010_pin_system`, and the real primitive/frequencies must be proven by
+  Task 0160's Quartus reports.
+- **Regression evidence**: `tb_fpga_io` locks pad direction, per-lane enables,
+  and sync inversion; `tb_reset_sync` locks assertion and two-edge release;
+  `tb_pin_system` and `tb_video_cdc` retain physical and asynchronous-domain
+  integration coverage.
+
 ## A0048 — Program-controlled VRAM transfers and processor/video boundary
 - **Date**: 2026-07-29 (Task 0158).
 - **Status**: specification-derived SRT classification and pin cycles, with
@@ -675,7 +717,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   pre-clear count. `HCOUNT > HEBLNK && HCOUNT <= HSBLNK` selects the odd
   field; every other horizontal phase selects even. NIL=1 always clears the
   stored odd phase. The functional active-high sync interval outputs remain
-  count-derived; a future FPGA top must invert them for the physical
+  count-derived. Task 0159's pad adapter inverts them for the physical
   active-low pins while using the explicit output enables.
 - **Collision priority**: a delivered VCOUNT load wins over external VSYNC
   recognition. A delivered HCOUNT load wins over the same-edge line clear
@@ -767,8 +809,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   requires VCLK edges to complete commands and refresh snapshots. If VCLK is
   stopped, reads retain the last coherent snapshot and writes remain queued
   until VCLK resumes. A0003 already excludes original electrical pin
-  compatibility; the final FPGA top must keep its internal video clock
-  running or explicitly document this software-visible difference.
+  compatibility. Task 0159 keeps independent `FPGA_CLK2_50` running
+  continuously in the DE10-Nano adapter, satisfying this boundary choice.
 - **Event/transaction crossings**: the one-bit DIP condition is held until a
   toggle mailbox accepts it; multiple occurrences while INTPEND.DIP is
   already pending are intentionally equivalent. A screen request captures
@@ -850,8 +892,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **HD direction**: read data remains registered until access re-arm and only
   captured selected byte lanes receive output-enable intent. Writes, waits,
   illegal direction combinations, and inactive HCS never enable HD outputs.
-  The FPGA top must map `hd_i`, `hd_o`, and `hd_oe_o` to bidirectional I/O
-  cells.
+  Task 0159 maps `hd_i`, `hd_o`, and `hd_oe_o` to bidirectional I/O cells;
+  Task 0160 must constrain the data and enable paths.
 - **Regression evidence**: `tb_host_bus` offsets host edges from the core
   clock and covers access starts, stable capture, byte lanes, illegal
   direction, HSTCTL HCS-only delay, busy carryover/current-ready priority, and
@@ -919,9 +961,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   within-clock relationships.
 - **Tri-state boundary**: synthesizable internal RTL exports explicit
   per-group output enables instead of assigning `Z` inside the controller.
-  The FPGA top must map them to device I/O buffers and constrain those enable
-  paths. Task 0152 combines Q3/Q4 HOLDA with Q1/Q2 EMUA on the original
-  shared pin inside the integrated pin system.
+  Task 0159 maps them to device I/O buffers; Task 0160 must constrain those
+  enable paths. Task 0152 combines Q3/Q4 HOLDA with Q1/Q2 EMUA on the
+  original shared pin inside the integrated pin system.
 - **Regression evidence**: `tb_local_bus_hold` locks end-Q1 sampling, early
   acknowledge, exact Q2/Q3 release/resume, held-command suppression, and
   active-cycle completion. `tb_pin_system` proves the synchronized path

@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0158. Task 0124
+The functional implementation is complete through Task 0159. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -108,6 +108,11 @@ TR/QE/W/address-status phases; ordinary instruction, data, I/O, and host
 traffic are unchanged. Direct replace operations avoid unnecessary
 destination reads. The TMS34010 itself has no pixel-data output pins:
 external VRAM serial ports supply pixels.
+Task 0159 adds the isolated Cyclone V adapter layer: a 50/200 MHz core/bus
+PLL, an independent phase-separated video PLL, three synchronized active-high
+reset releases, top-level-only host/local/video tri-states, and active-low
+sync conversion. Separate reset ports now reach the core, 8× bus, and VCLK
+owners; ordinary unit benches intentionally tie them together.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
@@ -118,9 +123,9 @@ noninterlaced/interlaced timing, the screen-refresh client, and its physical
 memory-to-register cycle. Program-controlled VRAM MTR/RTM service is also
 integrated; external VRAM serial-display behavior is a surrounding-system
 responsibility rather than missing processor RTL.
-Host pin timing is functionally
-integrated; its final FPGA I/O timing and CDC constraints remain sign-off
-work. Read
+Host and local/video pad direction are functionally integrated; their final
+FPGA pin assignments, I/O timing, and CDC constraints remain sign-off work.
+Read
 `tasks.md`, `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 
@@ -201,6 +206,16 @@ RTL, tests, task log, changelog, and specification first.
   original local-bus/HOLD/RUN-EMU/host pins, shared HLDA/EMUA output, HRDY,
   split HD data/output-enable boundary, and active-low video-sync
   inputs/split output enables.
+- `rtl/fpga/tms34010_cyclone_v_top.sv` — DE10-Nano realization boundary
+  composing the PLL, per-domain reset release, pin system, and physical pads.
+- `rtl/fpga/tms34010_fpga_io.sv` — sole home for top-level HD/LAD/control/
+  sync tri-states and active-low video-sync conversion.
+- `rtl/fpga/tms34010_cyclone_v_pll.sv` — vendor-isolated 50/200 MHz clock
+  wrapper; portable simulation uses its explicit elaboration bypass.
+- `rtl/fpga/tms34010_cyclone_v_video_pll.sv` — independent 50 MHz video PLL
+  with phase-zero internal VCLK and 180-degree physical VIDEO_VCLK.
+- `rtl/fpga/tms34010_reset_sync.sv` — active-high per-domain reset-release
+  conditioner driven by board reset and both PLL lock indications.
 - `rtl/host/tms34010_host_bus.sv` — asynchronous original-pin host access
   qualification, HCS/HSTCTL and busy wait generation, bundled request
   capture, response retention, and byte-lane HD direction.
@@ -233,8 +248,9 @@ accepts `REGRESS_JOBS=<N>` for parallel Verilator builds.
 
 `scripts/synth_quartus.sh` is currently only a placeholder/tool-discovery
 check. Its zero exit status is not evidence of synthesis, fit, timing closure,
-or Cyclone V compatibility. A real Quartus project, constraints, and reports
-are the next completion gate.
+or Cyclone V compatibility. Task 0159 landed the Cyclone V clock/reset/pad
+adapter; a real Quartus project, constraints, and reports are the next
+completion task.
 
 RTL lint is a zero-diagnostic gate. Do not silently suppress new warnings or
 call a warning-bearing run "clean."
