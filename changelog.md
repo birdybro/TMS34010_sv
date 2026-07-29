@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0145 — specification-priority local-bus arbitration)
+- Added `tms34010_bus_arbiter` with the User's Guide §11.3 fixed order:
+  external HOLD, screen refresh, DRAM refresh, host indirect, then CPU.
+- Registered the active owner through controller acknowledge, captured the
+  pulsed DRAM-refresh row/mode, and routed completion/read data only to the
+  selected client.
+- Reserved a selected CPU partial-word read through its matching write while
+  retaining the specified preemption point between different field words.
+- Added the HOLD exception to `tms34010_field_sequencer`: an interrupt between
+  a partial read and its not-yet-issued write suppresses that write and
+  restarts the complete RMW pair after HOLD release.
+- Added `tb_bus_arbiter` and `tb_bus_arbiter_rmw` for priority, stalls,
+  refresh retention, response routing, RMW atomicity/inter-word preemption,
+  and HOLD restart.
+- Validation: focused arbitration/field benches PASS; `scripts/lint.sh`
+  clean; full regression 133/133 PASS.
+
 ### Added (Task 0144 — integrated four-register host port)
 - Instantiated `tms34010_host_if` in the I/O block and made its aligned
   HSTADR and buffered HSTDATA state visible to both processor and host.

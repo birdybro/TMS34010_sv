@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0144, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0145, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -48,8 +48,9 @@
   core-clock relationships. The future pin wrapper must reproduce the
   asynchronous HCS/HRDY timing in §10.3.2.
   Task 0144 routes this four-register handshake through the core/I/O boundary
-  and exports the held local-word request unchanged; the future arbiter must
-  acknowledge only completed local service, not selection.
+  and exports the held local-word request unchanged. Task 0145 defines the
+  arbiter completion contract; integration must acknowledge only completed
+  local service, not selection.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
@@ -68,9 +69,9 @@
   into ROWADR (`0 → 255`), and registers `refresh_req_o` for one clock with
   `refresh_row_o=255`. Further RR=00 requests are 32 clocks apart; RR=01
   requests are 64 clocks apart. During each request pulse, the row is the
-  newly decremented value and `refresh_cbr_o` reflects CONTROL.RM. The future
-  arbiter must capture or retain this event until it performs the physical
-  cycle; no service/acknowledge path exists yet.
+  newly decremented value and `refresh_cbr_o` reflects CONTROL.RM. The
+  Task 0145 arbiter captures this event until it performs the physical cycle;
+  its core/client service wiring does not exist yet.
 - **Integrated video timing** — Task 0139 runs the internal/noninterlaced
   generator on the project `clk` under A0034. HCOUNT advances each positive
   edge and wraps after HTOTAL; that wrap advances VCOUNT and wraps it after
@@ -86,8 +87,8 @@
   `screen_refresh_ack_i` reports completion of the future physical VRAM
   transfer. That acknowledge clears the request, reloads LNCNT, and updates
   SRFADR by the live DUDATE/ORG value. Processor DPYADR load wins a same-edge
-  automatic update. The future arbiter must not acknowledge selection alone;
-  acknowledge denotes completed memory-to-register service.
+  automatic update. Task 0145's arbiter contract does not acknowledge
+  selection alone; acknowledge denotes completed memory-to-register service.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the
@@ -118,7 +119,16 @@
   stable until acknowledge. `word_rmw_lock_o` is asserted from a partial-word
   read through the matching write acknowledge; §11.3 permits arbitration
   between different words of a multiword field, so the lock does not span
-  the complete field.
+  the complete field. If HOLD wins between the read and write,
+  `word_restart_i` suppresses the write and repeats the read after release.
+- **Local-cycle arbitration** — selection uses registered owner states in
+  the specified order HOLD, screen, DRAM refresh, host, then CPU. Selection
+  costs an internal controller-facing bubble; once `cycle_req_o` asserts, its
+  kind and payload remain stable until `cycle_ack_i`. CPU partial-word RMW
+  reservation overrides ordinary priority only from the selected read through
+  its write. A pulsed DRAM refresh occupies a one-entry pending latch until
+  physical completion. These are internal arbitration clocks, not original
+  LAD/RAS/CAS pin phases.
 - **DIVU/DIVS/MODU/MODS** — `tms34010_divider` (restoring
   long division). Start: the `CORE_EXECUTE → CORE_DIVIDE` edge (one-cycle
   `div_start`). Internal states: 1 (latch) + 32 (iterate) + 1 (done); on

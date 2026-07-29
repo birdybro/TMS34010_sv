@@ -11,9 +11,9 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0138: architectural widths and register layouts,
-// instruction/control types, I/O fields, interrupt vectors, and the CPU/
-// graphics FSM states plus physical-memory word geometry are defined here.
+// Current through Task 0145: architectural widths and register layouts,
+// instruction/control types, I/O fields, interrupt vectors, the CPU/graphics
+// FSM states, physical-memory word geometry, and local-cycle kinds are here.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
@@ -42,6 +42,18 @@ package tms34010_pkg;
   parameter int unsigned FIELD_WINDOW_WIDTH   = 3 * LOCAL_WORD_WIDTH;
   parameter int unsigned FIELD_MAX_WORDS      = 3;
   typedef logic [LOCAL_WORD_WIDTH-1:0] local_word_t;
+
+  // Abstract local-memory cycle selected by the fixed-priority arbiter.
+  // A later physical-bus controller translates these cycle kinds into the
+  // original LAD/RAS/CAS/TR/Q timing. Screen refresh and DRAM refresh carry
+  // their dedicated payloads rather than pretending to be CPU word accesses.
+  typedef enum logic [2:0] {
+    LOCAL_CYCLE_WORD_READ      = 3'd0,
+    LOCAL_CYCLE_WORD_WRITE     = 3'd1,
+    LOCAL_CYCLE_SCREEN_REFRESH = 3'd2,
+    LOCAL_CYCLE_DRAM_RAS       = 3'd3,
+    LOCAL_CYCLE_DRAM_CBR       = 3'd4
+  } local_cycle_kind_t;
 
   // ---------------------------------------------------------------------------
   // Instruction-stream constants

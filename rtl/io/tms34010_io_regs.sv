@@ -218,7 +218,8 @@ module tms34010_io_regs
 
   // REFCNT is owned by the refresh block rather than mirrored in io_reg.
   // CONTROL.RR clocks its continuous interval/row counter, while a processor
-  // write loads the full value. The future arbiter consumes request/row/mode.
+  // write loads the full value. The Task 0145 arbiter consumes request/row/mode
+  // after the memory-fabric integration boundary is connected.
   tms34010_refresh u_refresh (
     .clk          (clk),
     .rst          (rst),

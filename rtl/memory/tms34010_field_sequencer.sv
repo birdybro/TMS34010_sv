@@ -16,7 +16,10 @@
 // `word_rmw_lock_o` is asserted from the partial-word read request through
 // its matching write acknowledgement. User's Guide §11.3, page 11-4 makes
 // that pair indivisible while allowing higher-priority cycles between
-// different words of a multiword field.
+// different words of a multiword field. HOLD is the sole exception: if it is
+// accepted after the partial read but before the write is issued, a one-cycle
+// `word_restart_i` returns the sequencer to the read so the complete RMW pair
+// restarts after HOLD release.
 //
 // Both interfaces use request/acknowledge flow control. A request and all of
 // its payload signals remain stable until acknowledgement. Consecutive word
@@ -46,6 +49,7 @@ module tms34010_field_sequencer
   output local_word_t                       word_wdata_o,
   input  local_word_t                       word_rdata_i,
   input  logic                              word_ack_i,
+  input  logic                              word_restart_i,
   output logic                              word_rmw_lock_o
 );
 
@@ -290,16 +294,23 @@ module tms34010_field_sequencer
       end
 
       FIELD_WRITE_WORD: begin
-        word_req_o   = 1'b1;
-        word_we_o    = 1'b1;
-        word_wdata_o = merged_word_data;
-        if (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})
-          word_rmw_lock_o = 1'b1;
-        if (word_ack_i) begin
-          if (word_index_q == last_word_index)
-            state_d = FIELD_RESPONSE;
-          else
-            state_d = FIELD_WRITE_SELECT;
+        if (word_restart_i
+            && (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})) begin
+          // HOLD may interrupt the otherwise-indivisible pair only between
+          // cycles. Suppress the not-yet-issued write and reacquire old data.
+          state_d = FIELD_WRITE_READ;
+        end else begin
+          word_req_o   = 1'b1;
+          word_we_o    = 1'b1;
+          word_wdata_o = merged_word_data;
+          if (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})
+            word_rmw_lock_o = 1'b1;
+          if (word_ack_i) begin
+            if (word_index_q == last_word_index)
+              state_d = FIELD_RESPONSE;
+            else
+              state_d = FIELD_WRITE_SELECT;
+          end
         end
       end
 

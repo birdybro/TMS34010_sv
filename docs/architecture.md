@@ -1,15 +1,16 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0144, with
+> Status: **implemented and ISA/status-audited through Task 0145, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Direct HSTCTL access, HINT, HCS-selected reset halt, and HLT
 > are also integrated. The synchronous four-register host engine shares
 > HSTADR/HSTDATA with processor I/O accesses and exports its held local-word
-> client for the future arbiter. Architectural fields are sequenced onto
-> aligned 16-bit words; REFCNT and the refresh requester are integrated at
-> the core boundary.
+> client. Architectural fields are sequenced onto aligned 16-bit words, and
+> the fixed-priority local-cycle arbiter has landed with CPU RMW/HOLD restart
+> semantics. REFCNT and the refresh requester are integrated at the core
+> boundary.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; physical VRAM transfer service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -66,7 +67,11 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
                                      └─────────────────┬───────────────┘
                                                        │
                             ┌──────────────────────────▼────┐
-                            │ future arbiter / local bus /   │
+                            │ fixed-priority local arbiter   │
+                            └──────────────────────────┬────┘
+                                                       │
+                            ┌──────────────────────────▼────┐
+                            │ future physical local bus /    │
                             │ host / video / refresh fabric  │
                             └────────────────────────────────┘
 ```
@@ -74,9 +79,10 @@ rst ───▶│  │  PC     │───▶│  Fetch   │───▶│ 
 The CPU, graphics execution engines, I/O register storage, interrupt entry,
 video timing/display-address scheduling, and REFCNT refresh requester
 currently live in or directly under `tms34010_core`. The field-to-word
-sequencer has landed below that core boundary. The lower
-local-bus/host/display-memory fabric, physical refresh services, and dedicated
-VCLK domain remain planned.
+sequencer and standalone local-cycle arbiter have landed below that core
+boundary. Their full client integration, the lower physical
+local-bus/host/display-memory fabric, refresh service, and dedicated VCLK
+domain remain planned.
 
 ## Test substrate
 
@@ -104,7 +110,7 @@ has not landed.
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
 | `rtl/memory/tms34010_local_bus.sv`      | 6     | not started | original-pin row/column/data phases, LRDY waits, and reset initialization |
 | `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
-| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | not started | screen refresh, DRAM refresh, host, and CPU/graphics arbitration |
+| `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **landed (Task 0145)** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh-event capture; CPU RMW reservation and HOLD restart |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
 | `rtl/graphics/tms34010_pixblt.sv`       | 7     | not separate | PIXBLT/FILL datapaths and FSM states currently reside in the core |
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
@@ -159,7 +165,7 @@ host/display set sidebands, and core-level external vector/priority tests.
 Task 0138 corrected the refresh model against the individual REFCNT pages and
 made it the live I/O register. CONTROL.RR/RM now drive a continuous
 interval/row down-counter, while refresh request, decremented row, and mode
-leave the core for the future arbiter. Physical refresh bus service remains
+leave the core for the local-cycle arbiter. Physical refresh bus service remains
 part of the local-memory fabric gate. Task 0139 corrected the old standalone
 display-interrupt event from line start to start-of-HBLANK and integrated the
 timing registers, live HCOUNT/VCOUNT, DPYCTL.ENV, DIP latch, and timing
@@ -194,6 +200,13 @@ accesses now share HSTADR/HSTDATA state through one generalized four-register
 core boundary, while HSTCTL continues through its existing ownership logic.
 The resulting held aligned-word host client is exposed from the core for the
 next specification-priority arbiter task.
+
+Task 0145 landed that arbiter as a controller-facing module. It registers one
+active owner until physical completion, captures a one-clock DRAM-refresh
+event, reserves the CPU between a partial-word read and write, permits
+preemption between different field words, and restarts the complete RMW pair
+when HOLD intervenes. Wiring all core clients through it remains separate
+from defining its verified arbitration contract.
 
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
@@ -325,11 +338,18 @@ the core still emits an external cycle and uses its ack (A0028).
 
 `tms34010_field_sequencer` accepts this core boundary and presents aligned
 16-bit `word_req_o`, `word_we_o`, `word_addr_o`, `word_wdata_o`,
-`word_rdata_i`, and `word_ack_i` signals. It sequences one/two/three-word
+`word_rdata_i`, `word_ack_i`, and `word_restart_i` signals. It sequences one/two/three-word
 reads, direct full-word writes, and partial-word RMW pairs while holding
 payload stable through stalls. `word_rmw_lock_o` identifies the indivisible
-interval required by §11.3. A future arbiter adds host, video, and refresh
-clients; a later local-bus controller converts each aligned word request into
+interval required by §11.3.
+
+`tms34010_bus_arbiter` implements the specified fixed order: external HOLD,
+screen refresh, DRAM refresh, host indirect, then CPU/graphics. Its registered
+owner keeps an issued cycle active through controller acknowledge. A CPU RMW
+reservation forces the matching write ahead of other ordinary clients; only
+HOLD can break the pair, in which case `word_restart_i` suppresses the
+not-yet-issued write and repeats the read. The arbiter exposes an abstract
+cycle kind and payload; a later local-bus controller converts it into
 RAS/CAS/LAL/DEN/DDOUT/W phases and samples LRDY.
 
 ## Graphics subsystem
@@ -365,10 +385,10 @@ holds its local-word request during backpressure. Processor-side accesses
 share the stored values but have no indirect side effects. HSTCTL transactions
 pass through to the I/O block's Task 0142 owner.
 
-The aligned 16-bit host client now leaves `tms34010_core`, but no shared
-memory arbiter consumes it yet. HRDY, physical pin strobes, asynchronous CDC,
-and host/local arbitration remain future work. CF is stored but has no cache
-to flush.
+The aligned 16-bit host client now leaves `tms34010_core`, and the standalone
+arbiter contract that will consume it has landed. Core-level wiring, HRDY,
+physical pin strobes, and asynchronous CDC remain future work. CF is stored
+but has no cache to flush.
 
 ## Video / display (timing integrated)
 
@@ -417,9 +437,9 @@ also awaits service by the memory arbiter.
 ## Current implementation gaps
 
 - Original-pin external-bus phase generation, LRDY validation, reset
-  initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
-- Host/local-memory arbitration, HRDY/pin timing/CDC, and internally completed
-  I/O accesses.
+  initialization, cache, and integration of the landed local-cycle arbiter.
+- Host/local-memory fabric wiring, HRDY/pin timing/CDC, and internally
+  completed I/O accesses.
 - Remaining non-host I/O side effects.
 - DRAM- and screen-refresh request service in the memory fabric; VCLK/CDC,
   external sync, interlace, physical VRAM transfer, and pixel output.

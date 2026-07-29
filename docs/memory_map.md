@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal video timing, and live DPYADR
-> implemented through Task 0144**. The core issues bit-addressed 1–32-bit
+> implemented through Task 0145**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > Original-pin local-bus timing and several I/O side effects remain open.
@@ -30,7 +30,16 @@ read/modify/write for a partial first or last word. These combinations give
 the guide's exact seven cases A–G. Read results are masked and right
 justified. `word_rmw_lock_o` covers each partial-word read through its
 matching write acknowledge, without incorrectly locking the gaps between
-different words.
+different words. Task 0145 adds the HOLD restart input: if HOLD is accepted
+after a partial read but before its write begins, that write is suppressed and
+the complete RMW pair repeats.
+
+`rtl/memory/tms34010_bus_arbiter.sv` implements the §11.3 fixed order of
+external HOLD, screen refresh, DRAM refresh, host indirect, and CPU/graphics.
+An active controller cycle retains ownership through acknowledge. CPU
+partial-word RMW pairs retain a reservation across the read/write boundary;
+different field words remain preemptable. A one-clock DRAM-refresh event is
+captured with its row/mode until serviced.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -106,8 +115,8 @@ order. Processor accesses cause no indirect side effect.
 Task 0144 instantiates the engine in the I/O/core path. Processor and host
 therefore observe the same HSTADR/HSTDATA state, while the host's indirect
 aligned-word request leaves the core on a held request/ack client. It is not
-yet connected to the shared local-memory arbiter. I/O accesses still rely on
-an external request/ack cycle as documented in A0028.
+yet wired to the Task 0145 local-memory arbiter. I/O accesses still rely on an
+external request/ack cycle as documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -153,15 +162,16 @@ or the combined HSTCTL register and exposes active-low HINT.
 `tms34010_host_if` owns HSTADR/HSTDATA storage and side effects while passing
 HSTCTL through to the I/O register owner. These represent completed
 core-clock-domain transactions, not an asynchronous original-pin bus.
-Memory arbitration, physical pin timing/CDC, and HRDY generation remain open.
+Arbiter/client integration, physical pin timing/CDC, and HRDY generation
+remain open.
 
 ## Display / video memory behavior
 
 The original device interacts with VRAM through random-access and serial-shift
 cycles. The current repository now schedules and holds the screen-refresh
 client request with raw SRFADR/DPYTAP, but has no physical VRAM
-memory-to-register cycle, serial-output model, pixel output, or arbitration
-with core and graphics accesses.
+memory-to-register cycle, serial-output model, pixel output, or integration
+with the landed local-cycle arbiter.
 
 ## Uncertain / partially implemented areas
 
@@ -169,6 +179,6 @@ with core and graphics accesses.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
-- Host local-memory arbitration, HRDY/pin timing, and CDC.
+- Host local-memory arbiter wiring, HRDY/pin timing, and CDC.
 - Dedicated VCLK/CDC, external-sync/interlace timing, display-address
   generation, and VRAM shift-register behavior.

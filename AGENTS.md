@@ -12,7 +12,7 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0144. Task 0124
+The functional implementation is complete through Task 0145. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -50,7 +50,10 @@ including LBL byte ordering, INCR/INCW sequencing, prefetch buffering,
 backpressure, and held local-word requests. Task 0144 integrated that engine
 with the I/O/core hierarchy, shared its state with processor accesses,
 generalized the core boundary to all four host registers, and exposed its
-held local-word client for the memory arbiter. The
+held local-word client for the memory arbiter. Task 0145 landed the
+specification-priority HOLD/screen/DRAM/host/CPU arbiter, retained pulsed
+DRAM-refresh events, reserved CPU partial-word RMW pairs, and implemented the
+required complete-pair restart when HOLD intervenes between read and write. The
 implementation includes the
 multicycle CPU core, the currently tracked instruction set, bit-field memory
 operations, graphics
@@ -59,9 +62,9 @@ registers, reset-vector fetch, maskable/NMI entry with architectural
 service-context ST initialization, and the illegal-opcode trap. Video timing
 is functionally integrated through its screen-refresh client; a dedicated
 VCLK/CDC boundary, external sync, interlace, and the physical VRAM transfer
-cycle remain future work. Physical refresh service and host/local arbitration
-remain part of the future memory fabric; HRDY and the asynchronous host pin
-wrapper also remain future work. Read `tasks.md`,
+cycle remain future work. Physical refresh service, client/arbiter/controller
+integration, HRDY, and the asynchronous host pin wrapper remain future
+memory-fabric work. Read `tasks.md`,
 `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 
@@ -118,6 +121,8 @@ RTL, tests, task log, changelog, and specification first.
   typedefs; do not scatter magic architectural values through the RTL.
 - `rtl/memory/tms34010_field_sequencer.sv` — synthesizable translation from
   core bit fields to aligned 16-bit physical-word requests.
+- `rtl/memory/tms34010_bus_arbiter.sv` — fixed-priority local-cycle owner,
+  refresh-event retention, CPU RMW reservation, and HOLD restart signaling.
 - `rtl/cdc/tms34010_sync_bit.sv` — dedicated, Quartus-recognizable two-flop
   synchronizer used for each asynchronous external interrupt level.
 - `sim/models/sim_memory_model.sv` — behavioral, nonsynthesizable bit-addressed

@@ -78,6 +78,7 @@ module sim_memory_model
     .word_wdata_o    (word_wdata),
     .word_rdata_i    (word_rdata),
     .word_ack_i      (word_ack),
+    .word_restart_i  (1'b0),
     .word_rmw_lock_o ()
   );
 

@@ -66,7 +66,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   words, giving the guide's exact seven alignment cases A–G.
 - **Atomicity**: Each partial-word read/modify/write pair exposes one
   indivisible `word_rmw_lock_o` interval. The lock may drop between different
-  words of a multiword field, as §11.3 permits arbitration there.
+  words of a multiword field, as §11.3 permits arbitration there. Task 0145
+  implements the documented HOLD exception: a HOLD accepted after the read
+  but before the write restarts the complete pair.
 - **Regression evidence**: `tb_field_sequencer` verifies all A–G write
   sequences, one/two/three-word reads, arbitrary word-side stalls, stable
   request payload, and reset recovery. `tb_mem_field` verifies the retained
@@ -572,7 +574,36 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Task 0144 checkpoint**: the engine is now instantiated in the I/O block.
   One generalized core request/ack port selects all four host registers,
   processor accesses share its HSTADR/HSTDATA state, and its held aligned-word
-  client is exposed for the future arbiter.
+  client is exposed. Task 0145 lands the standalone arbiter contract; wiring
+  this client through it remains memory-fabric integration work.
+
+## A0038 — Local-cycle arbitration and refresh-event retention
+- **Date**: 2026-07-28 (Task 0145).
+- **Status**: specification-derived priority/atomicity with an isolated
+  one-entry FPGA event-retention bound.
+- **Source**: 1988 TI TMS34010 User's Guide §11.3, page 11-4.
+- **Specification-derived behavior**: local-memory ownership descends from
+  external HOLD to screen refresh, DRAM refresh, host indirect, and finally
+  CPU/graphics. A physical cycle already in progress always completes before
+  a new owner begins. CPU partial-word read/modify/write is indivisible among
+  ordinary clients, but higher-priority work may run between different words
+  of a multiword field. HOLD is the sole exception: if accepted between the
+  partial read and its write, the complete RMW pair restarts after release.
+- **FPGA transaction boundary**: `tms34010_bus_arbiter` registers the active
+  owner and holds one abstract cycle kind plus client payload until controller
+  acknowledge. Selection and the return to idle may add internal bubble
+  clocks; no original LCLK/LAD/RAS/CAS phase or cycle-count claim is made.
+- **Refresh retention bound**: REFCNT produces a one-clock event every 32 or
+  64 local clocks. The arbiter captures one pending row/mode. A new event can
+  replace a just-retired event on the same edge, but an additional event while
+  one is already pending is not queued. The physical controller and external
+  HOLD user must therefore complete service before the next interval; an
+  overlong HOLD already violates the guide's refresh-availability constraint.
+  This bound must be validated when the physical controller lands.
+- **Regression evidence**: `tb_bus_arbiter` locks the full priority order,
+  active-owner/payload retention, response routing, and pulsed-refresh capture.
+  `tb_bus_arbiter_rmw` integrates the real field sequencer and locks the
+  ordinary RMW reservation, legal inter-word preemption, and HOLD restart.
 
 ## A0037 — Synchronous host-indirect boundary and invalid-access collisions
 - **Date**: 2026-07-28 (Task 0143).

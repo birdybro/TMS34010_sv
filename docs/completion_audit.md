@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0144, with strict RTL
+> Baseline: functional implementation through Task 0145, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -122,6 +122,15 @@ the engine-owned state without indirect side effects; and the engine's held
 aligned-word client leaves the core. The remaining host-memory work is
 arbiter service plus the asynchronous pin/HRDY/CDC wrapper.
 
+Task 0145 landed the specification-priority local-cycle arbiter from §11.3.
+Registered ownership enforces HOLD, screen, DRAM refresh, host, then CPU
+priority without truncating an active cycle. A one-entry latch retains the
+pulsed DRAM-refresh row/mode through contention. CPU partial-word RMW pairs
+remain indivisible, while different words of one field are preemptable; HOLD
+between the partial read and write suppresses that write and restarts the
+complete pair after release. Physical cycle generation and integration of the
+landed clients with this arbiter remain in the memory-fabric gate.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -155,8 +164,8 @@ deliberate non-pin-compatible boundary.
 - Connect the landed field sequencer to an original-pin local memory-cycle
   controller: row/column/address/data phases, LRDY-controlled waits, and the
   eight post-reset RAS-only initialization cycles.
-- Add arbitration among CPU/graphics, display, refresh, and host clients with
-  specification-derived priority and request-hold rules.
+- Integrate the landed specification-priority arbiter with the CPU/graphics,
+  display, refresh, and host clients plus the physical controller.
 - Service the held screen-refresh client with the highest-priority physical
   VRAM memory-to-register cycle and completion acknowledge.
 - Service the exported refresh request in the local-memory arbiter/controller,
@@ -192,8 +201,8 @@ deliberate non-pin-compatible boundary.
    named test.
 3. Complete I/O side effects and every interrupt source.
 4. Land the pin-level local memory controller, refresh, host, and arbitration
-   fabric with LRDY/reset tests. Task 0136 has completed its field-to-word
-   sequencing prerequisite.
+   fabric with LRDY/reset tests. Task 0136 completed field-to-word sequencing,
+   and Task 0145 completed the standalone priority/RMW arbitration engine.
 5. Integrate video/display memory and CDC with frame-level tests.
 6. Land the Cyclone V project and close synthesis, fit, setup, and hold.
 7. Run strict lint, every self-checking simulation, the real Quartus flow,

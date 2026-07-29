@@ -2,10 +2,12 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0144. Task 0144
-integrated the four-register host engine into the I/O/core hierarchy, made
-HSTADR/HSTDATA common processor/host state, and exposed its held local-word
-client for the future arbiter. Task 0143
+The functional implementation is complete through Task 0145. Task 0145
+landed the fixed-priority local-cycle arbiter with active-owner retention,
+DRAM-refresh event capture, CPU RMW reservation, inter-word preemption, and
+the HOLD restart exception. Task 0144 integrated the four-register host
+engine into the I/O/core hierarchy, made HSTADR/HSTDATA common processor/host
+state, and exposed its held local-word client. Task 0143
 implemented the synchronous HSTADR/HSTDATA indirect engine with LBL byte
 completion, prefetch buffering, INCR/INCW ordering, held local-word requests,
 and host backpressure. Task 0142
@@ -4733,6 +4735,52 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 77feb2f
+
+---
+
+### Task 0145: Implement specification-priority local-bus arbitration
+Status: complete
+Dependencies:
+- Task 0136 (aligned 16-bit field sequencer and per-word RMW lock).
+- Task 0138 (one-clock DRAM-refresh request plus row/mode).
+- Task 0141 (held screen-refresh request and payload).
+- Task 0144 (held host-indirect aligned-word client).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §11.3, page 11-4
+  (HOLD/screen/DRAM/host/CPU priority, active-cycle completion,
+  partial-word RMW indivisibility, inter-word preemption, and HOLD restart).
+Acceptance Criteria:
+- Add a synthesizable registered-owner arbiter with the exact fixed priority:
+  external HOLD, screen refresh, DRAM refresh, host indirect, CPU/graphics.
+- Hold an issued controller-facing cycle and all payload stable through
+  acknowledge even if a higher-priority request arrives.
+- Capture a one-clock DRAM-refresh request with its row/mode until physical
+  completion and preserve a same-edge replacement event.
+- Reserve the CPU between the selected partial-word read and its matching
+  write, while permitting higher-priority service between different words of
+  a multiword field.
+- Accept HOLD only after an active cycle completes; if it intervenes between
+  the partial read and write, suppress the not-yet-issued write and restart
+  the complete RMW pair after release.
+- Keep the output as an abstract local-cycle contract; leave LAD/RAS/CAS/LRDY
+  phase generation and full core/client integration to following tasks.
+Tests:
+- `tb_bus_arbiter` PASS (reset, full fixed-priority chain, HOLD retention,
+  response routing, active-cycle/payload stability, pulsed DRAM capture, and
+  same-edge refresh-event replacement).
+- `tb_bus_arbiter_rmw` PASS (real field-sequencer RMW reservation, legal
+  inter-word host preemption, active-read completion, and HOLD pair restart).
+- `tb_field_sequencer` PASS (all alignment cases and existing stall/reset
+  behavior with the new restart input inactive).
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 133/133 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0144. Task 0124
+Functional implementation work is complete through Task 0145. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -43,6 +43,9 @@ INCR/INCW address sequencing, prefetch buffering, and held local-word
 requests. Task 0144 integrated that engine with the processor-visible I/O
 registers and replaced the temporary HSTCTL-only core boundary with one
 synchronous four-register host port plus an exposed held local-word client.
+Task 0145 added the specification-priority local-bus arbiter, including
+held-owner completion, pulsed DRAM-refresh retention, CPU partial-word RMW
+reservation, inter-word preemption, and the external-HOLD restart exception.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -63,19 +66,21 @@ The repository currently contains:
   incrementing, stalled-request stability, and an exposed local-word client;
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
 - a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
-  partial-word RMW locking, and arbitrary word-side stalls;
+  partial-word RMW locking/restart, and arbitrary word-side stalls;
+- a synthesizable fixed-priority HOLD/screen/DRAM/host/CPU local-cycle
+  arbiter with held grants and a captured DRAM-refresh event;
 - integrated same-clock internal/noninterlaced video timing with live
   HCOUNT/VCOUNT, DPYCTL.ENV blanking, DIP, live DPYADR and held
   screen-refresh scheduling, and core timing/client outputs, plus integrated
   REFCNT/refresh-request generation;
-- 131 self-checking SystemVerilog testbenches, including an exhaustive
+- 133 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
-the audit records the remaining pin-level local-bus controller, host pin
-wrapper/HRDY/CDC, bus arbitration and physical refresh service, remaining I/O
-side effects, video display-memory behavior and VCLK/CDC, real Quartus
-project/constraints, and timing/resource validation.
+the audit records the remaining pin-level local-bus controller, arbiter/client
+fabric integration and physical refresh service, host pin wrapper/HRDY/CDC,
+remaining I/O side effects, video display-memory behavior and VCLK/CDC, real
+Quartus project/constraints, and timing/resource validation.
 
 ## Getting started
 
