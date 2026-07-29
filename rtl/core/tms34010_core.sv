@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0135.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0137.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -45,6 +45,14 @@ module tms34010_core
   // future pin/bus wrapper.
   input  logic                                run_emu_n_i,
   output logic                                emua_n_o,
+
+  // Interrupt-source boundary. LINT pins are raw asynchronous active-low
+  // levels and are synchronized internally. Host/display set inputs are
+  // core-clock pulses from their future integration wrappers.
+  input  logic                                lint1_n_i,
+  input  logic                                lint2_n_i,
+  input  logic                                host_int_set_i,
+  input  logic                                dpyint_set_i,
 
   // Observability for testbenches (Phase 0..3 — may move to an
   // sva/observability bundle later).
@@ -2300,7 +2308,11 @@ module tms34010_core
     .intpend_o(io_intpend),
     .hstctlh_o(io_hstctlh),
     .nmi_clear(nmi_clear),
-    .wvp_set  (wvp_set)
+    .wvp_set  (wvp_set),
+    .dpyint_set(dpyint_set_i),
+    .host_int_set(host_int_set_i),
+    .lint1_n_i(lint1_n_i),
+    .lint2_n_i(lint2_n_i)
   );
 
   // ---- Maskable-interrupt priority encoder (Task 0100) --------------------

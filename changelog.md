@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0137 — interrupt-pending source semantics)
+- Implemented the User's Guide pages 6-36 through 6-42 register contract:
+  INTPEND.X1P/X2P are read-only active-low pin reflections, HIP is the
+  read-only HSTCTLL.INTIN reflection, and DIP/WVP are hardware-set latches
+  cleared only by writing zero.
+- Added dedicated Quartus-recognizable two-flop synchronizers for LINT1 and
+  LINT2, exposed raw active-low pins at the core boundary, and added
+  synchronous host/display set sidebands for later producer integration.
+- Made a coincident internal set win over a processor clear, masked INTENB
+  reserved bits, and implemented the processor side of HSTCTLL INTIN,
+  MSGOUT, and INTOUT writes.
+- Added `tb_io_interrupts` for source/register semantics and
+  `tb_external_interrupts` for LINT2 vectoring plus LINT1-over-LINT2 priority;
+  updated display-interrupt integration tests to request DIP through hardware.
+- Validation: focused interrupt/I/O benches PASS; `scripts/lint.sh` clean;
+  full regression 123/123 PASS.
+
 ### Added (Task 0136 — architectural field-to-word sequencing)
 - Resolved A0005 from the 1988 User's Guide §§3.1, 4.1, and 11.3 and added
   `tms34010_field_sequencer`, which expands one bit-addressed 1–32-bit request

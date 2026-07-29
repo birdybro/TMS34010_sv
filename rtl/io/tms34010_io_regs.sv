@@ -15,16 +15,17 @@
 // the host interface, which this FPGA reimplementation does not yet model;
 // resetting every register to 0 is therefore correct here.
 //
-// Current scope (Tasks 0081–0117):
-//   - Plain read/write storage for all 32 registers. This is exactly correct
+// Current scope (Tasks 0081–0137):
+//   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
 //   - Dedicated taps drive graphics and interrupt control. Sideband inputs
-//     auto-clear HSTCTLH.NMI after entry and set INTPEND.WV on a window event.
-//   - Registers whose real silicon behavior is read-only or has write side
-//     effects (HCOUNT/VCOUNT/REFCNT/DPYADR are driven by video timing;
-//     INTPEND bits are write-to-clear) are MODELLED AS PLAIN STORAGE for now.
-//     Video/refresh/host integration and remaining side effects are open.
+//     auto-clear HSTCTLH.NMI and set the internal interrupt latches.
+//   - INTPEND implements the source-specific semantics from pages 6-41/6-42:
+//     synchronized read-only external levels, read-only HSTCTLL.INTIN, and
+//     hardware-set/write-zero-to-clear DIP/WVP latches.
+//   - HCOUNT/VCOUNT/REFCNT/DPYADR remain ordinary storage until their
+//     video/refresh producers are integrated.
 //
 // Port shape:
 //   - Synchronous active-high reset (assumption A0003), all registers -> 0.
@@ -66,8 +67,12 @@ module tms34010_io_regs
   output logic [15:0]           intenb_o, // INTENB: maskable-interrupt enables
   output logic [15:0]           intpend_o,// INTPEND: maskable-interrupt pending bits
   output logic [15:0]           hstctlh_o,// HSTCTLH: host control (NMI/NMIM in bits 8/9)
-  input  logic                  nmi_clear,// 1-cycle: clear HSTCTLH.NMI (device took NMI)
-  input  logic                  wvp_set   // 1-cycle: set INTPEND.WV (window violation)
+  input  logic                  nmi_clear,     // clear HSTCTLH.NMI after NMI entry
+  input  logic                  wvp_set,       // synchronous INTPEND.WVP set pulse
+  input  logic                  dpyint_set,    // synchronous INTPEND.DIP set pulse
+  input  logic                  host_int_set,  // synchronous HSTCTLL.INTIN set pulse
+  input  logic                  lint1_n_i,     // asynchronous, active-low LINT1 pin
+  input  logic                  lint2_n_i      // asynchronous, active-low LINT2 pin
 );
 
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
@@ -80,9 +85,49 @@ module tms34010_io_regs
   // Register storage.
   logic [15:0] io_reg [0:IO_REG_COUNT-1];
 
+  logic lint1_n_sync;
+  logic lint2_n_sync;
+  logic [15:0] intpend_value;
+
+  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_lint1_sync (
+    .clk     (clk),
+    .rst     (rst),
+    .async_i (lint1_n_i),
+    .sync_o  (lint1_n_sync)
+  );
+
+  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_lint2_sync (
+    .clk     (clk),
+    .rst     (rst),
+    .async_i (lint2_n_i),
+    .sync_o  (lint2_n_sync)
+  );
+
+  // INTPEND is a composite view, not general storage. External requests and
+  // HIP are read-only levels; only the internal DIP/WVP latches use io_reg.
+  always_comb begin
+    intpend_value = 16'h0000;
+    intpend_value[INT_X1_BIT] = ~lint1_n_sync;
+    intpend_value[INT_X2_BIT] = ~lint2_n_sync;
+    intpend_value[INT_HI_BIT] =
+        io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT];
+    intpend_value[INT_DI_BIT] =
+        io_reg[IO_IDX_INTPEND][INT_DI_BIT];
+    intpend_value[INT_WV_BIT] =
+        io_reg[IO_IDX_INTPEND][INT_WV_BIT];
+  end
+
   // Async read: the selected register, or 0 when the address is not in
   // I/O space (so a non-I/O read contributes nothing to a merged read bus).
-  assign rdata = is_io ? io_reg[idx] : 16'h0;
+  always_comb begin
+    rdata = 16'h0000;
+    if (is_io) begin
+      if (idx == IO_IDX_INTPEND)
+        rdata = intpend_value;
+      else
+        rdata = io_reg[idx];
+    end
+  end
 
   // Dedicated graphics taps.
   assign psize_o   = io_reg[IO_IDX_PSIZE];
@@ -91,7 +136,7 @@ module tms34010_io_regs
   assign control_o = io_reg[IO_IDX_CONTROL];
   assign pmask_o   = io_reg[IO_IDX_PMASK];
   assign intenb_o  = io_reg[IO_IDX_INTENB];
-  assign intpend_o = io_reg[IO_IDX_INTPEND];
+  assign intpend_o = intpend_value;
   assign hstctlh_o = io_reg[IO_IDX_HSTCTLH];
 
   // Synchronous write + reset. The reset loop is bounded (32 iterations) and
@@ -101,18 +146,57 @@ module tms34010_io_regs
       for (int i = 0; i < IO_REG_COUNT; i++) begin
         io_reg[i] <= 16'h0;
       end
-    end else if (req && we && is_io) begin
-      io_reg[idx] <= wdata;
-    end else if (nmi_clear) begin
-      // The device automatically clears HSTCTLH.NMI when it takes the NMI
-      // (1988 UG §8). A normal I/O write takes precedence (the else-if order):
-      // simultaneous host write + take is a don't-care corner.
-      io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
-    end else if (wvp_set) begin
-      // The graphics engine sets INTPEND.WV on a window violation (1988 UG
-      // §7.10). Like nmi_clear, this is a device-internal set, lower priority
-      // than a host/program I/O write.
-      io_reg[IO_IDX_INTPEND][INT_WV_BIT] <= 1'b1;
+    end else begin
+      if (req && we && is_io) begin
+        unique case (idx)
+          IO_IDX_INTENB: begin
+            // Reserved bits read zero and cannot create interrupt sources.
+            io_reg[IO_IDX_INTENB] <= wdata & INT_SOURCE_MASK;
+          end
+
+          IO_IDX_INTPEND: begin
+            // DIP/WVP are cleared only by writing zero. Writing one retains
+            // the old latch; X1P/X2P/HIP and reserved bits are read-only.
+            io_reg[IO_IDX_INTPEND][INT_DI_BIT] <=
+                io_reg[IO_IDX_INTPEND][INT_DI_BIT]
+                & wdata[INT_DI_BIT];
+            io_reg[IO_IDX_INTPEND][INT_WV_BIT] <=
+                io_reg[IO_IDX_INTPEND][INT_WV_BIT]
+                & wdata[INT_WV_BIT];
+          end
+
+          IO_IDX_HSTCTLL: begin
+            // Processor-side HSTCTLL rules (pages 6-36/6-37): MSGIN is
+            // read-only, zero clears INTIN, MSGOUT is writable, and one sets
+            // INTOUT. Host-side complementary operations land with host_if.
+            io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <=
+                io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT]
+                & wdata[HSTCTL_INTIN_BIT];
+            io_reg[IO_IDX_HSTCTLL][6:4] <= wdata[6:4];
+            io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <=
+                io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT]
+                | wdata[HSTCTL_INTOUT_BIT];
+          end
+
+          default: io_reg[idx] <= wdata;
+        endcase
+      end
+
+      // Internal/host set pulses are independent of an unrelated processor
+      // write. A set after a same-cycle write-zero clear wins, preventing an
+      // interrupt event from being lost at the register boundary.
+      if (dpyint_set)
+        io_reg[IO_IDX_INTPEND][INT_DI_BIT] <= 1'b1;
+      if (wvp_set)
+        io_reg[IO_IDX_INTPEND][INT_WV_BIT] <= 1'b1;
+      if (host_int_set)
+        io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <= 1'b1;
+
+      // Retain the existing precedence for a simultaneous processor write to
+      // HSTCTLH; otherwise interrupt entry automatically clears NMI.
+      if (nmi_clear
+          && !(req && we && is_io && (idx == IO_IDX_HSTCTLH)))
+        io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
     end
   end
 

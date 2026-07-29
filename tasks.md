@@ -2,7 +2,10 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0136. Task 0118
+The functional implementation is complete through Task 0137. Task 0137
+closed the interrupt-register/source portion of exit gate 3 by implementing
+every maskable pending source, the external-pin synchronizers, and the exact
+processor-side register rules. Task 0118
 reconciled the repository for continued work, Task 0119 made every tracked
 testbench part of one strict local validation gate, and Task 0120 closed the
 two explicitly tracked multiword MOVB gaps. Task 0121 began the remaining
@@ -167,6 +170,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0134 | Correct SUBXY signed comparison semantics | complete |
 | 0135 | Complete the instruction status audit | complete |
 | 0136 | Sequence architectural fields onto 16-bit memory words | complete |
+| 0137 | Complete interrupt-pending source semantics | complete |
 
 ---
 
@@ -4351,6 +4355,48 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 789eef2
+
+---
+
+### Task 0137: Complete interrupt-pending source semantics
+Status: complete
+Dependencies:
+- Task 0081 (I/O register file).
+- Task 0100 (maskable-interrupt entry).
+- Task 0136 (current completion baseline).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 6-36 through 6-42
+  (HSTCTLL.INTIN, INTENB, and INTPEND register semantics).
+- 1988 TI TMS34010 User's Guide §§8.1 through 8.4, pages 8-2 through 8-5
+  (source priority, active-low external interrupts, and vectors).
+- SPVS002C TMS34010 data sheet local-interrupt timing requirements.
+Acceptance Criteria:
+- Synchronize the active-low LINT1/LINT2 pins through dedicated, recognized
+  two-flop synchronizers and expose their level-sensitive state as read-only
+  INTPEND.X1P/X2P bits.
+- Make INTPEND.HIP a read-only reflection of HSTCTLL.INTIN; provide
+  synchronous host/display source sidebands for later host/video integration.
+- Implement DIP and WVP as hardware-set latches for which a processor write
+  of zero clears and a write of one has no effect; a coincident set wins.
+- Restrict INTENB to its five implemented enable bits and retain the
+  specification-derived priority/vector behavior.
+- Exercise each maskable source through the I/O register boundary and verify
+  external interrupt entry at the core boundary.
+Tests:
+- `tb_io_interrupts` PASS (reserved-bit masks, synchronized external levels,
+  read-only X1P/X2P/HIP, independent DIP/WVP clears, and set-over-clear).
+- `tb_external_interrupts` PASS (LINT2 vector and LINT1-over-LINT2 priority).
+- Existing `tb_int_ctrl`, `tb_int_entry`, `tb_int_reti`,
+  `tb_int_priority`, and `tb_io_regs` focused regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 123/123 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

@@ -9,7 +9,7 @@
 // handler; it can only fire once NMI's RETI restores IE=1. So if both handlers
 // ran, RETI'd, and SP returned to its start, the NMI necessarily ran first.
 //
-//   main:  SP; INTENB.DI; INTPEND.DI; HSTCTLH.NMI(NMIM=0); EINT
+//   main:  SP; INTENB.DI; hardware-set DIP; HSTCTLH.NMI(NMIM=0); EINT
 //          <resume: MOVI A7,0x1234> ; halt
 //   NMI ISR (vec 0xFFFFFEE0, word 100):  MOVI A5,0xBEEF ; RETI
 //   DI  ISR (vec 0xFFFFFEA0, word 120):  MOVI A6,0xCAFE ; clear INTPEND ; RETI
@@ -36,12 +36,16 @@ module tb_int_priority;
   logic [ADDR_WIDTH-1:0]         pc_w;
   instr_word_t                   instr_w;
   logic                          illegal_w;
+  logic                          dpyint_set;
 
   tms34010_core u_core (
     .clk(clk), .rst(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_size(mem_size),
     .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
-    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
+    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w),
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(),
+    .lint1_n_i(1'b1), .lint2_n_i(1'b1), .host_int_set_i(1'b0),
+    .dpyint_set_i(dpyint_set)
   );
   sim_memory_model #(.DEPTH_WORDS(1024)) u_mem (
     .clk(clk), .rst(rst),
@@ -90,6 +94,7 @@ module tb_int_priority;
   initial begin : main
     int unsigned p, i;
     failures = 0;
+    dpyint_set = 1'b0;
     for (i = 0; i < 1024; i++) u_mem.mem[i] = 16'h0300;
 
     // NMI ISR (word 100): A5 <- 0xBEEF, RETI.
@@ -112,8 +117,6 @@ module tb_int_priority;
     p = place_word(p, 16'h4C4F);                 // MOVE A2,A15
     p = place_movi_il(p, 4'd0, {16'h0, DI_MASK});
     p = place_store_abs(p, 4'd0, A_INTENB);      // INTENB.DI
-    p = place_movi_il(p, 4'd1, {16'h0, DI_MASK});
-    p = place_store_abs(p, 4'd1, A_INTPEND);     // INTPEND.DI
     p = place_movi_il(p, 4'd4, {16'h0, NMI_REQ});
     p = place_store_abs(p, 4'd4, A_HSTCTLH);     // HSTCTLH.NMI (NMIM=0)
     p = place_word(p, 16'h0D60);                 // EINT
@@ -122,6 +125,10 @@ module tb_int_priority;
 
     repeat (3) @(posedge clk);
     rst = 1'b0;
+    @(negedge clk);
+    dpyint_set = 1'b1;
+    @(negedge clk);
+    dpyint_set = 1'b0;
     repeat (6000) @(posedge clk);
     #1;
 

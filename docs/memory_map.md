@@ -1,7 +1,8 @@
 # Memory map
 
-> Status: **field-to-word translation implemented through Task 0136**. The
-> core issues bit-addressed 1–32-bit accesses, and a synthesizable sequencer
+> Status: **field-to-word translation and interrupt-register semantics
+> implemented through Task 0137**. The core issues bit-addressed 1–32-bit
+> accesses, and a synthesizable sequencer
 > expands them into aligned 16-bit word cycles. The on-chip I/O page is
 > decoded and stored in the core. Original-pin local-bus timing and several
 > I/O side effects remain open.
@@ -76,12 +77,16 @@ address decodes to I/O space when its two MSBs are `11` and bits[29:9] are
 `rtl/io/tms34010_io_regs.sv` implements the register file and is wired into
 the core memory path (Tasks 0081–0082). Graphics-control taps drive PSIZE,
 PMASK, conversion pitch, CONTROL/PPOP, and interrupt behavior. HSTCTLH.NMI is
-auto-cleared on entry and the window engine can set INTPEND.WV.
+auto-cleared on entry. Task 0137 made INTENB reserved bits read zero and
+implemented INTPEND by source: synchronized read-only LINT1/LINT2 levels,
+read-only HSTCTLL.INTIN/HIP, and hardware-set DIP/WVP latches cleared by
+writing zero. Processor-side HSTCTLL writes also obey the INTIN, MSGOUT, and
+INTOUT restrictions on pages 6-36/6-37.
 
 The remaining register semantics are incomplete: video/refresh counters are
-not driven into HCOUNT/VCOUNT/REFCNT/DPYADR, most read-only/write-to-clear
-rules are still plain storage behavior, and I/O accesses still rely on an
-external request/ack cycle as documented in A0028.
+not driven into HCOUNT/VCOUNT/REFCNT/DPYADR, host-side HSTCTL behavior is not
+connected, and I/O accesses still rely on an external request/ack cycle as
+documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -100,10 +105,10 @@ external request/ack cycle as documented in A0028.
 | C00000C0 | 0x0C | HSTDATA | host         | Host Data |
 | C00000D0 | 0x0D | HSTADRL | host         | Host Address (LSBs) |
 | C00000E0 | 0x0E | HSTADRH | host         | Host Address (MSBs) |
-| C00000F0 | 0x0F | HSTCTLL | host         | Host Control (LSBs) |
+| C00000F0 | 0x0F | HSTCTLL | host         | CPU clears INTIN, writes MSGOUT, sets INTOUT |
 | C0000100 | 0x10 | HSTCTLH | host         | Host Control (MSBs) |
-| C0000110 | 0x11 | INTENB  | interrupt    | Interrupt Enable |
-| C0000120 | 0x12 | INTPEND | interrupt    | Interrupt Pending (write-to-clear; plain storage for now) |
+| C0000110 | 0x11 | INTENB  | interrupt    | Five source enables; reserved bits read zero |
+| C0000120 | 0x12 | INTPEND | interrupt    | X1P/X2P/HIP read-only; DIP/WVP hardware-set and write-zero-to-clear |
 | C0000130 | 0x13 | CONVSP  | graphics ctl | Source Conversion Pitch |
 | C0000140 | 0x14 | CONVDP  | graphics ctl | Destination Conversion Pitch |
 | C0000150 | 0x15 | PSIZE   | graphics ctl | Pixel Size (1/2/4/8/16) |
@@ -138,6 +143,6 @@ graphics accesses.
 - Original-pin 16-bit local-bus phasing and LRDY wait-state behavior.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
-  yet consumed by graphics/interrupt logic.
+  yet consumed by host/video/refresh logic.
 - Host-visible register access and locking semantics.
 - Video/display address generation and VRAM shift-register behavior.

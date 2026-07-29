@@ -63,7 +63,7 @@ module tb_smoke;
     .state_o         (state_w),
     .pc_o            (pc_w),
     .instr_word_o    (instr_w),
-    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(), .lint1_n_i(1'b1), .lint2_n_i(1'b1), .host_int_set_i(1'b0), .dpyint_set_i(1'b0)
   );
 
   // The model's default level-0 vector is zero, so the first instruction

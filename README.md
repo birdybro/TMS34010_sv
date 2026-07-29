@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0136. Task 0124
+Functional implementation work is complete through Task 0137. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -24,7 +24,10 @@ resolved A0009, corrected divide/modulo and odd-result multiply edge cases,
 and completed W=3/PIXT graphics-window status behavior. Task 0136 resolved
 the remaining field-alignment assumption and added exact
 specification-derived sequencing from 1–32-bit architectural fields onto
-aligned 16-bit physical words. The repository currently contains:
+aligned 16-bit physical words. Task 0137 implemented the source-specific
+INTPEND/INTENB contract, synchronized both active-low external interrupt
+pins, and exposed synchronous host/display request sidebands. The repository
+currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,
@@ -33,19 +36,20 @@ aligned 16-bit physical words. The repository currently contains:
   field-aware MOVE, stack/trap/interrupt operations, and conditional control;
 - PIXT, FILL, PIXBLT, DRAV, and LINE graphics datapaths with pixel processing,
   plane masking, transparency, and all window modes;
-- on-chip I/O-register storage plus maskable and nonmaskable interrupt entry;
+- on-chip I/O-register storage plus every maskable pending-source boundary
+  and maskable/nonmaskable entry path;
 - architectural reset and illegal-opcode vector entry;
 - RUN/EMU sampling, active-low EMUA acknowledgement, halt, and resume;
 - a synthesizable field-to-word sequencer covering §4.1 alignment cases A–G,
   partial-word RMW locking, and arbitrary word-side stalls;
 - standalone video-timing and DRAM-refresh modules;
-- 121 self-checking SystemVerilog testbenches, including an exhaustive
+- 123 self-checking SystemVerilog testbenches, including an exhaustive
   65,536-opcode static status-policy sweep.
 
 This is not yet a complete FPGA system. ISA/status reconciliation is complete;
 the audit records the remaining pin-level local-bus controller, host/memory
-fabric, bus arbitration, I/O side-effect completion, video/refresh integration,
-real Quartus project/constraints, and timing/resource validation.
+fabric, bus arbitration, remaining I/O/host side effects, video/refresh
+integration, real Quartus project/constraints, and timing/resource validation.
 
 ## Getting started
 

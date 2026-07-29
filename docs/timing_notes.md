@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0136, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0137, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -118,6 +118,23 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
   longer, register it or note the exception here.
 - All clock-domain crossings (host interface, video) must be wrapped in
   a CDC primitive (Phase 6 / Phase 9). Listed here when they land.
+
+## Interrupt input CDC
+
+LINT1 and LINT2 are raw asynchronous active-low level inputs. Each passes
+through its own `tms34010_sync_bit` instance: two core-clock flops with no
+combinational logic between them and Quartus `PRESERVE`,
+`SYNCHRONIZER_IDENTIFICATION`, and `useioff=0` attributes. Reset initializes
+both synchronized levels inactive-high. The core therefore observes a pin
+transition after two core-clock sampling edges; this is the FPGA abstraction
+of the guide's one-to-two-state synchronization delay.
+
+The future SDC must mark the pin-to-first-stage paths asynchronous and the
+Quartus metastability report must recognize both chains. Those checks cannot
+be claimed until the real project exists. `host_int_set_i` and
+`dpyint_set_i` are currently synchronous core-clock pulses; host/video
+integration must cross their producer clocks with pulse/toggle handshakes
+rather than feeding raw pulses into a two-flop level synchronizer.
 
 ## Cyclone V-specific notes
 

@@ -8,7 +8,7 @@
 // execution resumes at the instruction that was about to run when the
 // interrupt fired and ST.IE is re-enabled), and SP returns to its start.
 //
-//   main:  set SP, INTENB.DI, INTPEND.DI, EINT
+//   main:  set SP, INTENB.DI, hardware-set INTPEND.DI, EINT
 //          <resume target: MOVI A6,0x1234>   ; skipped on entry, run after RETI
 //          halt
 //   ISR :  clear INTPEND (MOVE 0), MOVI A5,0xBEEF, RETI
@@ -38,12 +38,16 @@ module tb_int_reti;
   logic [ADDR_WIDTH-1:0]         pc_w;
   instr_word_t                   instr_w;
   logic                          illegal_w;
+  logic                          dpyint_set;
 
   tms34010_core u_core (
     .clk(clk), .rst(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_size(mem_size),
     .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
-    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
+    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w),
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(),
+    .lint1_n_i(1'b1), .lint2_n_i(1'b1), .host_int_set_i(1'b0),
+    .dpyint_set_i(dpyint_set)
   );
 
   sim_memory_model #(.DEPTH_WORDS(1024)) u_mem (
@@ -95,6 +99,7 @@ module tb_int_reti;
   initial begin : main
     int unsigned p, i;
     failures = 0;
+    dpyint_set = 1'b0;
 
     for (i = 0; i < 1024; i++) u_mem.mem[i] = 16'h0300; // NOP fill
 
@@ -115,8 +120,6 @@ module tb_int_reti;
     p = place_word(p, 16'h4C4F);                // MOVE A2,A15 (SP <- SP_INIT)
     p = place_movi_il(p, 4'd0, {16'h0, DI_MASK});
     p = place_store_abs(p, 4'd0, A_INTENB);     // INTENB.DI <- 1
-    p = place_movi_il(p, 4'd1, {16'h0, DI_MASK});
-    p = place_store_abs(p, 4'd1, A_INTPEND);    // INTPEND.DI <- 1
     p = place_word(p, 16'h0D60);                // EINT
     // Resume target: skipped on entry, executed after RETI returns here.
     p = place_movi_il(p, 4'd6, 32'h0000_1234);
@@ -124,6 +127,10 @@ module tb_int_reti;
 
     repeat (3) @(posedge clk);
     rst = 1'b0;
+    @(negedge clk);
+    dpyint_set = 1'b1;
+    @(negedge clk);
+    dpyint_set = 1'b0;
     repeat (4000) @(posedge clk);
     #1;
 

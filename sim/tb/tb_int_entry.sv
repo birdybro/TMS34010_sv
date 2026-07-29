@@ -14,10 +14,10 @@
 // TRAP push.) NMI/host (HSTCTL) interrupts are separate and not covered here.
 //
 // Test plan (DI = display interrupt, bit 10, vector 0xFFFFFEA0):
-//   - Set SP, write INTENB.DI and INTPEND.DI via MOVE absolute to I/O space,
-//     then PUTST a distinguishable word with IE=1. The next fetch must divert
-//     into the entry sequence (the marker MOVI A6 right after PUTST must not
-//     run).
+//   - Set SP and INTENB.DI via MOVE absolute, pulse the display-timing
+//     sideband that latches INTPEND.DI, then PUTST a distinguishable word with
+//     IE=1. The next fetch must divert into the entry sequence (the marker
+//     MOVI A6 right after PUTST must not run).
 //   - The ISR at word 100 writes A5 = 0xBEEF and halts.
 //   Verify: A5 = 0xBEEF (PC reached the vector), A6 = 0 (marker skipped),
 //   SP = SP-64, pushed PC = marker address, pushed ST = old ST (IE=1),
@@ -44,12 +44,16 @@ module tb_int_entry;
   logic [ADDR_WIDTH-1:0]         pc_w;
   instr_word_t                   instr_w;
   logic                          illegal_w;
+  logic                          dpyint_set;
 
   tms34010_core u_core (
     .clk(clk), .rst(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_size(mem_size),
     .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
-    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o()
+    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w),
+    .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(),
+    .lint1_n_i(1'b1), .lint2_n_i(1'b1), .host_int_set_i(1'b0),
+    .dpyint_set_i(dpyint_set)
   );
 
   // 1024 words → word_idx = mem_addr[13:4]. DI vector 0xFFFFFEA0 aliases to
@@ -100,8 +104,6 @@ module tb_int_entry;
   localparam logic [DATA_WIDTH-1:0] PRE_INT_ST = 32'hF0E0_0C3F;
   localparam logic [31:0] A_INTENB =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_INTENB) << 4); // C0000110
-  localparam logic [31:0] A_INTPEND =
-      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_INTPEND) << 4); // C0000120
   localparam logic [15:0] DI_MASK   = 16'(1 << INT_DI_BIT);                 // 0x0400
   localparam int unsigned VEC_WORD_LO = 1002;
   localparam int unsigned VEC_WORD_HI = 1003;
@@ -110,6 +112,7 @@ module tb_int_entry;
     int unsigned p, i, marker_word;
     logic [DATA_WIDTH-1:0] pushed_pc, pushed_st;
     failures = 0;
+    dpyint_set = 1'b0;
 
     for (i = 0; i < 1024; i++) u_mem.mem[i] = 16'h0300; // NOP fill
 
@@ -130,9 +133,6 @@ module tb_int_entry;
     // INTENB.DI <- 1 (enable display interrupt).
     p = place_movi_il(p, 4'd0, {16'h0, DI_MASK});
     p = place_store_abs(p, 4'd0, A_INTENB);
-    // INTPEND.DI <- 1 (request a display interrupt).
-    p = place_movi_il(p, 4'd1, {16'h0, DI_MASK});
-    p = place_store_abs(p, 4'd1, A_INTPEND);
     // Install a nondefault ST whose IE bit is set. The interrupt must be
     // taken at the next fetch boundary after PUTST.
     p = place_movi_il(p, 4'd3, PRE_INT_ST);
@@ -146,6 +146,13 @@ module tb_int_entry;
     repeat (3) @(posedge clk);
     #1;
     rst = 1'b0;
+    // Display timing is not integrated yet; emulate its one-cycle hardware
+    // request. DIP latches even while disabled and survives until software
+    // writes zero to INTPEND.
+    @(negedge clk);
+    dpyint_set = 1'b1;
+    @(negedge clk);
+    dpyint_set = 1'b0;
     repeat (3000) @(posedge clk);
     #1;
 

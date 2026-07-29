@@ -11,7 +11,7 @@
 // Spec source: third_party/TMS34010_Info/docs/ti-official/
 //              1988_TI_TMS34010_Users_Guide.pdf
 //
-// Current through Task 0136: architectural widths and register layouts,
+// Current through Task 0137: architectural widths and register layouts,
 // instruction/control types, I/O fields, interrupt vectors, and the CPU/
 // graphics FSM states plus physical-memory word geometry are defined here.
 // -----------------------------------------------------------------------------
@@ -332,6 +332,12 @@ package tms34010_pkg;
   parameter int unsigned INT_HI_BIT = 9;   // host interrupt
   parameter int unsigned INT_DI_BIT = 10;  // display interrupt
   parameter int unsigned INT_WV_BIT = 11;  // window violation
+  parameter logic [15:0] INT_SOURCE_MASK =
+      (16'h0001 << INT_X1_BIT)
+    | (16'h0001 << INT_X2_BIT)
+    | (16'h0001 << INT_HI_BIT)
+    | (16'h0001 << INT_DI_BIT)
+    | (16'h0001 << INT_WV_BIT);
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_X1 = 32'hFFFF_FFC0; // trap 1
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_X2 = 32'hFFFF_FFA0; // trap 2
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_HI = 32'hFFFF_FEC0; // trap 9
@@ -345,6 +351,8 @@ package tms34010_pkg;
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_NMI   = 32'hFFFF_FEE0; // trap 8
   parameter int unsigned           HSTCTL_NMI_BIT  = 8;  // HSTCTLH: NMI request
   parameter int unsigned           HSTCTL_NMIM_BIT = 9;  // HSTCTLH: NMI mode (1=no push)
+  parameter int unsigned           HSTCTL_INTIN_BIT  = 3; // HSTCTLL: host-to-GSP IRQ
+  parameter int unsigned           HSTCTL_INTOUT_BIT = 7; // HSTCTLL: GSP-to-host IRQ
 
   // CONTROL register bit fields (1988 UG page 4-? CONTROL register).
   parameter int unsigned CTRL_T_BIT    = 5;   // pixel transparency enable

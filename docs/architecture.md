@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0136, with
+> Status: **implemented and ISA/status-audited through Task 0137, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -85,7 +85,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0135** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, interrupts, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0137** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -103,7 +103,8 @@ has not landed.
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
 | `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed + wired** | 32×16-bit memory-mapped I/O register file (1988 UG Fig 6-1); plain R/W storage, I/O-space decode + index. Instantiated inside the core (Task 0082): I/O-space accesses are serviced on-chip — external write gated off, read data muxed/latched in. Side-effect/read-only register behaviors deferred (A0028). |
+| `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0137** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact INTENB/INTPEND source semantics, and processor-side HSTCTLL restrictions; host/video/refresh producer integration remains |
 | `rtl/video/tms34010_video.sv`           | 9     | **landed (standalone)** | HSYNC/VSYNC/blanking generator: free-running HCOUNT/VCOUNT off VCLK, wraps at HTOTAL/VTOTAL, sync/blank window compares, DPYINT scan-line strobe. Not yet wired to the I/O register timing values or a pixel clock (Task 0097). |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **landed (standalone)** | DRAM-refresh address generator: prescaler off CONTROL.RR (every 32/64 clocks, or disabled), 8-bit REFCNT row counter, one-clock refresh strobe (Task 0099). Not yet wired to the memory arbiter. |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
@@ -143,6 +144,9 @@ XY-destination distinctions. `status_audit.md` records the complete matrix
 and the deterministic handling of Undefined flags. Task 0136 then resolved
 A0005 and landed exact §4.1 field-to-word sequencing, including all seven
 alignment cases, stalls, reset recovery, and per-word RMW indivisibility.
+Task 0137 completed the pending-source half of the I/O/interrupt gate:
+dedicated LINT synchronizers, read-only X1P/X2P/HIP, latched DIP/WVP,
+host/display set sidebands, and core-level external vector/priority tests.
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -238,6 +242,15 @@ to `ST_RESET_VALUE` at `CORE_INT_DONE`. The device auto-clears HSTCTLH.NMI on
 entry (a one-cycle `nmi_clear` into `tms34010_io_regs`) — mandatory, since a
 non-maskable request would otherwise re-fire every cycle.
 
+**Maskable pending sources** (Task 0137): raw active-low LINT1/LINT2 inputs
+pass through independent two-flop synchronizers and appear as read-only,
+level-sensitive INTPEND.X1P/X2P. HSTCTLL.INTIN appears as read-only HIP.
+Synchronous `host_int_set_i` and `dpyint_set_i` pulses set the host/display
+requests until software clears INTIN or writes zero to DIP; the graphics
+window path similarly latches WVP. INTENB retains only its five architected
+enable bits. The existing priority encoder implements
+HI > DI > WV > INT1 > INT2, and direct tests cover both external vectors.
+
 ## Memory interface
 
 The core exposes one request/ack interface for instruction fetches, data
@@ -314,7 +327,7 @@ VRAM shift-register behavior and pixel output are not implemented.
 - Original-pin external-bus phase generation, LRDY validation, reset
   initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
 - Host interface behavior.
-- Full I/O side effects/read-only semantics and internally completed I/O
+- Remaining host/video/refresh I/O side effects and internally completed I/O
   accesses.
 - Integration of video timing and refresh with I/O registers, interrupts, and
   memory; display fetch and pixel output.

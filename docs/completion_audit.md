@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0136, with strict RTL
+> Baseline: functional implementation through Task 0137, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -69,6 +69,13 @@ exact word order/count/data, per-word RMW indivisibility, arbitrary word-side
 stalls, and reset recovery. Pin-level local-bus phases remain an integration
 gate, not an architectural field-alignment uncertainty.
 
+Task 0137 completed every maskable pending-source path at the core boundary.
+Dedicated two-flop synchronizers turn active-low LINT1/LINT2 levels into
+read-only X1P/X2P, HIP reflects host INTIN, and DIP/WVP are hardware-set
+latches with specification-defined write-zero clearing. Host and display
+sidebands make those sources testable until their clock-domain wrappers land;
+direct entry tests lock both external vectors and INT1-over-INT2 priority.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -89,10 +96,10 @@ non-pin-compatible boundary.
 - Complete read-only, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Add and synchronize the two external interrupt inputs and reflect their
-  level-sensitive state in INTPEND.
-- Connect display timing to DPYINT/INTPEND.DI and hardware-driven
-  HCOUNT/VCOUNT/DPYADR.
+- Connect the display timing pulse to the landed INTPEND.DI sideband and
+  drive HCOUNT/VCOUNT/DPYADR from the video subsystem.
+- Connect the host interface to the landed HSTCTLL.INTIN/HIP sideband and
+  complete the complementary host-visible HSTCTL semantics.
 - Replace the provisional external-ack dependency for on-chip I/O accesses
   with the final bus/controller contract.
 

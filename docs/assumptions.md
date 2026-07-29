@@ -556,6 +556,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   MOVE to I/O space); sub-16-bit field writes to I/O are not read-modify-
   write (they write the low 16 bits) and 32-bit accesses would span two
   registers — neither is exercised by the implemented instruction set.
+- **Task 0137 checkpoint**: INTPEND is no longer provisional plain storage.
+  Pages 6-36 through 6-42 now directly determine INTENB masking,
+  HSTCTLL.INTIN/HIP, synchronized read-only X1P/X2P, and hardware-set,
+  write-zero-to-clear DIP/WVP behavior. The synchronous host/display set
+  inputs are deliberate integration sidebands; their future source-clock
+  crossings remain explicit in `docs/timing_notes.md`.
 
 ## A0032 — Abstract RUN/EMU handshake and deterministic status
 - **Date**: 2026-07-28 (Task 0128).
