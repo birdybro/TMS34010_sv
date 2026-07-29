@@ -29,7 +29,10 @@ module tb_io_interrupts;
   logic                  nmi_clear;
   logic                  wvp_set;
   logic                  dpyint_set;
-  logic                  host_int_set;
+  logic                  host_ctl_we;
+  logic [1:0]            host_ctl_be;
+  logic [15:0]           host_ctl_wdata;
+  logic [15:0]           host_ctl_rdata;
   logic                  lint1_n;
   logic                  lint2_n;
 
@@ -48,6 +51,13 @@ module tb_io_interrupts;
   tms34010_io_regs u_dut (
     .clk         (clk),
     .rst         (rst),
+    .hcs_n_i     (1'b0),
+    .host_ctl_we_i(host_ctl_we),
+    .host_ctl_be_i(host_ctl_be),
+    .host_ctl_wdata_i(host_ctl_wdata),
+    .host_ctl_rdata_o(host_ctl_rdata),
+    .hint_n_o    (),
+    .hlt_o       (),
     .req         (req),
     .we          (we),
     .addr        (addr),
@@ -81,7 +91,6 @@ module tb_io_interrupts;
     .nmi_clear   (nmi_clear),
     .wvp_set     (wvp_set),
     .dpyint_set  (dpyint_set),
-    .host_int_set(host_int_set),
     .lint1_n_i   (lint1_n),
     .lint2_n_i   (lint2_n)
   );
@@ -101,6 +110,18 @@ module tb_io_interrupts;
       @(negedge clk);
       req = 1'b0;
       we  = 1'b0;
+    end
+  endtask
+
+  task automatic host_write(input logic [15:0] write_data);
+    begin
+      @(negedge clk);
+      host_ctl_we    = 1'b1;
+      host_ctl_be    = 2'b11;
+      host_ctl_wdata = write_data;
+      @(negedge clk);
+      host_ctl_we = 1'b0;
+      host_ctl_be = 2'b00;
     end
   endtask
 
@@ -138,7 +159,9 @@ module tb_io_interrupts;
     nmi_clear    = 1'b0;
     wvp_set      = 1'b0;
     dpyint_set   = 1'b0;
-    host_int_set = 1'b0;
+    host_ctl_we    = 1'b0;
+    host_ctl_be    = 2'b00;
+    host_ctl_wdata = 16'h0000;
     lint1_n      = 1'b1;
     lint2_n      = 1'b1;
 
@@ -207,7 +230,7 @@ module tb_io_interrupts;
 
     // HIP is the read-only copy of HSTCTLL.INTIN. A host set latches it;
     // INTPEND writes do nothing; the processor clears it through HSTCTLL.
-    pulse_source(host_int_set);
+    host_write(16'h0008);
     check_value("host INTIN reflected as HIP", intpend & HI_MASK, HI_MASK);
     io_write(A_INTPEND, 16'h0000);
     check_value("HIP INTPEND write ignored", intpend & HI_MASK, HI_MASK);

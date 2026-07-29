@@ -10,12 +10,11 @@
 // bit-addressed memory interface; an address decodes to I/O space when its
 // two MSBs are 11 and bits[29:9] are 0. The register index is addr[8:4].
 //
-// "All I/O registers ... are cleared to 0 at reset" (UG §6, Reset). The one
-// documented exception concerns the HLT bit's dependence on the HCS pin of
-// the host interface, which this FPGA reimplementation does not yet model;
-// resetting every register to 0 is therefore correct here.
+// "All I/O registers ... are cleared to 0 at reset" (UG §6, Reset), except
+// HSTCTLH.HLT, which samples HCS at reset release: active-low HCS selects
+// self-bootstrap (HLT=0), while inactive-high HCS selects host-present halt.
 //
-// Current scope (Tasks 0081–0141):
+// Current scope (Tasks 0081–0142):
 //   - Plain read/write storage for ordinary registers. This is exactly correct
 //     for the control/graphics registers that the instruction set reads
 //     (PSIZE, PMASK, CONVSP, CONVDP, CONTROL, DPYCTL, ...).
@@ -29,9 +28,13 @@
 //     the internal noninterlaced generator; DPYCTL.ENV gates BLANK and DIP.
 //   - DPYADR is live display state. DPYSTRT/DPYCTL schedule held
 //     screen-refresh requests and update its address/count after acknowledge.
+//   - The synchronous direct-host HSTCTL boundary implements per-side field
+//     ownership, HINT, NMI/HLT control, and HCS-selected reset state. The
+//     future pin wrapper owns asynchronous host-bus timing and CDC.
 //
 // Port shape:
-//   - Synchronous active-high reset (assumption A0003), all registers -> 0.
+//   - Synchronous active-high reset (assumption A0003); all registers -> 0
+//     except HSTCTLH.HLT, which samples hcs_n_i.
 //   - One synchronous write port (req & we & is_io).
 //   - One combinational (async) read port. The 32x16 array is tiny (512
 //     bits) and async read keeps this composable with the core's existing
@@ -50,6 +53,16 @@ module tms34010_io_regs
 (
   input  logic                  clk,
   input  logic                  rst,
+
+  // Synchronous direct-host control-register boundary. A later host-bus
+  // wrapper converts physical asynchronous pin cycles into this interface.
+  input  logic                  hcs_n_i,          // reset strap: 0=run, 1=halt
+  input  logic                  host_ctl_we_i,
+  input  logic [1:0]            host_ctl_be_i,
+  input  logic [15:0]           host_ctl_wdata_i,
+  output logic [15:0]           host_ctl_rdata_o,
+  output logic                  hint_n_o,
+  output logic                  hlt_o,
 
   input  logic                  req,      // access strobe
   input  logic                  we,       // 1 = write, 0 = read
@@ -89,7 +102,6 @@ module tms34010_io_regs
   input  logic                  nmi_clear,     // clear HSTCTLH.NMI after NMI entry
   input  logic                  wvp_set,       // synchronous INTPEND.WVP set pulse
   input  logic                  dpyint_set,    // synchronous INTPEND.DIP set pulse
-  input  logic                  host_int_set,  // synchronous HSTCTLL.INTIN set pulse
   input  logic                  lint1_n_i,     // asynchronous, active-low LINT1 pin
   input  logic                  lint2_n_i      // asynchronous, active-low LINT2 pin
 );
@@ -245,6 +257,12 @@ module tms34010_io_regs
   assign intenb_o  = io_reg[IO_IDX_INTENB];
   assign intpend_o = intpend_value;
   assign hstctlh_o = io_reg[IO_IDX_HSTCTLH];
+  assign host_ctl_rdata_o = {
+    io_reg[IO_IDX_HSTCTLH][15:8],
+    io_reg[IO_IDX_HSTCTLL][7:0]
+  };
+  assign hint_n_o = ~io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT];
+  assign hlt_o    = io_reg[IO_IDX_HSTCTLH][HSTCTL_HLT_BIT];
 
   // Synchronous write + reset. The reset loop is bounded (32 iterations) and
   // fully unrollable, so synthesis treats it as parallel resets.
@@ -253,6 +271,9 @@ module tms34010_io_regs
       for (int i = 0; i < IO_REG_COUNT; i++) begin
         io_reg[i] <= 16'h0;
       end
+      // HCS is active low: low selects self-bootstrap/run; high selects the
+      // host-present state in which vector fetch waits for a host HLT clear.
+      io_reg[IO_IDX_HSTCTLH][HSTCTL_HLT_BIT] <= hcs_n_i;
     end else begin
       if (req && we && is_io) begin
         unique case (idx)
@@ -285,6 +306,13 @@ module tms34010_io_regs
                 | wdata[HSTCTL_INTOUT_BIT];
           end
 
+          IO_IDX_HSTCTLH: begin
+            // Both sides may write all seven defined high-byte fields.
+            // Reserved bits 10 and 7:0 always remain zero.
+            io_reg[IO_IDX_HSTCTLH] <=
+                wdata & HSTCTLH_WRITABLE_MASK;
+          end
+
           IO_IDX_REFCNT: begin
             // The refresh submodule owns the live counter. Its parallel-load
             // port consumes this write, so no mirror storage is updated.
@@ -304,20 +332,42 @@ module tms34010_io_regs
         endcase
       end
 
-      // Internal/host set pulses are independent of an unrelated processor
-      // write. A set after a same-cycle write-zero clear wins, preventing an
+      // Direct host writes obey the complementary HSTCTL ownership table.
+      // Host owns MSGIN, may set INTIN with one, and may clear INTOUT with
+      // zero. MSGOUT remains processor-owned.
+      if (host_ctl_we_i && host_ctl_be_i[0]) begin
+        io_reg[IO_IDX_HSTCTLL][2:0] <= host_ctl_wdata_i[2:0];
+        if (host_ctl_wdata_i[HSTCTL_INTIN_BIT])
+          io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <= 1'b1;
+        if (!host_ctl_wdata_i[HSTCTL_INTOUT_BIT])
+          io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <= 1'b0;
+      end
+
+      // Conflicting simultaneous HSTCTLH writes are unpredictable on the
+      // original device. This synchronous boundary chooses host priority.
+      if (host_ctl_we_i && host_ctl_be_i[1])
+        io_reg[IO_IDX_HSTCTLH] <=
+            host_ctl_wdata_i & HSTCTLH_WRITABLE_MASK;
+
+      // Internal set pulses are independent of an unrelated processor write.
+      // A set after a same-cycle write-zero clear wins, preventing an
       // interrupt event from being lost at the register boundary.
       if (dpyint_set || video_dpyint_pulse)
         io_reg[IO_IDX_INTPEND][INT_DI_BIT] <= 1'b1;
       if (wvp_set)
         io_reg[IO_IDX_INTPEND][INT_WV_BIT] <= 1'b1;
-      if (host_int_set)
-        io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT] <= 1'b1;
 
-      // Retain the existing precedence for a simultaneous processor write to
-      // HSTCTLH; otherwise interrupt entry automatically clears NMI.
+      // The HSTCTLL arbitration guarantees hazard-free simultaneous access.
+      // Producer-side sets win consumer-side clears for both interrupt bits.
+      if (req && we && is_io && (idx == IO_IDX_HSTCTLL)
+          && wdata[HSTCTL_INTOUT_BIT])
+        io_reg[IO_IDX_HSTCTLL][HSTCTL_INTOUT_BIT] <= 1'b1;
+
+      // A same-cycle host or processor high-byte write wins over the
+      // automatic NMI clear.
       if (nmi_clear
-          && !(req && we && is_io && (idx == IO_IDX_HSTCTLH)))
+          && !(req && we && is_io && (idx == IO_IDX_HSTCTLH))
+          && !(host_ctl_we_i && host_ctl_be_i[1]))
         io_reg[IO_IDX_HSTCTLH][HSTCTL_NMI_BIT] <= 1'b0;
     end
   end

@@ -7,6 +7,23 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Added (Task 0142 — direct host control and halt semantics)
+- Replaced the provisional host-interrupt pulse with a synchronous direct
+  HSTCTL transaction boundary, combined host read data, byte enables, and
+  complementary MSGIN/INTIN/MSGOUT/INTOUT ownership.
+- Added active-low HINT, masked all reserved HSTCTLH bits, and retained the
+  INCW/INCR/LBL/CF fields for the forthcoming indirect-host/cache consumers.
+- Implemented HCS-selected reset HLT state. Host-present reset now remains
+  memory-quiescent until HLT clears, then performs the level-0 vector fetch.
+- Added an instruction-boundary run-time halt state. Processor traffic and
+  interrupt entry stop while halted, while refresh/video logic continues.
+  Pending NMI is serviced after resume; simultaneous new NMI+HLT completes
+  NMI entry and halts before the first handler instruction.
+- Added `tb_host_control` and `tb_host_halt`, and migrated every core/I/O
+  integration bench from the removed one-bit host interrupt stub.
+- Validation: focused host/reset/NMI/interrupt/I/O benches PASS;
+  `scripts/lint.sh` clean; full regression 129/129 PASS.
+
 ### Added (Task 0141 — live DPYADR and screen-refresh scheduling)
 - Added `tms34010_display_addr`, which owns live processor-writable DPYADR,
   reloads SRFADR/LNCNT at their specified frame boundaries, and schedules

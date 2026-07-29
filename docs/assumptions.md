@@ -103,7 +103,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 ## A0008 — Reset PC and level-0 vector fetch
 - **Date**: 2026-05-12; **resolved 2026-07-28 (Task 0121)**.
 - **Status**: **RESOLVED** against the primary specification.
-- **Source**: 1988 TI TMS34010 User's Guide §8.8, pages 8-10 and 8-12.
+- **Source**: 1988 TI TMS34010 User's Guide §8.8, pages 8-10 through 8-13.
   Both self-bootstrap and host-present descriptions identify the level-0
   vector location as `0xFFFF_FFE0`; the initial-state description says PC
   contains the 32-bit value fetched there. Reset and TRAP 0 share this vector
@@ -115,10 +115,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   No PC advance, stack write, or SP update occurs. The bounded simulation
   memory provides a dedicated `level0_vector` word (default zero) so the high
   architectural address does not alias an ordinary low-memory program word.
-- **Integration boundary**: the guide requires eight RAS-only cycles before
-  the vector fetch and allows HCS to select a halted host-present mode. Those
-  are external-memory-controller and host-interface behaviors, not functions
-  of the abstract CPU request/ack port, and remain explicitly tracked there.
+- **Task 0142 refinement**: HCS-selected host-present behavior is now
+  integrated. HSTCTLH.HLT samples HCS during reset, `CORE_RESET_HALT` issues
+  no vector request while it remains one, and clearing HLT returns to
+  `CORE_RESET` for the ordinary vector fetch. The eight prerequisite
+  RAS-only cycles remain with the future external-memory controller.
 
 ---
 
@@ -559,9 +560,43 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Task 0137 checkpoint**: INTPEND is no longer provisional plain storage.
   Pages 6-36 through 6-42 now directly determine INTENB masking,
   HSTCTLL.INTIN/HIP, synchronized read-only X1P/X2P, and hardware-set,
-  write-zero-to-clear DIP/WVP behavior. The synchronous host/display set
-  inputs are deliberate integration sidebands; their future source-clock
-  crossings remain explicit in `docs/timing_notes.md`.
+  write-zero-to-clear DIP/WVP behavior.
+- **Task 0142 checkpoint**: the provisional host INTIN set sideband is gone.
+  A synchronous direct HSTCTL transaction now implements host-side MSGIN,
+  INTIN, and INTOUT behavior plus HINT and shared high-byte fields. Physical
+  pin timing and CDC remain isolated from this on-chip I/O-cycle choice.
+
+## A0036 — Synchronous direct-host boundary and collision precedence
+- **Date**: 2026-07-28 (Task 0142).
+- **Status**: specification-derived register/halt behavior with isolated
+  deterministic choices for the FPGA transaction boundary.
+- **Source**: 1988 TMS34010 User's Guide pages 6-31 through 6-37, §8.8 pages
+  8-10 through 8-13, and §§10.3.3.5/10.3.4 pages 10-18 through 10-20.
+- **Specification-derived behavior**: host writes own MSGIN, set INTIN with
+  one, and clear INTOUT with zero; processor writes own MSGOUT, clear INTIN
+  with zero, and set INTOUT with one. INTOUT drives active-low HINT. Both
+  sides read/write the seven defined HSTCTLH fields. HCS high resets HLT to
+  one and defers the level-0 vector fetch. Run-time HLT takes effect at an
+  instruction boundary, blocks every interrupt while already halted, and
+  leaves refresh/video functions running. A new simultaneous NMI+HLT
+  completes NMI entry and halts before the first handler instruction.
+- **FPGA boundary**: `host_ctl_we_i`, `host_ctl_be_i`, and write data are
+  synchronous completed host-control transactions in the core clock domain;
+  read data and HINT are combinational views. The future host-pin wrapper must
+  implement physical strobes, HRDY, and coherent asynchronous CDC. This task
+  does not claim original-pin timing.
+- **Collision choices**: the guide declares conflicting simultaneous
+  host/processor HSTCTLH writes unpredictable; this boundary chooses host
+  priority. HSTCTLL remains hazard-free, with producer events winning
+  coincident consumer clears (host INTIN set over processor clear; processor
+  INTOUT set over host clear). A host or processor high-byte write wins a
+  coincident automatic NMI clear.
+- **Deferred field consumers**: INCW, INCR, LBL, and CF are stored and read
+  correctly, but host-indirect cycles and the instruction cache do not yet
+  exist, so those fields have no downstream behavioral effect.
+- **Regression evidence**: `tb_host_control` covers the direct register
+  contract and collisions; `tb_host_halt` covers reset/run-time halt,
+  quiescence, refresh/video continuation, pending NMI, and NMI+HLT ordering.
 
 ## A0035 — Deterministic screen-refresh handshake and DPYADR collisions
 - **Date**: 2026-07-28 (Task 0141).

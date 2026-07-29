@@ -111,7 +111,9 @@ package tms34010_pkg;
     CORE_PIXT_SETUP_WIN = 6'd37, // PIXT XY (W!=0): read WSTART/WEND before the RMW
     CORE_FETCH_IMM_EXT_LO = 6'd38, // fourth instruction word (second 32-bit operand low)
     CORE_FETCH_IMM_EXT_HI = 6'd39, // fifth instruction word (second 32-bit operand high)
-    CORE_EMU_HALT         = 6'd40  // EMU sampled active: quiescent until RUN returns high
+    CORE_EMU_HALT         = 6'd40, // EMU sampled active: quiescent until RUN returns high
+    CORE_RESET_HALT       = 6'd41, // HCS-high reset: wait for host before vector fetch
+    CORE_HOST_HALT        = 6'd42  // HSTCTL.HLT: quiescent at an instruction boundary
   } core_state_t;
 
   // ---------------------------------------------------------------------------
@@ -371,8 +373,21 @@ package tms34010_pkg;
   parameter logic [ADDR_WIDTH-1:0] INT_VEC_NMI   = 32'hFFFF_FEE0; // trap 8
   parameter int unsigned           HSTCTL_NMI_BIT  = 8;  // HSTCTLH: NMI request
   parameter int unsigned           HSTCTL_NMIM_BIT = 9;  // HSTCTLH: NMI mode (1=no push)
+  parameter int unsigned           HSTCTL_INCW_BIT = 11; // increment pointer after host write
+  parameter int unsigned           HSTCTL_INCR_BIT = 12; // increment pointer before host read
+  parameter int unsigned           HSTCTL_LBL_BIT  = 13; // lower-byte-last host ordering
+  parameter int unsigned           HSTCTL_CF_BIT   = 14; // instruction-cache flush/disable
+  parameter int unsigned           HSTCTL_HLT_BIT  = 15; // halt processor at next boundary
   parameter int unsigned           HSTCTL_INTIN_BIT  = 3; // HSTCTLL: host-to-GSP IRQ
   parameter int unsigned           HSTCTL_INTOUT_BIT = 7; // HSTCTLL: GSP-to-host IRQ
+  parameter logic [15:0] HSTCTLH_WRITABLE_MASK =
+      (16'h0001 << HSTCTL_NMI_BIT)
+    | (16'h0001 << HSTCTL_NMIM_BIT)
+    | (16'h0001 << HSTCTL_INCW_BIT)
+    | (16'h0001 << HSTCTL_INCR_BIT)
+    | (16'h0001 << HSTCTL_LBL_BIT)
+    | (16'h0001 << HSTCTL_CF_BIT)
+    | (16'h0001 << HSTCTL_HLT_BIT);
 
   // CONTROL register bit fields (1988 UG page 4-? CONTROL register).
   parameter int unsigned CTRL_RM_BIT   = 2;   // DRAM refresh mode: 0=RAS-only

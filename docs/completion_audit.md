@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0141, with strict RTL
+> Baseline: functional implementation through Task 0142, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -102,6 +102,13 @@ requests, and captured SRFADR/DPYTAP remain held until completion acknowledge.
 DUDATE/ORG updates now occur only at completion. Physical VRAM
 memory-to-register service and arbitration remain in the memory-fabric gate.
 
+Task 0142 completed direct HSTCTL semantics and processor halt behavior.
+Complementary low-byte ownership now produces the real HIP/HINT paths, both
+sides share masked HSTCTLH fields, HCS can defer reset-vector fetch, and HLT
+quiesces processor traffic at an instruction boundary without stopping
+refresh/video state. The physical asynchronous host port, HRDY, and indirect
+HSTADR/HSTDATA memory cycles remain in the host/memory-fabric gate.
+
 ## Active architectural assumptions requiring closure
 
 No active architectural compatibility assumption remains. New uncertainty
@@ -113,7 +120,9 @@ A0003 (synchronous active-high FPGA reset), A0004 (single initial core
 clock), A0006 (functional-first timing), and A0034 (provisional same-clock
 internal/noninterlaced video timing) are intentional design choices. A0035
 isolates deterministic collision/undefined behavior around the screen-refresh
-handshake. These do not excuse missing architectural state or interface
+handshake, and A0036 isolates the direct synchronous host boundary and
+otherwise-unpredictable simultaneous high-byte write choice. These do not
+excuse missing architectural state or interface
 behavior; any remaining difference at final sign-off must be documented as a
 deliberate non-pin-compatible boundary.
 
@@ -124,9 +133,7 @@ deliberate non-pin-compatible boundary.
 - Complete counter-driven, write-to-clear, set-by-hardware, and host-visible
   behavior for all I/O registers. Current storage is only partially
   specialized.
-- Complete the remaining host register side effects.
-- Connect the host interface to the landed HSTCTLL.INTIN/HIP sideband and
-  complete the complementary host-visible HSTCTL semantics.
+- Complete HSTADR/HSTDATA host-indirect register side effects.
 - Replace the provisional external-ack dependency for on-chip I/O accesses
   with the final bus/controller contract.
 
@@ -142,9 +149,8 @@ deliberate non-pin-compatible boundary.
 - Service the exported refresh request in the local-memory arbiter/controller,
   retaining or acknowledging requests through contention and issuing the
   selected RAS-only or CAS-before-RAS cycle.
-- Implement the host interface, host-direct/indirect accesses, HCS-selected
-  reset halt, HLT behavior, HRDY/HINT signaling, and CDC where host timing is
-  asynchronous.
+- Implement host-indirect accesses, HRDY and the asynchronous physical host
+  wrapper/CDC around the completed direct HSTCTL boundary.
 
 ### Video/display
 

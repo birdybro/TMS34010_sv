@@ -1,11 +1,13 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0141, with
+> Status: **implemented and ISA/status-audited through Task 0142, with
 > integration gaps**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
-> integrated. Architectural fields are sequenced onto aligned 16-bit words;
-> REFCNT and the refresh requester are integrated at the core boundary.
+> integrated. Direct HSTCTL access, HINT, HCS-selected reset halt, and HLT
+> are also integrated. Architectural fields are sequenced onto aligned
+> 16-bit words; REFCNT and the refresh requester are integrated at the core
+> boundary.
 > Internal/noninterlaced video timing and the held screen-refresh client are
 > integrated on the project clock; physical VRAM transfer service and the real
 > VCLK/CDC boundary remain open. The remaining system-level exit gates are
@@ -89,7 +91,7 @@ has not landed.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0141** | multicycle CPU, reset/illegal-vector fetch, EMU halt/resume, memory sequencing, I/O routing, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
+| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0142** | multicycle CPU, reset/illegal-vector fetch, EMU/host halt and resume, memory sequencing, I/O routing, all interrupt sources, DRAM/screen-refresh/video boundaries, and graphics engines |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -106,9 +108,9 @@ has not landed.
 | `rtl/graphics/tms34010_window.sv`       | 7     | not separate | all four window modes are implemented in the core |
 | `rtl/graphics/tms34010_plane_mask.sv`   | 7     | not separate | PPOP, plane mask, and transparency logic currently reside in the core |
 | `rtl/graphics/tms34010_line_draw.sv`    | 7     | not separate | LINE and DRAV FSMs currently reside in the core |
-| `rtl/host/tms34010_host_if.sv`          | 6     | not started | HSTCTL / HSTDATA / HSTADRH/L |
+| `rtl/host/tms34010_host_if.sv`          | 6     | direct control lives in I/O block | future HSTADR/HSTDATA indirect client and asynchronous physical wrapper |
 | `rtl/cdc/tms34010_sync_bit.sv`          | 6     | **landed (Task 0137)** | dedicated attributed two-flop synchronizer; one instance per active-low LINT level |
-| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0141** | 32×16-bit memory-mapped I/O register file; graphics taps, NMI auto-clear, exact interrupt sources, processor-side HSTCTLL, live REFCNT/counters/DPYADR, and screen-refresh scheduling; host integration remains |
+| `rtl/io/tms34010_io_regs.sv`            | 6     | **landed through Task 0142** | 32×16-bit memory-mapped I/O register file; graphics taps, exact interrupt sources, direct HSTCTL/HINT/HCS behavior, live REFCNT/counters/DPYADR, and screen-refresh scheduling |
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0140** | same-clock internal/noninterlaced timing: writable HCOUNT/VCOUNT, HTOTAL/VTOTAL wraps, exact delayed sync/blank endpoints, ENV blank/interrupt gating, and HSBLNK-positioned DPYINT; VCLK/external-sync/interlace remain |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated (Task 0141)** | live DPYADR, frame/line reloads, LCSTRT+1 scheduling, held SRFADR/DPYTAP request, and acknowledge-time DUDATE/ORG update; physical VRAM cycle and interlaced adjustment remain |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
@@ -171,6 +173,13 @@ schedules the first and LCSTRT-spaced active-line requests, and a held
 SRFADR/DPYTAP payload advances by DUDATE/ORG only after the future controller
 acknowledges completion.
 
+Task 0142 completed the synchronous direct-host HSTCTL boundary. Host and
+processor writes now obey their complementary low-byte ownership, HINT
+reflects INTOUT, and defined high-byte fields are shared. HCS selects a
+pre-vector reset halt; run-time HLT stops only at an instruction boundary.
+Physical host-pin timing/CDC and HSTADR/HSTDATA indirect memory cycles remain
+with the future host/memory fabric.
+
 The audit also consolidated the I/O, interrupt-source,
 physical-memory, host, refresh, video, CDC, and Quartus work into seven
 ordered exit gates. The authoritative remaining-work ledger is
@@ -199,6 +208,7 @@ authoritative state enum is `core_state_t` in `rtl/tms34010_pkg.sv`.
 
 ```
 CORE_RESET  ──▶ CORE_FETCH          (after level-0 vector read/PC load)
+           └─▶ CORE_RESET_HALT      (HCS high; host clears HLT to continue)
 CORE_FETCH  ──▶ CORE_DECODE         (when mem returns instruction word)
 CORE_DECODE ──▶ CORE_EXECUTE
             └─▶ CORE_INT_PUSH_PC    (illegal opcode; vector 30)
@@ -206,6 +216,7 @@ CORE_EXECUTE──▶ CORE_MEMORY         (if instruction touches memory)
             └─▶ CORE_WRITEBACK      (otherwise)
             └─▶ CORE_EMU_HALT       (EMU samples RUN/EMU low)
 CORE_EMU_HALT ─▶ CORE_FETCH         (RUN returns high)
+CORE_HOST_HALT ─▶ CORE_FETCH        (host/processor clears HSTCTL.HLT)
 CORE_MEMORY ──▶ CORE_WRITEBACK
 CORE_WRITEBACK ─▶ CORE_FETCH
 ```
@@ -214,13 +225,16 @@ Multicycle graphics operations are FSM branches invoked from `CORE_EXECUTE`
 and return to writeback only when their memory loops and architectural
 writebacks complete.
 
-**Architectural reset** (Task 0121): while `rst` is active, `CORE_RESET` keeps
+**Architectural reset** (Tasks 0121 and 0142): while `rst` is active,
+`CORE_RESET` keeps
 the memory request inactive. After release it holds a 32-bit read at
 `RESET_VECTOR_ADDR = 0xFFFF_FFE0` until `mem_ack`, loads PC from the returned
 level-0 vector, and enters `CORE_FETCH`. This is the same vector word used by
-TRAP 0; reset performs no PC/ST push and does not touch SP. The eight
-post-reset RAS-only cycles and HCS-selected host halt are responsibilities of
-the future physical memory controller and host interface.
+TRAP 0; reset performs no PC/ST push and does not touch SP. When HCS is high
+during reset, HSTCTL.HLT resets to one and `CORE_RESET_HALT` defers that
+vector request until a direct host high-byte write clears HLT. The eight
+post-reset RAS-only cycles remain a responsibility of the future physical
+memory controller.
 
 **Maskable-interrupt entry** (Task 0100): `tms34010_int_ctrl` is instantiated
 in the core; `int_req` (ST.IE=1 and an enabled INTPEND bit set, via the
@@ -270,8 +284,8 @@ non-maskable request would otherwise re-fire every cycle.
 LINT1/LINT2 inputs
 pass through independent two-flop synchronizers and appear as read-only,
 level-sensitive INTPEND.X1P/X2P. HSTCTLL.INTIN appears as read-only HIP.
-Synchronous `host_int_set_i` can set the host request; `dpyint_set_i` remains
-as a supplemental integration/test sideband, while the integrated timing
+The direct host HSTCTL low-byte write sets INTIN; `dpyint_set_i` remains as a
+supplemental integration/test sideband, while the integrated timing
 compare now sets DIP directly at start-of-HBLANK. Both requests remain until
 software clears INTIN or writes zero to DIP; the graphics window path
 similarly latches WVP. INTENB retains only its five architected enable bits.
@@ -317,12 +331,20 @@ These engines currently share implementation inside `tms34010_core`.
 Extraction into dedicated modules is optional refactoring and must not precede
 functional or synthesis evidence that justifies it.
 
-## Host interface (not implemented)
+## Host interface (direct control integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control
-and shared-memory access. The intended first implementation is a synchronous
-slave port; signal-level pin compatibility with original silicon is not a
-goal.
+and shared-memory access. Task 0142 provides a synchronous completed-cycle
+boundary for direct HSTCTL access: `host_ctl_we_i`, two byte enables, write
+data, combined read data, and active-low HINT. The host owns MSGIN, sets
+INTIN, and clears INTOUT; the processor owns MSGOUT, clears INTIN, and sets
+INTOUT. Both can write the seven defined HSTCTLH fields. HCS initializes HLT,
+and separate reset/run-time halt states preserve the correct resume point.
+
+This is not yet the physical host port. HSTADRL/HSTADRH/HSTDATA indirect
+memory cycles, HRDY, LBL-triggered byte sequencing, host/local arbitration,
+pin strobes, and asynchronous CDC remain future work. CF is stored but has no
+cache to flush; INCW/INCR/LBL are stored for their future consumers.
 
 ## Video / display (timing integrated)
 
@@ -372,8 +394,9 @@ also awaits service by the memory arbiter.
 
 - Original-pin external-bus phase generation, LRDY validation, reset
   initialization, cache, and arbitration among CPU/graphics/host/video/refresh.
-- Host interface behavior.
-- Remaining host I/O side effects and internally completed I/O accesses.
+- Host-indirect HSTADR/HSTDATA memory behavior, HRDY/pin timing/CDC, and
+  arbitration; internally completed I/O accesses.
+- Remaining non-host I/O side effects.
 - DRAM- and screen-refresh request service in the memory fabric; VCLK/CDC,
   external sync, interlace, physical VRAM transfer, and pixel output.
 - Real Quartus project files, SDC, synthesis/fit/timing reports, and measured

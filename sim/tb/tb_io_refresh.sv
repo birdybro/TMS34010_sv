@@ -71,7 +71,7 @@ module tb_io_refresh;
     .nmi_clear    (1'b0),
     .wvp_set      (1'b0),
     .dpyint_set   (1'b0),
-    .host_int_set (1'b0),
+    .hcs_n_i(1'b0), .host_ctl_we_i(1'b0), .host_ctl_be_i(2'b00), .host_ctl_wdata_i(16'h0000), .host_ctl_rdata_o(), .hint_n_o(), .hlt_o(),
     .lint1_n_i    (1'b1),
     .lint2_n_i    (1'b1)
   );

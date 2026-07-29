@@ -2,7 +2,9 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0141. Task 0141 made
+The functional implementation is complete through Task 0142. Task 0142
+completed direct host-side HSTCTL access, HINT, HCS-selected reset halt, and
+instruction-boundary HLT/NMI behavior. Task 0141 made
 DPYADR live and added held, acknowledged screen-refresh scheduling with exact
 frame reload, line cadence, and DUDATE/ORG completion updates. Task 0140
 corrected every internal sync/blank interval endpoint for the specified
@@ -185,6 +187,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0139 | Integrate internal noninterlaced video timing | complete |
 | 0140 | Correct sync and blank interval endpoints | complete |
 | 0141 | Integrate DPYADR and screen-refresh scheduling | complete |
+| 0142 | Integrate direct host control and halt semantics | complete |
 
 ---
 
@@ -4584,6 +4587,54 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 2ed909c
+
+---
+
+### Task 0142: Integrate direct host control and halt semantics
+Status: complete
+Dependencies:
+- Task 0137 (HSTCTLL.INTIN/HIP and NMI register behavior).
+- Task 0141 (current completion baseline).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 6-31 through 6-37
+  (HSTCTLH/HSTCTLL field ownership, HINT, NMI, and HLT).
+- 1988 TI TMS34010 User's Guide §8.8, pages 8-10 through 8-13
+  (HCS-selected host-present reset and deferred level-0 vector fetch).
+- 1988 TI TMS34010 User's Guide §10.3.3.5 and §10.3.4, pages 10-18 through
+  10-20 (simultaneous NMI/HLT ordering and instruction-boundary halt latency).
+Acceptance Criteria:
+- Replace the provisional one-bit host interrupt input with one synchronous
+  direct-host HSTCTL transaction boundary and a combined 16-bit read view.
+- Implement complementary host/processor ownership of MSGIN, INTIN, MSGOUT,
+  and INTOUT, active-low HINT, byte enables, and defined HSTCTLH reserved bits.
+- Sample active-low HCS into HLT on reset; in host-present mode, issue no
+  level-0 vector request until the host clears HLT.
+- Halt only after the current instruction completes, issue no processor
+  memory request or interrupt entry while halted, and resume at the saved
+  boundary while refresh/video state continues clocking.
+- Service a simultaneous new NMI before HLT so entry completes and the core
+  halts before the first service-routine instruction; retain NMI pending when
+  asserted after the core is already halted.
+- Isolate deterministic collision choices for same-clock direct-host and
+  processor writes without claiming original asynchronous pin timing or
+  host-indirect memory access.
+Tests:
+- `tb_host_control` PASS (HCS reset values, combined reads, byte enables,
+  per-side ownership, HINT, masks, automatic NMI clear, and collisions).
+- `tb_host_halt` PASS (deferred reset vector, instruction completion,
+  quiescent halt, continuing refresh/video state, pending NMI, and
+  simultaneous NMI+HLT ordering).
+- Existing `tb_io_interrupts`, `tb_reset_vector`, `tb_nmi`, `tb_emu`,
+  `tb_io_regs`, and `tb_external_interrupts` focused regressions PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 129/129 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

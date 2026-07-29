@@ -1,12 +1,11 @@
 # Memory map
 
-> Status: **field-to-word translation, interrupt-register semantics, live
-> REFCNT, internal video timing, and live DPYADR implemented through Task
-> 0141**. The core issues bit-addressed 1–32-bit accesses, and a synthesizable
-> sequencer
-> expands them into aligned 16-bit word cycles. The on-chip I/O page is
-> decoded and stored in the core. Original-pin local-bus timing and several
-> I/O side effects remain open.
+> Status: **field-to-word translation, interrupt-register semantics, direct
+> HSTCTL access, live REFCNT, internal video timing, and live DPYADR
+> implemented through Task 0142**. The core issues bit-addressed 1–32-bit
+> accesses, and a synthesizable sequencer expands them into aligned 16-bit
+> word cycles. The on-chip I/O page is decoded and stored in the core.
+> Original-pin local-bus timing and several I/O side effects remain open.
 
 ## Architectural address space
 
@@ -71,9 +70,9 @@ The TMS34010 maps 32 on-chip 16-bit I/O registers into the bit-address
 range `0xC0000000`–`0xC00001FF` (1988 User's Guide Figure 6-1, page 6-3).
 Each register sits at a `0x10`-bit-aligned address (16 bits apart). An
 address decodes to I/O space when its two MSBs are `11` and bits[29:9] are
-`0`; the register index is `addr[8:4]`. **All I/O registers reset to 0**
-(UG §6; the only documented exception is the HLT bit's dependence on the
-`HCS` host-interface pin, not yet modelled).
+`0`; the register index is `addr[8:4]`. **All I/O registers reset to 0
+except HSTCTLH.HLT**, which resets to the sampled HCS level: active-low HCS
+selects self-bootstrap/run and inactive-high HCS selects host-present halt.
 
 `rtl/io/tms34010_io_regs.sv` implements the register file and is wired into
 the core memory path (Tasks 0081–0082). Graphics-control taps drive PSIZE,
@@ -93,9 +92,13 @@ counters, and its start-of-HBLANK compare sets the existing DIP latch.
 Task 0141 makes DPYADR live: DPYSTRT supplies its frame/line reloads,
 DPYCTL.SRE/DUDATE/ORG controls held screen-refresh scheduling and
 acknowledge-time updates, and DPYTAP is captured with each client request.
+Task 0142 connects the complementary host-visible HSTCTL view: host writes
+own MSGIN, set INTIN, and clear INTOUT; processor writes own MSGOUT, clear
+INTIN, and set INTOUT. Both sides can write the seven defined HSTCTLH fields,
+reserved bits read zero, and active-low HINT reflects INTOUT.
 
-The remaining register semantics are incomplete: the host-side HSTCTL
-behavior is not connected, and I/O accesses still rely on an external
+The remaining register semantics are incomplete: HSTADR/HSTDATA host-indirect
+side effects are not connected, and I/O accesses still rely on an external
 request/ack cycle as documented in A0028.
 
 | Addr (bit) | Index | Name | Group | Notes |
@@ -115,8 +118,8 @@ request/ack cycle as documented in A0028.
 | C00000C0 | 0x0C | HSTDATA | host         | Host Data |
 | C00000D0 | 0x0D | HSTADRL | host         | Host Address (LSBs) |
 | C00000E0 | 0x0E | HSTADRH | host         | Host Address (MSBs) |
-| C00000F0 | 0x0F | HSTCTLL | host         | CPU clears INTIN, writes MSGOUT, sets INTOUT |
-| C0000100 | 0x10 | HSTCTLH | host         | Host Control (MSBs) |
+| C00000F0 | 0x0F | HSTCTLL | host         | Host: MSGIN/set INTIN/clear INTOUT; CPU: clear INTIN/MSGOUT/set INTOUT |
+| C0000100 | 0x10 | HSTCTLH | host         | Shared NMI/NMIM/INCW/INCR/LBL/CF/HLT; reserved bits zero |
 | C0000110 | 0x11 | INTENB  | interrupt    | Five source enables; reserved bits read zero |
 | C0000120 | 0x12 | INTPEND | interrupt    | X1P/X2P/HIP read-only; DIP/WVP hardware-set and write-zero-to-clear |
 | C0000130 | 0x13 | CONVSP  | graphics ctl | Source Conversion Pitch |
@@ -132,14 +135,16 @@ request/ack cycle as documented in A0028.
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
 fields for graphics and interrupt behavior are also named in the package.
-Remaining host and video-mode fields must be documented as their consuming
-blocks are integrated.
+Remaining host-indirect and video-mode fields must be documented as their
+consuming blocks are integrated.
 
 ## Host-interface-visible registers
 
-A small subset of the I/O space is also visible to the host CPU on original
-silicon. The host interface and its locking/access restrictions are not
-implemented.
+The synchronous direct-host boundary exposes the combined 16-bit HSTCTL
+register and active-low HINT. It represents completed host control cycles;
+it is not an asynchronous original-pin bus. HSTADRL/HSTADRH/HSTDATA remain
+processor-visible storage, but host accesses do not yet initiate local-memory
+cycles, auto-increment the address, arbitrate, or generate HRDY.
 
 ## Display / video memory behavior
 
@@ -155,6 +160,6 @@ with core and graphics accesses.
 - The dedicated on-chip ack path for I/O accesses (A0028).
 - Read-only, write-to-clear, and hardware-driven behavior for registers not
   yet consumed by host/video-mode logic.
-- Host-visible register access and locking semantics.
+- Host-indirect memory access, HRDY/pin timing, CDC, and locking semantics.
 - Dedicated VCLK/CDC, external-sync/interlace timing, display-address
   generation, and VRAM shift-register behavior.

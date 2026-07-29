@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // tms34010_core.sv
 //
-// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0141.
+// Top-level multicycle TMS34010 CPU/graphics core, current through Task 0142.
 //
 // The core integrates instruction fetch/decode/execute, the A/B/SP register
 // file, PC/ST, ALU/shifter/divider, field-aware memory sequencing, on-chip I/O
@@ -12,8 +12,9 @@
 // The external request/ack interface is an architectural bit-addressed
 // interface, not the original physical 16-bit bus. REFCNT requests and
 // same-clock internal/noninterlaced video timing/screen scheduling are
-// integrated, but physical refresh/VRAM service, VCLK/CDC, host access, and
-// physical bus arbitration are not; see docs/architecture.md.
+// integrated. Direct synchronous host-control access, HINT, and HLT behavior
+// are also integrated; physical host-pin timing/CDC, indirect host access,
+// refresh/VRAM service, VCLK/CDC, and physical bus arbitration are not.
 //
 // Synthesis notes:
 //   - One sequential `always_ff` for the state register.
@@ -48,12 +49,20 @@ module tms34010_core
   input  logic                                run_emu_n_i,
   output logic                                emua_n_o,
 
+  // Direct synchronous host-control boundary. The future pin-level host
+  // wrapper supplies bus timing/CDC and drives these completed transactions.
+  input  logic                                hcs_n_i,
+  input  logic                                host_ctl_we_i,
+  input  logic [1:0]                          host_ctl_be_i,
+  input  logic [15:0]                         host_ctl_wdata_i,
+  output logic [15:0]                         host_ctl_rdata_o,
+  output logic                                hint_n_o,
+
   // Interrupt-source boundary. LINT pins are raw asynchronous active-low
-  // levels and are synchronized internally. Host/display set inputs are
-  // core-clock pulses from their future integration wrappers.
+  // levels and are synchronized internally. The display set input remains a
+  // core-clock pulse from its future integration wrapper.
   input  logic                                lint1_n_i,
   input  logic                                lint2_n_i,
-  input  logic                                host_int_set_i,
   input  logic                                dpyint_set_i,
 
   // Refresh-client boundary. The request is a one-core-clock underflow event;
@@ -2310,6 +2319,7 @@ module tms34010_core
   logic [15:0]           io_intenb;    // INTENB register (maskable-interrupt enables)
   logic [15:0]           io_intpend;   // INTPEND register (maskable-interrupt pending)
   logic [15:0]           io_hstctlh;   // HSTCTLH register (host control; NMI/NMIM bits)
+  logic                  io_hlt;       // HSTCTLH.HLT, sampled at instruction boundaries
   logic                  nmi_clear;    // pulse to clear HSTCTLH.NMI on taking the NMI
   logic                  wvp_set;      // pulse to set INTPEND.WV on a window violation
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
@@ -2317,6 +2327,13 @@ module tms34010_core
   tms34010_io_regs u_io_regs (
     .clk      (clk),
     .rst      (rst),
+    .hcs_n_i  (hcs_n_i),
+    .host_ctl_we_i(host_ctl_we_i),
+    .host_ctl_be_i(host_ctl_be_i),
+    .host_ctl_wdata_i(host_ctl_wdata_i),
+    .host_ctl_rdata_o(host_ctl_rdata_o),
+    .hint_n_o (hint_n_o),
+    .hlt_o    (io_hlt),
     .req      (mem_req),
     .we       (mem_we_int),    // the access's write intent
     .addr     (mem_addr),
@@ -2350,7 +2367,6 @@ module tms34010_core
     .nmi_clear(nmi_clear),
     .wvp_set  (wvp_set),
     .dpyint_set(dpyint_set_i),
-    .host_int_set(host_int_set_i),
     .lint1_n_i(lint1_n_i),
     .lint2_n_i(lint2_n_i)
   );
@@ -2609,16 +2625,20 @@ module tms34010_core
 
     unique case (state_q)
       CORE_RESET: begin
-        // Architectural reset (1988 UG 8-10/8-12): after rst releases, fetch
-        // the 32-bit level-0 vector through the normal memory interface. The
-        // request remains inactive while rst is asserted and is otherwise
-        // held until ack. Reset does not push PC/ST or touch SP.
+        // Architectural reset (1988 UG 8-10 through 8-13): HCS high at reset
+        // selects host-present mode and defers the level-0 vector fetch until
+        // the host clears HLT. Otherwise fetch the 32-bit vector through the
+        // normal memory interface. Reset does not push PC/ST or touch SP.
         if (!rst) begin
-          mem_req    = 1'b1;
-          mem_we_int = 1'b0;
-          mem_addr   = RESET_VECTOR_ADDR;
-          mem_size   = MEM_SIZE_32;
-          if (mem_ack) state_d = CORE_FETCH;
+          if (io_hlt) begin
+            state_d = CORE_RESET_HALT;
+          end else begin
+            mem_req    = 1'b1;
+            mem_we_int = 1'b0;
+            mem_addr   = RESET_VECTOR_ADDR;
+            mem_size   = MEM_SIZE_32;
+            if (mem_ack) state_d = CORE_FETCH;
+          end
         end
       end
 
@@ -2628,8 +2648,12 @@ module tms34010_core
         // enabled INTPEND bit). When taken, do NOT fetch — pc_value stays at the
         // resume address. An NMI with NMIM=1 saves no context and jumps
         // straight to the vector; everything else pushes PC+ST first.
+        // A newly asserted NMI is serviced before a simultaneous halt, which
+        // lets HLT stop the core at the NMI service routine's first boundary.
         if (int_take) begin
           state_d = (nmi_req && nmi_nmim) ? CORE_INT_VECTOR : CORE_INT_PUSH_PC;
+        end else if (io_hlt) begin
+          state_d = CORE_HOST_HALT;
         end else begin
           mem_req  = 1'b1;
           mem_we_int   = 1'b0;
@@ -3226,6 +3250,17 @@ module tms34010_core
         // architectural write occurs while halted. Raising RUN resumes at
         // the next instruction boundary.
         state_d = run_emu_n_i ? CORE_FETCH : CORE_EMU_HALT;
+      end
+
+      CORE_RESET_HALT: begin
+        // Host-present reset performs no vector fetch until HLT is cleared.
+        state_d = io_hlt ? CORE_RESET_HALT : CORE_RESET;
+      end
+
+      CORE_HOST_HALT: begin
+        // No instruction, memory, or interrupt work occurs while halted.
+        // Refresh/video/display blocks continue clocking independently.
+        state_d = io_hlt ? CORE_HOST_HALT : CORE_FETCH;
       end
 
       default: begin

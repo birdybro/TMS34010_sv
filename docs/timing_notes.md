@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0141, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0142, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -26,6 +26,18 @@
   16-bit word reads and holds each request through `word_ack_i`. The eight
   original-silicon RAS-only initialization cycles still precede this
   transaction in the future pin-level memory controller.
+- **Host-present reset halt** — if HCS is high during reset,
+  HSTCTLH.HLT resets to one and `CORE_RESET_HALT` issues no vector or
+  instruction request. A synchronous direct-host high-byte write clearing
+  HLT returns through `CORE_RESET` and begins the level-0 vector transaction.
+- **Run-time HLT** — HSTCTLH.HLT is observed at `CORE_FETCH`, after the
+  current instruction finishes. `CORE_HOST_HALT` issues no processor memory
+  transaction and accepts no interrupt until HLT clears. Refresh, video, and
+  screen scheduling remain independently clocked. A newly simultaneous NMI
+  takes priority long enough to complete entry; HLT then stops the first ISR
+  fetch. A host write completing on the same edge as an already-acknowledged
+  instruction fetch can take effect at the following boundary, matching the
+  direct synchronous transaction abstraction rather than claiming pin phase.
 - **Illegal opcode entry** — detection in `CORE_DECODE` bypasses execute and
   issues three acknowledged 32-bit transactions through the shared interrupt
   states: push PC, push ST, then read vector 30. A final `CORE_INT_DONE` cycle
@@ -156,9 +168,11 @@ of the guide's one-to-two-state synchronization delay.
 
 The future SDC must mark the pin-to-first-stage paths asynchronous and the
 Quartus metastability report must recognize both chains. Those checks cannot
-be claimed until the real project exists. `host_int_set_i` and
-`host_int_set_i` and the supplemental `dpyint_set_i` are currently
-synchronous core-clock pulses. The integrated Task 0139 display compare is
+be claimed until the real project exists. The direct `host_ctl_*` interface
+and supplemental `dpyint_set_i` are currently synchronous core-clock
+transactions/events. The future asynchronous host pin wrapper must transfer
+each completed control write coherently and return stable read data/HINT
+under its HRDY protocol. The integrated Task 0139 display compare is
 same-clock and therefore needs no crossing yet. When it moves to VCLK, DIP
 delivery must use a lossless event handshake or equivalent pending-level
 protocol, timing configuration must use a coherent multi-bit transfer, and

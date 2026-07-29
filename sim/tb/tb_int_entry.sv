@@ -52,7 +52,7 @@ module tb_int_entry;
     .mem_wdata(mem_wdata), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
     .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w),
     .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(),
-    .lint1_n_i(1'b1), .lint2_n_i(1'b1), .host_int_set_i(1'b0),
+    .lint1_n_i(1'b1), .lint2_n_i(1'b1), .hcs_n_i(1'b0), .host_ctl_we_i(1'b0), .host_ctl_be_i(2'b00), .host_ctl_wdata_i(16'h0000), .host_ctl_rdata_o(), .hint_n_o(),
     .dpyint_set_i(dpyint_set), .refresh_req_o(), .refresh_row_o(), .refresh_cbr_o(), .video_hsync_o(), .video_vsync_o(), .video_hblank_o(), .video_vblank_o(), .video_blank_o(), .screen_refresh_req_o(), .screen_refresh_ack_i(1'b0), .screen_refresh_srfaddr_o(), .screen_refresh_dpytap_o()
   );
 
