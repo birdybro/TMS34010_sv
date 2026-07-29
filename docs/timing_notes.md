@@ -1,7 +1,7 @@
 # Timing notes
 
 > Status: **functional latency notes only**. RTL is implemented through Task
-> 0139, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
+> 0140, but no real Quartus project, SDC, fit, or TimeQuest report exists yet.
 > Every path/resource assessment below is therefore a watch item, not measured
 > Cyclone V evidence.
 
@@ -52,8 +52,10 @@
   edge and wraps after HTOTAL; that wrap advances VCOUNT and wraps it after
   VTOTAL. Processor counter loads take same-edge priority. The display event
   is combinational for the `HCOUNT=HSBLNK && VCOUNT=DPYINT && ENV` interval
-  and is sampled into the DIP latch on the following clock edge. These are
-  functional clock relationships, not the original falling-VCLK pin phase.
+  and is sampled into the DIP latch on the following clock edge. Sync/end
+  blank equality remains active for that count; start blank equality remains
+  inactive until the following count. These are functional clock
+  relationships, not the original falling-VCLK pin phase.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

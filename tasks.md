@@ -2,10 +2,12 @@
 
 ## Current Milestone: Reconcile and complete the remaining architecture
 
-The functional implementation is complete through Task 0139. Task 0139
-corrected the display-interrupt compare point and integrated internal,
-noninterlaced video timing with the live I/O registers, DIP latch, and core
-timing outputs. Task 0138 corrected the legacy refresh model against the
+The functional implementation is complete through Task 0140. Task 0140
+corrected every internal sync/blank interval endpoint for the specified
+one-VCLK delay after equality. Task 0139 corrected the display-interrupt
+compare point and integrated internal, noninterlaced video timing with the
+live I/O registers, DIP latch, and core timing outputs. Task 0138 corrected
+the legacy refresh model against the
 individual REFCNT pages, integrated the live counter with CONTROL and the I/O
 register file, and exported its request/row/mode boundary for the future
 memory fabric. Task 0137 closed the interrupt-register/source portion of exit
@@ -179,6 +181,7 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0137 | Complete interrupt-pending source semantics | complete |
 | 0138 | Correct and integrate DRAM refresh semantics | complete |
 | 0139 | Integrate internal noninterlaced video timing | complete |
+| 0140 | Correct sync and blank interval endpoints | complete |
 
 ---
 
@@ -4495,6 +4498,41 @@ Docs:
   `docs/timing_notes.md`.
 Commit:
 - 1ab082d
+
+---
+
+### Task 0140: Correct sync and blank interval endpoints
+Status: complete
+Dependencies:
+- Task 0139 (integrated internal/noninterlaced timing).
+Spec sources:
+- 1988 TI TMS34010 User's Guide pages 6-26 through 6-28
+  (HCOUNT, HEBLNK, HESYNC, and HSBLNK equality behavior).
+- 1988 TI TMS34010 User's Guide pages 6-48 through 6-51
+  (VEBLNK, VESYNC, VSBLNK, and VTOTAL equality behavior).
+- 1988 TI TMS34010 User's Guide §§9.5/9.6, especially pages 9-6 through 9-8
+  (one-VCLK output delay after each equality compare).
+Acceptance Criteria:
+- Keep HSYNC active through HCOUNT=HESYNC and VSYNC active through
+  VCOUNT=VESYNC, so their programmed values represent duration minus one.
+- Keep leading horizontal/vertical blank active through HEBLNK/VEBLNK and
+  begin trailing blank only after HSBLNK/VSBLNK.
+- Preserve the display-interrupt request at the HSBLNK equality event even
+  though the externally visible blank interval changes one clock later.
+- Directly regression-lock all inclusive/exclusive count-space boundaries.
+Tests:
+- `tb_video` PASS (every counter value checked against the exact sync/blank
+  intervals over multiple frames).
+- `tb_io_video` PASS (HSBLNK equality versus following-count blank transition,
+  integrated DIP, and visible-coordinate outputs).
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 125/125 self-checking benches.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and `docs/timing_notes.md`.
+Commit:
+- pending
 
 ---
 

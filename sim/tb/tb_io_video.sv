@@ -191,8 +191,9 @@ module tb_io_video;
     io_write(A_HCOUNT, 16'd5);
     @(negedge clk);
     check_value("counter reached HSBLNK", hcount, 16'd6);
-    check_bit("HSBLNK asserts horizontal blank", hblank, 1'b1);
+    check_bit("HSBLNK equality precedes output blank transition", hblank, 1'b0);
     @(negedge clk);
+    check_bit("count after HSBLNK asserts horizontal blank", hblank, 1'b1);
     check_value("HBLANK compare set DIP", intpend & DIP_MASK, DIP_MASK);
 
     // A processor zero clears the latch. Disabling video before recreating
@@ -209,8 +210,8 @@ module tb_io_video;
 
     // Reload a visible coordinate to exercise the integrated output windows.
     io_write(A_DPYCTL, ENV_MASK);
-    io_write(A_VCOUNT, 16'd1);
-    io_write(A_HCOUNT, 16'd3);
+    io_write(A_VCOUNT, 16'd2);
+    io_write(A_HCOUNT, 16'd4);
     check_bit("visible coordinate hsync low", hsync, 1'b0);
     check_bit("visible coordinate vsync low", vsync, 1'b0);
     check_bit("visible coordinate hblank low", hblank, 1'b0);

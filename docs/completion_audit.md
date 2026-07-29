@@ -1,6 +1,6 @@
 # Completion audit
 
-> Baseline: functional implementation through Task 0139, with strict RTL
+> Baseline: functional implementation through Task 0140, with strict RTL
 > lint clean. This ledger defines what “complete” still requires for the
 > TMS34010-only scope in A0002.
 
@@ -89,6 +89,12 @@ and inhibits new display interrupts when clear, and the corrected
 `HCOUNT=HSBLNK` event sets the landed DIP latch on the selected DPYINT line.
 Timing intervals now leave the core boundary. The independent VCLK/CDC,
 external-sync, interlace, and display-memory paths remain exit-gate work.
+
+Task 0140 corrected the inherited standalone timing interval endpoints
+against the individual Chapter 6 register pages and §§9.5/9.6. Sync and
+leading blank remain active at their programmed end-count equality; trailing
+blank becomes active only on the count after HSBLNK/VSBLNK. The HSBLNK
+display event remains at equality, before the delayed blank output transition.
 
 ## Active architectural assumptions requiring closure
 

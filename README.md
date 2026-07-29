@@ -6,7 +6,7 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0139. Task 0124
+Functional implementation work is complete through Task 0140. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -31,8 +31,9 @@ corrected REFCNT to the guide's continuous 14-bit decrementing counter,
 integrated it with CONTROL.RR/RM and the I/O register file, and exposed its
 refresh request, row, and mode at the core boundary. Task 0139 integrated the
 internal noninterlaced video counters/timing registers, corrected DIP to the
-start of horizontal blanking, and exported timing outputs. The repository
-currently contains:
+start of horizontal blanking, and exported timing outputs. Task 0140
+corrected the inherited sync/blank interval endpoints for the guide's
+one-VCLK equality-to-output delay. The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
 - A/B register files, shared stack pointer, status register, ALU, shifter,

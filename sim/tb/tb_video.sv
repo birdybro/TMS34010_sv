@@ -98,10 +98,10 @@ module tb_video;
     for (int unsigned k = 0; k < 84; k++) begin
       @(negedge clk);
       // Combinational window compares.
-      if (hsync  !== (hcount < HESYNC))                         fail("hsync window");
-      if (vsync  !== (vcount < VESYNC))                         fail("vsync window");
-      if (hblank !== ((hcount < HEBLNK) || (hcount >= HSBLNK))) fail("hblank window");
-      if (vblank !== ((vcount < VEBLNK) || (vcount >= VSBLNK))) fail("vblank window");
+      if (hsync  !== (hcount <= HESYNC))                       fail("hsync window");
+      if (vsync  !== (vcount <= VESYNC))                       fail("vsync window");
+      if (hblank !== ((hcount <= HEBLNK) || (hcount > HSBLNK))) fail("hblank window");
+      if (vblank !== ((vcount <= VEBLNK) || (vcount > VSBLNK))) fail("vblank window");
       if (blank  !== (hblank || vblank))                        fail("blank combine");
       if (dpyint_pulse !== ((hcount == HSBLNK) && (vcount == DPYINT)))
         fail("dpyint strobe");

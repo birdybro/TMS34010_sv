@@ -574,9 +574,12 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   do not replace the original VCLK behavior.
 - **Specification-derived behavior**: HCOUNT increments through HTOTAL and
   wraps while advancing VCOUNT through VTOTAL; sync and blank intervals use
-  the H*/V* timing compares. DPYCTL.ENV=0 forces BLANK active and inhibits
-  setting DIP. When enabled, DIP is requested on the DPYINT-selected line at
-  start of horizontal blanking (`HCOUNT=HSBLNK`), not at HCOUNT zero.
+  the H*/V* timing compares. Task 0140 verified the specified one-VCLK output
+  delay: sync and leading blank remain active through their end-value
+  equality, while trailing blank begins on the count after HSBLNK/VSBLNK.
+  DPYCTL.ENV=0 forces BLANK active and inhibits setting DIP. When enabled,
+  DIP is requested on the DPYINT-selected line at the HSBLNK equality event,
+  not at HCOUNT zero.
 - **Provisional clock boundary**: `tms34010_video` currently runs on `clk`
   under A0004 and advances on its positive edge. The original device uses a
   separate VCLK and advances HCOUNT on falling VCLK. No claim is made about

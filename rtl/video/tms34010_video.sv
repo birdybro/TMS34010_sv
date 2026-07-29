@@ -10,13 +10,15 @@
 //   horizontal sync interval restarts. On each HCOUNT wrap, VCOUNT increments;
 //   when VCOUNT == VTOTAL it wraps to 0 (a new frame).
 //
-//   HSYNC is asserted while HCOUNT < HESYNC (the sync interval that begins at
-//   the HTOTAL wrap). HBLANK is asserted while HCOUNT < HEBLNK (the leading
-//   blank, including the sync interval) or HCOUNT >= HSBLNK (the trailing
-//   blank); the visible region is HEBLNK..HSBLNK. The vertical signals are the
-//   analogous compares on VCOUNT. BLANK is asserted when either axis is
-//   blanking or DPYCTL.ENV is clear. DPYINT_PULSE is a one-clock strobe at
-//   the start of horizontal blanking on the line selected by DPYINT.
+//   HSYNC is asserted while HCOUNT <= HESYNC (the sync interval that begins at
+//   the HTOTAL wrap). HBLANK is asserted while HCOUNT <= HEBLNK (the leading
+//   blank, including the sync interval) or HCOUNT > HSBLNK (the trailing
+//   blank); the visible region is HEBLNK+1..HSBLNK. These inclusive/exclusive
+//   endpoints model the guide's one-VCLK delay after each equality compare.
+//   The vertical signals use the analogous compares on VCOUNT. BLANK is
+//   asserted when either axis is blanking or DPYCTL.ENV is clear.
+//   DPYINT_PULSE is a one-clock strobe at the HSBLNK equality event on the
+//   line selected by DPYINT.
 //
 // Scope (Task 0139): internal, noninterlaced functional timing. The I/O block
 // drives this module from the project clock under A0004 until the dedicated
@@ -97,11 +99,13 @@ module tms34010_video
     end
   end
 
-  // Sync / blank window compares (combinational).
-  assign hsync  = (hcount < hesync);
-  assign vsync  = (vcount < vesync);
-  assign hblank = (hcount < heblnk) || (hcount >= hsblnk);
-  assign vblank = (vcount < veblnk) || (vcount >= vsblnk);
+  // Sync/blank intervals in count space. The User's Guide specifies that the
+  // output transition occurs one VCLK after the corresponding equality, so
+  // each end value remains active and each start value remains inactive.
+  assign hsync  = (hcount <= hesync);
+  assign vsync  = (vcount <= vesync);
+  assign hblank = (hcount <= heblnk) || (hcount > hsblnk);
+  assign vblank = (vcount <= veblnk) || (vcount > vsblnk);
   assign blank  = !display_enable || hblank || vblank;
 
   // Display interrupt: DPYINT matches VCOUNT at the start of horizontal

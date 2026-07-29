@@ -7,6 +7,19 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-28
 
+### Fixed (Task 0140 — exact sync/blank interval endpoints)
+- Corrected all inherited Task 0097 interval compares to model the guide's
+  one-VCLK delay after equality: HSYNC/VSYNC and leading blanking remain
+  active through their programmed end values, while trailing blanking begins
+  only after HSBLNK/VSBLNK.
+- Preserved DIP at the HSBLNK equality event, which intentionally precedes
+  the active-high internal HBLANK interval transition by one count.
+- Strengthened `tb_video` to check the exact inclusive/exclusive intervals at
+  every count and `tb_io_video` to distinguish the HSBLNK event from the
+  following-count blank output.
+- Validation: both focused video benches PASS; `scripts/lint.sh` clean; full
+  regression 125/125 PASS.
+
 ### Fixed (Task 0139 — integrated internal video timing and DIP)
 - Corrected display-interrupt generation against the register pages and
   §9.7: the compare now fires at the start of horizontal blanking
