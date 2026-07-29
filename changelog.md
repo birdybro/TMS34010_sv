@@ -7,6 +7,36 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0160 — Cyclone V implementation closure)
+- Added the Quartus Prime Lite 17.0.2 project for `5CSEBA6U23I7`, with
+  `tms34010_cyclone_v_top` as the sole top, both vendor PLLs enabled, and all
+  63 user ports assigned to documented DE10-Nano clock, KEY0, JP1, and JP7
+  pins as 3.3-V LVTTL.
+- Added the complete SDC for both independent primary clocks, the generated
+  50/200/50 MHz clocks, asynchronous clock groups, attributed synchronizers,
+  stable-payload MCPs, reset boundaries, and min/max host/local/video I/O
+  budgets. TimeQuest reports no ignored constraint and a fully constrained
+  design.
+- Registered the exhaustive decode result, ordinary execution writeback
+  result, and completion-qualified processor-I/O snapshot to close the
+  measured Cyclone V paths without changing architectural results. Updated
+  the PLL primitive instantiations for Quartus 17's complete port surface.
+- Replaced synthesis tool discovery with deterministic clean map, fit,
+  assembly, multicorner TimeQuest, detailed timing/CDC reporting, and strict
+  report validation. The validator rejects warning, phase, pin, clock,
+  constraint, slack/TNS, synchronizer, resource, or output-file drift.
+- Added the DE10-Nano pinout and reproducible implementation evidence. The
+  accepted fit uses 24% ALMs, 8,039 registers, 5% DSPs, 33% PLLs, and no
+  block memory; worst setup/hold slack is +0.747/+0.128 ns. All 27 required
+  two-stage synchronizers enter metastability analysis.
+- Added `tb_fpga_refresh_ratio`, composing the real refresh generator,
+  fabric, MCP bridge, and physical controller at 50/200 MHz. Four
+  minimum-interval requests complete in at most 11 of 32 available core
+  clocks when HOLD is inactive and LRDY is bounded.
+- Validation: focused refresh-ratio test PASS; `scripts/lint.sh` clean; full
+  regression 147/147 PASS; clean Quartus map/fit/assembly/TimeQuest/report
+  validation PASS.
+
 ### Added (Task 0159 — Cyclone V clock, reset, and pad boundary)
 - Added `tms34010_cyclone_v_top`, selecting independent DE10-Nano
   `FPGA_CLK1_50` and `FPGA_CLK2_50` sources, a wrapped Intel PLL for 50 MHz

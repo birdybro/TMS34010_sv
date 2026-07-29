@@ -1,8 +1,8 @@
 # Completion audit
 
-> Baseline: functional implementation and the Cyclone V clock/reset/pad
-> adapter through Task 0159, with strict RTL lint clean. This ledger defines
-> what “complete” still requires for the TMS34010-only scope in A0002.
+> Baseline: functional implementation and reproducible Cyclone V
+> implementation sign-off through Task 0160. All seven ordered gates for the
+> TMS34010-only scope in A0002 are complete.
 
 ## Official ISA reconciliation
 
@@ -260,10 +260,9 @@ not a missing TMS34010 feature.
 
 ## Active architectural assumptions requiring closure
 
-No active architectural compatibility assumption remains. New uncertainty
-found during the remaining system integration must still be resolved by
-primary-spec evidence plus tests or retained as an explicit project-level
-deviation.
+No active architectural compatibility assumption remains. New uncertainty in
+future work must still be resolved by primary-spec evidence plus tests or
+retained as an explicit project-level deviation.
 
 A0003 (synchronous active-high FPGA reset), A0004 (explicit project clock
 domains), A0006 (functional-first timing), and A0034 (video timing and
@@ -272,17 +271,18 @@ isolates deterministic collision/undefined behavior around the screen-refresh
 handshake, A0036 isolates the direct synchronous host boundary and
 otherwise-unpredictable simultaneous high-byte write choice, and A0037
 isolates host-engine collisions and the pre-pin synchronous protocol. A0038
-isolates the one-entry DRAM-refresh retention bound until the physical
-controller proves service before the next interval. A0039 records the 8×
+records the one-entry DRAM-refresh retention bound; Task 0160 proves physical
+service before the next minimum interval under its documented external-wait
+assumptions. A0039 records the 8×
 phase representation, synchronous-reset phase origin, deterministic
 undefined LAD value, and explicit CDC boundary. A0040 records the MCP's
-one-outstanding/common-reset contract and pending Quartus constraint proof.
+one-outstanding/common-reset contract and completed Quartus constraint proof.
 A0041 records physical HOLD's synchronized level handshake and phased
 output-enable implementation. A0042 records the one-outstanding EMU-event
 handshake and phase-latched halt indication. A0043 records the asynchronous
-host bundled-data/re-arm contract and FPGA I/O timing work. A0044 records the
-reserved-location read-zero choice and REFCNT exception. A0045 records the
-dedicated VCLK MCP/stopped-clock/active-edge/reset contract. A0046 records
+host bundled-data/re-arm contract and completed FPGA I/O timing work. A0044
+records the reserved-location read-zero choice and REFCNT exception. A0045
+records the dedicated VCLK MCP/stopped-clock/active-edge/reset contract. A0046 records
 interlaced phase recovery, counter-write priority, and equality-counter
 programming requirements. A0047 records external-sync sampling, recognition,
 fallback, field classification, direction, and final FPGA I/O choices. A0048
@@ -290,33 +290,17 @@ records explicit SRT transfer classification/phases, the deterministic
 no-LAD read result, and the processor/external-VRAM scope boundary. Task
 0159's A0049 records the Cyclone V clock ratio, independent board VCLK,
 per-domain reset release, physical video-clock phase, and top-level-only
-tri-state choices. These do not excuse missing architectural state or interface
-behavior; any remaining difference at final sign-off must be documented as a
-deliberate non-pin-compatible boundary.
+tri-state choices. A0050 records Task 0160's Quartus/tool/pin/constraint,
+report-validation, CDC, resource, and refresh-service closure. These do not
+excuse missing architectural state or interface behavior; future differences
+from the signed-off baseline must be documented as deliberate boundaries.
 
 ## System integration gaps
 
-### Memory and refresh fabric
-
-- Validate the one-entry DRAM-refresh service bound under the final PLL clock
-  ratio, external waits, and physical HOLD behavior.
-
-### Video/display
-
-- Constrain and prove the VCLK phase, clock groups, MCP payload paths,
-  external-sync input/output timing, and synchronizer recognition in the real
-  Quartus project.
-
-### FPGA realization
-
-- **Complete (Task 0159):** add the synthesizable Cyclone V top, wrapped
-  PLL, per-domain reset release, and physical HD/LAD/control/sync pads.
-- Add a real Quartus project for `5CSEBA6U23I7`, QSF assignments, and SDC
-  constraints.
-- Make `scripts/synth_quartus.sh` run analysis/synthesis, fitting, and
-  TimeQuest rather than tool discovery.
-- Inspect and archive zero-warning synthesis, resource/inference, CDC, and
-  nonnegative setup/hold reports. Simulation alone is not FPGA completion.
+None within the TMS34010 processor/Cyclone V scope. External VRAM/DRAM,
+level translation, board-level signal integrity, and the VRAM serial-pixel
+path are surrounding-system responsibilities rather than unfinished
+processor behavior.
 
 ## Ordered exit gates
 
@@ -337,18 +321,20 @@ deliberate non-pin-compatible boundary.
    integrated arbitration; Tasks 0147–0148 landed the 8× phase engine and
    coherent CDC/system path; Tasks 0149–0150 completed both on-chip I/O
    requesters; Tasks 0151–0152 completed HOLD and HLDA/EMUA; and Task 0153
-   completed the asynchronous host pins, HRDY, and HD direction. The final
-   PLL/SDC service-bound proof belongs to FPGA-realization gate 6.
+   completed the asynchronous host pins, HRDY, and HD direction. Task 0160's
+   final-ratio refresh proof closes the one-entry service bound.
 5. **Complete (Tasks 0155–0158):** the dedicated VCLK boundary, every
    core/video crossing, internal/external noninterlaced/interlaced timing,
    completed screen-transfer request path, and DPYCTL.SRT graphics MTR/RTM
    path have direct/asynchronous-clock and physical-phase tests. Pixel data is
    emitted by attached VRAM, not by a TMS34010 pin, so external serial-memory
    behavior is outside the processor implementation gate.
-6. **In progress (Task 0159 adapter complete):** land the Cyclone V project
-   and close synthesis, fit, setup, hold, I/O timing, and CDC reporting.
-7. Run strict lint, every self-checking simulation, the real Quartus flow,
-   and a final spec/documentation audit from a clean worktree.
+6. **Complete (Tasks 0159–0160):** the Cyclone V adapter, Quartus 17 project,
+   63-pin QSF, complete SDC, map/fit/assembly, multicorner setup/hold and I/O
+   timing, CDC/metastability reporting, and fixed resource envelopes are
+   validated by one deterministic command.
+7. **Complete (Task 0160):** strict lint, all 147 self-checking simulations,
+   the clean real Quartus flow, and the final spec/documentation audit pass.
 
-The project is complete only when all seven gates are satisfied and their
-evidence is recorded in `tasks.md` and `changelog.md`.
+All seven gates are satisfied. Task evidence is recorded in `tasks.md`,
+`changelog.md`, and `fpga/IMPLEMENTATION_EVIDENCE.md`.

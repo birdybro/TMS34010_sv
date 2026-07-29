@@ -6,7 +6,8 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-Functional implementation work is complete through Task 0159. Task 0124
+The planned TMS34010 processor and Cyclone V implementation scope is complete
+through Task 0160. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -101,6 +102,14 @@ active-high reset release, actual HD/LAD/control/sync tri-states, active-low
 sync inversion, and a DE10-Nano top-level port surface. The reusable
 hierarchy now carries separate core, bus, and video resets so every clock
 domain releases synchronously.
+Task 0160 adds the complete Quartus Prime Lite 17 project, assigns all 63
+top-level ports to DE10-Nano clocks/KEY0/JP1/JP7 pins, constrains every clock
+and I/O boundary, and makes map, fit, assembly, TimeQuest, pin, resource, and
+CDC report acceptance one deterministic command. Multicorner timing closes
+with +0.747 ns worst setup and +0.128 ns worst hold slack; all 27 required
+two-stage synchronizers are reported. A final-ratio integration test proves
+minimum-interval DRAM refresh completes in at most 11 of the available 32
+core clocks when HOLD is inactive and LRDY is bounded.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -156,17 +165,20 @@ The repository currently contains:
 - a Cyclone V top-level adapter with vendor-isolated PLLs, three reset
   conditioners, active-low video-clock/sync phase mapping, and IOE-ready
   bidirectional host/local/video pads;
-- 146 self-checking SystemVerilog testbenches, including non-integer-clock
+- a Quartus Prime Lite 17 project with a complete SDC, deterministic
+  implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
+  reproducible sign-off evidence;
+- 147 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.
 
-This is not yet a fully signed-off FPGA system. ISA/status reconciliation and
-the synthesizable Cyclone V adapter are complete; the audit records the
-remaining real Quartus project/constraints plus timing/resource/CDC
-validation. A board-level design still needs external VRAM or an equivalent
-memory/video subsystem to consume the landed transfer cycles and emit pixels;
-that device behavior is not part of this processor.
+The processor RTL and its reproducible Cyclone V implementation flow are
+complete for the documented scope. A board-level system still needs external
+VRAM/DRAM or an equivalent memory/video subsystem, level translation, and
+signal-integrity validation to consume the landed transfer cycles and emit
+pixels; those surrounding-device responsibilities are not part of this
+processor.
 
 ## Getting started
 
@@ -176,14 +188,17 @@ scripts/lint.sh
 scripts/regress.sh
 scripts/sim.sh tb_smoke
 scripts/sim.sh tb_pixt_win
+QUARTUS_SH=/path/to/quartus-17.0/quartus/bin/quartus_sh \
+  scripts/synth_quartus.sh
 ```
 
 The scripts prefer Questa/ModelSim and fall back to Verilator. Testbenches must
 print `TEST_RESULT: PASS`; the simulator exit code alone is not treated as a
 pass. `scripts/regress.sh` discovers and runs all testbenches; set
 `REGRESS_JOBS` to parallelize the Verilator flow. `scripts/synth_quartus.sh`
-remains a placeholder until Task 0160 and does not yet perform a real
-synthesis or timing run.
+requires Quartus Prime Lite 17.0.2 and rebuilds map, fit, assembly, and
+TimeQuest results before validating the exact warnings, pin fit, complete
+constraints, timing, synchronizers, and resource envelopes.
 
 Before changing RTL, read [AGENTS.md](AGENTS.md), [tasks.md](tasks.md),
 [architecture.md](docs/architecture.md), and the relevant specification in the
@@ -195,6 +210,8 @@ pinned `third_party/TMS34010_Info` submodule.
   refresh RTL.
 - `sim/models/` — nonsynthesizable behavioral memory model.
 - `sim/tb/` — focused self-checking testbenches.
+- `fpga/` — Quartus 17 project, SDC, DE10-Nano pinout, report script, and
+  reproducible implementation evidence.
 - `docs/` — architecture, assumptions, coverage, memory/timing notes, and the
   authoritative Cyclone V HDL coding-guideline bundle.
 - `docs/completion_audit.md` — primary-spec reconciliation and ordered exit

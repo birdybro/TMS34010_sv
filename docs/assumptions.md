@@ -599,11 +599,56 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0050 — Cyclone V implementation and report-acceptance boundary
+- **Date**: 2026-07-29 (Task 0160).
+- **Status**: completed project-level realization contract with reproducible
+  map/fit/assembly/TimeQuest, CDC, pin, resource, and refresh-service evidence.
+- **Sources**: DE10-Nano User Manual Tables 3-5, 3-7, and 3-10; SPVS002C
+  local/host/video AC timing diagrams; and Cyclone V HDL guidelines 23, 24,
+  40, 41, and 91.
+- **Tool/device/top boundary**: the sign-off flow deliberately fixes Quartus
+  Prime Lite 17.0.2 Build 602, `5CSEBA6U23I7`, and
+  `tms34010_cyclone_v_top`. A different tool build, device, or top is a new
+  implementation result and must not reuse this report acceptance.
+- **Pin/electrical boundary**: the QSF assigns all 63 top ports to the two
+  board clocks, debounced KEY0, and JP1/JP7 GPIO as 3.3-V LVTTL. This is a
+  logical processor interface. Original-voltage compatibility, external
+  bidirectional translation, fanout/buffering, termination, pull-ups, power,
+  and signal-integrity closure remain board responsibilities.
+- **Timing/CDC boundary**: the SDC defines both independent primary clocks,
+  every generated 50/200/50 MHz clock, asynchronous groups, reset and
+  source-held MCP exceptions, and absolute min/max host/local/video I/O
+  budgets. TimeQuest reports zero ignored constraints, full setup/hold
+  coverage, +0.747 ns worst setup, +0.128 ns worst hold, and zero TNS at
+  every enabled corner. Recovery/removal has no paths because assertion is
+  cut at the asynchronous first-stage boundary and release is synchronized
+  through the attributed two-register chains.
+- **Synchronizer boundary**: source attributes force exactly 54 protected
+  stages forming 27 required two-register chains; all 27 enter MTBF
+  analysis. Quartus also identifies ordinary shift and stable bundled-payload
+  structures as candidate chains, but those automatic candidates are not
+  claimed as CDC primitives. The validator checks required source-attributed
+  counts independently.
+- **Accepted warning/resource boundary**: the only permitted Fitter warnings
+  are the unavailable Lite LogicLock license (`292013`) and one direct-mode
+  PLL compensation warning (`177007`) per PLL. Accepted utilization is 24%
+  ALMs, 8,039 registers, no block memory, 5% DSPs, and 33% PLLs; the validator
+  applies stricter fixed ceilings of 30%, 12,000, zero, 10%, and 50%.
+- **Refresh/environmental bound**: at the final 50/200 MHz ratio,
+  `tb_fpga_refresh_ratio` observes complete physical RAS-only service in at
+  most 11 core clocks, before the next RR=`00` event at 32 clocks. The proof
+  assumes HOLD inactive and bounded LRDY. An external agent that owns the bus
+  indefinitely or asserts an unbounded wait can prevent refresh, as it can on
+  the original interface, and remains an environmental constraint.
+- **Evidence**: `scripts/synth_quartus.sh` rebuilds and validates the reports;
+  `fpga/IMPLEMENTATION_EVIDENCE.md` records the accepted timestamp-free
+  values and reproduction command.
+
 ## A0049 — Cyclone V clock, reset, and physical-pad realization
 - **Date**: 2026-07-29 (Task 0159).
-- **Status**: active board-realization choice; the logical clock/CDC and
-  original signal-direction behavior are implemented, while QSF/SDC/report
-  proof remains Task 0160.
+- **Status**: active board-realization choice; logical clock/CDC and original
+  signal-direction behavior are implemented, and A0050 records completed
+  QSF/SDC/report proof.
 - **Sources**: 1988 TI TMS34010 User's Guide §2.4 and §9.9; SPVS002C pin and
   AC-timing descriptions; Cyclone V HDL guidelines 11, 12, 23, 24, and 40.
 - **Board clock plan**: DE10-Nano `FPGA_CLK1_50` feeds a wrapped Intel PLL
@@ -634,8 +679,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   passes the reference clock to both logical outputs and models lock from
   reset. This branch exists only so ordinary lint/simulation can elaborate
   vendor-isolated RTL; all clock-ratio behavior is tested below
-  `tms34010_pin_system`, and the real primitive/frequencies must be proven by
-  Task 0160's Quartus reports.
+  `tms34010_pin_system`, and A0050 proves the real primitives/frequencies.
 - **Regression evidence**: `tb_fpga_io` locks pad direction, per-lane enables,
   and sync inversion; `tb_reset_sync` locks assertion and two-edge release;
   `tb_pin_system` and `tb_video_cdc` retain physical and asynchronous-domain
@@ -706,7 +750,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   counter clear. A transition violating synchronizer setup/hold may move
   recognition by one complete update, consistent with the guide's
   asynchronous-input qualification. Final pin delays, minimum pulses, and
-  synchronizer reports remain Quartus sign-off work.
+  synchronizer recognition are constrained and report-validated under A0050.
 - **Counter and fallback behavior**: in external-horizontal mode, recognized
   HSYNC or `HCOUNT=HTOTAL`, whichever occurs first, clears HCOUNT and
   advances/wraps VCOUNT. A recognized VSYNC clears VCOUNT independently of
@@ -779,7 +823,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Date**: 2026-07-28 (Task 0155).
 - **Status**: specification-derived clock ownership with isolated FPGA CDC,
   stopped-clock, reset, and active-edge representation choices. Quartus
-  recognition/constraints remain part of gate 6.
+  recognition/constraints are complete under A0050.
 - **Sources**: 1988 TI TMS34010 User's Guide §2.4, page 2-9; §§9.2–9.6,
   pages 9-3 through 9-12; §9.10.1, pages 9-18 through 9-25; and the project
   CDC rules in `docs/hdl-coding-guidelines/23-cdc-single-bit.md` and
@@ -859,8 +903,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 ## A0043 — Asynchronous physical host bus CDC and re-arm contract
 - **Date**: 2026-07-28 (Task 0153).
 - **Status**: specification-derived host protocol with an isolated
-  functional-first CDC/strobe-width realization; final FPGA timing and
-  original-cycle latency proof remain open.
+  functional-first CDC/strobe-width realization. FPGA timing is constrained
+  and report-validated under A0050; A0006 still deliberately does not claim
+  original-silicon cycle accuracy.
 - **Sources**: 1988 TI TMS34010 User's Guide §2.2, Table 2-2, pages 2-5
   through 2-6; §10.3.2, pages 10-4 through 10-10; and A0006.
 - **Access qualification**: a physical access exists only while HCS is low,
@@ -879,8 +924,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   remain inactive long enough for both synchronizer stages and the one-access
   latch to clear before another access begins. This minimum inactive width is
   an FPGA interface requirement not stated as such for original silicon; the
-  final datasheet/board timing audit must prove it or replace the bridge with
-  a faster asynchronous-front-end handshake.
+  A0050 I/O budget constrains the implemented path, while the external host
+  must satisfy this documented protocol or use a faster front-end bridge.
 - **HRDY policy**: every legal access may receive an extra wait for CDC. A
   registered response wins over a newly started indirect busy condition so
   the current access can end; that busy condition then waits the following
@@ -888,12 +933,13 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   strobes and holds a deterministic two-core-count interval after
   synchronized recognition. This functionally preserves the mandatory
   HSTCTL delay but does not yet claim the guide's exact one-to-two-local-clock
-  latency without the final PLL/TimeQuest relationship.
+  latency; A0006 makes cycle accuracy explicitly out of scope even though the
+  implemented PLL/TimeQuest relationship now closes.
 - **HD direction**: read data remains registered until access re-arm and only
   captured selected byte lanes receive output-enable intent. Writes, waits,
   illegal direction combinations, and inactive HCS never enable HD outputs.
   Task 0159 maps `hd_i`, `hd_o`, and `hd_oe_o` to bidirectional I/O cells;
-  Task 0160 must constrain the data and enable paths.
+  A0050 constrains and report-validates their data and enable paths.
 - **Regression evidence**: `tb_host_bus` offsets host edges from the core
   clock and covers access starts, stable capture, byte lanes, illegal
   direction, HSTCTL HCS-only delay, busy carryover/current-ready priority, and
@@ -903,8 +949,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 ## A0042 — Physical RUN/EMU event bridge and shared output
 - **Date**: 2026-07-28 (Task 0152).
 - **Status**: specification-derived physical RUN/EMU synchronization and
-  HLDA/EMUA phasing; Quartus synchronizer recognition and output timing remain
-  part of the FPGA sign-off gate.
+  HLDA/EMUA phasing; Quartus synchronizer recognition and output timing are
+  complete under A0050.
 - **Sources**: 1988 TI TMS34010 User's Guide §2.5, Table 2-5, page 2-10;
   §11.4.11, page 11-20; and the EMU instruction on page 12-77.
 - **Physical input**: RUN/EMU passes through a dedicated 2FF synchronizer into
@@ -939,7 +985,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Date**: 2026-07-28 (Task 0151).
 - **Status**: specification-derived physical release sequencing with an
   explicit FPGA I/O-enable boundary; Task 0152 completes the shared
-  HLDA/EMUA mux, while TimeQuest proof remains open.
+  HLDA/EMUA mux, and A0050 completes TimeQuest proof.
 - **Sources**: 1988 TI TMS34010 User's Guide §2.5, Table 2-5, pages 2-10
   through 2-11; §11.3, page 11-4; and §11.4.11, Figures 11-15/11-16,
   pages 11-18 through 11-21.
@@ -961,8 +1007,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   within-clock relationships.
 - **Tri-state boundary**: synthesizable internal RTL exports explicit
   per-group output enables instead of assigning `Z` inside the controller.
-  Task 0159 maps them to device I/O buffers; Task 0160 must constrain those
-  enable paths. Task 0152 combines Q3/Q4 HOLDA with Q1/Q2 EMUA on the
+  Task 0159 maps them to device I/O buffers; A0050 constrains those enable
+  paths. Task 0152 combines Q3/Q4 HOLDA with Q1/Q2 EMUA on the
   original shared pin inside the integrated pin system.
 - **Regression evidence**: `tb_local_bus_hold` locks end-Q1 sampling, early
   acknowledge, exact Q2/Q3 release/resume, held-command suppression, and
@@ -971,8 +1017,8 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0040 — Core-to-8× MCP bridge and common reset
 - **Date**: 2026-07-28 (Task 0148).
-- **Status**: verified functional CDC architecture; Quartus constraint and
-  metastability-report sign-off remain part of the FPGA project gate.
+- **Status**: verified functional CDC architecture with completed Quartus
+  constraints and metastability-report sign-off under A0050.
 - **Sources**: `docs/hdl-coding-guidelines/23-cdc-single-bit.md` and
   `24-cdc-multi-bit.md`; 1988 TI TMS34010 User's Guide §11.5, pages 11-23
   through 11-24 (IAQ); and §9.10.1.2, pages 9-20 through 9-23 (screen ORG).
@@ -999,10 +1045,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   low. Screen ORG is captured with SRFADR/DPYTAP when the held refresh request
   begins, so later DPYCTL changes do not alter an in-flight physical command.
 - **Timing boundary**: the source/destination clocks are treated as
-  asynchronous by the RTL. The future Quartus SDC must identify both clocks,
-  constrain the toggle synchronizers, cut/waive the protocol-protected MCP
-  payload paths, and preserve/recognize both 2FF chains. Simulation does not
-  constitute metastability or TimeQuest evidence.
+  asynchronous by the RTL. The Quartus SDC identifies both clocks, constrains
+  the toggle synchronizers, cuts only protocol-protected stable MCP payload
+  paths, and preserves/recognizes both 2FF chains. A0050 records the
+  independent TimeQuest/metastability evidence.
 - **Regression evidence**: `tb_local_bus_bridge` uses a non-integer clock
   ratio, variable destination waits, all payload fields, returned data, and
   consecutive toggle phases. `tb_pin_system` proves that eight reset RAS
@@ -1023,9 +1069,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   by eight extendable zero-row RAS-only cycles.
 - **8× representation**: two timing ticks represent each Q phase. This
   resolves the diagrams' mid-quarter strobe transitions and middle-Q4 read
-  sample without driving internal flops from LCLK1 or LCLK2. The future FPGA
-  top must source `clk8x_i` from a PLL/clock network and constrain the output
-  pins; the current repository has no synthesis or timing evidence.
+  sample without driving internal flops from LCLK1 or LCLK2. The FPGA top
+  sources `clk8x_i` from a 200 MHz PLL clock network, and A0050 records the
+  constrained output pins plus synthesis/timing evidence.
 - **Synchronous reset boundary**: A0003 resets the subphase counter to Q1A,
   holding the two LCLK outputs at their Q1 levels while reset remains active.
   Original silicon keeps its local clocks running and asynchronously samples
@@ -1069,10 +1115,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   64 local clocks. The arbiter captures one pending row/mode. A new event can
   replace a just-retired event on the same edge, but an additional event while
   one is already pending is not queued. Task 0147 proves the standalone
-  controller consumes two local clocks plus any LRDY waits, but the final CDC
-  and external HOLD path must still guarantee service before the next
-  interval. An overlong HOLD already violates the guide's
-  refresh-availability constraint.
+  controller consumes two local clocks plus any LRDY waits; Task 0160's
+  final-ratio integration proof completes physical service in at most 11 of
+  the available 32 core clocks with HOLD inactive and bounded LRDY. An
+  overlong HOLD or unbounded LRDY wait remains an external
+  refresh-availability violation.
 - **Regression evidence**: `tb_bus_arbiter` locks the full priority order,
   active-owner/payload retention, response routing, and pulsed-refresh capture.
   `tb_bus_arbiter_rmw` integrates the real field sequencer and locks the
@@ -1360,5 +1407,6 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 Task 0124 consolidates the assumptions that still affect observable
 compatibility and all system-level work into `completion_audit.md`. Task 0154
-closed the unscoped I/O-register-state item; remaining uncertainty is assigned
-to the explicit video, cache/cycle-accuracy, CDC, and FPGA-realization gates.
+closed the unscoped I/O-register-state item, Tasks 0155–0158 closed the video
+gate, and Tasks 0159–0160 closed CDC/FPGA realization. Optional cache and
+original-silicon cycle accuracy remain outside the completed baseline.

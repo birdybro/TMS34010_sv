@@ -12,7 +12,8 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The functional implementation is complete through Task 0159. Task 0124
+The planned processor and Cyclone V implementation scope is complete through
+Task 0160. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -113,6 +114,12 @@ PLL, an independent phase-separated video PLL, three synchronized active-high
 reset releases, top-level-only host/local/video tri-states, and active-low
 sync conversion. Separate reset ports now reach the core, 8× bus, and VCLK
 owners; ordinary unit benches intentionally tie them together.
+Task 0160 adds the Quartus Prime Lite 17.0.2 project, complete DE10-Nano
+pin/3.3-V LVTTL assignments and SDC, deterministic map/fit/assembly/TimeQuest
+plus report validation, measured timing/resource/CDC evidence, and an
+end-to-end final-clock-ratio refresh-service proof. The complete task gate is
+147 self-checking benches, zero-diagnostic RTL lint, and the real Quartus
+flow.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
@@ -123,9 +130,8 @@ noninterlaced/interlaced timing, the screen-refresh client, and its physical
 memory-to-register cycle. Program-controlled VRAM MTR/RTM service is also
 integrated; external VRAM serial-display behavior is a surrounding-system
 responsibility rather than missing processor RTL.
-Host and local/video pad direction are functionally integrated; their final
-FPGA pin assignments, I/O timing, and CDC constraints remain sign-off work.
-Read
+Host and local/video pad direction, pin assignments, I/O timing, and required
+CDC chains are signed off by the checked-in FPGA project and validator. Read
 `tasks.md`, `docs/completion_audit.md`, and the current-status sections in
 `docs/architecture.md` before selecting new work.
 
@@ -178,6 +184,12 @@ RTL, tests, task log, changelog, and specification first.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.
 - `docs/memory_map.md` — bit-addressed memory model and I/O register map.
 - `docs/hdl-coding-guidelines/` — authoritative Cyclone V RTL style bundle.
+- `fpga/tms34010_cyclone_v.qsf` — sole Quartus project assignment source for
+  the `5CSEBA6U23I7` top, RTL file set, and 63 physical pins.
+- `fpga/tms34010_cyclone_v.sdc` — complete clock, CDC, reset, MCP, and I/O
+  timing contract.
+- `fpga/PINOUT.md` and `fpga/IMPLEMENTATION_EVIDENCE.md` — board mapping,
+  reproducible report results, accepted warnings, and environmental bounds.
 - `rtl/tms34010_pkg.sv` — sole home for shared architectural constants and
   typedefs; do not scatter magic architectural values through the RTL.
 - `rtl/memory/tms34010_field_sequencer.sv` — synthesizable translation from
@@ -246,11 +258,14 @@ exit code alone is not a passing result. `scripts/regress.sh` discovers every
 `sim/tb/tb_*.sv` bench, retains per-test logs under `work/regression/`, and
 accepts `REGRESS_JOBS=<N>` for parallel Verilator builds.
 
-`scripts/synth_quartus.sh` is currently only a placeholder/tool-discovery
-check. Its zero exit status is not evidence of synthesis, fit, timing closure,
-or Cyclone V compatibility. Task 0159 landed the Cyclone V clock/reset/pad
-adapter; a real Quartus project, constraints, and reports are the next
-completion task.
+`scripts/synth_quartus.sh` requires Quartus Prime Lite 17.0.2. It deletes
+only this project's generated implementation directories, then runs a clean
+map, fit, assembly, multicorner TimeQuest analysis, and strict report
+validation. Its pass requires exact tool/device/top identity, all four
+phases, the reviewed warning allowlist, 63 fitted pins, complete constraints,
+nonnegative setup/hold/minimum-pulse timing with zero TNS, every required
+synchronizer, and the fixed resource envelopes. Do not call a manual Quartus
+phase or a stale report a project pass.
 
 RTL lint is a zero-diagnostic gate. Do not silently suppress new warnings or
 call a warning-bearing run "clean."
@@ -274,6 +289,10 @@ keep one task per commit, stage files explicitly, and record the resulting
 commit hash in `tasks.md`. When the user requests publication, push only after
 the local commit and validation are confirmed. Report any authentication or
 network failure; never claim a push succeeded when it did not.
+
+The original completion roadmap ends at Task 0160. New changes still require
+a new numbered task with explicit scope and acceptance criteria; do not
+silently extend the signed-off baseline.
 
 Historical task entries and changelog entries describe what was true at the
 time. Correct current summaries when they drift, but do not rewrite historical

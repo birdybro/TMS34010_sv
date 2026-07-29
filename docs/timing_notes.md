@@ -1,34 +1,28 @@
 # Timing notes
 
-> Status: **functional latency notes plus the Task 0159 FPGA adapter**. The
-> clock/reset/pad boundary exists, but no real Quartus project, SDC, fit, or
-> TimeQuest report exists yet. Every path/resource assessment below is
-> therefore a watch item, not measured Cyclone V evidence.
+> Status: **functional latency and measured Cyclone V implementation evidence
+> through Task 0160**. Quartus Prime Lite 17.0.2 closes the complete design at
+> 50/200/50 MHz with +0.747 ns worst setup, +0.128 ns worst hold, zero TNS,
+> and no ignored constraints.
 
-## Known long paths (planned watchlist)
+## Known long paths and measured disposition
 
 | Path                                | Phase introduced | Status   | Mitigation if needed |
 |-------------------------------------|------------------|----------|----------------------|
-| Decode → ALU operand mux            | 3                | landed, unmeasured | pipeline decode/execute boundary if Fmax suffers |
-| Bit-addressed field/XY address logic| 5 / 7            | landed in core, unmeasured | register conversion/extract paths if combinational logic is too wide |
-| PIXBLT/FILL/LINE pixel pipeline     | 7                | landed, multicycle, unmeasured | keep memory hand-offs registered; split core control if fanout dominates |
-| Wide barrel shifter / field masks   | 2 / 5            | landed, unmeasured | stage only with synthesis evidence and full latency regression |
-| Field-window shift/mask and word merge | Task 0136      | landed, sequenced, unmeasured | preserve the registered word boundary; pipeline only if TimeQuest identifies this path |
-| 8× local-bus phase/pin decode        | Tasks 0147/0159   | landed through physical pads, unmeasured | keep outputs in the 8× domain/IOE boundary; constrain the 200 MHz PLL clock and every pin delay before FPGA sign-off |
-| Core↔8× MCP payload/response paths   | Task 0148        | landed, protocol-protected, unconstrained | declare asynchronous clocks, preserve/recognize toggle synchronizers, and cut/waive only the stable MCP payload paths |
-| CPU request classification → field/I/O select | Task 0149 | one registered stage, unmeasured | retain the registered loop break; inspect fanout only if TimeQuest identifies it |
-| Host I/O read mux → grant snapshot      | Task 0150        | grant-registered, unmeasured | retain the host-grant sample; do not let live counters cross the MCP as changing payload |
-| HOLD request/grant CDC → phased output enables | Task 0151 | synchronized levels, unmeasured | preserve both 2FF chains; keep all OE/HOLDA decoding wholly in the 8× domain and constrain final I/O timing |
-| EMU held-event/halt CDC → shared pin     | Task 0152        | source-held/phase-latched, unmeasured | preserve all three 2FF chains; constrain the final Q1/Q2 EMUA and Q3/Q4 HLDA mux at the I/O boundary |
-| Host access/HCS levels → bundled payload | Task 0153        | 2FF-qualified MCP, unconstrained | preserve both synchronizers; constrain host input minima and bundled HFS/HD/control stability through capture; constrain HRDY and HD/OE outputs |
-| Core↔VCLK video configuration/command/status/DIP | Task 0155 | four packed MCP mailboxes, unconstrained | declare core/VCLK asynchronous; recognize every request/ack 2FF; cut only source-held payload paths; retain bounded-stale status and sticky DIP contracts |
-| VCLK→core screen request/completion | Task 0155 | held bundled MCP transaction, unconstrained | preserve request/complete toggles and source payload; keep the core request registered through memory completion |
-| External HSYNC/VSYNC pins → VCLK recognition | Task 0157 | attributed two-stage level synchronizers plus edge history, unconstrained | constrain pin-to-first-stage input delay, preserve/report both chains, and prove no path bypasses delayed edge recognition |
-| Graphics-state/SRT decode → registered CPU request | Task 0158 | one-bit sideband captured with request, unmeasured | retain the registered fabric ingress; inspect graphics-state and DPYCTL fanout if TimeQuest identifies it |
-| Board reset / PLL locks → three release chains | Task 0159 | attributed two-stage chains, unmeasured | constrain async assertion into each first stage; prove recovery/removal and synchronizer recognition for core, bus, and VCLK |
-| Split signals → HD/LAD/control/sync IOEs | Task 0159 | top-level tri-states landed, unmeasured | assign legal GPIO pins/I/O standards, constrain data and output enables, and inspect IOE packing plus hold/release timing |
-| SLA sign-difference reduction       | Task 0130         | landed, unmeasured | reduction follows the barrel shift amount; register only if TimeQuest identifies it |
-| MPYS/MPYU 32×32 multiply (`mpy_product`) | 3 (Task 0071) | watch | Operands are regfile-registered and the product is registered into `mpy_product_q` (1 EXECUTE cycle), so it should map to Cyclone V variable-precision DSP (≈3–4 DSP blocks for 32×32→64). If the combinational 32×32 multiply fails Fmax, pipeline it into 2+ stages and stretch the multiply latency (cycle count is internal to EXECUTE/WRITEBACK — not externally observable for a register op). |
+| Decode → dispatch/result boundary   | 3 / Task 0160    | closed with registered decode and ordinary result | retain both explicit register boundaries and their narrow two-cycle SDC |
+| Bit-addressed field/XY/graphics logic | 5 / 7          | closed at 50 MHz | keep memory hand-offs registered |
+| Wide barrel shifter / field masks   | 2 / 5            | closed at 50 MHz | stage only after new measured evidence |
+| Field-window shift/mask and word merge | Task 0136      | closed through registered word boundary | preserve that boundary |
+| 8× local-bus phase/pin decode       | Tasks 0147/0159  | closed at 200 MHz and bounded to pins | keep outputs wholly in the 8× domain |
+| Core↔8× MCP payload/response paths  | Task 0148        | stable-payload exceptions applied; toggles recognized | preserve source-held payloads and 2FF attributes |
+| CPU/I/O classification and completion | Tasks 0149/0160 | closed with registered ingress and I/O snapshot | retain both stages |
+| HOLD/EMU/host CDC and pad enables   | Tasks 0151–0153  | constrained; required 2FF chains recognized | preserve the protocol-held payloads and phased OE owner |
+| Core↔VCLK mailboxes and screen transaction | Task 0155 | constrained asynchronous groups/MCPs; chains recognized | retain one-outstanding source-held contracts |
+| External HSYNC/VSYNC → VCLK         | Task 0157        | constrained inputs; both level chains recognized | retain delayed edge recognition |
+| Graphics SRT request classification | Task 0158        | closed through registered fabric ingress | retain captured SRT sideband |
+| Board reset / PLL locks             | Task 0159        | assertion cut, three release chains recognized | preserve synchronous destination-domain release |
+| HD/LAD/control/sync IOEs            | Task 0159        | 63 fitted pins with bounded min/max paths | re-run full implementation after any pad change |
+| MPYS/MPYU 32×32 multiply            | Task 0071        | closed using 6 DSP blocks total | pipeline only after new measured evidence and full regression |
 
 ## Multi-cycle operations
 
@@ -114,8 +108,10 @@
   newly decremented value and `refresh_cbr_o` reflects CONTROL.RM. The
   Task 0145 arbiter captures this event until it performs the physical cycle;
   Task 0148 routes it through the MCP bridge to the RAS-only or CBR phase
-  engine. The final wait/PLL configuration and permitted HOLD duration must
-  still prove the one-entry pending latch cannot be overrun.
+  engine. At the final 50/200 MHz ratio, `tb_fpga_refresh_ratio` observes
+  complete physical service in at most 11 of 32 available core clocks when
+  HOLD is inactive and LRDY is bounded. Unbounded external ownership or wait
+  remains the explicit environmental limit.
 - **Integrated video timing** — Task 0155 runs the timing
   path on independent `vclk_i`. In internal NIL=1 mode HCOUNT wraps after HTOTAL and
   advances/wraps VCOUNT after VTOTAL. Task 0156 adds NIL=0 fields: reset starts
@@ -127,8 +123,8 @@
   VESYNC half-line advance suppresses that one stale compare as §9.7
   requires. Sync/end blank equality remains active for that count; start
   blank equality remains inactive until the following count. The internal
-  positive edge represents the original falling-VCLK update edge; final
-  PLL/pin phase mapping remains gate-6 work.
+  positive edge represents the original falling-VCLK update edge; Task 0160's
+  generated clocks and output constraints close the PLL/pin mapping.
   Task 0157 adds external mode: each raw active-low sync level uses its own
   attributed 2FF plus saved history, so a sampled falling input clears its
   counter on the third update edge (the guide's 2.5-VCLK offset). External
@@ -281,18 +277,18 @@ Pipelining is a Phase 10 candidate. Any pipeline introduction must:
 
 ## FPGA timing concerns
 
-- The Task 0159 Cyclone V adapter fixes the initial clock plan:
+- The Task 0159 Cyclone V adapter fixes the clock plan:
   `FPGA_CLK1_50` enters an Intel PLL that emits 50 MHz core and 200 MHz 8×
   local-bus timing clocks; independent continuously running
   `FPGA_CLK2_50` feeds a second PLL with phase-zero 50 MHz internal VCLK and
   a 180-degree 50 MHz pin clock. The phase engine divides its 200 MHz clock
   into eight subphases, so each LCLK waveform has a 25 MHz period. Task 0160
-  must prove those exact generated clocks and clear 50/200/50 MHz
-  setup/hold on `5CSEBA6U23I7`.
+  proves those exact generated clocks and closes 50/200/50 MHz setup/hold on
+  `5CSEBA6U23I7`.
 - `VIDEO_VCLK` uses the second PLL's 180-degree output, mapping the internal
   positive edge to the original falling-edge update phase without a fabric
-  clock inverter. TimeQuest must constrain this output path and confirm that
-  sync/blank changes meet the selected external video-device relationship.
+  clock inverter. TimeQuest constrains the output relationship and absolute
+  sync/blank paths.
 - Avoid combinational paths longer than ~10 LUT levels. If a path goes
   longer, register it or note the exception here.
 - All clock-domain crossings (local bus, host interface, video) must be
@@ -305,6 +301,7 @@ synchronous to `clk8x_i`. LCLK1/LCLK2 are output waveforms decoded from the
 internal subphase counter and are never used as fabric clocks. Task 0159's
 PLL supplies `clk8x_i` at 200 MHz; the QSF/SDC must prove that generated
 clock is on a clock network and constrain the physical LCLK/LAD/control pins.
+Task 0160's fitted clock and output-path reports satisfy that requirement.
 
 Task 0148 connects the core-clock command boundary through
 `tms34010_local_bus_bridge`. The source registers the complete command,
@@ -320,10 +317,9 @@ request to go low so the held completion cannot launch twice.
 The bridge requires common reset assertion and initializes both toggle phases
 to zero. Its RTL does not require a rational or fixed clock ratio, and
 `tb_local_bus_bridge` tests a non-integer ratio with variable service delay.
-The future SDC must declare the clock relationship, identify both
-synchronizers, and cut or waive only the protocol-protected MCP payload paths.
-Until Quartus recognizes those chains and TimeQuest/CDC reports are archived,
-this is functional CDC evidence rather than FPGA timing sign-off.
+The SDC declares the clocks asynchronous, recognizes both synchronizers, and
+cuts only the protocol-protected stable MCP payload paths. Task 0160's
+TimeQuest/metastability reports supply the independent FPGA timing evidence.
 
 ## Interrupt input CDC
 
@@ -335,13 +331,12 @@ both synchronized levels inactive-high. The core therefore observes a pin
 transition after two core-clock sampling edges; this is the FPGA abstraction
 of the guide's one-to-two-state synchronization delay.
 
-The future SDC must mark the pin-to-first-stage paths asynchronous and the
-Quartus metastability report must recognize both chains. Those checks cannot
-be claimed until the real project exists. The supplemental `dpyint_set_i`
-remains a synchronous core-clock event. Task 0155's display compare lives in
-VCLK: a sticky event feeds a packed one-bit MCP mailbox and emits one core
-pulse, while an already pending architectural DIP makes multiple intervening
-events equivalent.
+The SDC marks pin-to-first-stage paths asynchronous, and the Quartus
+metastability report recognizes both chains. The supplemental
+`dpyint_set_i` remains a synchronous core-clock event. Task 0155's display
+compare lives in VCLK: a sticky event feeds a packed one-bit MCP mailbox and
+emits one core pulse, while an already pending architectural DIP makes
+multiple intervening events equivalent.
 
 ## Host pin CDC boundary
 
@@ -358,10 +353,11 @@ The external access must remain active until HRDY is high, then remain
 inactive long enough for the combined level to cross low through both stages
 and clear the one-access latch. HFS must already be stable when HCS falls so
 the HCS-only HSTCTL wait can be classified. These are functional protocol
-requirements verified by `tb_host_bus`; the final SDC must constrain
-pin-to-first-stage paths, recognize both 2FF chains, prove the host's minimum
-active/inactive strobe widths, constrain the bundled payload relative to the
-capture edge, and close HRDY plus HD/output-enable pin delays.
+requirements verified by `tb_host_bus`. The final SDC constrains
+pin-to-first-stage paths, recognizes both 2FF chains, bounds the bundled
+payload relative to capture, and closes HRDY plus HD/output-enable paths.
+The external host remains responsible for the documented active/inactive
+strobe widths.
 
 ## Dedicated video clock boundary
 
@@ -382,27 +378,31 @@ Tasks 0155–0157 close the functional video-timing VCLK boundary:
   synchronizers and edge history in VCLK; DXV/HSD direction resolves to
   explicit output enables at the pin-system boundary.
 
-The core and VCLK clocks are asynchronous. The final SDC must define both
-clocks, use asynchronous clock groups, preserve and report every toggle 2FF,
-and cut/waive only payload buses proven stable by the MCP protocol. It must
-also constrain external-sync pin input delays and minimum pulse widths,
-recognize each pin synchronizer, and constrain physical active-low sync data
-and output-enable delays/inversion. Task 0159 gives each domain a separately
-synchronized active-high reset release from one common assertion request, so
-toggle phases start at zero without an asynchronously released shared net.
-If VCLK stops, status remains at its last coherent snapshot and pending
-commands complete only when it resumes (A0045/A0047/A0049).
+The core and VCLK clocks are asynchronous. The SDC defines both clocks, uses
+asynchronous clock groups, preserves/reports every required toggle 2FF, cuts
+only payload buses proven stable by the MCP protocol, and constrains external
+sync input/output paths. Task 0159 gives each domain a separately synchronized
+active-high reset release from one common assertion request, so toggle phases
+start at zero without an asynchronously released shared net. If VCLK stops,
+status remains at its last coherent snapshot and pending commands complete
+only when it resumes (A0045/A0047/A0049/A0050).
 
 Task 0158 adds no new clock crossing: its SRT value and graphics request are
 both core-clock signals captured before the already landed core-to-8× MCP.
 The expanded cycle kind then crosses as part of the existing stable command
-payload. Quartus must nevertheless include the MTR/RTM pin paths in the same
-8× output-delay and output-enable analysis as screen transfer (A0048).
+payload. Task 0160 includes the MTR/RTM pin paths in the same 8× absolute
+output-delay and output-enable analysis as screen transfer (A0048).
 
 ## Cyclone V-specific notes
 
 Task 0159 isolates `altera_pll` under `rtl/fpga/`, isolates every high
 impedance assignment in `tms34010_fpga_io`, and provides one reset-release
-chain per clock domain. Task 0160 must fill in measured ALM/register/M10K/DSP
-use, clock-network placement, synchronizer statistics, I/O register packing,
-and worst setup/hold/recovery/removal slack from real reports.
+chain per clock domain. Task 0160 measures 10,017 ALMs (24%), 8,039
+registers, zero block-memory bits, 6 DSP blocks (5%), and 2 PLLs (33%). The
+fit uses all 63 assigned pins. Across all enabled corners, worst setup is
++0.747 ns, worst hold is +0.128 ns, worst minimum-pulse slack is +1.250 ns,
+and TNS is zero. Recovery/removal reports have no paths because asynchronous
+assertion is cut before the first stage and release is synchronized. Exactly
+54 forced stages form the 27 required two-register synchronizer chains, all
+of which enter MTBF analysis. `fpga/IMPLEMENTATION_EVIDENCE.md` records the
+complete reproducible result and accepted warning set.

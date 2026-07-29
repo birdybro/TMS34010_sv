@@ -201,11 +201,14 @@ module tms34010_core
   // Instruction word latch + decoder
   //
   // instr_word_q is latched the cycle the memory acks an instruction
-  // fetch. The decoder runs combinationally; consumers see the decoded
-  // result from CORE_DECODE onward.
+  // fetch. The decoder runs combinationally for two settle cycles; consumers
+  // see its registered result from CORE_DISPATCH onward.
   // ---------------------------------------------------------------------------
-  instr_word_t    instr_word_q;
-  decoded_instr_t decoded;
+  // Quartus 17 needs the intentionally multi-cycle decoder boundary to remain
+  // visible after optimization so the matching SDC exception stays narrow.
+  (* preserve *) instr_word_t instr_word_q;
+  decoded_instr_t            decoded_comb;
+  (* preserve *) decoded_instr_t decoded;
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -217,8 +220,22 @@ module tms34010_core
 
   tms34010_decode u_decode (
     .instr  (instr_word_q),
-    .decoded(decoded)
+    .decoded(decoded_comb)
   );
+
+  // The exhaustive decoder is deliberately given two complete core clocks.
+  // The opcode is stable throughout CORE_DECODE and CORE_DECODE_WAIT, then
+  // the packed result is captured once and used from CORE_DISPATCH until the
+  // next acknowledged opcode fetch. Besides making the timing contract
+  // explicit, this prevents decoder equality trees from being replicated
+  // deep into every execute/writeback cone.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      decoded <= '0;
+    end else if (state_q == CORE_DECODE_WAIT) begin
+      decoded <= decoded_comb;
+    end
+  end
 
   // Sticky illegal-opcode diagnostic latch. Set when CORE_DECODE encounters
   // an unrecognized encoding and cleared only by reset. The §8.7-reserved
@@ -227,7 +244,7 @@ module tms34010_core
   always_ff @(posedge clk) begin
     if (rst) begin
       illegal_q <= 1'b0;
-    end else if (state_q == CORE_DECODE && decoded.illegal) begin
+    end else if (state_q == CORE_DISPATCH && decoded.illegal) begin
       illegal_q <= 1'b1;
     end
   end
@@ -288,11 +305,14 @@ module tms34010_core
   // direction bit; instr_word_q[9:5] is the 5-bit unsigned offset.
   logic [ADDR_WIDTH-1:0] branch_target_dsjs;
   logic signed [9:0]     dsjs_disp_bits;
+  logic signed [9:0]     dsjs_disp_magnitude;
   // Build positive bit-offset = {1'b0, offset5, 4'h0} (signed 10-bit
   // value in [0, +496]), then negate when D=1.
+  assign dsjs_disp_magnitude =
+      $signed({1'b0, instr_word_q[9:5], 4'h0});
   assign dsjs_disp_bits = instr_word_q[10]
-                        ? -10'($signed({1'b0, instr_word_q[9:5], 4'h0}))
-                        :  10'($signed({1'b0, instr_word_q[9:5], 4'h0}));
+                        ? -dsjs_disp_magnitude
+                        :  dsjs_disp_magnitude;
   assign branch_target_dsjs = pc_value + ADDR_WIDTH'(dsjs_disp_bits);
 
   // ---------------------------------------------------------------------------
@@ -841,14 +861,10 @@ module tms34010_core
   logic [1:0]            drav_w_q;          // CONTROL.W latched at EXECUTE
   logic                  drav_inside_q;     // Rd's pixel lies inside the window
   logic                  drav_in_window;    // combinational test at SETUP_WIN
-  logic                  drav_draw;         // pixel is actually written
   assign drav_in_window =
         (drav_rd_q[15:0] >= rf_rs1_data[15:0]) && (drav_rd_q[15:0] <= rf_rs2_data[15:0])
      && (drav_rd_q[DATA_WIDTH-1:16] >= rf_rs1_data[DATA_WIDTH-1:16])
      && (drav_rd_q[DATA_WIDTH-1:16] <= rf_rs2_data[DATA_WIDTH-1:16]);
-  // Drawn for W=0 always; for W=2/W=3 only when inside; W=1 never draws.
-  assign drav_draw = (drav_w_q == 2'd0)
-                   || (((drav_w_q == 2'd2) || (drav_w_q == 2'd3)) && drav_inside_q);
   logic [DATA_WIDTH-1:0] drav_pixel_mask, drav_pmask_field, drav_processed, drav_merged;
   logic                  drav_transp;
   logic [DATA_WIDTH-1:0] drav_advance;
@@ -1081,13 +1097,13 @@ module tms34010_core
       // MMFM: highest set bit. Iterate low→high so the LAST overwrite
       // (the largest i with mm_mask_q[i]=1) wins.
       for (int i = 0; i < 16; i++) begin
-        if (mm_mask_q[i]) mm_iter_idx = 4'(i);
+        if (mm_mask_q[i]) mm_iter_idx = i[3:0];
       end
     end else begin
       // MMTM: lowest set bit. Iterate high→low so the loop terminates
       // on the smallest i with mm_mask_q[i]=1.
       for (int i = 15; i >= 0; i--) begin
-        if (mm_mask_q[i]) mm_iter_idx = 4'(i);
+        if (mm_mask_q[i]) mm_iter_idx = i[3:0];
       end
     end
   end
@@ -1943,7 +1959,7 @@ module tms34010_core
     // wins. Synthesizable — no `break`, no run-time loop.
     lmo_bit_pos = 5'd0;
     for (int i = 0; i < DATA_WIDTH; i++) begin
-      if (rf_rs1_data[i]) lmo_bit_pos = 5'(i);
+      if (rf_rs1_data[i]) lmo_bit_pos = i[4:0];
     end
     if (rf_rs1_data == '0)
       lmo_result = '0;
@@ -1958,21 +1974,65 @@ module tms34010_core
   //   EXGPC  → current PC value (the other half of the swap)
   //   REV    → chip-revision constant (page 12-233)
   //   LMO_RR → priority-encoder result
-  // The default routes the shifter or ALU result per decoded.use_shifter.
+  // Ordinary results are captured while the FSM is in CORE_EXECUTE. This
+  // explicit boundary matches the multi-cycle contract: CORE_WRITEBACK
+  // consumes a stable registered value instead of rebuilding a live
+  // asynchronous-regfile/ALU path after the state and special read selectors
+  // have moved on.
+  logic [DATA_WIDTH-1:0] execute_wb_data;
+  logic [DATA_WIDTH-1:0] execute_wb_data_q;
+  logic [DATA_WIDTH-1:0] m2m_dst_new_q;
+
+  always_comb begin
+    unique case (decoded.iclass)
+      INSTR_MOVX:   execute_wb_data =
+          {rf_rs2_data[DATA_WIDTH-1:16], rf_rs1_data[15:0]};
+      INSTR_MOVY:   execute_wb_data =
+          {rf_rs1_data[DATA_WIDTH-1:16], rf_rs2_data[15:0]};
+      INSTR_ADDXY:  execute_wb_data = addxy_result;
+      INSTR_SUBXY:  execute_wb_data = subxy_result;
+      INSTR_CPW:    execute_wb_data = cpw_result;
+      INSTR_GETST:  execute_wb_data = st_value;
+      INSTR_MOVE_FIELD_STORE,
+      INSTR_MOVE_FIELD_LOAD:
+                    execute_wb_data = mv_ptr_new;
+      INSTR_MOVE_FIELD_M2M,
+      INSTR_MOVE_OFF_M2M_PI,
+      INSTR_MOVE_ABS_M2M_PI:
+                    execute_wb_data = m2m_src_new;
+      INSTR_CVXYL:  execute_wb_data = cvxyl_result;
+      INSTR_GETPC,
+      INSTR_EXGPC:  execute_wb_data = pc_value;
+      INSTR_REV:    execute_wb_data = REV_VALUE;
+      INSTR_LMO_RR: execute_wb_data = lmo_result;
+      INSTR_SEXT:   execute_wb_data = sext_result;
+      INSTR_ZEXT:   execute_wb_data = zext_result;
+      INSTR_EXGF:   execute_wb_data = exgf_new_rd;
+      default:      execute_wb_data =
+          decoded.use_shifter ? shifter_result : alu_result;
+    endcase
+  end
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      execute_wb_data_q <= '0;
+      m2m_dst_new_q     <= '0;
+    end else if (state_q == CORE_EXECUTE) begin
+      execute_wb_data_q <= execute_wb_data;
+      m2m_dst_new_q     <= m2m_dst_new;
+    end
+  end
+
+  // Later multi-cycle engines override the registered ordinary result with
+  // their own registered/memory response. The default is the execution-stage
+  // result above.
   always_comb begin
     if (int_sp_wb) begin
       // Interrupt entry: SP <- SP - 64 (two 32-bit pushes complete).
       rf_wr_data = rf_sp - WORD_BIT_SIZE_2;
     end else
     unique case (decoded.iclass)
-      // MOVX: Rd.X (low 16) <- Rs.X, Rd.Y (high 16) kept. MOVY: Rd.Y <-
-      // Rs.Y, Rd.X kept. rf_rs1=Rs, rf_rs2=old Rd (async read, same cycle).
-      INSTR_MOVX:   rf_wr_data = {rf_rs2_data[DATA_WIDTH-1:16], rf_rs1_data[15:0]};
-      INSTR_MOVY:   rf_wr_data = {rf_rs1_data[DATA_WIDTH-1:16], rf_rs2_data[15:0]};
-      INSTR_ADDXY:  rf_wr_data = addxy_result;
-      INSTR_SUBXY:  rf_wr_data = subxy_result;
       INSTR_DRAV:   rf_wr_data = drav_advance;   // Rd advanced by Rs (XY add)
-      INSTR_CPW:    rf_wr_data = cpw_result;
       // MPYS/MPYU: even Rd -> hi32 then (Rd+1) lo32; odd Rd -> lo32.
       INSTR_MPYS,
       INSTR_MPYU:   rf_wr_data = mpy_rd_even
@@ -1989,7 +2049,6 @@ module tms34010_core
       // MODU/MODS: the remainder of Rd mod Rs -> Rd (single writeback).
       INSTR_MODU,
       INSTR_MODS:   rf_wr_data = div_rem_out;
-      INSTR_GETST:  rf_wr_data = st_value;
       INSTR_MMTM:   rf_wr_data = mm_rp_q;       // final Rp = address of last push
       // MMFM: per-iteration pop writes mem_rdata_eff to the popped register;
       // the WRITEBACK pass writes final Rp (= initial + 32*count).
@@ -1998,21 +2057,21 @@ module tms34010_core
       // holds the value at WRITEBACK (no new transaction is issued there).
       // Store inc/dec writes the auto-updated pointer back to Rd at
       // WRITEBACK (plain store has wb_reg_en=0, so this is unused there).
-      INSTR_MOVE_FIELD_STORE: rf_wr_data = mv_ptr_new;
+      INSTR_MOVE_FIELD_STORE: rf_wr_data = execute_wb_data_q;
       // Load: at WRITEBACK -> the field-extended data to Rd; during
       // CORE_MEMORY (inc/dec) -> the updated pointer to Rs.
-      INSTR_MOVE_FIELD_LOAD: rf_wr_data = mv_load_ptr_wr ? mv_ptr_new : mv_load_data;
+      INSTR_MOVE_FIELD_LOAD:
+          rf_wr_data = mv_load_ptr_wr ? execute_wb_data_q : mv_load_data;
       // Indirect-to-indirect inc/dec: source pointer Rs (step-0 ack) or
       // destination pointer Rd (WRITEBACK).
       INSTR_MOVE_FIELD_M2M,
       INSTR_MOVE_OFF_M2M_PI,
       INSTR_MOVE_ABS_M2M_PI:
-          rf_wr_data = m2m_src_wr ? m2m_src_new : m2m_dst_new;
+          rf_wr_data = m2m_src_wr ? execute_wb_data_q : m2m_dst_new_q;
       // MOVE @SAddr,Rd: Rd <- the field-extended value read from the
       // absolute address. MOVE *Rs(off),Rd: same, from the offset address.
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
-      INSTR_CVXYL:  rf_wr_data = cvxyl_result;
       INSTR_FILL_L,
       INSTR_FILL_XY: rf_wr_data = fill_addr_q;  // final (linear) DADDR -> B2 (CORE_FILL_WB)
       INSTR_PIXBLT_LL: rf_wr_data = pblt_wb_saddr ? pblt_src_addr_q   // SADDR -> B0
@@ -2020,14 +2079,7 @@ module tms34010_core
       INSTR_LINE:    rf_wr_data = line_wb_d     ? line_d_q      // d -> B0
                                : line_wb_daddr  ? line_daddr_q  // DADDR -> B2
                                                 : line_count_q; // COUNT -> B10
-      INSTR_GETPC,
-      INSTR_EXGPC:  rf_wr_data = pc_value;
-      INSTR_REV:    rf_wr_data = REV_VALUE;
-      INSTR_LMO_RR: rf_wr_data = lmo_result;
-      INSTR_SEXT:   rf_wr_data = sext_result;
-      INSTR_ZEXT:   rf_wr_data = zext_result;
-      INSTR_EXGF:   rf_wr_data = exgf_new_rd;
-      default:      rf_wr_data = decoded.use_shifter ? shifter_result : alu_result;
+      default:      rf_wr_data = execute_wb_data_q;
     endcase
   end
 
@@ -2414,7 +2466,8 @@ module tms34010_core
     .req      (mem_req && mem_ack),
     .we       (mem_we_int),    // the access's write intent
     .addr     (mem_addr),
-    .wdata    (mem_wdata[15:0]),
+    .req_addr_i(io_access_addr_q),
+    .wdata    (io_write_data_q),
     .rdata    (io_rdata16),
     .is_io    (io_is_io),
     .psize_o  (io_psize),
@@ -2497,7 +2550,7 @@ module tms34010_core
       int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
       int_is_nmi_q <= nmi_req;
       int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
-    end else if (state_q == CORE_DECODE && decoded.illegal_trap) begin
+    end else if (state_q == CORE_DISPATCH && decoded.illegal_trap) begin
       // 1988 User's Guide §8.7: an illegal opcode is an unmaskable
       // TRAP-30-equivalent event. PC already points past the illegal word.
       int_vec_q    <= INT_VEC_ILLOP;
@@ -2527,28 +2580,38 @@ module tms34010_core
   assign mem_io_we    = mem_we_int;
   assign mem_io_rdata = io_rdata16;
 
-  // Effective read data. The external memory model holds mem_rdata stable
-  // from the ack cycle through WRITEBACK, but the I/O register's async read
-  // follows mem_addr and would change once the address moves on. So latch
-  // the I/O read at the access ack and hold it: during an active transaction
-  // (mem_req high, i.e. the ack cycle) use the combinational decode; once the
-  // transaction has retired (WRITEBACK, mem_req low) use the latched I/O
-  // value if the just-completed access was I/O, else the persisted external
-  // mem_rdata.
+  // Effective read data. The external memory path holds mem_rdata through
+  // WRITEBACK, but the asynchronous I/O read follows the live address. The
+  // integrated fabric cannot acknowledge before its registered ingress has
+  // accepted a request, so snapshot I/O classification, read data, completion
+  // address, and write data on the held request. Completion and WRITEBACK then
+  // consume only these stable values rather than rebuilding a long live
+  // core/register/I/O mux path.
   logic [15:0] io_rdata_q;
   logic        io_is_io_q;
+  logic [ADDR_WIDTH-1:0] io_access_addr_q;
+  logic [15:0] io_write_data_q;
   always_ff @(posedge clk) begin
     if (rst) begin
-      io_rdata_q <= '0;
-      io_is_io_q <= 1'b0;
-    end else if (mem_req && mem_ack) begin
-      io_rdata_q <= io_rdata16;
-      io_is_io_q <= io_is_io;
+      io_rdata_q       <= '0;
+      io_is_io_q       <= 1'b0;
+      io_access_addr_q <= '0;
+      io_write_data_q  <= '0;
+    end else begin
+      // The integrated memory fabric registers every request before it can
+      // acknowledge it. Hold the processor I/O read view and write payload
+      // at the core boundary as well, removing a live register-file/address
+      // mux round-trip from the eventual completion-qualified writeback.
+      if (mem_req) begin
+        io_rdata_q       <= io_rdata16;
+        io_is_io_q       <= io_is_io;
+        io_access_addr_q <= mem_addr;
+        io_write_data_q  <= mem_wdata[15:0];
+      end
     end
   end
   assign mem_rdata_eff =
-      mem_req ? (io_is_io   ? {{(DATA_WIDTH-16){1'b0}}, io_rdata16} : mem_rdata)
-              : (io_is_io_q ? {{(DATA_WIDTH-16){1'b0}}, io_rdata_q} : mem_rdata);
+      io_is_io_q ? {{(DATA_WIDTH-16){1'b0}}, io_rdata_q} : mem_rdata;
 
   tms34010_alu u_alu (
     .op    (alu_op),
@@ -2692,16 +2755,6 @@ module tms34010_core
     .v_o             (st_v)
   );
 
-  // Currently-unused datapath observability — keep the lint sweep
-  // clean without falsely claiming we consume the value.
-  logic [DATA_WIDTH-1:0] unused_rf_sp;
-  logic [DATA_WIDTH-1:0] unused_st_value;
-  logic                  unused_st_nv;
-  assign unused_rf_sp    = rf_sp;
-  assign unused_st_value = st_value;
-  assign unused_st_nv    = st_n ^ st_v ^ st_z;  // touch all three to suppress
-
-
   // ---------------------------------------------------------------------------
   // Next-state + combinational outputs
   //
@@ -2802,6 +2855,17 @@ module tms34010_core
       end
 
       CORE_DECODE: begin
+        // instr_word_q has just changed. Hold it for a second complete cycle
+        // before the wide combinational decode record is captured.
+        state_d = CORE_DECODE_WAIT;
+      end
+
+      CORE_DECODE_WAIT: begin
+        // decoded is captured at the edge leaving this state.
+        state_d = CORE_DISPATCH;
+      end
+
+      CORE_DISPATCH: begin
         // Reserved encodings trap immediately to vector 30. PC was advanced
         // by the opcode fetch, so the pushed PC matches TRAP 30's PC'.
         if (decoded.illegal_trap) begin

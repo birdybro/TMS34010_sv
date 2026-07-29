@@ -1,12 +1,13 @@
 # Tasks
 
-## Current Milestone: Reconcile and complete the remaining architecture
+## Current Milestone: Completed processor and Cyclone V baseline
 
-The functional implementation and Cyclone V adapter are complete through
-Task 0159. Task 0159 adds the wrapped PLL, independent board VCLK,
-per-domain reset release, and top-level host/local/video pad direction.
-The remaining mandatory work is the Task 0160 Quartus project, constraints,
-fit/timing/CDC reports, followed by the clean-tree final audit. Task 0158
+All mandatory work in the original TMS34010 processor and Cyclone V roadmap is
+complete through Task 0160. Task 0160 supplies the deterministic Quartus Prime
+Lite 17 map/fit/assembly/TimeQuest flow, complete pin and timing constraints,
+measured resource/CDC/timing evidence, and final-clock-ratio refresh-service
+proof. Task 0159 supplies the wrapped PLLs, independent board VCLK, per-domain
+reset release, and top-level host/local/video pad direction. Task 0158
 consumes DPYCTL.SRT: graphics pixel reads/writes become explicit VRAM
 memory-to-register/register-to-memory cycles with exact local-bus phases,
 while instruction, ordinary data, I/O, and host traffic remain unchanged.
@@ -251,6 +252,8 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0156 | Implement internal interlaced video timing | complete |
 | 0157 | Implement external video synchronization | complete |
 | 0158 | Implement program-controlled VRAM register transfers | complete |
+| 0159 | Add the Cyclone V clock, reset, and pad boundary | complete |
+| 0160 | Close the Cyclone V implementation flow | complete |
 
 ---
 
@@ -5577,6 +5580,61 @@ Commit:
 
 ---
 
+### Task 0160: Close the Cyclone V implementation flow
+Status: complete
+Dependencies:
+- Task 0159 (Cyclone V clock/reset/pad realization boundary).
+Spec sources:
+- DE10-Nano User Manual Tables 3-5, 3-7, and 3-10
+  (50 MHz clocks, active-low debounced KEY0 reset, and JP1/JP7 GPIO pins).
+- 1988 TI TMS34010 User's Guide §2.4 and Chapter 11
+  (processor pin surface and local-bus relationships).
+- SPVS002C local/host/video AC timing diagrams
+  (external interface timing requirements).
+- Cyclone V HDL guidelines 23, 24, 40, 41, and 91
+  (CDC recognition, complete SDC, report inspection, and implementation
+  sign-off).
+Acceptance Criteria:
+- Add a Quartus Prime Lite 17-compatible project for `5CSEBA6U23I7` with
+  `tms34010_cyclone_v_top` as the sole top, vendor PLL elaboration enabled,
+  and every physical port assigned to a documented DE10-Nano clock, KEY0, or
+  JP1/JP7 3.3-V LVTTL pin.
+- Add complete SDC for both primary 50 MHz clocks, all PLL-derived clocks,
+  asynchronous clock groups, reset/CDC exceptions, MCP stable-payload
+  exceptions, and min/max I/O timing budgets with written protocol rationale.
+- Make the complete RTL accepted by Quartus Prime Lite 17 without changing
+  simulation-visible architectural behavior.
+- Replace the placeholder synthesis script with a deterministic full
+  analysis/synthesis, fit, assembly, TimeQuest, and report-validation flow.
+  A missing phase, unconstrained path, negative setup/hold/recovery/removal
+  slack, unexpected warning, unrecognized required synchronizer, pin
+  mismatch, or resource-budget violation must fail the script.
+- Archive concise, reproducible implementation evidence: tool/device/top,
+  assigned-pin count, clocks, resources, synchronizer/MTBF coverage, and
+  worst setup/hold/recovery/removal slack.
+- Prove the final 50/200/50 MHz ratio services one pending DRAM refresh before
+  the next 32-core-clock minimum interval when neither external HOLD nor
+  unbounded LRDY wait prevents progress; retain the documented environmental
+  bound for those intentionally unbounded cases.
+Tests:
+- `scripts/sim.sh tb_fpga_refresh_ratio` PASS: four minimum-interval refresh
+  events complete in at most 11 of 32 available core clocks.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 147/147 self-checking benches.
+- `QUARTUS_SH=<Quartus-17-path>/quartus_sh scripts/synth_quartus.sh` PASS:
+  map 0 errors/0 warnings; fit 0 errors/3 reviewed warnings; assembly and
+  TimeQuest 0 errors/0 warnings; report, pin, constraint, CDC, resource, and
+  timing validation accepted.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/timing_notes.md`, and add the board
+  pinout/report evidence documents under `fpga/`.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
@@ -5596,10 +5654,11 @@ Commit:
 
 ---
 
-## Roadmap (post-Phase 0)
+## Completed roadmap
 
-Tracked at coarse granularity here; each phase expands into numbered tasks
-when its predecessor lands.
+The historical coarse phases below are all complete through the numbered Task
+0160 baseline. Future work begins with a new numbered task rather than
+silently extending this closed roadmap.
 
 - **Phase 1 — Core shell**: package constants, top-level ports, clock/reset,
   PC skeleton, memory IF, fetch/decode/execute FSM scaffold.

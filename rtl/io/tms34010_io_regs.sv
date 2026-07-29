@@ -95,6 +95,7 @@ module tms34010_io_regs
   input  logic                  req,      // access strobe
   input  logic                  we,       // 1 = write, 0 = read
   input  logic [ADDR_WIDTH-1:0] addr,     // full 32-bit bit-address
+  input  logic [ADDR_WIDTH-1:0] req_addr_i, // held address for req completion
   input  logic [15:0]           wdata,
 
   output logic [15:0]           rdata,    // selected register (0 if not I/O)
@@ -141,9 +142,17 @@ module tms34010_io_regs
   // I/O-space decode: two MSBs = 11 and bits[29:9] = 0 (range C0000000-
   // C00001FF). The register index is addr[8:4].
   logic [IO_REG_IDX_W-1:0] idx;
+  logic [IO_REG_IDX_W-1:0] req_idx;
+  logic [IO_REG_IDX_W-1:0] cpu_access_idx;
+  logic                    req_is_io;
   assign is_io = (addr[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
               && (addr[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
   assign idx   = addr[IO_REG_IDX_W+3 : 4];
+  assign req_is_io =
+      (req_addr_i[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
+      && (req_addr_i[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
+  assign req_idx = req_addr_i[IO_REG_IDX_W+3 : 4];
+  assign cpu_access_idx = req ? req_idx : idx;
 
   // Register storage.
   logic [15:0] io_reg [0:IO_REG_COUNT-1];
@@ -178,7 +187,7 @@ module tms34010_io_regs
   // per-side field ownership and interrupt effects live in this block.
   always_comb begin
     cpu_host_reg = HOST_REG_HSTDATA;
-    unique case (idx)
+    unique case (cpu_access_idx)
       IO_IDX_HSTADRL: cpu_host_reg = HOST_REG_HSTADRL;
       IO_IDX_HSTADRH: cpu_host_reg = HOST_REG_HSTADRH;
       IO_IDX_HSTDATA: cpu_host_reg = HOST_REG_HSTDATA;
@@ -186,10 +195,10 @@ module tms34010_io_regs
     endcase
   end
 
-  assign cpu_host_we = req && we && is_io
-                    && ((idx == IO_IDX_HSTADRL)
-                        || (idx == IO_IDX_HSTADRH)
-                        || (idx == IO_IDX_HSTDATA));
+  assign cpu_host_we = req && we && req_is_io
+                    && ((req_idx == IO_IDX_HSTADRL)
+                        || (req_idx == IO_IDX_HSTADRH)
+                        || (req_idx == IO_IDX_HSTDATA));
 
   // The held host-indirect address is already a full bit address. Decode it
   // independently of the processor port so both clients retain their own
@@ -222,9 +231,9 @@ module tms34010_io_regs
           || (host_mem_idx == IO_IDX_HSTDATA));
 
   always_comb begin
-    io_write_commit    = req && we && is_io;
+    io_write_commit    = req && we && req_is_io;
     io_write_from_host = 1'b0;
-    io_write_idx       = idx;
+    io_write_idx       = req_idx;
     io_write_data      = wdata;
 
     if (host_mem_req_o && host_mem_we_o

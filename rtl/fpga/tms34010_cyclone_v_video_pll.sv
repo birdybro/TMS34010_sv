@@ -23,7 +23,9 @@ module tms34010_cyclone_v_video_pll (
   altera_pll #(
     .fractional_vco_multiplier("false"),
     .reference_clock_frequency("50.0 MHz"),
-    .operation_mode("normal"),
+    // The two clocks are direct phase-related outputs; neither compensates
+    // an external feedback path.
+    .operation_mode("direct"),
     .number_of_clocks(2),
     .output_clock_frequency0("50.0 MHz"),
     .phase_shift0("0 ps"),
@@ -34,12 +36,32 @@ module tms34010_cyclone_v_video_pll (
     .pll_type("General"),
     .pll_subtype("General")
   ) u_pll (
-    .outclk  (pll_clks),
-    .locked  (locked_o),
-    .fboutclk(),
-    .fbclk   (1'b0),
-    .rst     (pll_rst_i),
-    .refclk  (ref_clk_i)
+    .refclk           (ref_clk_i),
+    .refclk1          (1'b0),
+    .fbclk            (1'b0),
+    .rst              (pll_rst_i),
+    .phase_en         (1'b0),
+    .updn             (1'b0),
+    .num_phase_shifts (3'b000),
+    .scanclk          (1'b0),
+    .cntsel           (5'b00000),
+    .reconfig_to_pll  (64'b0),
+    .extswitch        (1'b0),
+    .adjpllin         (1'b0),
+    .cclk             (1'b0),
+    .outclk           (pll_clks),
+    .fboutclk         (),
+    .locked           (locked_o),
+    .phase_done       (),
+    .reconfig_from_pll(),
+    .activeclk        (),
+    .clkbad           (),
+    .phout            (),
+    .lvds_clk         (),
+    .loaden           (),
+    .extclk_out       (),
+    .cascade_out      (),
+    .zdbfbclk         ()
   );
 
   assign video_clk_o      = pll_clks[0];

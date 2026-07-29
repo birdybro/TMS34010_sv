@@ -43,6 +43,7 @@ module tb_io_refresh;
     .req          (req),
     .we           (we),
     .addr         (addr),
+    .req_addr_i   (addr),
     .wdata        (wdata),
     .rdata        (rdata),
     .is_io        (is_io),

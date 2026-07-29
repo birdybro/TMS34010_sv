@@ -1,7 +1,7 @@
 # Architecture
 
-> Status: **implemented and ISA/status-audited through Task 0159, with
-> integration gaps**. The core executes the instruction and graphics
+> Status: **implemented, ISA/status-audited, and Cyclone V-signed-off through
+> Task 0160**. The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Direct HSTCTL access, HINT, HCS-selected reset halt, and HLT
@@ -36,8 +36,10 @@
 > HSYNC/VSYNC inputs isolate it from the core clock and asynchronous pins.
 > DPYCTL.SRT now converts only graphics pixel reads/writes into explicit VRAM
 > MTR/RTM cycles with the documented physical phases. Pixel data comes from
-> the attached VRAM serial port rather than a processor pin. The remaining
-> system-level exit gates are recorded in `completion_audit.md`.
+> the attached VRAM serial port rather than a processor pin. The Quartus 17
+> project, complete SDC/pin map, multicorner timing, resource checks, CDC
+> recognition, and final refresh-service bound satisfy all ordered gates in
+> `completion_audit.md`.
 
 ## Specification source
 
@@ -101,8 +103,9 @@ coherently into/out of the 8× domain, while `tms34010_pin_system` composes the
 system, bridge, and `tms34010_local_bus`; `tms34010_emu_bridge` closes the
 RUN/EMU event/level CDC and shared output mux, and
 `tms34010_host_bus` closes the asynchronous host-control/data boundary. The
-pin system also exposes split HSYNC/VSYNC direction. The FPGA
-clock/constraint project remains planned.
+pin system also exposes split HSYNC/VSYNC direction. The FPGA top surrounds
+that hierarchy with both PLLs, per-domain reset release, and the physical pad
+adapter; the QSF/SDC realizes and constrains it on the DE10-Nano.
 
 ## Test substrate
 
@@ -122,9 +125,9 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
 | `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/tms34010_system.sv`                | 6     | **landed through Task 0159** | functional-system wrapper connecting all core memory clients, explicit VCLK/reset, raw video-sync pins, and the graphics SRT tag to the core/fabric boundary |
-| `rtl/tms34010_pin_system.sv`            | 6     | **landed through Task 0159** | integrated separately reset core/VCLK/8× system, MCP bridges, original-pin local bus including SRT transfers, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, shared HLDA/EMUA, and split video-sync direction |
-| `rtl/core/tms34010_core.sv`             | 0+    | **landed through Task 0159** | multicycle CPU, memory/host/interrupt/graphics engines, explicit VCLK/reset, coherent DRAM/screen/video boundaries, and graphics-only DPYCTL.SRT tagging |
+| `rtl/tms34010_system.sv`                | 6     | **signed off through Task 0160** | functional-system wrapper connecting all core memory clients, explicit VCLK/reset, raw video-sync pins, and the graphics SRT tag to the core/fabric boundary |
+| `rtl/tms34010_pin_system.sv`            | 6     | **signed off through Task 0160** | integrated separately reset core/VCLK/8× system, MCP bridges, original-pin local bus including SRT transfers, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, shared HLDA/EMUA, and split video-sync direction |
+| `rtl/core/tms34010_core.sv`             | 0+    | **signed off through Task 0160** | multicycle CPU with registered decode/ordinary-result/I/O-completion timing boundaries, memory/host/interrupt/graphics engines, explicit VCLK/reset, coherent DRAM/screen/video boundaries, and graphics-only DPYCTL.SRT tagging |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -154,11 +157,11 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0157** | internal/external timing: writable counters, synchronized active-low sync inputs, exact recognition/fallback/interval endpoints, field sequencing, ENV gating, DPYINT, and split output enables |
 | `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0156** | VCLK-owned live DPYADR, frame/line reloads, signed interlaced DUDATE/2 start, LCSTRT+1 scheduling, and acknowledged SRFADR/DPYTAP/ORG transfer |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
-| `rtl/fpga/tms34010_cyclone_v_top.sv`    | 10    | **landed (Task 0159)** | DE10-Nano clock/reset/pad composition with independent board VCLK and physical video-clock phase mapping |
-| `rtl/fpga/tms34010_cyclone_v_pll.sv`    | 10    | **landed (Task 0159)** | isolated Intel `altera_pll` synthesis path for 50 MHz core and 200 MHz bus timing clocks; explicit portable elaboration bypass |
-| `rtl/fpga/tms34010_cyclone_v_video_pll.sv` | 10 | **landed (Task 0159)** | independent phase-zero 50 MHz internal VCLK and 180-degree VIDEO_VCLK output, with no fabric clock inversion |
-| `rtl/fpga/tms34010_reset_sync.sv`       | 10    | **landed (Task 0159)** | two-stage active-high reset conditioner instantiated separately in core, bus, and video domains |
-| `rtl/fpga/tms34010_fpga_io.sv`          | 10    | **landed (Task 0159)** | sole IOE-boundary tri-state owner for HD/LAD/local controls and active-low bidirectional video sync |
+| `rtl/fpga/tms34010_cyclone_v_top.sv`    | 10    | **signed off (Task 0160)** | DE10-Nano clock/reset/pad composition with independent board VCLK and physical video-clock phase mapping |
+| `rtl/fpga/tms34010_cyclone_v_pll.sv`    | 10    | **signed off (Task 0160)** | isolated Intel `altera_pll` synthesis path for 50 MHz core and 200 MHz bus timing clocks; explicit portable elaboration bypass |
+| `rtl/fpga/tms34010_cyclone_v_video_pll.sv` | 10 | **signed off (Task 0160)** | independent phase-zero 50 MHz internal VCLK and 180-degree VIDEO_VCLK output, with no fabric clock inversion |
+| `rtl/fpga/tms34010_reset_sync.sv`       | 10    | **signed off (Task 0160)** | two-stage active-high per-domain reset conditioners recognized in the implementation CDC report |
+| `rtl/fpga/tms34010_fpga_io.sv`          | 10    | **signed off (Task 0160)** | sole IOE-boundary tri-state owner for HD/LAD/local controls and active-low bidirectional video sync |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
 
@@ -381,11 +384,11 @@ PPOP, transparency, PMASK, and applicable windows keep the read path.
 The processor has sync/blank and VRAM-control pins but no pixel-data output;
 the external VRAM serial port is the pixel source.
 
-The audit also consolidated the I/O, interrupt-source,
-physical-memory, host, refresh, video, CDC, and Quartus work into seven
-ordered exit gates. The authoritative remaining-work ledger is
-`completion_audit.md`; this architecture document describes the current
-structure rather than claiming project completion.
+The audit also consolidated the I/O, interrupt-source, physical-memory, host,
+refresh, video, CDC, and Quartus work into seven ordered exit gates. Task 0160
+closes the last two gates with the real implementation flow and clean final
+validation. `completion_audit.md` is the authoritative completion ledger;
+this document describes the resulting structure.
 
 ## Datapath strategy
 
@@ -587,7 +590,8 @@ held asynchronous access, HRDY waits for coherent capture/response or an
 older indirect side effect, and read data drives only the selected HD byte
 lanes after completion. HSTCTL selection starts its wait from HCS alone.
 Task 0159's FPGA top maps those split signals to physical bidirectional pads;
-Task 0160 must prove the bundled-data/strobe constraints recorded in A0043.
+Task 0160 constrains the bundled-data/strobe contract recorded in A0043 and
+the report validator checks that the corresponding paths remain bounded.
 CF is stored but has no cache to flush.
 
 ## Video / display (timing integrated)
@@ -647,8 +651,10 @@ program-controlled graphics MTR/RTM are functionally and physically
 implemented at the TMS34010 pin boundary. Attached VRAM owns its
 shift-register storage and pixel output.
 `tms34010_refresh` is integrated with REFCNT and its request is serviced
-through the pin system; final FPGA integration must still prove its bounded
-service under the PLL ratio, physical HOLD, and external waits.
+through the pin system. `tb_fpga_refresh_ratio` proves service in at most 11
+of the available 32 core clocks at the final 50/200 MHz ratio when external
+HOLD is inactive and LRDY is bounded; deliberately unbounded external
+ownership/waits remain a surrounding-system constraint.
 
 ## Clock / reset strategy
 
@@ -666,7 +672,8 @@ service under the PLL ratio, physical HOLD, and external waits.
   `assumptions.md`.
 - Every clock-domain crossing is wrapped in a clearly named CDC module and
   flagged in `docs/timing_notes.md`; raw HSYNC/VSYNC use individual
-  attributed two-flop VCLK synchronizers.
+  attributed two-flop VCLK synchronizers. Task 0160's metastability report
+  includes all 27 required two-stage chains.
 
 ## FPGA resource strategy
 
@@ -677,14 +684,14 @@ service under the PLL ratio, physical HOLD, and external waits.
 - No vendor-locked primitives in core RTL. Cyclone V-specific primitives
   live only under `rtl/fpga/` and are wrapped.
 
-## Current implementation gaps
+## Optional and surrounding-system scope
 
 - Optional instruction cache.
-- Real Quartus project files, physical pin assignments, SDC,
-  synthesis/fit/timing reports, and measured Cyclone V resource/Fmax results.
 - A cycle-accuracy contract against original silicon.
+- External VRAM/DRAM, level translation, board buffering/termination, and the
+  VRAM serial-pixel output path.
 
-The instruction/status reconciliation and TMS34010 functional interface are
-complete, and the FPGA clock/reset/pad adapter is landed. Remaining completion
-work is Quartus realization plus measured memory/video/CDC timing evidence
-recorded in `completion_audit.md`.
+These are optional extensions or surrounding hardware, not open work in the
+completed TMS34010 processor/Cyclone V baseline. Measured implementation
+results and their reproducible validation command are recorded in
+`fpga/IMPLEMENTATION_EVIDENCE.md`.

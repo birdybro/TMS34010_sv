@@ -160,7 +160,9 @@ package tms34010_pkg;
     CORE_FETCH_IMM_EXT_HI = 6'd39, // fifth instruction word (second 32-bit operand high)
     CORE_EMU_HALT         = 6'd40, // EMU sampled active: quiescent until RUN returns high
     CORE_RESET_HALT       = 6'd41, // HCS-high reset: wait for host before vector fetch
-    CORE_HOST_HALT        = 6'd42  // HSTCTL.HLT: quiescent at an instruction boundary
+    CORE_HOST_HALT        = 6'd42, // HSTCTL.HLT: quiescent at an instruction boundary
+    CORE_DECODE_WAIT      = 6'd43, // second decode-settle cycle before capture
+    CORE_DISPATCH         = 6'd44  // registered decode selects operand/immediate path
   } core_state_t;
 
   // ---------------------------------------------------------------------------

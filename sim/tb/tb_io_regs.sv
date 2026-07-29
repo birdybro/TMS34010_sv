@@ -35,7 +35,7 @@ module tb_io_regs;
     .clk(clk), .vclk_i(clk), .rst(rst), .vclk_rst_i(rst),
     .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
     .video_hsync_oe_o(), .video_vsync_oe_o(),
-    .req(req), .we(we), .addr(addr), .wdata(wdata),
+    .req(req), .we(we), .addr(addr), .req_addr_i(addr), .wdata(wdata),
     .rdata(rdata), .is_io(is_io),
     .psize_o(psize_w), .convdp_o(convdp_w), .convsp_o(convsp_w),
     .control_o(control_w), .pmask_o(pmask_w), .pixel_srt_o(),
