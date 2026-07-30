@@ -5762,7 +5762,7 @@ Commit:
 ---
 
 ### Task 0163: Implement directional PIXBLT traversal
-Status: pending
+Status: complete
 Dependencies:
 - Task 0162 (correct array bounds and terminal context).
 Spec sources:
@@ -5797,6 +5797,19 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
+Results:
+- Added `tb_pixblt_direction`, covering every full-color addressing-form and
+  PBH/PBV combination with PSIZE 1/2/4/8/16, power-of-two and odd linear
+  pitches, exact framebuffer pixels, and exact terminal SADDR/DADDR context.
+- Verified the L,L software-supplied corner contract, automatic mixed/XY-form
+  corner adjustment, and binary-source PBH/PBV isolation.
+- Verified one-pixel and one-row degeneracies plus forward- and reverse-safe
+  overlapping copies while the memory model inserted three wait cycles and
+  the protocol monitor required held requests to remain stable.
+- Existing focused PIXBLT and array-edge benches PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 149/149 benches.
 Commit:
 - pending
 

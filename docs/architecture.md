@@ -572,6 +572,21 @@ pixels of the hypothetical next rows. All field requests remain held by the
 existing request/acknowledge contract; the simulation memory model can inject
 deterministic physical-word waits for end-to-end checks.
 
+Task 0163 separates three address concepts in the PIXBLT engine:
+
+- the architecturally supplied default/software-corner address;
+- an internal directional row pointer, automatically corner-adjusted only
+  for full-color forms containing an XY operand; and
+- a completion pointer that advances geometrically by positive pitch once
+  per completed row, independent of traversal order.
+
+PBH selects postincrement versus predecrement pixel access. PBV selects
+positive versus negative internal row pitch. L,L starts exactly at the
+software-supplied corners (reverse-X pointers are one pixel beyond the right
+edge); L,XY, XY,L, and XY,XY add `DX*PSIZE` and/or `(DY-1)*pitch` internally
+as selected. B,L and B,XY force forward traversal because their individual
+instruction pages explicitly ignore PBH/PBV.
+
 ## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control

@@ -667,9 +667,11 @@ module tms34010_core
   logic [15:0]           pblt_dx_q, pblt_dy_q;
   logic [DATA_WIDTH-1:0] pblt_src_addr_q, pblt_dst_addr_q;
   logic [DATA_WIDTH-1:0] pblt_src_row_q, pblt_dst_row_q;
+  logic [DATA_WIDTH-1:0] pblt_src_result_q, pblt_dst_result_q;
   logic [15:0]           pblt_x_q, pblt_y_q;
   logic [1:0]            pblt_substep_q;     // 0 read src, 1 read dst, 2 write
   logic                  pblt_dest_read_q;
+  logic                  pblt_hrev_q, pblt_vrev_q, pblt_auto_corner_q;
   logic [DATA_WIDTH-1:0] pblt_src_pix_q, pblt_dst_pix_q;
   logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask, pblt_pmask_field;
   logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
@@ -704,9 +706,16 @@ module tms34010_core
   logic                  pblt_win_en_q;    // W=3 per-pixel clip active
   logic                  pblt_w2_q;        // W=2 (miss detection) active
   logic [15:0]           pblt_px, pblt_py;
+  logic [15:0]           pblt_col_index, pblt_row_index;
   logic                  pblt_in_window, pblt_clip_out;
-  assign pblt_px = pblt_dst_xy_raw_q[15:0]            + pblt_x_q;
-  assign pblt_py = pblt_dst_xy_raw_q[DATA_WIDTH-1:16] + pblt_y_q;
+  assign pblt_col_index = pblt_empty ? 16'd0
+                         : pblt_hrev_q ? (pblt_dx_q - 16'd1 - pblt_x_q)
+                                       : pblt_x_q;
+  assign pblt_row_index = pblt_empty ? 16'd0
+                         : pblt_vrev_q ? (pblt_dy_q - 16'd1 - pblt_y_q)
+                                       : pblt_y_q;
+  assign pblt_px = pblt_dst_xy_raw_q[15:0]            + pblt_col_index;
+  assign pblt_py = pblt_dst_xy_raw_q[DATA_WIDTH-1:16] + pblt_row_index;
   assign pblt_in_window =
         (pblt_px >= pblt_wstart_q[15:0]) && (pblt_px <= pblt_wend_q[15:0])
      && (pblt_py >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_py <= pblt_wend_q[DATA_WIDTH-1:16]);
@@ -751,6 +760,50 @@ module tms34010_core
       (({{16{pblt_dst_addr_q[DATA_WIDTH-1]}}, pblt_dst_addr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convdp[4:0]))
        | ({16'b0, pblt_dst_addr_q[15:0]} << pix_xy_xsh)) + rf_rs3_data;
 
+  // Full-color direction and corner adjustment (Task 0163).  Binary-source
+  // PIXBLTs explicitly ignore PBH/PBV.  L,L consumes software-adjusted
+  // starting corners; every full-color form containing an XY operand starts
+  // from the default top-left address and receives automatic X/Y adjustment.
+  // A reverse-X start points one pixel beyond the right edge because each
+  // memory access predecrements by one pixel.
+  logic [DATA_WIDTH-1:0] pblt_src_base, pblt_dst_base;
+  logic [DATA_WIDTH-1:0] pblt_h_adjust;
+  logic [DATA_WIDTH-1:0] pblt_src_v_adjust, pblt_dst_v_adjust;
+  logic [DATA_WIDTH-1:0] pblt_src_corner, pblt_dst_corner;
+  logic [DATA_WIDTH-1:0] pblt_src_row_step, pblt_dst_row_step;
+  logic [DATA_WIDTH-1:0] pblt_src_access_addr, pblt_dst_access_addr;
+  assign pblt_src_base = decoded.blt_src_xy ? pblt_src_conv
+                                            : pblt_src_addr_q;
+  assign pblt_dst_base = decoded.blt_dst_xy ? pblt_dst_conv
+                                            : pblt_dst_addr_q;
+  assign pblt_h_adjust = {{16{1'b0}}, pblt_dx_q} << pix_xy_xsh;
+  assign pblt_src_v_adjust =
+      {{16{1'b0}}, (pblt_empty ? 16'd0 : pblt_dy_q - 16'd1)}
+      << (5'd31 - io_convsp[4:0]);
+  assign pblt_dst_v_adjust =
+      {{16{1'b0}}, (pblt_empty ? 16'd0 : pblt_dy_q - 16'd1)}
+      << (5'd31 - io_convdp[4:0]);
+  assign pblt_src_corner = pblt_src_base
+                         + ((pblt_auto_corner_q && pblt_hrev_q)
+                            ? pblt_h_adjust : 32'd0)
+                         + ((pblt_auto_corner_q && pblt_vrev_q)
+                            ? pblt_src_v_adjust : 32'd0);
+  assign pblt_dst_corner = pblt_dst_base
+                         + ((pblt_auto_corner_q && pblt_hrev_q)
+                            ? pblt_h_adjust : 32'd0)
+                         + ((pblt_auto_corner_q && pblt_vrev_q)
+                            ? pblt_dst_v_adjust : 32'd0);
+  assign pblt_src_row_step = pblt_vrev_q
+                           ? (32'd0 - pblt_sptch_q) : pblt_sptch_q;
+  assign pblt_dst_row_step = pblt_vrev_q
+                           ? (32'd0 - pblt_dptch_q) : pblt_dptch_q;
+  assign pblt_src_access_addr = pblt_hrev_q
+                              ? pblt_src_addr_q - pblt_src_step
+                              : pblt_src_addr_q;
+  assign pblt_dst_access_addr = pblt_hrev_q
+                              ? pblt_dst_addr_q - pblt_psize_ext
+                              : pblt_dst_addr_q;
+
   always_ff @(posedge clk) begin
     if (rst) begin
       pblt_sptch_q    <= '0;
@@ -761,10 +814,15 @@ module tms34010_core
       pblt_dst_addr_q <= '0;
       pblt_src_row_q  <= '0;
       pblt_dst_row_q  <= '0;
+      pblt_src_result_q <= '0;
+      pblt_dst_result_q <= '0;
       pblt_x_q        <= '0;
       pblt_y_q        <= '0;
       pblt_substep_q  <= 2'd0;
       pblt_dest_read_q <= 1'b0;
+      pblt_hrev_q     <= 1'b0;
+      pblt_vrev_q     <= 1'b0;
+      pblt_auto_corner_q <= 1'b0;
       pblt_src_pix_q  <= '0;
       pblt_dst_pix_q  <= '0;
       pblt_color0_q   <= '0;
@@ -790,6 +848,12 @@ module tms34010_core
         pblt_x_q        <= 16'd0;
         pblt_y_q        <= 16'd0;
         pblt_substep_q  <= 2'd0;
+        pblt_hrev_q     <= !decoded.blt_binary
+                         && io_control[CTRL_PBH_BIT];
+        pblt_vrev_q     <= !decoded.blt_binary
+                         && io_control[CTRL_PBV_BIT];
+        pblt_auto_corner_q <= !decoded.blt_binary
+                           && (decoded.blt_src_xy || decoded.blt_dst_xy);
         pblt_win_en_q   <= decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
         pblt_w2_q       <= decoded.blt_dst_xy &&
@@ -810,14 +874,15 @@ module tms34010_core
       if (state_q == CORE_PBLT_SETUP) begin
         pblt_sptch_q <= rf_rs1_data;
         pblt_dptch_q <= rf_rs2_data;
-        if (decoded.blt_src_xy) begin
-          pblt_src_addr_q <= pblt_src_conv;
-          pblt_src_row_q  <= pblt_src_conv;
-        end
-        if (decoded.blt_dst_xy) begin
-          pblt_dst_addr_q <= pblt_dst_conv;
-          pblt_dst_row_q  <= pblt_dst_conv;
-        end
+        pblt_src_addr_q   <= pblt_src_corner;
+        pblt_src_row_q    <= pblt_src_corner;
+        pblt_dst_addr_q   <= pblt_dst_corner;
+        pblt_dst_row_q    <= pblt_dst_corner;
+        // Architectural completion context is based on the supplied
+        // top-left/default address (or the software-adjusted L,L corner), not
+        // on the internal directional traversal address.
+        pblt_src_result_q <= pblt_src_base;
+        pblt_dst_result_q <= pblt_dst_base;
       end
       // CORE_PBLT_SETUP2 (binary form): latch COLOR0(port1) / COLOR1(port2).
       if (state_q == CORE_PBLT_SETUP2) begin
@@ -833,22 +898,30 @@ module tms34010_core
           pblt_dst_pix_q <= mem_rdata_eff;
           pblt_substep_q <= 2'd2;
         end else begin
-          // Write ack: advance within a row, or publish the next row base at
-          // every row boundary.  The latter is also the architectural final
-          // SADDR/DADDR after the last row.
+          // Write ack: advance within a row or move the internal traversal
+          // pointers by the selected signed row step.  Separate result
+          // pointers advance geometrically by +pitch once per completed row,
+          // which preserves the documented completion context for every
+          // PBH/PBV selection.
           pblt_substep_q  <= 2'd0;
           if (pblt_row_end) begin
-            pblt_src_row_q  <= pblt_src_row_q + pblt_sptch_q;
-            pblt_dst_row_q  <= pblt_dst_row_q + pblt_dptch_q;
-            pblt_src_addr_q <= pblt_src_row_q + pblt_sptch_q;
-            pblt_dst_addr_q <= pblt_dst_row_q + pblt_dptch_q;
+            pblt_src_row_q    <= pblt_src_row_q + pblt_src_row_step;
+            pblt_dst_row_q    <= pblt_dst_row_q + pblt_dst_row_step;
+            pblt_src_addr_q   <= pblt_src_row_q + pblt_src_row_step;
+            pblt_dst_addr_q   <= pblt_dst_row_q + pblt_dst_row_step;
+            pblt_src_result_q <= pblt_src_result_q + pblt_sptch_q;
+            pblt_dst_result_q <= pblt_dst_result_q + pblt_dptch_q;
             if (!pblt_done) begin
               pblt_y_q <= pblt_y_q + 16'd1;
               pblt_x_q <= 16'd0;
             end
           end else if (!pblt_done) begin
-            pblt_src_addr_q <= pblt_src_addr_q + pblt_src_step;
-            pblt_dst_addr_q <= pblt_dst_addr_q + pblt_psize_ext;
+            pblt_src_addr_q <= pblt_hrev_q
+                             ? pblt_src_addr_q - pblt_src_step
+                             : pblt_src_addr_q + pblt_src_step;
+            pblt_dst_addr_q <= pblt_hrev_q
+                             ? pblt_dst_addr_q - pblt_psize_ext
+                             : pblt_dst_addr_q + pblt_psize_ext;
             pblt_x_q        <= pblt_x_q + 16'd1;
           end
         end
@@ -2091,8 +2164,8 @@ module tms34010_core
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
       INSTR_FILL_L,
       INSTR_FILL_XY: rf_wr_data = fill_addr_q;  // final (linear) DADDR -> B2 (CORE_FILL_WB)
-      INSTR_PIXBLT_LL: rf_wr_data = pblt_wb_saddr ? pblt_src_addr_q   // SADDR -> B0
-                                                  : pblt_dst_addr_q;  // DADDR -> B2
+      INSTR_PIXBLT_LL: rf_wr_data = pblt_wb_saddr ? pblt_src_result_q   // SADDR -> B0
+                                                  : pblt_dst_result_q;  // DADDR -> B2
       INSTR_LINE:    rf_wr_data = line_wb_d     ? line_d_q      // d -> B0
                                : line_wb_daddr  ? line_daddr_q  // DADDR -> B2
                                                 : line_count_q; // COUNT -> B10
@@ -3155,16 +3228,16 @@ module tms34010_core
         unique case (pblt_substep_q)
           2'd0: begin
             mem_we_int = 1'b0;             // read source pixel (1 bit if binary)
-            mem_addr   = pblt_src_addr_q;
+            mem_addr   = pblt_src_access_addr;
             if (decoded.blt_binary) mem_size = FIELD_SIZE_WIDTH'(1);
           end
           2'd1: begin
             mem_we_int = 1'b0;             // read destination pixel
-            mem_addr   = pblt_dst_addr_q;
+            mem_addr   = pblt_dst_access_addr;
           end
           default: begin
             mem_we_int = 1'b1;             // write the processed pixel
-            mem_addr   = pblt_dst_addr_q;
+            mem_addr   = pblt_dst_access_addr;
             mem_wdata  = pblt_merged;
           end
         endcase

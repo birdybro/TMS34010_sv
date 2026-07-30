@@ -131,7 +131,12 @@ sign-off. Task 0162 corrected empty-array handling for all FILL/PIXBLT forms
 and the distinct terminal-context rules: PIXBLT returns hypothetical
 next-row SADDR/DADDR, while FILL returns final-row next-X DADDR. It is locked
 by the stalled-memory `tb_graphics_array_edges` matrix. Task 0163 directional
-PIXBLT traversal is the next implementation task. The optional instruction
+PIXBLT traversal implements all PBH/PBV combinations: L,L accepts
+software-adjusted corners, mixed/XY full-color forms adjust automatically,
+and binary-source forms ignore both bits. `tb_pixblt_direction` locks exact
+pixels/context, degenerate edges, stalls, and overlap-safe forward/reverse
+copies. Task 0164 W=1 common-rectangle results is the next implementation
+task. The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
 outside this functional GPU gate.

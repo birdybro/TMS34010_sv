@@ -1339,6 +1339,27 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
+## A0034 — RESOLVED: PBH/PBV form-specific traversal
+- **Date**: 2026-07-29 (Task 0163).
+- **Status**: **RESOLVED** against the 1988 TI User's Guide §7.2.2 and the
+  individual PIXBLT B,L; B,XY; L,L; L,XY; XY,L; and XY,XY pages.
+- **Resolution**: PBH=1 processes each full-color row right-to-left and PBV=1
+  processes rows bottom-to-top. L,L requires software to supply the selected
+  source/destination corners, with reverse-X addresses one pixel beyond the
+  right edge. The other full-color forms automatically adjust both arrays
+  from their supplied top-left/default addresses because at least one operand
+  is XY. Both binary-source forms explicitly ignore PBH/PBV and remain
+  increasing-address operations.
+- **Completion rule**: internal reverse traversal does not redefine the
+  architectural result. Separate SADDR/DADDR result pointers begin at the
+  supplied/converted default context and add positive SPTCH/DPTCH once per
+  completed row, matching the instruction-page next-row descriptions.
+- **Regression evidence**: `tb_pixblt_direction` covers all 16
+  full-color form/direction combinations, PSIZE 1/2/4/8/16, legal
+  power-of-two and non-power-of-two linear pitches, one-pixel/one-row edges,
+  exact final context, binary isolation, overlap-safe forward/reverse copies,
+  and held requests through injected word-side stalls.
+
 ## A0033 — RESOLVED: empty arrays and array completion pointers
 - **Date**: 2026-07-29 (Task 0162).
 - **Status**: **RESOLVED** against the 1988 TI User's Guide DYDX, SADDR,

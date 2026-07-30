@@ -7,6 +7,24 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0163 — directional PIXBLT traversal)
+- Implemented PBH/PBV for every full-color PIXBLT. PBH selects
+  left-to-right versus predecrement right-to-left pixel access; PBV selects
+  positive versus negative internal row stepping.
+- Preserved the individual form contracts: L,L consumes software-adjusted
+  source/destination corners, mixed/XY forms automatically add the selected
+  horizontal and vertical corner offsets to both arrays, and B,L/B,XY ignore
+  PBH/PBV.
+- Split directional traversal addresses from architectural result pointers,
+  retaining exact next-row SADDR/DADDR for every direction without exposing
+  the internal adjusted corner.
+- Added `tb_pixblt_direction`: all 16 full-color form/direction combinations,
+  PSIZE 1/2/4/8/16, non-power-of-two linear pitches, one-pixel/one-row edges,
+  binary isolation, exact context, injected waits, and safe forward/reverse
+  overlapping framebuffer copies.
+- Validation: focused PIXBLT tests PASS; `scripts/lint.sh` clean; full
+  regression 149/149 PASS.
+
 ### Fixed (Task 0162 — empty graphics arrays and terminal context)
 - Made zero DX or zero DY a prompt, memory-quiescent no-op for FILL L/XY and
   every full-color/binary PIXBLT form. Guarded rectangle/terminal arithmetic

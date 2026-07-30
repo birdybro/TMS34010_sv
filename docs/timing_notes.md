@@ -170,6 +170,14 @@
   last acknowledge installs both hypothetical next-row bases before their
   two writeback cycles. `tb_graphics_array_edges` runs all forms with three
   extra physical-word wait cycles and monitors every held field payload.
+- **Directional PIXBLT sequencing** — PBH/PBV are latched with the implied
+  operands. Reverse-X computes the same field request as a predecrement
+  pointer, then holds that address/data through every physical-word wait.
+  Counters and traversal pointers advance only after the destination write
+  field acknowledge. At a row boundary, the internal base adds or subtracts
+  pitch according to PBV, while a separate architectural result pointer
+  always adds positive pitch. This prevents stalls or reverse traversal from
+  perturbing final SADDR/DADDR. Binary-source forms latch neither direction.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

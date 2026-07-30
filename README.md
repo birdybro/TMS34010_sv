@@ -126,7 +126,15 @@ without implied-register or status changes. Full-color and binary PIXBLT
 completion writes SADDR/DADDR as the first pixels of the hypothetical next
 rows, while FILL retains its distinct final-row next-X DADDR. Focused coverage
 exercises every form, multiple PSIZEs, signed/non-unit pitches, and injected
-physical-memory stalls. Task 0163 directional PIXBLT traversal is next.
+physical-memory stalls.
+Task 0163 implements the complete production-revision PBH/PBV contract.
+Full-color PIXBLTs traverse in all four horizontal/vertical directions;
+L,L consumes software-selected corners, while L,XY, XY,L, and XY,XY
+automatically adjust both source and destination from their default
+top-left addresses. Binary-source forms remain direction-independent as
+specified. Exact terminal context is decoupled from traversal state, and
+stalled-memory tests include safe forward/reverse overlapping copies.
+Task 0164 W=1 common-rectangle results is next.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -185,7 +193,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 148 self-checking SystemVerilog testbenches, including non-integer-clock
+- 149 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.
