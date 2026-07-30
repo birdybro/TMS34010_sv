@@ -1,7 +1,8 @@
 # Architecture
 
 > Status: **implemented, ISA/status-audited, and Cyclone V-signed-off through
-> Task 0160**. The core executes the instruction and graphics
+> Task 0160, with the production graphics matrix closed through Task 0169**.
+> The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
 > integrated. Direct HSTCTL access, HINT, HCS-selected reset halt, and HLT
@@ -664,6 +665,26 @@ use final LINE writeback, so an abort is never mistaken for an interrupted
 line. W=3 clipped pixels still complete their destination read/write pair
 before checkpointing. No held request or field-sequencer partial-word RMW can
 be divided by entry.
+
+Task 0169 closes the production graphics datapath matrix. A single shared
+`ppop_apply` function implements the 16 Boolean operations for every legal
+PSIZE and the six arithmetic operations defined for PSIZE 4/8/16. Each
+backend feeds that function one PSIZE-wide source and destination. PMASK is
+selected by each pixel's physical position in its 16-bit source or
+destination word: protected memory operands enter PPOP as zero, the result is
+masked before transparency, and the final merge preserves protected raw
+destination bits. Register sources bypass source masking. Direct replace
+uses the two-request PIXT memory-to-memory fast path; PPOP, T, or PMASK adds
+the required destination read.
+COLOR0/COLOR1 differ: their low 16 bits contain independent pixel fields, so
+DRAV, LINE, FILL, and binary PIXBLT select
+`color >> destination_address[3:0]` before masking. This is the architectural
+dither-field correspondence; a uniform brush is represented by replicating
+the pixel across the color register. `tb_graphics_ppop_matrix` checks 1,176
+defined backend/PPOP/PSIZE cells and 10 PMASK-read cases with non-replicated
+colors and masks, mask-induced transparency, SRT, field boundaries, held
+requests, and stalls. The complete owner/source/evidence ledger is
+`docs/graphics_conformance.md`.
 
 ## Host interface (physical wrapper integrated)
 

@@ -125,7 +125,7 @@ module tb_fill_ppop;
     // Preload destination pixels: two pixels per word.
     u_mem.mem[128] = 16'hF00F;  // case 1 (XOR): pixels 0x0F, 0xF0 at 0x800,0x808
     u_mem.mem[136] = 16'hAAAA;  // case 2 (transparent COLOR1=0): both 0xAA
-    u_mem.mem[144] = 16'hCCCC;  // case 3 (PMASK 0x0F): both 0xCC
+    u_mem.mem[144] = 16'hCCCC;  // case 3 (PMASK 0x0F0F): both 0xCC
 
     p = 0;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));      // FS0=16 for MOVE-to-I/O
@@ -133,12 +133,14 @@ module tb_fill_ppop;
     p = place_store_abs(p, 4'd0, A_PSIZE);               // PSIZE = 8
 
     // 1) PPOP = XOR (0x0A): COLOR1=0xFF over dest {0x0F,0xF0} -> {0xF0,0x0F}.
-    p = place_fill(p, {16'h0, 1'b0, 5'h0A, 10'h0}, 32'h0, 32'h0000_00FF, 32'h0000_0800);
+    p = place_fill(p, {16'h0, 1'b0, 5'h0A, 10'h0}, 32'h0, 32'hFFFF_FFFF, 32'h0000_0800);
     // 2) Transparency: COLOR1=0 with T=1 -> dest unchanged (0xAA both).
     p = place_fill(p, {16'h0, 1'b0, 5'h00, 4'h0, 1'b1, 5'h0}, 32'h0, 32'h0000_0000, 32'h0000_0880);
-    // 3) PMASK = 0x0F (low nibble protected): COLOR1=0x55 over dest 0xCC ->
-    //    (0x55 & 0xF0) | (0xCC & 0x0F) = 0x50 | 0x0C = 0x5C, both pixels.
-    p = place_fill(p, {16'h0, 1'b0, 5'h00, 10'h0}, 32'h0000_000F, 32'h0000_0055, 32'h0000_0900);
+    // 3) PMASK = 0x0F0F (each pixel's low nibble protected):
+    //    COLOR1=0x55 over dest 0xCC gives
+    //    (0x55 & 0xF0) | (0xCC & 0x0F) = 0x5C in both word positions.
+    p = place_fill(p, {16'h0, 1'b0, 5'h00, 10'h0}, 32'h0000_0F0F,
+                   32'h5555_5555, 32'h0000_0900);
 
     p = place_word(p, 16'hC0FF);
 
@@ -152,7 +154,7 @@ module tb_fill_ppop;
     check_word("1: XOR fill word128 = 0x0FF0", 128, 16'h0FF0);
     // 2) Transparent (COLOR1=0): destination unchanged.
     check_word("2: transparent word136 = 0xAAAA", 136, 16'hAAAA);
-    // 3) PMASK 0x0F: each pixel -> 0x5C, word = 0x5C5C.
+    // 3) PMASK 0x0F0F: each pixel -> 0x5C, word = 0x5C5C.
     check_word("3: PMASK fill word144 = 0x5C5C", 144, 16'h5C5C);
 
     if (illegal_w !== 1'b0) begin

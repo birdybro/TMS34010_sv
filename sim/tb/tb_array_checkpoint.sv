@@ -206,6 +206,18 @@ module tb_array_checkpoint;
     field_mask = (32'd1 << size) - 32'd1;
   endfunction
 
+  function automatic logic [DATA_WIDTH-1:0] uniform_color(
+      input logic [DATA_WIDTH-1:0] pixel,
+      input int unsigned size
+  );
+    logic [DATA_WIDTH-1:0] color;
+    color = '0;
+    for (int unsigned bit_offset = 0; bit_offset < 16;
+         bit_offset += size)
+      color |= (pixel & field_mask(size)) << bit_offset;
+    uniform_color = color;
+  endfunction
+
   task automatic write_field(
       input logic [DATA_WIDTH-1:0] bit_addr,
       input int unsigned size,
@@ -497,7 +509,8 @@ module tb_array_checkpoint;
     p = place_store_abs(p, 4'd0, A_CONVDP);
     p = place_movi_il(p, 4'd0, control);
     p = place_store_abs(p, 4'd0, A_CONTROL);
-    p = place_movi_il(p, 4'd0, rmw ? 32'h0000_0001 : 32'd0);
+    p = place_movi_il(p, 4'd0,
+                      rmw ? uniform_color(32'h1, psize) : 32'd0);
     p = place_store_abs(p, 4'd0, A_PMASK);
     p = place_movi_il(p, 4'd0,
                       srt ? (DATA_WIDTH'(1) << DPYCTL_SRT_BIT) : 32'd0);
@@ -513,8 +526,8 @@ module tb_array_checkpoint;
     p = place_movi_il_b(p, 4'd6,
                         {16'(dst_y + dy - 1), 16'(wx1)});
     p = place_movi_il_b(p, 4'd7, {16'(dy), 16'(dx)});
-    p = place_movi_il_b(p, 4'd8, 32'h0000_0003);
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AE);
+    p = place_movi_il_b(p, 4'd8, uniform_color(32'h3, psize));
+    p = place_movi_il_b(p, 4'd9, uniform_color(32'hAE, psize));
     p = place_movi_il_b(p, 4'd10, 32'hA010_A010);
     p = place_movi_il_b(p, 4'd11, 32'hA011_A011);
     p = place_movi_il_b(p, 4'd12, 32'hA012_A012);

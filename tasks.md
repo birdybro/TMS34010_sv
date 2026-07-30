@@ -6146,7 +6146,7 @@ Commit:
 ---
 
 ### Task 0169: Close the graphics conformance matrix
-Status: pending
+Status: complete
 Dependencies:
 - Task 0168 (known graphics semantic and interruption gaps closed).
 Spec sources:
@@ -6183,6 +6183,39 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`,
   `docs/memory_map.md`, and `docs/status_audit.md`.
+Implementation summary:
+- Added `docs/graphics_conformance.md`, mapping every production graphics
+  instruction form and every defined B-file/graphics-I/O field to the 1988
+  primary pages, its exact RTL owner, architectural side effects, and named
+  self-checking evidence. Reserved/undefined PPOP and optional-cache cells are
+  explicit boundaries rather than invented behavior.
+- Added generated `tb_graphics_ppop_matrix`, executing 1,176 defined
+  backend/PPOP/PSIZE cells: all 16 Boolean operations at PSIZE 1/2/4/8/16
+  and all six arithmetic operations at their defined PSIZE 4/8/16. It spans
+  register/XY PIXT stores, linear/XY PIXT memory copies, DRAV, LINE, both
+  FILLs, full-color PIXBLTs, and binary-source PIXBLTs. Ten additional
+  linear/XY PIXT-load cells prove PMASK reads, for 1,186 total cases. The
+  suite crosses non-replicated PMASK, mask-induced transparency, bit order,
+  non-replicated colors, placement, status, SRT, and three-cycle stalls.
+- Corrected DRAV, LINE, FILL, and binary PIXBLT COLOR0/COLOR1 selection to
+  use the PSIZE field corresponding to the destination pixel's position in
+  its 16-bit word. This closes documented non-replicated dithering behavior;
+  legacy uniform-color fixtures now replicate their field explicitly.
+- Corrected PMASK to select physical source/destination word positions,
+  zero protected memory operands before PPOP, mask the processed result
+  before transparency, and preserve protected raw destination bits. Register
+  sources remain unmasked; uniform-mask fixtures now replicate explicitly.
+- Completed PMASK reads for both PIXT load forms and PPOP/T/PMASK for both
+  PIXT memory-to-memory forms, retaining the direct replace fast path.
+- Reverified graphics-adjacent XY arithmetic/address operations, complete
+  window/status behavior, pitch/direction/boundary matrices, terminal and
+  checkpoint B-register effects, and repeated interrupt continuation. Every
+  production graphics row in `instruction_coverage.md` is verified with no
+  graphics cycle cell left `TBD`.
+- Focused generated and affected graphics suites PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 154/154 benches.
 Commit:
 - pending
 

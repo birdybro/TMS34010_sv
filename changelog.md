@@ -7,6 +7,39 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Fixed (Task 0169 — production graphics conformance matrix)
+- Added `docs/graphics_conformance.md`, mapping every production graphics
+  instruction form and defined B-file/I/O graphics field to its primary
+  source, RTL owner, architectural side effects, and named regression.
+- Added `tb_graphics_ppop_matrix`, a deterministic 1,186-case end-to-end
+  oracle: 1,176 PPOP cells spanning all 16 Boolean operations at PSIZE
+  1/2/4/8/16 and all six defined arithmetic operations at PSIZE 4/8/16
+  across register, XY, LINE, FILL, PIXBLT, and linear/XY memory-to-memory
+  PIXT backends, plus 10 linear/XY PMASK-read cells. It crosses PMASK,
+  transparency—including mask-induced transparency—bit order,
+  non-replicated color fields, sub-word placement, status, SRT, held
+  requests, and three-cycle memory stalls.
+- Corrected COLOR0/COLOR1 consumption for DRAV, LINE, both FILL forms, and
+  binary PIXBLT: the pixel field corresponding to the destination's position
+  in its 16-bit word is now selected before PPOP, enabling the documented
+  non-replicated dither pattern. Existing uniform-brush fixtures now encode
+  replicated fields explicitly.
+- Corrected PMASK to select the field matching each source/destination
+  pixel's physical position in its 16-bit memory word. Protected bits on
+  memory reads now become zero before PPOP, the processed result is masked
+  before transparency detection, protected destination bits survive the
+  write, and register-source pixels remain unmasked as specified.
+- Completed PPOP, transparency, and PMASK for both linear and XY
+  memory-to-memory PIXT forms. Processing cases now issue source read,
+  destination read, and merged write; direct replace remains the two-request
+  fast path. Both PIXT memory-to-register forms now apply PMASK before
+  zero-extension and V evaluation.
+- Recorded the production boundaries: arithmetic PPOP is defined only for
+  PSIZE 4/8/16; PPOP 0x16–0x1F is reserved; optional CONTROL.CD cache behavior
+  remains inert because this implementation has no instruction cache.
+- Validation: generated matrix and affected graphics suites PASS;
+  `scripts/lint.sh` clean; full regression 154/154 PASS.
+
 ### Added (Task 0168 — interruptible LINE continuation)
 - Added a three-cycle, memory-quiescent LINE checkpoint after every completed
   nonfinal pixel. It publishes the next Bresenham error, XY destination, and

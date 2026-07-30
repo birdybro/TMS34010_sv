@@ -112,7 +112,7 @@ module tb_line_win;
     p = place_movi_il_b(p, 4'd5,  32'h0001_0020);        // WSTART (0x20,1)
     p = place_movi_il_b(p, 4'd6,  32'h0002_0020);        // WEND   (0x20,2)
     p = place_movi_il_b(p, 4'd7,  32'h0000_0003);        // DYDX {b=0,a=3}
-    p = place_movi_il_b(p, 4'd9,  32'h0000_00AA);        // COLOR1
+    p = place_movi_il_b(p, 4'd9,  32'hAAAA_AAAA);        // uniform COLOR1
     p = place_movi_il_b(p, 4'd10, 32'h0000_0004);        // COUNT = 4
     p = place_movi_il_b(p, 4'd11, 32'h0001_0000);        // INC1 (unused)
     p = place_movi_il_b(p, 4'd12, 32'h0001_0000);        // INC2 (+1 Y)

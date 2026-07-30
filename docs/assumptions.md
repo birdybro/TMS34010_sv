@@ -599,6 +599,46 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0051 — RESOLVED: COLOR/PMASK correspondence and defined PPOP domain
+- **Date**: 2026-07-29 (Task 0169).
+- **Status**: **RESOLVED** against the production CONTROL and COLOR0/COLOR1
+  pages in Chapters 5–7 of the 1988 TI User's Guide.
+- **Color-field rule**: the low 16 bits of COLOR0/COLOR1 contain independent
+  PSIZE-wide pixels corresponding directly to pixel locations in a
+  destination 16-bit memory word. DRAV, LINE, FILL, and binary PIXBLT
+  therefore select `(COLOR >> destination_address[3:0]) & pixel_mask` before
+  PPOP. This permits non-replicated dithering. Software wanting a uniform
+  color replicates its pixel into every low-16 field.
+- **Plane-mask rule and ordering**: each PMASK bit corresponds to the same
+  physical bit position in every 16-bit memory word, rather than an
+  automatically repeated low PSIZE field. The core selects
+  `(PMASK >> pixel_address[3:0]) & pixel_mask` independently for a memory
+  source and destination. Protected memory operand bits become zero before
+  PPOP; register sources (FILL, DRAV, LINE, and register-source PIXT) are
+  unchanged. The PPOP result is masked before transparency detection, so a
+  protected-only result becomes transparent, and the raw protected
+  destination bits are preserved on the write. Software wanting the same
+  plane protection in every sub-word pixel replicates the mask through all
+  16 PMASK bits.
+- **PIXT consequence**: linear and XY memory-to-register PIXT apply PMASK
+  before zero-extension and V evaluation. Linear and XY memory-to-memory PIXT
+  apply PPOP/T/PMASK; a processing transfer performs source read,
+  destination read, and merged write, while replace/T=0/PMASK=0 keeps the
+  direct source-read/write fast path.
+- **PPOP boundary**: Boolean PPOP 0x00–0x0F is defined for PSIZE
+  1/2/4/8/16. Arithmetic PPOP 0x10–0x15 is defined only for PSIZE 4/8/16.
+  PPOP 0x16–0x1F is reserved. The undefined/reserved cells are excluded from
+  conformance rather than given an architectural meaning.
+- **Optional cache field**: CONTROL.CD is defined, stored, and readable, but
+  both values execute through the same uncached fetch path because the
+  optional instruction cache is outside this design's scope.
+- **Regression evidence**: `tb_graphics_ppop_matrix` independently computes
+  all 1,176 defined backend/PPOP/PSIZE cells plus 10 PMASK-read cases with
+  non-replicated colors/masks and crosses mask-induced transparency, binary
+  bit order, placement, status, SRT, held requests, and stalls.
+  `docs/graphics_conformance.md` maps every production graphics form and
+  field to its remaining focused evidence.
+
 ## A0050 — Cyclone V implementation and report-acceptance boundary
 - **Date**: 2026-07-29 (Task 0160).
 - **Status**: completed project-level realization contract with reproducible

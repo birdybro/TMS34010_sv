@@ -387,7 +387,7 @@ module tb_line_interrupt;
     p = place_movi_il_b(p, 4'd5, {16'd8, 16'd8});
     p = place_movi_il_b(p, 4'd6, {16'd14, 16'd14});
     p = place_movi_il_b(p, 4'd7, {b, a});
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AE);
+    p = place_movi_il_b(p, 4'd9, 32'hAEAE_AEAE);
     p = place_movi_il_b(p, 4'd10, DATA_WIDTH'(count));
     p = place_movi_il_b(p, 4'd11, inc1);
     p = place_movi_il_b(p, 4'd12, inc2);

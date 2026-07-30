@@ -145,7 +145,7 @@ module tb_line_abort;
     p = place_movi_il  (p, 4'd0, 32'h0000_001B);
     p = place_store_abs(p, 4'd0, A_CONVDP);              // CONVDP = 0x1B
     p = place_movi_il_b(p, 4'd4,  32'h0000_0800);        // OFFSET
-    p = place_movi_il_b(p, 4'd9,  32'h0000_00AA);        // COLOR1
+    p = place_movi_il_b(p, 4'd9,  32'hAAAA_AAAA);        // uniform COLOR1
 
     // W=2 (miss): line (0x20,1..4), window (0x20,1)..(0x20,2). Aborts at Y=3.
     p = place_movi_il  (p, 4'd0, {16'h0, ctrl_w(2'd2)});

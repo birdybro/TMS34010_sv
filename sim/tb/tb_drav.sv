@@ -6,7 +6,8 @@
 // CONTROL pixel-processing options), then advances Rd by Rs as an XY add
 // (X+X, Y+Y, no carry between halves). W=0 (no windowing) — A0031.
 //
-// Setup: PSIZE=8, CONVDP=0x1B (Y shift 4), OFFSET(B4)=0x800, COLOR1(B9)=0xAA,
+// Setup: PSIZE=8, CONVDP=0x1B (Y shift 4), OFFSET(B4)=0x800,
+// COLOR1(B9)=0xAAAAAAAA (uniform 8-bit color fields),
 // CONTROL=0 (PPOP=replace, T=0, PMASK=0, W=0).
 //   Rd=A2 = XY(0x20,1) → linear (1<<4)|(0x20<<3)+0x800 = 0x910 (word 145, low
 //   byte = X=0x20). Rs=A1 = XY(1,0) (advance X by 1).
@@ -109,7 +110,7 @@ module tb_drav;
     p = place_movi_il  (p, 4'd0, 32'h0000_001B);
     p = place_store_abs(p, 4'd0, A_CONVDP);              // CONVDP = 0x1B
     p = place_movi_il_b(p, 4'd4, 32'h0000_0800);         // OFFSET (B4)
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1 (B9)
+    p = place_movi_il_b(p, 4'd9, 32'hAAAA_AAAA);         // COLOR1 (B9)
     p = place_movi_il  (p, 4'd1, 32'h0000_0001);         // Rs=A1 : XY (X=1,Y=0)
     p = place_movi_il  (p, 4'd2, 32'h0001_0020);         // Rd=A2 : XY (X=0x20,Y=1)
     p = place_word(p, drav_enc(REG_FILE_A, 4'd1, 4'd2)); // DRAV A1,A2  (= 0xF622)

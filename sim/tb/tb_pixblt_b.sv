@@ -124,8 +124,8 @@ module tb_pixblt_b;
     p = place_movi_il_b(p, 4'd2, 32'h0000_0900);         // DADDR (B2)
     p = place_movi_il_b(p, 4'd3, 32'h0000_0080);         // DPTCH (B3)
     p = place_movi_il_b(p, 4'd7, 32'h0001_0004);         // DYDX: DY=1, DX=4
-    p = place_movi_il_b(p, 4'd8, 32'h0000_0033);         // COLOR0 (B8)
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00CC);         // COLOR1 (B9)
+    p = place_movi_il_b(p, 4'd8, 32'h3333_3333);         // uniform COLOR0
+    p = place_movi_il_b(p, 4'd9, 32'hCCCC_CCCC);         // uniform COLOR1
     p = place_word(p, 16'h0F80);                         // PIXBLT B,L
 
     p = place_word(p, 16'hC0FF);

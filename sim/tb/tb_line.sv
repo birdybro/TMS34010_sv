@@ -140,7 +140,7 @@ module tb_line;
     p = place_movi_il_b(p, 4'd2,  32'h0001_0020);        // B2  DADDR (0x20,1)
     p = place_movi_il_b(p, 4'd4,  32'h0000_0800);        // B4  OFFSET
     p = place_movi_il_b(p, 4'd7,  32'h0000_0003);        // B7  DYDX {b=0,a=3}
-    p = place_movi_il_b(p, 4'd9,  32'h0000_00AA);        // B9  COLOR1
+    p = place_movi_il_b(p, 4'd9,  32'hAAAA_AAAA);        // B9 uniform COLOR1
     p = place_movi_il_b(p, 4'd10, 32'h0000_0004);        // B10 COUNT = 4
     p = place_movi_il_b(p, 4'd11, 32'h0001_0000);        // B11 INC1 (unused; b=0)
     p = place_movi_il_b(p, 4'd12, 32'h0001_0000);        // B12 INC2 (+1 Y)

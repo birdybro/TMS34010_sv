@@ -15,7 +15,18 @@ translate a software implementation into one large procedural HDL block.
 The original processor and Cyclone V implementation baseline is complete
 through Task 0160. Task 0161's production-revision GPU re-audit found
 remaining programmer-visible graphics work; do not claim GPU completion until
-the ordered Task 0162–0174 closure plan in `tasks.md` passes. Task 0124
+the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0169
+close the production graphics-instruction semantic, direction, window,
+checkpoint/resume, LINE-interrupt, and complete PPOP/PSIZE/register matrix
+gates. Treat `docs/graphics_conformance.md` as the authoritative graphics
+coverage ledger: never add a defined graphics cell without a primary citation,
+RTL owner, side effects, and named self-checking test, and never assign
+behavior to a reserved/undefined cell. PMASK maps to physical positions in
+each 16-bit memory word: protected memory-source and destination bits read as
+zero before PPOP, the result is masked before transparency, and protected
+destination bits are preserved on write. Register-source pixels remain
+unmasked. COLOR0/COLOR1 fields align to the destination word position.
+Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE

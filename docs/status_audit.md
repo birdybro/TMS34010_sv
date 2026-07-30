@@ -2,6 +2,8 @@
 
 Task 0135 reconciled every implemented TMS34010 instruction family against
 the individual `Status Bits` tables in the 1988 TI TMS34010 User's Guide.
+Task 0169 rechecked every production graphics row while closing the complete
+graphics conformance matrix; no status policy changed.
 This document is the compact review matrix behind the per-instruction
 `Flags` column in `instruction_coverage.md`.
 
@@ -108,4 +110,9 @@ The audit found and corrected these observable mismatches:
 Focused evidence is in `tb_div_flags`, `tb_mpy_flags`, `tb_fill_window`,
 `tb_pixblt_window`, `tb_window_preclip`, and `tb_pixt_win`. Existing
 arithmetic, logical, move, shift, field, control, and graphics benches remain
-part of the complete regression.
+part of the complete regression. `tb_graphics_ppop_matrix` additionally
+proves across 1,176 defined PPOP/PSIZE/backend cells plus 10 PMASK-read cases
+that pixel processing, word-aligned PMASK, mask-induced transparency, aligned
+COLOR selection, and arbitrary stalls do not write NCZV beyond each
+instruction's policy. Undefined graphics flags remain deterministically
+preserved as documented above.

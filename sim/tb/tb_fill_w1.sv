@@ -114,7 +114,7 @@ module tb_fill_w1;
     p = place_movi_il_b(p, 4'd3, 32'h0000_0080);         // DPTCH
     p = place_movi_il_b(p, 4'd4, 32'h0000_0800);         // OFFSET
     p = place_movi_il_b(p, 4'd7, 32'h0002_0002);         // DYDX (DY=2,DX=2)
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1
+    p = place_movi_il_b(p, 4'd9, 32'hAAAA_AAAA);         // uniform COLOR1
 
     // #1: array entirely outside window → no draw, V=1, no WVP.
     p = place_movi_il_b(p, 4'd2, 32'h0001_0020);         // DADDR (0x20,1)

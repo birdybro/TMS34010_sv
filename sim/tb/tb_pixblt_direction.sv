@@ -255,8 +255,8 @@ module tb_pixblt_direction;
     p = place_movi_il_b(p, 4'd3, dptch);
     p = place_movi_il_b(p, 4'd4, OFFSET_VAL);
     p = place_movi_il_b(p, 4'd7, {16'(dy), 16'(dx)});
-    p = place_movi_il_b(p, 4'd8, 32'h0000_0003);
-    p = place_movi_il_b(p, 4'd9, 32'h0000_000E);
+    p = place_movi_il_b(p, 4'd8, 32'h3333_3333);
+    p = place_movi_il_b(p, 4'd9, 32'hEEEE_EEEE);
     p = place_word(p, opcode);
     p = place_word(p, 16'hC0FF);
   endtask

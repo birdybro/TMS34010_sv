@@ -9,7 +9,15 @@ This is FPGA RTL, not a software emulator.
 The original TMS34010 processor and Cyclone V implementation baseline is
 complete through Task 0160. Task 0161's production-revision GPU re-audit found
 remaining programmer-visible graphics work, so the GPU-complete claim is
-withheld until the ordered Task 0162–0174 closure plan passes. Task 0124
+withheld until the ordered Task 0162–0174 closure plan passes. Tasks
+0162–0168 closed array semantics, direction, windowing, coherent checkpoints,
+PBX resume, and interruptible LINE. Task 0169 closes the complete production
+graphics-instruction/register matrix and adds a 1,186-case generated oracle:
+1,176 PPOP/PSIZE/backend cells plus 10 PMASK-read cells. It includes
+destination-aligned COLOR0/COLOR1 dithering, physical-word-aligned PMASK,
+PMASK-before-transparency ordering, and processed PIXT memory-to-memory
+forms. The authoritative matrix is
+`docs/graphics_conformance.md`. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -280,6 +288,9 @@ pinned `third_party/TMS34010_Info` submodule.
   gates for project completion.
 - `docs/status_audit.md` — complete individual-instruction N/C/Z/V policy,
   undefined-bit handling, and regression evidence.
+- `docs/graphics_conformance.md` — every production graphics instruction and
+  defined graphics-register field, its primary source, RTL owner, side
+  effects, undefined boundaries, and named regression evidence.
 - `scripts/` — lint, simulation, and Quartus entry points.
 - `tasks.md` / `changelog.md` — task-level design and implementation history.
 - `third_party/TMS34010_Info/` — pinned primary/reference documentation.

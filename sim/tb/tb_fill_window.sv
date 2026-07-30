@@ -121,7 +121,7 @@ module tb_fill_window;
     p = place_movi_il_b(p, 4'd5, 32'h0001_0020);         // WSTART XY (X=0x20,Y=1)
     p = place_movi_il_b(p, 4'd6, 32'h0002_0020);         // WEND   XY (X=0x20,Y=2)
     p = place_movi_il_b(p, 4'd7, 32'h0002_0002);         // DYDX (DY=2,DX=2)
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1
+    p = place_movi_il_b(p, 4'd9, 32'hAAAA_AAAA);         // uniform COLOR1
     p = place_movi_il  (p, 4'd14, ST_SEED);
     p = place_word(p, putst_enc(4'd14));                 // NCZ=111, V=0
     p = place_word(p, 16'h0FE0);                         // FILL XY

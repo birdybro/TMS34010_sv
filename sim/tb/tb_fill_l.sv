@@ -115,7 +115,7 @@ module tb_fill_l;
     p = place_movi_il_b(p, 4'd2, 32'h0000_0800);         // DADDR (B2)
     p = place_movi_il_b(p, 4'd3, 32'h0000_0080);         // DPTCH (B3)
     p = place_movi_il_b(p, 4'd7, 32'h0002_0004);         // DYDX (B7): DY=2, DX=4
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1 (B9)
+    p = place_movi_il_b(p, 4'd9, 32'hAAAA_AAAA);         // uniform COLOR1
     p = place_word(p, 16'h0FC0);                         // FILL L
 
     p = place_word(p, 16'hC0FF);

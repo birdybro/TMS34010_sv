@@ -187,6 +187,18 @@ module tb_window_preclip;
     field_mask = (32'd1 << size) - 32'd1;
   endfunction
 
+  function automatic logic [DATA_WIDTH-1:0] uniform_color(
+      input logic [DATA_WIDTH-1:0] pixel,
+      input int unsigned size
+  );
+    logic [DATA_WIDTH-1:0] color;
+    color = '0;
+    for (int unsigned bit_offset = 0; bit_offset < 16;
+         bit_offset += size)
+      color |= (pixel & field_mask(size)) << bit_offset;
+    uniform_color = color;
+  endfunction
+
   task automatic write_field(
       input logic [DATA_WIDTH-1:0] bit_addr,
       input int unsigned size,
@@ -358,7 +370,8 @@ module tb_window_preclip;
     p = place_movi_il(p, 4'd0,
                       srt ? (DATA_WIDTH'(1) << DPYCTL_SRT_BIT) : 32'd0);
     p = place_store_abs(p, 4'd0, A_DPYCTL);
-    p = place_movi_il(p, 4'd0, rmw ? 32'h0000_0001 : 32'd0);
+    p = place_movi_il(p, 4'd0,
+                      rmw ? uniform_color(32'h1, psize) : 32'd0);
     p = place_store_abs(p, 4'd0, A_PMASK);
     p = place_movi_il_b(p, 4'd0, source_raw);
     p = place_movi_il_b(p, 4'd1, DATA_WIDTH'(sptch));
@@ -368,8 +381,8 @@ module tb_window_preclip;
     p = place_movi_il_b(p, 4'd5, {16'(wy0), 16'(wx0)});
     p = place_movi_il_b(p, 4'd6, {16'(wy1), 16'(wx1)});
     p = place_movi_il_b(p, 4'd7, {16'(dy), 16'(dx)});
-    p = place_movi_il_b(p, 4'd8, 32'h0000_0003);
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AE);
+    p = place_movi_il_b(p, 4'd8, uniform_color(32'h3, psize));
+    p = place_movi_il_b(p, 4'd9, uniform_color(32'hAE, psize));
     p = place_movi_il(p, 4'd14, ST_SEED);
     p = place_word(p, putst_enc(4'd14));
     p = place_word(p, opcode);

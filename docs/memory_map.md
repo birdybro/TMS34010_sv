@@ -246,8 +246,17 @@ Task 0158 consumes SRT for graphics-only explicit VRAM register transfers.
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
 fields for graphics and interrupt behavior are also named in the package.
-Remaining video-mode fields must be documented as their consuming blocks are
-integrated.
+The complete production graphics-field ownership and evidence matrix is in
+`graphics_conformance.md`. In particular, CONTROL PPOP 0x00–0x0F is defined
+for all legal PSIZE values, arithmetic PPOP 0x10–0x15 only for PSIZE
+4/8/16, and 0x16–0x1F is reserved. CONTROL.CD is retained as the specified
+optional-cache-disable field; this uncached implementation has no behavioral
+difference between its values. PMASK bits map to physical positions within
+each 16-bit memory word; software replicates a per-pixel mask when it wants
+uniform protection across every sub-word pixel. Pixel reads zero protected
+bits before processing, and writes preserve them. Remaining video-mode fields
+are reconciled by the display task rather than inferred from graphics
+behavior.
 
 ## Host-interface-visible registers
 

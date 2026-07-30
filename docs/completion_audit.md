@@ -363,7 +363,20 @@ all-octant reference matrix interrupts every checkpoint with DI/NMI under
 RMW, W=3, SRT, and stalls while retaining exact traffic/context. W=1/W=2
 aborting pixels are verified final completions without restart images.
 
-Tasks 0169–0171 close the remaining functional and pin-integration items, Tasks
+Task 0169 closed the complete production graphics conformance matrix.
+`docs/graphics_conformance.md` maps every graphics instruction form and
+defined graphics-register field to primary pages, an RTL owner, side effects,
+and named tests. The generated `tb_graphics_ppop_matrix` covers 1,176 PPOP
+cells—every Boolean PPOP at five pixel sizes and every defined arithmetic
+PPOP at PSIZE 4/8/16—plus 10 PMASK-read cases across applicable register,
+linear, XY, LINE, FILL, PIXBLT, and PIXT memory-to-memory backends. It exposed
+and corrected destination-field selection for non-replicated COLOR0/COLOR1
+dithering, physical-word PMASK alignment/read behavior, result-mask-before-
+transparency ordering, and processing for memory-to-memory PIXT.
+Reserved PPOP 0x16–0x1F and undefined 1/2-bit arithmetic combinations are
+explicit exclusions, not invented behavior.
+
+Tasks 0170–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

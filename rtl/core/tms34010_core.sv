@@ -165,6 +165,29 @@ module tms34010_core
     endcase
   endfunction
 
+  // COLOR0/COLOR1 contain four/sixteen/etc. independently selectable pixel
+  // fields in their low 16 bits. The production guide requires the selected
+  // source field to correspond to the destination pixel's position in its
+  // 16-bit word, enabling non-replicated dithering patterns.
+  function automatic logic [DATA_WIDTH-1:0] aligned_color(
+      input logic [DATA_WIDTH-1:0] color,
+      input logic [ADDR_WIDTH-1:0] destination_address,
+      input logic [DATA_WIDTH-1:0] mask);
+    aligned_color = (color >> destination_address[3:0]) & mask;
+  endfunction
+
+  // PMASK bits correspond to physical bit positions in each 16-bit memory
+  // word. Pixel fields are right-justified inside the core, so select the
+  // mask field at the actual source/destination address before processing.
+  function automatic logic [DATA_WIDTH-1:0] aligned_pmask(
+      input logic [15:0] plane_mask,
+      input logic [ADDR_WIDTH-1:0] pixel_address,
+      input logic [DATA_WIDTH-1:0] mask);
+    aligned_pmask =
+        ({{(DATA_WIDTH-16){1'b0}}, plane_mask} >> pixel_address[3:0])
+        & mask;
+  endfunction
+
   // ---------------------------------------------------------------------------
   // Program counter
   // ---------------------------------------------------------------------------
@@ -359,6 +382,11 @@ module tms34010_core
        && mem_op_step == 2'd0) begin
         move_data_q <= mem_rdata_eff;
       end
+      // A processing PIXT memory-to-memory transfer reads the raw destination
+      // after its source. Keep the unmasked value for protected-plane merge;
+      // PPOP sees the separately masked destination operand.
+      if (pixt_m2m_rmw && mem_op_step == 2'd1)
+        pix_dest_q <= mem_rdata_eff;
       // A processing/window PIXT store reads the destination at step 0; latch
       // it so step 1 can merge the result.
       if (decoded.iclass == INSTR_MOVE_FIELD_STORE && pixt_rmw && mem_op_step == 2'd0) begin
@@ -391,7 +419,10 @@ module tms34010_core
         INSTR_MOVE_ABS_M2M_PI,
         INSTR_MOVB_OFF_M2M,
         INSTR_MOVB_ABS_M2M:
-                    mem_op_step <= (mem_op_step == 2'd1) ? 2'd0 : mem_op_step + 2'd1;
+                    mem_op_step <=
+                        (mem_op_step
+                         == (pixt_m2m_rmw ? 2'd2 : 2'd1))
+                          ? 2'd0 : mem_op_step + 2'd1;
         // Processing/window PIXT store: read -> write -> 0. Direct PIXT and
         // regular MOVE stores are single-step and fall through to default.
         INSTR_MOVE_FIELD_STORE:
@@ -632,10 +663,18 @@ module tms34010_core
                  || (pixt_win_wb && (((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) && pixt_inside_q)
                                   || ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2) && !pixt_inside_q)));
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign fill_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & fill_pixel_mask;
-  assign fill_processed   = ppop_apply(fill_color_q, fill_dest_q,
+  assign fill_pmask_field = aligned_pmask(io_pmask, fill_addr_q,
+                                          fill_pixel_mask);
+  assign fill_processed   = ppop_apply(
+                                       aligned_color(fill_color_q, fill_addr_q,
+                                                     fill_pixel_mask),
+                                       fill_dest_q & ~fill_pmask_field,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], fill_pixel_mask);
-  assign fill_transp      = io_control[CTRL_T_BIT] && ((fill_processed & fill_pixel_mask) == '0);
+  // The architectural order is source/destination mask, PPOP, result mask,
+  // then transparency. A protected-only result is therefore transparent.
+  assign fill_transp      = io_control[CTRL_T_BIT]
+                          && ((fill_processed & ~fill_pmask_field
+                               & fill_pixel_mask) == '0);
   assign fill_merged      = (fill_transp || fill_clip_out)
                           ? fill_dest_q
                           : ((fill_processed & ~fill_pmask_field) | (fill_dest_q & fill_pmask_field));
@@ -797,7 +836,8 @@ module tms34010_core
   logic                  pblt_dest_read_q;
   logic                  pblt_hrev_q, pblt_vrev_q, pblt_auto_corner_q;
   logic [DATA_WIDTH-1:0] pblt_src_pix_q, pblt_dst_pix_q;
-  logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask, pblt_pmask_field;
+  logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask;
+  logic [DATA_WIDTH-1:0] pblt_src_pmask_field, pblt_pmask_field;
   logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
   logic                  pblt_empty, pblt_row_end, pblt_done, pblt_transp;
   // PIXBLT B (color expand): COLOR0/COLOR1 latched at SETUP2; the source read is
@@ -806,7 +846,10 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_eff, pblt_src_step;
   assign pblt_psize_ext   = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
   assign pblt_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign pblt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & pblt_pixel_mask;
+  assign pblt_src_pmask_field = aligned_pmask(
+      io_pmask, pblt_src_access_addr, pblt_pixel_mask);
+  assign pblt_pmask_field = aligned_pmask(
+      io_pmask, pblt_dst_access_addr, pblt_pixel_mask);
   assign pblt_empty       = (pblt_dx_q == 16'd0) || (pblt_dy_q == 16'd0);
   assign pblt_row_end     = !pblt_empty
                           && (pblt_x_q == pblt_dx_q - 16'd1);
@@ -814,13 +857,21 @@ module tms34010_core
                           && (pblt_y_q == pblt_dy_q - 16'd1);
   // Effective source pixel: a binary source bit selects COLOR1/COLOR0.
   assign pblt_src_eff     = decoded.blt_binary
-                          ? (pblt_src_pix_q[0] ? pblt_color1_q : pblt_color0_q)
-                          : pblt_src_pix_q;
+                          ? (aligned_color(
+                               pblt_src_pix_q[0]
+                                 ? pblt_color1_q : pblt_color0_q,
+                               pblt_dst_access_addr, pblt_pixel_mask)
+                             & ~pblt_pmask_field)
+                          : (pblt_src_pix_q & ~pblt_src_pmask_field);
   // Source advances 1 bit/pixel for the binary form, PSIZE bits otherwise.
   assign pblt_src_step    = decoded.blt_binary ? 32'd1 : pblt_psize_ext;
-  assign pblt_processed   = ppop_apply(pblt_src_eff, pblt_dst_pix_q,
+  assign pblt_processed   = ppop_apply(
+                                       pblt_src_eff,
+                                       pblt_dst_pix_q & ~pblt_pmask_field,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], pblt_pixel_mask);
-  assign pblt_transp      = io_control[CTRL_T_BIT] && ((pblt_processed & pblt_pixel_mask) == '0);
+  assign pblt_transp      = io_control[CTRL_T_BIT]
+                          && ((pblt_processed & ~pblt_pmask_field
+                               & pblt_pixel_mask) == '0);
   // Window handling for PIXBLTs with an XY destination. W=3 preclips both
   // arrays before traffic; the raw/effective XY destination remains available
   // for W=1/W=2 geometry and as a defensive in-window check in the pixel loop.
@@ -1265,11 +1316,17 @@ module tms34010_core
   logic                  drav_transp;
   logic [DATA_WIDTH-1:0] drav_advance;
   assign drav_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign drav_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & drav_pixel_mask;
+  assign drav_pmask_field = aligned_pmask(io_pmask, drav_linear_q,
+                                          drav_pixel_mask);
   // COLOR1 is rf_rs1_data in CORE_DRAV (port1 reads B9 there).
-  assign drav_processed   = ppop_apply(rf_rs1_data, drav_dest_q,
+  assign drav_processed   = ppop_apply(
+                                       aligned_color(rf_rs1_data, drav_linear_q,
+                                                     drav_pixel_mask),
+                                       drav_dest_q & ~drav_pmask_field,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], drav_pixel_mask);
-  assign drav_transp      = io_control[CTRL_T_BIT] && ((drav_processed & drav_pixel_mask) == '0);
+  assign drav_transp      = io_control[CTRL_T_BIT]
+                          && ((drav_processed & ~drav_pmask_field
+                               & drav_pixel_mask) == '0);
   assign drav_merged      = drav_transp
                           ? drav_dest_q
                           : ((drav_processed & ~drav_pmask_field) | (drav_dest_q & drav_pmask_field));
@@ -1335,10 +1392,16 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] line_pixel_mask, line_pmask_field, line_processed, line_merged;
   logic                  line_transp;
   assign line_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign line_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & line_pixel_mask;
-  assign line_processed   = ppop_apply(line_color_q, line_dest_q,
+  assign line_pmask_field = aligned_pmask(io_pmask, line_linear,
+                                          line_pixel_mask);
+  assign line_processed   = ppop_apply(
+                                       aligned_color(line_color_q, line_linear,
+                                                     line_pixel_mask),
+                                       line_dest_q & ~line_pmask_field,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], line_pixel_mask);
-  assign line_transp      = io_control[CTRL_T_BIT] && ((line_processed & line_pixel_mask) == '0);
+  assign line_transp      = io_control[CTRL_T_BIT]
+                          && ((line_processed & ~line_pmask_field
+                               & line_pixel_mask) == '0);
   // Per-pixel window clip (CONTROL.W=3, Task 0115). LINE inhibits writes to
   // pixels outside the window (no preclip — tested at draw time); the V bit at
   // the end reflects whether the last pixel calculated was inside. W=1/W=2
@@ -1811,6 +1874,7 @@ module tms34010_core
   logic                  mv_fe;             // 1 = sign-extend on load
   logic [DATA_WIDTH-1:0] mv_fs_ext;         // FS zero-extended to the pointer width
   logic [DATA_WIDTH-1:0] mv_fmask;
+  logic [DATA_WIDTH-1:0] mv_read_data;
   logic [DATA_WIDTH-1:0] mv_load_data;      // field-extended load result
   logic [4:0]            mv_sign_bit_idx;   // FS-1 for a 32-bit field source
   assign mv_fs_raw = instr_word_q[9] ? st_value[ST_FS1_HI:ST_FS1_LO]
@@ -1828,16 +1892,20 @@ module tms34010_core
   assign mv_fs_ext = DATA_WIDTH'(mv_fs);
   assign mv_fmask  = (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH))
                    ? '1 : ((32'd1 << mv_fs) - 32'd1);
+  assign mv_read_data = (decoded.force_pixel && is_mv_load)
+                      ? (mem_rdata_eff
+                         & ~aligned_pmask(io_pmask, mv_addr, mv_fmask))
+                      : mem_rdata_eff;
   // The FS=32 arm below bypasses this index; for FS=1..31, five bits address
   // the selected sign bit without an implicit 6-to-5-bit truncation.
   assign mv_sign_bit_idx = mv_fs[4:0] - 5'd1;
   always_comb begin
     if (mv_fs >= FIELD_SIZE_WIDTH'(DATA_WIDTH)) begin
-      mv_load_data = mem_rdata_eff;                         // FS = 32: identity
-    end else if (mv_fe && mem_rdata_eff[mv_sign_bit_idx]) begin
-      mv_load_data = mem_rdata_eff | ~mv_fmask;             // sign-extend
+      mv_load_data = mv_read_data;                          // FS = 32: identity
+    end else if (mv_fe && mv_read_data[mv_sign_bit_idx]) begin
+      mv_load_data = mv_read_data | ~mv_fmask;              // sign-extend
     end else begin
-      mv_load_data = mem_rdata_eff & mv_fmask;              // zero-extend
+      mv_load_data = mv_read_data & mv_fmask;               // zero-extend
     end
   end
 
@@ -1848,29 +1916,45 @@ module tms34010_core
   //   1. Pixel processing (PPOP, CONTROL[14:10]): processed = f(src, dest).
   //      All 16 Boolean and 6 arithmetic codes are implemented within the
   //      selected pixel width.
-  //   2. Transparency (CONTROL.T, bit 5): if enabled and the PROCESSED pixel
-  //      is 0, the destination is left unchanged (write the old value back —
-  //      memory cycles still occur, per the spec).
-  //   3. Plane mask (PMASK): a 1 bit protects that plane:
-  //      merged = (processed & ~pmask) | (dest & pmask).
+  //   2. Plane mask (PMASK): memory-source/destination protected bits enter
+  //      PPOP as zero, then a 1 masks the corresponding processed-result bit.
+  //   3. Transparency (CONTROL.T, bit 5): if the MASKED processed pixel is 0,
+  //      the raw destination is left unchanged (the write still occurs).
+  // Protected raw destination bits are then merged back for a visible result.
   // `pixt_rmw` selects this path; a regular MOVE store (no force_pixel) stays
   // a single write.
-  logic                  pixt_rmw;
-  logic [DATA_WIDTH-1:0] pixt_pmask_field;
+  logic                  pixt_rmw, pixt_m2m, pixt_m2m_rmw;
+  logic [DATA_WIDTH-1:0] pixt_source_pixel;
+  logic [DATA_WIDTH-1:0] pixt_source_pmask_field;
+  logic [DATA_WIDTH-1:0] pixt_dest_address, pixt_pmask_field;
   logic [DATA_WIDTH-1:0] pix_dest_q;     // dest pixel latched at the read step
   logic [DATA_WIDTH-1:0] pixt_processed; // PPOP(src, dest)
   logic                  pixt_transp;    // transparency inhibits this write
-  logic [DATA_WIDTH-1:0] pixt_merged;    // value written at step 1
+  logic [DATA_WIDTH-1:0] pixt_merged;    // value written at final pixel step
   // Arithmetic-PPOP operands: the PSIZE-bit pixels as unsigned values, and
   // the unsigned add. Arith ops are only defined for pixels of 4/8/16 bits
   // (SPVU001A); they are computed for all sizes (1/2-bit results are
   // spec-Undefined, so any value is acceptable).
   assign pixt_rmw         = decoded.force_pixel && is_mv_store
                           && (pixel_dest_read_required || pixt_xy_win);
-  assign pixt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & mv_fmask;
-  assign pixt_processed   = ppop_apply(rf_rs1_data, pix_dest_q,
+  assign pixt_m2m         = decoded.force_pixel
+                          && (decoded.iclass == INSTR_MOVE_FIELD_M2M);
+  assign pixt_m2m_rmw     = pixt_m2m && pixel_dest_read_required;
+  assign pixt_dest_address = pixt_m2m ? m2m_dst_addr : mv_addr;
+  assign pixt_source_pmask_field =
+      aligned_pmask(io_pmask, m2m_src_addr, mv_fmask);
+  assign pixt_pmask_field =
+      aligned_pmask(io_pmask, pixt_dest_address, mv_fmask);
+  assign pixt_source_pixel = pixt_m2m
+                           ? (move_data_q & ~pixt_source_pmask_field)
+                           : rf_rs1_data;
+  assign pixt_processed   = ppop_apply(
+                                       pixt_source_pixel,
+                                       pix_dest_q & ~pixt_pmask_field,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], mv_fmask);
-  assign pixt_transp  = io_control[CTRL_T_BIT] && ((pixt_processed & mv_fmask) == '0);
+  assign pixt_transp  = io_control[CTRL_T_BIT]
+                      && ((pixt_processed & ~pixt_pmask_field
+                           & mv_fmask) == '0);
   // Per-pixel window check for PIXT operations with an XY destination,
   // mirroring DRAV. This includes register-to-XY and XY-to-XY forms.
   // WSTART/WEND are read at CORE_PIXT_SETUP_WIN; the destination point is
@@ -1881,8 +1965,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pixt_point_q;
   logic                  pixt_inside_q;     // latched at the pixel write step
   logic                  pixt_in_window, pixt_in_window_live, pixt_clip_out;
-  assign pixt_xy_m2m = decoded.force_pixel && decoded.xy_addr
-                     && (decoded.iclass == INSTR_MOVE_FIELD_M2M);
+  assign pixt_xy_m2m = pixt_m2m && decoded.xy_addr;
   assign pixt_xy_win  = decoded.xy_addr
                      && ((decoded.force_pixel && is_mv_store) || pixt_xy_m2m)
                      && (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0);
@@ -3567,9 +3650,11 @@ module tms34010_core
       end
 
       CORE_PIXT_SETUP_WIN: begin
-        // Read WSTART/WEND. A register-to-XY store runs its pixel access and inhibits
-        // the write there. XY-to-XY has no destination-read phase, so modes
-        // that suppress drawing skip directly to writeback.
+        // Read WSTART/WEND. A register-to-XY store runs its pixel access and
+        // inhibits the write there. Suppressed XY-to-XY transfers skip
+        // directly to writeback; an admitted transfer may use either the
+        // direct source-read/write path or the processing destination-read
+        // path selected by pixt_m2m_rmw.
         state_d = (pixt_xy_m2m
                    && ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1)
                        || !pixt_in_window_live))
@@ -3969,22 +4054,22 @@ module tms34010_core
           INSTR_MOVE_ABS_M2M_PI,
           INSTR_MOVB_OFF_M2M,
           INSTR_MOVB_ABS_M2M: begin
-            // Two-step indirect-to-indirect: step 0 reads an FS-bit field at
-            // mem[*Rs] into move_data_q, step 1 writes its low FS bits to
-            // mem[*Rd]. Field-size aware (Task 0079): both transactions use
-            // mem_size = mv_fs and the pointers step by ±FS (m2m_*_addr fold
-            // in the predec -FS). No FE extension — this is mem->mem, no
-            // register destination. For inc/dec the pointers are updated via
-            // the m2m_src_wr / WRITEBACK paths.
+            // Ordinary indirect-to-indirect MOVE is read then write. PIXT
+            // uses the same direct two-step path only for replace/T=0/
+            // PMASK=0; otherwise it inserts a destination read and writes the
+            // PPOP/transparency/plane-mask result on step 2.
             mem_req   = 1'b1;
             mem_size  = mv_fs;             // field size (1..32)
             if (mem_op_step == 2'd0) begin
               mem_we_int   = 1'b0;
               mem_addr = m2m_src_addr;     // = Rs (or Rs-FS predec)
+            end else if (pixt_m2m_rmw && mem_op_step == 2'd1) begin
+              mem_we_int = 1'b0;
+              mem_addr = m2m_dst_addr;
             end else begin
               mem_we_int   = 1'b1;
               mem_addr = m2m_dst_addr;     // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
-              mem_wdata = move_data_q;     // field (low FS bits) read in step 0
+              mem_wdata = pixt_m2m ? pixt_merged : move_data_q;
             end
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
@@ -4003,7 +4088,9 @@ module tms34010_core
             INSTR_MOVE_ABS_M2M_PI,
             INSTR_MOVB_OFF_M2M,
             INSTR_MOVB_ABS_M2M:
-                        if (mem_op_step == 2'd1) state_d = CORE_WRITEBACK;
+                        if (mem_op_step
+                            == (pixt_m2m_rmw ? 2'd2 : 2'd1))
+                          state_d = CORE_WRITEBACK;
             // A destination-reading PIXT stays for its write; direct store exits.
             INSTR_MOVE_FIELD_STORE:
                         if (!pixt_rmw || mem_op_step == 2'd1) state_d = CORE_WRITEBACK;

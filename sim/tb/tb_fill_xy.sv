@@ -128,7 +128,7 @@ module tb_fill_xy;
     p = place_movi_il_b(p, 4'd3, 32'h0000_0080);         // DPTCH (B3)
     p = place_movi_il_b(p, 4'd4, 32'h0000_0800);         // OFFSET (B4)
     p = place_movi_il_b(p, 4'd7, 32'h0002_0002);         // DYDX (B7): DY=2, DX=2
-    p = place_movi_il_b(p, 4'd9, 32'h0000_00AA);         // COLOR1 (B9)
+    p = place_movi_il_b(p, 4'd9, 32'hAAAA_AAAA);         // uniform COLOR1
     p = place_movi_il  (p, 4'd14, ST_SEED);
     p = place_word(p, putst_enc(REG_FILE_A, 4'd14));     // Seed NCZV=1111.
     p = place_word(p, 16'h0FE0);                         // FILL XY
