@@ -24,15 +24,16 @@
 //        mem_rdata  ..................XdataX.......   valid with mem_ack
 //
 // Individual physical word requests use the same request/ack contract and
-// receive one-cycle target latency. This model deliberately does not add
-// random waits; tb_field_sequencer provides stalled-word coverage.
+// receive one-cycle target latency by default. WORD_WAIT_CYCLES can inject a
+// deterministic number of additional wait cycles for end-to-end stall tests.
 // -----------------------------------------------------------------------------
 
 module sim_memory_model
   import tms34010_pkg::*;
 #(
   parameter int unsigned DEPTH_WORDS = 1024,
-  parameter logic [DATA_WIDTH-1:0] LEVEL0_VECTOR_INIT = '0
+  parameter logic [DATA_WIDTH-1:0] LEVEL0_VECTOR_INIT = '0,
+  parameter int unsigned WORD_WAIT_CYCLES = 0
 )(
   input  logic                              clk,
   input  logic                              rst,
@@ -82,12 +83,14 @@ module sim_memory_model
     .word_rmw_lock_o ()
   );
 
-  typedef enum logic [0:0] {
-    WORD_IDLE = 1'b0,
-    WORD_ACK  = 1'b1
+  typedef enum logic [1:0] {
+    WORD_IDLE = 2'd0,
+    WORD_WAIT = 2'd1,
+    WORD_ACK  = 2'd2
   } word_state_t;
 
   word_state_t state_q;
+  int unsigned wait_count_q;
   logic [ADDR_WIDTH-1:0] latched_word_addr_q;
   logic                  latched_word_we_q;
   local_word_t           latched_word_wdata_q;
@@ -124,6 +127,7 @@ module sim_memory_model
   always @(posedge clk) begin
     if (rst) begin
       state_q               <= WORD_IDLE;
+      wait_count_q          <= 0;
       latched_word_addr_q   <= '0;
       latched_word_we_q     <= 1'b0;
       latched_word_wdata_q  <= '0;
@@ -134,7 +138,18 @@ module sim_memory_model
             latched_word_addr_q  <= word_addr;
             latched_word_we_q    <= word_we;
             latched_word_wdata_q <= word_wdata;
-            state_q              <= WORD_ACK;
+            wait_count_q         <= WORD_WAIT_CYCLES;
+            state_q              <= (WORD_WAIT_CYCLES == 0)
+                                  ? WORD_ACK : WORD_WAIT;
+          end
+        end
+
+        WORD_WAIT: begin
+          if (wait_count_q <= 1) begin
+            wait_count_q <= 0;
+            state_q      <= WORD_ACK;
+          end else begin
+            wait_count_q <= wait_count_q - 1;
           end
         end
 

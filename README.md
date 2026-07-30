@@ -120,6 +120,13 @@ differential testing, TI software workloads, and final regression/Quartus
 sign-off. Exact instruction-cycle parity, the optional instruction cache,
 first-silicon compatibility, external VRAM serial pixels, later-family
 devices, and board analog validation are explicit non-goals.
+Task 0162 closes the first GPU finding. Every FILL and PIXBLT encoding now
+treats either zero DYDX dimension as an empty, memory-quiescent operation
+without implied-register or status changes. Full-color and binary PIXBLT
+completion writes SADDR/DADDR as the first pixels of the hypothetical next
+rows, while FILL retains its distinct final-row next-X DADDR. Focused coverage
+exercises every form, multiple PSIZEs, signed/non-unit pitches, and injected
+physical-memory stalls. Task 0163 directional PIXBLT traversal is next.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -178,7 +185,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 147 self-checking SystemVerilog testbenches, including non-integer-clock
+- 148 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.

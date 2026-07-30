@@ -425,15 +425,17 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] fill_addr_q, fill_row_base_q;
   logic [15:0]           fill_x_q, fill_y_q;
   logic [DATA_WIDTH-1:0] fill_psize_ext;
-  logic                  fill_row_end, fill_done;
+  logic                  fill_empty, fill_row_end, fill_done;
   // The destination is not read for the documented fast path: replace
   // processing, transparency disabled, and no protected planes. Field
   // insertion still performs any alignment-required word RMW in the memory
   // fabric. Other pixel modes need the destination value explicitly.
   logic                  pixel_dest_read_required;
   assign fill_psize_ext = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
-  assign fill_row_end   = (fill_x_q == fill_dx_q - 16'd1);
-  assign fill_done      = fill_row_end && (fill_y_q == fill_dy_q - 16'd1);
+  assign fill_empty     = (fill_dx_q == 16'd0) || (fill_dy_q == 16'd0);
+  assign fill_row_end   = !fill_empty && (fill_x_q == fill_dx_q - 16'd1);
+  assign fill_done      = fill_row_end
+                       && (fill_y_q == fill_dy_q - 16'd1);
   assign pixel_dest_read_required =
       (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO] != 5'd0)
       || io_control[CTRL_T_BIT]
@@ -485,12 +487,16 @@ module tms34010_core
   logic [15:0]           fill_arr_x0, fill_arr_y0, fill_arr_x1, fill_arr_y1;
   assign fill_arr_x0 = fill_daddr_raw_q[15:0];
   assign fill_arr_y0 = fill_daddr_raw_q[DATA_WIDTH-1:16];
-  assign fill_arr_x1 = fill_arr_x0 + fill_dx_q - 16'd1;   // last column
-  assign fill_arr_y1 = fill_arr_y0 + fill_dy_q - 16'd1;   // last row
-  assign fill_array_inside =
+  assign fill_arr_x1 = fill_empty ? fill_arr_x0
+                                  : fill_arr_x0 + fill_dx_q - 16'd1;
+  assign fill_arr_y1 = fill_empty ? fill_arr_y0
+                                  : fill_arr_y0 + fill_dy_q - 16'd1;
+  assign fill_array_inside = !fill_empty
+     &&
         (fill_arr_x0 >= rf_rs1_data[15:0]) && (fill_arr_x1 <= rf_rs2_data[15:0])
      && (fill_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (fill_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
-  assign fill_array_inside_latched =
+  assign fill_array_inside_latched = !fill_empty
+     &&
         (fill_arr_x0 >= fill_wstart_q[15:0]) && (fill_arr_x1 <= fill_wend_q[15:0])
      && (fill_arr_y0 >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_arr_y1 <= fill_wend_q[DATA_WIDTH-1:16]);
   // W=1 (hit detection): no pixels are drawn. The array "hits" the window if it
@@ -498,7 +504,7 @@ module tms34010_core
   // CORE_FILL_WIN_HIT, after the SETUP_WIN latch). Overlap = NOT fully to one
   // side. Inclusive corners.
   logic fill_w1_q, fill_array_hit;
-  assign fill_array_hit = !(
+  assign fill_array_hit = !fill_empty && !(
         (fill_arr_x1 < fill_wstart_q[15:0]) || (fill_arr_x0 > fill_wend_q[15:0])
      || (fill_arr_y1 < fill_wstart_q[DATA_WIDTH-1:16]) || (fill_arr_y0 > fill_wend_q[DATA_WIDTH-1:16]));
   // Window-violation flag write (sets V; detection paths may also pulse
@@ -652,9 +658,10 @@ module tms34010_core
   // and transparency-checked. Operands are read at EXECUTE (SADDR/DADDR/DYDX)
   // and CORE_PBLT_SETUP (SPTCH/DPTCH). Each pixel reads its source, optionally
   // reads its destination when processing requires it, then writes; both
-  // pointers advance by PSIZE per pixel and row-step by their pitch. SADDR/DADDR are updated to
-  // the pixel following their last (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2).
-  // No corner adjust (top-left → bottom-right), no window checking yet.
+  // pointers advance by PSIZE per pixel and row-step by their pitch.
+  // SADDR/DADDR are updated to the first pixels of the hypothetical next rows
+  // (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2). Direction/corner adjustment is
+  // added separately; this engine currently walks top-left to bottom-right.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] pblt_sptch_q, pblt_dptch_q;
   logic [15:0]           pblt_dx_q, pblt_dy_q;
@@ -666,7 +673,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_pix_q, pblt_dst_pix_q;
   logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask, pblt_pmask_field;
   logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
-  logic                  pblt_row_end, pblt_done, pblt_transp;
+  logic                  pblt_empty, pblt_row_end, pblt_done, pblt_transp;
   // PIXBLT B (color expand): COLOR0/COLOR1 latched at SETUP2; the source read is
   // 1 bit (mem_size 1, src step 1) and expands to COLOR1 / COLOR0.
   logic [DATA_WIDTH-1:0] pblt_color0_q, pblt_color1_q;
@@ -674,8 +681,11 @@ module tms34010_core
   assign pblt_psize_ext   = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
   assign pblt_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign pblt_pmask_field = {{(DATA_WIDTH-16){1'b0}}, io_pmask} & pblt_pixel_mask;
-  assign pblt_row_end     = (pblt_x_q == pblt_dx_q - 16'd1);
-  assign pblt_done        = pblt_row_end && (pblt_y_q == pblt_dy_q - 16'd1);
+  assign pblt_empty       = (pblt_dx_q == 16'd0) || (pblt_dy_q == 16'd0);
+  assign pblt_row_end     = !pblt_empty
+                          && (pblt_x_q == pblt_dx_q - 16'd1);
+  assign pblt_done        = pblt_row_end
+                          && (pblt_y_q == pblt_dy_q - 16'd1);
   // Effective source pixel: a binary source bit selects COLOR1/COLOR0.
   assign pblt_src_eff     = decoded.blt_binary
                           ? (pblt_src_pix_q[0] ? pblt_color1_q : pblt_color0_q)
@@ -708,18 +718,22 @@ module tms34010_core
   logic [15:0] pblt_arr_x0, pblt_arr_y0, pblt_arr_x1, pblt_arr_y1;
   assign pblt_arr_x0 = pblt_dst_xy_raw_q[15:0];
   assign pblt_arr_y0 = pblt_dst_xy_raw_q[DATA_WIDTH-1:16];
-  assign pblt_arr_x1 = pblt_arr_x0 + pblt_dx_q - 16'd1;
-  assign pblt_arr_y1 = pblt_arr_y0 + pblt_dy_q - 16'd1;
-  assign pblt_array_inside =
+  assign pblt_arr_x1 = pblt_empty ? pblt_arr_x0
+                                  : pblt_arr_x0 + pblt_dx_q - 16'd1;
+  assign pblt_arr_y1 = pblt_empty ? pblt_arr_y0
+                                  : pblt_arr_y0 + pblt_dy_q - 16'd1;
+  assign pblt_array_inside = !pblt_empty
+     &&
         (pblt_arr_x0 >= rf_rs1_data[15:0]) && (pblt_arr_x1 <= rf_rs2_data[15:0])
      && (pblt_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
-  assign pblt_array_inside_latched =
+  assign pblt_array_inside_latched = !pblt_empty
+     &&
         (pblt_arr_x0 >= pblt_wstart_q[15:0]) && (pblt_arr_x1 <= pblt_wend_q[15:0])
      && (pblt_arr_y0 >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= pblt_wend_q[DATA_WIDTH-1:16]);
   // W=1 (hit detection): never draws; overlap test from the LATCHED WSTART/WEND
   // (valid in CORE_PBLT_WIN_HIT). Mirrors the FILL W=1 path.
   logic pblt_w1_q, pblt_array_hit;
-  assign pblt_array_hit = !(
+  assign pblt_array_hit = !pblt_empty && !(
         (pblt_arr_x1 < pblt_wstart_q[15:0]) || (pblt_arr_x0 > pblt_wend_q[15:0])
      || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16]) || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
   assign pblt_merged      = (pblt_transp || pblt_clip_out)
@@ -819,20 +833,23 @@ module tms34010_core
           pblt_dst_pix_q <= mem_rdata_eff;
           pblt_substep_q <= 2'd2;
         end else begin
-          // Write ack: advance both pointers to the next pixel (source by 1
-          // bit for the binary form, PSIZE otherwise; dest always by PSIZE).
+          // Write ack: advance within a row, or publish the next row base at
+          // every row boundary.  The latter is also the architectural final
+          // SADDR/DADDR after the last row.
           pblt_substep_q  <= 2'd0;
-          pblt_src_addr_q <= pblt_src_addr_q + pblt_src_step;
-          pblt_dst_addr_q <= pblt_dst_addr_q + pblt_psize_ext;
-          if (pblt_row_end && !pblt_done) begin
-            pblt_y_q        <= pblt_y_q + 16'd1;
+          if (pblt_row_end) begin
             pblt_src_row_q  <= pblt_src_row_q + pblt_sptch_q;
             pblt_dst_row_q  <= pblt_dst_row_q + pblt_dptch_q;
             pblt_src_addr_q <= pblt_src_row_q + pblt_sptch_q;
             pblt_dst_addr_q <= pblt_dst_row_q + pblt_dptch_q;
-            pblt_x_q        <= 16'd0;
+            if (!pblt_done) begin
+              pblt_y_q <= pblt_y_q + 16'd1;
+              pblt_x_q <= 16'd0;
+            end
           end else if (!pblt_done) begin
-            pblt_x_q <= pblt_x_q + 16'd1;
+            pblt_src_addr_q <= pblt_src_addr_q + pblt_src_step;
+            pblt_dst_addr_q <= pblt_dst_addr_q + pblt_psize_ext;
+            pblt_x_q        <= pblt_x_q + 16'd1;
           end
         end
       end
@@ -2966,10 +2983,13 @@ module tms34010_core
 
       CORE_FILL_SETUP: begin
         // One cycle to latch COLOR1 (and the counters were seeded at EXECUTE).
+        // A zero dimension is an empty array: no access, flag update, or
+        // implied-register writeback is performed.
         // FILL XY with a window (W=2 or W=3) takes one more cycle to read
         // WSTART/WEND.
-        state_d = (fill_win_en_q || fill_w2_q || fill_w1_q) ? CORE_FILL_SETUP_WIN
-                                                            : CORE_FILL;
+        state_d = fill_empty                                  ? CORE_FETCH
+                : (fill_win_en_q || fill_w2_q || fill_w1_q)   ? CORE_FILL_SETUP_WIN
+                                                              : CORE_FILL;
       end
 
       CORE_FILL_SETUP_WIN: begin
@@ -3090,9 +3110,12 @@ module tms34010_core
 
       CORE_PBLT_SETUP: begin
         // One cycle to latch SPTCH/DPTCH (counters seeded at EXECUTE). The
+        // zero-dimension case is an empty array and exits before color/window
+        // setup, memory traffic, or implied-register writeback.
         // binary form reads COLOR0/COLOR1 in a second setup cycle; a windowed
         // (W=3) XY blt reads WSTART/WEND in CORE_PBLT_SETUP_WIN.
-        state_d = decoded.blt_binary                          ? CORE_PBLT_SETUP2
+        state_d = pblt_empty                                  ? CORE_FETCH
+                : decoded.blt_binary                          ? CORE_PBLT_SETUP2
                 : (pblt_win_en_q || pblt_w2_q || pblt_w1_q)   ? CORE_PBLT_SETUP_WIN
                                                               : CORE_PBLT;
       end

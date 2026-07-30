@@ -3,12 +3,13 @@
 //
 // PIXBLT B,L (0x0F80) — Task 0096. The source is a 1-bit-per-pixel bitmap; each
 // source bit expands to COLOR1 (B9) if 1, COLOR0 (B8) if 0, then processes with
-// the destination. The source address advances 1 bit per pixel. SPVU001A
+// the destination. Within each row the source address advances 1 bit per
+// pixel; completion publishes the next source and destination row bases. SPVU001A
 // PIXBLT B,L. PSIZE=8, replace mode.
 //
 //   Source bitmap at 0x800 = 0b1010 (p0=0, p1=1, p2=0, p3=1). COLOR0=0x33,
 //   COLOR1=0xCC. DADDR=0x900, DY=1, DX=4. Dest pixels: 0x33,0xCC,0x33,0xCC ->
-//   word144=0xCC33, word145=0xCC33. SADDR final=0x804 (+4 bits), DADDR=0x920.
+//   word144=0xCC33, word145=0xCC33. SADDR final=0x880, DADDR=0x980.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -139,9 +140,9 @@ module tb_pixblt_b;
     check_word("dst word145 = 0xCC33", 145, 16'hCC33);
     // Source bitmap unchanged.
     check_word("src word128 = 0x000A", 128, 16'h000A);
-    // SADDR advanced 4 bits; DADDR advanced 4 pixels.
-    check_breg("SADDR (B0) = 0x804", 0, 32'h0000_0804);
-    check_breg("DADDR (B2) = 0x920", 2, 32'h0000_0920);
+    // Completion publishes the hypothetical next row's source/dest bases.
+    check_breg("SADDR (B0) = 0x880", 0, 32'h0000_0880);
+    check_breg("DADDR (B2) = 0x980", 2, 32'h0000_0980);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");

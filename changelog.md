@@ -7,6 +7,22 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Fixed (Task 0162 — empty graphics arrays and terminal context)
+- Made zero DX or zero DY a prompt, memory-quiescent no-op for FILL L/XY and
+  every full-color/binary PIXBLT form. Guarded rectangle/terminal arithmetic
+  prevents unsigned `dimension-1` wraparound, and the early setup exit
+  preserves implied B registers and status.
+- Corrected nonempty PIXBLT completion so SADDR and DADDR identify the first
+  pixels of the hypothetical next source/destination rows. FILL deliberately
+  retains its separately specified final-row next-X DADDR behavior.
+- Added deterministic physical-word wait injection to the simulation memory
+  model and the 24-case `tb_graphics_array_edges` regression. It covers both
+  empty axes for all eight forms, multiple PSIZEs, positive/negative/non-unit
+  pitches, exact terminal registers, zero empty traffic, and held-request
+  stability.
+- Validation: focused graphics tests PASS; `scripts/lint.sh` clean; full
+  regression 148/148 PASS.
+
 ### Changed (Task 0161 — production-revision GPU completion closure)
 - Re-audited the recursively inventoried TMS34010 reference archive against
   the current RTL and tests. The 1988 TI User's Guide remains the

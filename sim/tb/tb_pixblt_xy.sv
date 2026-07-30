@@ -9,8 +9,8 @@
 //
 //   SADDR XY (X=0,Y=0)    -> linear 0x800 (word 128, source)
 //   DADDR XY (X=0x20,Y=0) -> linear 0x900 (word 144, dest)
-//   DYDX = DY=1, DX=2. After: dest word144 = source word128. SADDR final
-//   0x810, DADDR final 0x910 (linear).
+//   DYDX = DY=1, DX=2. After: dest word144 = source word128. The final
+//   SADDR=0x880 and DADDR=0x980 are the linear starts of the next rows.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -144,9 +144,9 @@ module tb_pixblt_xy;
     check_word("dst word144 = 0x2211", 144, 16'h2211);
     // Source unchanged.
     check_word("src word128 = 0x2211", 128, 16'h2211);
-    // SADDR / DADDR updated (linear) past their arrays.
-    check_breg("SADDR (B0) = 0x810", 0, 32'h0000_0810);
-    check_breg("DADDR (B2) = 0x910", 2, 32'h0000_0910);
+    // SADDR / DADDR updated to the linear starts of the next rows.
+    check_breg("SADDR (B0) = 0x880", 0, 32'h0000_0880);
+    check_breg("DADDR (B2) = 0x980", 2, 32'h0000_0980);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");

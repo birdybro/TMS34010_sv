@@ -161,6 +161,15 @@
   skip an architectural destination read when PPOP=replace, transparency is
   disabled, PMASK is zero, and no existing window path needs it; alignment-
   required partial writes still use the field sequencer's word RMW.
+- **Array completion under stalls** — FILL and PIXBLT sample dimensions and
+  implied operands before their pixel loops. A zero dimension returns from
+  setup without issuing a pixel request. For nonempty arrays, counters and
+  row/address context advance only on the final field acknowledge for that
+  pixel; the held request payload cannot change while acknowledge is low.
+  FILL's last acknowledge leaves DADDR at final-row next-X, while PIXBLT's
+  last acknowledge installs both hypothetical next-row bases before their
+  two writeback cycles. `tb_graphics_array_edges` runs all forms with three
+  extra physical-word wait cycles and monitors every held field payload.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

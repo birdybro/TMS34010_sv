@@ -146,9 +146,9 @@ module tb_pixblt_window;
     // Dest: low pixel (X=0x20) written = 0x11; high pixel (X=0x21) clipped = 0.
     check_word("dst word144 clipped = 0x0011", 144, 16'h0011);
     check_word("src word128 unchanged = 0x2211", 128, 16'h2211);
-    // SADDR / DADDR still advance over the full array (clip doesn't change them).
-    check_breg("SADDR (B0) = 0x810", 0, 32'h0000_0810);
-    check_breg("DADDR (B2) = 0x910", 2, 32'h0000_0910);
+    // Clipping does not change the next-row completion context.
+    check_breg("SADDR (B0) = 0x880", 0, 32'h0000_0880);
+    check_breg("DADDR (B2) = 0x980", 2, 32'h0000_0980);
     if (u_core.u_regfile.a_regs[8] !== 32'hF000_0010) begin
       $display("TEST_RESULT: FAIL: W=3 clipped ST expected=F0000010 actual=%08h",
                u_core.u_regfile.a_regs[8]);

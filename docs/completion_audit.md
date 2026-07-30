@@ -300,15 +300,21 @@ from the signed-off baseline must be documented as deliberate boundaries.
 ## Production-revision GPU completion gaps
 
 Task 0161 found concrete functional gaps beyond the Task 0160 baseline:
-zero-sized arrays can wrap into long operations; terminal PIXBLT context is
-not exact; CONTROL.PBH/PBV are stored but do not control traversal; W=1 does
-not return the specified common rectangle; W=3 suppresses individual writes
-instead of truly preclipping the arrays; and FILL, PIXBLT, and LINE do not
-implement their architectural mid-instruction interrupt/resume contracts.
+CONTROL.PBH/PBV are stored but do not control traversal; W=1 does not return
+the specified common rectangle; W=3 suppresses individual writes instead of
+truly preclipping the arrays; and FILL, PIXBLT, and LINE do not implement
+their architectural mid-instruction interrupt/resume contracts.
 The existing tests also lack a complete graphics/display conformance matrix,
 pinned MAME differential coverage, and TI-shipped graphics workloads.
 
-Tasks 0162–0171 close those functional and pin-integration items, Tasks
+Task 0162 closed the empty-array and terminal-context findings. Zero DX or DY
+now exits every FILL/PIXBLT form without graphics traffic or architectural
+writeback. PIXBLT final SADDR/DADDR identify the hypothetical next-row starts,
+whereas FILL retains the final-row next-X result. The 24-case
+`tb_graphics_array_edges` matrix covers all forms, signed/non-unit pitches,
+multiple pixel sizes, and injected word-side stalls.
+
+Tasks 0163–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

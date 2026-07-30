@@ -563,6 +563,15 @@ These engines currently share implementation inside `tms34010_core`.
 Extraction into dedicated modules is optional refactoring and must not precede
 functional or synthesis evidence that justifies it.
 
+Task 0162 makes the shared array bounds explicit:
+`DX==0 || DY==0` exits from setup before color/window work, memory traffic,
+or implied-register writeback. Nonempty FILL advances within the last row and
+returns its next-X DADDR. Nonempty full-color and binary PIXBLT advance to
+their row bases on every row boundary, so the final SADDR/DADDR are the first
+pixels of the hypothetical next rows. All field requests remain held by the
+existing request/acknowledge contract; the simulation memory model can inject
+deterministic physical-word waits for end-to-end checks.
+
 ## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control

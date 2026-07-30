@@ -127,7 +127,11 @@ PIXBLT context, implement PBH/PBV direction and exact W=1/W=3 array
 semantics, add resumable FILL/PIXBLT/LINE interrupt paths, close exhaustive
 graphics and video matrices, reclose SRT/local-bus integration, validate
 against pinned MAME and TI software, then rerun full simulation and Quartus
-sign-off. Task 0162 is the next implementation task. The optional instruction
+sign-off. Task 0162 corrected empty-array handling for all FILL/PIXBLT forms
+and the distinct terminal-context rules: PIXBLT returns hypothetical
+next-row SADDR/DADDR, while FILL returns final-row next-X DADDR. It is locked
+by the stalled-memory `tb_graphics_array_edges` matrix. Task 0163 directional
+PIXBLT traversal is the next implementation task. The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
 outside this functional GPU gate.

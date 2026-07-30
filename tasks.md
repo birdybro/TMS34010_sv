@@ -5706,7 +5706,7 @@ Commit:
 ---
 
 ### Task 0162: Correct empty arrays and terminal PIXBLT context
-Status: pending
+Status: complete
 Dependencies:
 - Task 0161 (GPU completion scope and ordered findings).
 Spec sources:
@@ -5735,6 +5735,22 @@ Tests:
   rows, pitches, PSIZE values, and injected memory stalls.
 - `scripts/lint.sh` PASS, strict RTL lint clean.
 - `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Results:
+- `tb_graphics_array_edges` PASS: 16 empty-array cases cover zero DX and zero
+  DY for both FILL forms and all six full-color/binary PIXBLTs, with bounded
+  completion, no graphics request cycles/acknowledgements, unchanged
+  SADDR/DADDR/DYDX, unchanged destination sentinels, and preserved ST.
+- The same bench's eight nonempty cases cover every form across PSIZE
+  1/2/4/8/16, multiple rows, positive/negative/non-unit pitches, exact FILL
+  final-row next-X DADDR, and exact PIXBLT hypothetical-next-row SADDR/DADDR.
+- Every focused case uses three extra physical-word wait cycles; an
+  end-to-end monitor proves the held field request direction/address/size/data
+  remain stable through acknowledgement.
+- Corrected legacy expectations in `tb_pixblt_ll`, `tb_pixblt_xy`,
+  `tb_pixblt_b`, and `tb_pixblt_window`; all focused FILL/PIXBLT benches PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 148/148 self-checking benches.
 Docs:
 - Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
   `docs/architecture.md`, `docs/assumptions.md`,

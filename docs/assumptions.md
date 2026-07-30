@@ -1339,6 +1339,25 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
+## A0033 — RESOLVED: empty arrays and array completion pointers
+- **Date**: 2026-07-29 (Task 0162).
+- **Status**: **RESOLVED** against the 1988 TI User's Guide DYDX, SADDR,
+  DADDR, FILL, and PIXBLT descriptions.
+- **Resolution**: A zero DX or zero DY means no array is moved or filled.
+  The instruction performs no source/destination access and does not write
+  its implied address registers. For a nonempty PIXBLT, final SADDR and DADDR
+  identify the first pixels in the hypothetical row following the source and
+  destination arrays; this applies to full-color and binary-source forms.
+  FILL is intentionally different: its final DADDR is the next X pixel on
+  the final row.
+- **Implementation**: guarded `fill_empty`/`pblt_empty` predicates prevent
+  `dimension-1` underflow and divert setup directly to fetch. PIXBLT row-end
+  acknowledgement publishes `row_base + pitch` even on the final row.
+- **Regression evidence**: `tb_graphics_array_edges` covers zero DX and zero
+  DY for both FILL forms and all six PIXBLTs, exact terminal registers across
+  multiple PSIZEs and signed/non-unit pitches, zero empty-array traffic, and
+  request stability with three injected physical-word wait cycles.
+
 ## A0031 — Window-checking scope and implementation
 - **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117), audited
   2026-07-28 (Task 0135).

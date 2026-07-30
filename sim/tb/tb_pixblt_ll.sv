@@ -4,12 +4,12 @@
 // PIXBLT L,L (0x0F00) — Task 0094. Transfer a DY×DX source pixel array
 // (SADDR=B0, rows SPTCH=B1 apart) to a destination array (DADDR=B2, rows
 // DPTCH=B3 apart), processing each pixel through the CONTROL pixel engine.
-// SADDR and DADDR are updated to the pixel following their last. SPVU001A
+// SADDR and DADDR are updated to the start of the hypothetical next row. SPVU001A
 // PIXBLT L,L. PSIZE=8, replace mode (verifies the transfer + register updates).
 //
 // Source row 0 (word128/129) = pixels 0x11,0x22,0x33,0x44; row 1 (word136/137)
 // = 0x55,0x66,0x77,0x88. Dest at 0x900 -> words 144,145 (row 0) and 152,153
-// (row 1, +DPTCH 0x80). SADDR final = 0x8A0, DADDR final = 0x9A0.
+// (row 1, +DPTCH 0x80). SADDR final = 0x900, DADDR final = 0xA00.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -144,9 +144,9 @@ module tb_pixblt_ll;
     check_word("dst row1 word153 = 0x8877", 153, 16'h8877);
     // Source unchanged.
     check_word("src word128 = 0x2211 (unchanged)", 128, 16'h2211);
-    // SADDR / DADDR updated to the pixel following the last.
-    check_breg("SADDR (B0) = 0x8A0", 0, 32'h0000_08A0);
-    check_breg("DADDR (B2) = 0x9A0", 2, 32'h0000_09A0);
+    // SADDR / DADDR updated to the start of the hypothetical next row.
+    check_breg("SADDR (B0) = 0x900", 0, 32'h0000_0900);
+    check_breg("DADDR (B2) = 0xA00", 2, 32'h0000_0A00);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
