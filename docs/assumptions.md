@@ -1405,8 +1405,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## TODO / spec-uncertain (waiting on detailed read)
 
-Task 0124 consolidates the assumptions that still affect observable
-compatibility and all system-level work into `completion_audit.md`. Task 0154
-closed the unscoped I/O-register-state item, Tasks 0155–0158 closed the video
-gate, and Tasks 0159–0160 closed CDC/FPGA realization. Optional cache and
-original-silicon cycle accuracy remain outside the completed baseline.
+Task 0124 consolidated the then-known assumptions that affected observable
+compatibility and system integration into `completion_audit.md`. Task 0161's
+production-revision GPU re-audit supersedes the earlier no-gap interpretation:
+Tasks 0162–0174 now track the remaining graphics, video-reconciliation,
+interrupt/resume, differential, workload, and final-sign-off work. The
+optional instruction cache, exact original-silicon instruction timing,
+first-silicon compatibility, external VRAM serial pixels, later-family
+devices, and board analog validation remain outside that functional GPU gate.

@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Changed (Task 0161 — production-revision GPU completion closure)
+- Re-audited the recursively inventoried TMS34010 reference archive against
+  the current RTL and tests. The 1988 TI User's Guide remains the
+  production-revision design contract; MAME and the archive's implementation
+  bibliography are secondary verification/navigation sources.
+- Withdrew the overbroad GPU-complete interpretation of the valid Task 0160
+  processor/Cyclone V baseline. Known functional gaps include empty-array and
+  terminal PIXBLT context, PBH/PBV traversal, exact W=1/W=3 array behavior,
+  and architectural FILL/PIXBLT/LINE interrupt/resume.
+- Added the ordered Task 0162–0174 closure roadmap: concrete semantic fixes,
+  exhaustive graphics and display conformance, SRT/local-bus reintegration,
+  pinned MAME differential verification, surviving TI graphics workloads,
+  and final regression plus Quartus sign-off.
+- Defined the gate as production-revision programmer-visible GPU behavior.
+  The optional instruction cache, exact instruction-cycle parity,
+  first-silicon mode, TMS34020/TMS34082, external VRAM serial pixels, and
+  board analog validation remain explicit non-goals.
+- Validation: task-index/detail IDs match 174/174 uniquely;
+  `git diff --check` clean; `scripts/lint.sh` clean; full regression
+  147/147 PASS.
+
 ### Added (Task 0160 — Cyclone V implementation closure)
 - Added the Quartus Prime Lite 17.0.2 project for `5CSEBA6U23I7`, with
   `tms34010_cyclone_v_top` as the sole top, both vendor PLLs enabled, and all

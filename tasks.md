@@ -1,13 +1,16 @@
 # Tasks
 
-## Current Milestone: Completed processor and Cyclone V baseline
+## Current Milestone: Production-revision GPU completion
 
-All mandatory work in the original TMS34010 processor and Cyclone V roadmap is
-complete through Task 0160. Task 0160 supplies the deterministic Quartus Prime
-Lite 17 map/fit/assembly/TimeQuest flow, complete pin and timing constraints,
-measured resource/CDC/timing evidence, and final-clock-ratio refresh-service
-proof. Task 0159 supplies the wrapped PLLs, independent board VCLK, per-domain
-reset release, and top-level host/local/video pad direction. Task 0158
+The original processor and Cyclone V implementation baseline remains complete
+through Task 0160, but Task 0161's primary-source re-audit found
+programmer-visible graphics gaps that prevent a GPU-complete claim. The claim
+is withheld until the ordered Task 0162–0174 closure plan is complete. Task
+0160 supplies the deterministic Quartus Prime Lite 17
+map/fit/assembly/TimeQuest flow, complete pin and timing constraints, measured
+resource/CDC/timing evidence, and final-clock-ratio refresh-service proof.
+Task 0159 supplies the wrapped PLLs, independent board VCLK, per-domain reset
+release, and top-level host/local/video pad direction. Task 0158
 consumes DPYCTL.SRT: graphics pixel reads/writes become explicit VRAM
 memory-to-register/register-to-memory cycles with exact local-bus phases,
 while instruction, ordinary data, I/O, and host traffic remain unchanged.
@@ -89,6 +92,17 @@ individual-page N/C/Z/V audit, corrected divide/modulo and odd-result multiply
 semantics, completed graphics W=3 V reporting and PIXT XY-to-XY window
 handling, and resolved A0009. Task 0136 resolved A0005 by sequencing every
 architectural field onto the exact required ascending 16-bit word operations.
+
+For this milestone, **GPU complete** means functional compatibility with the
+production-revision TMS34010 described by the 1988 User's Guide for every
+programmer-visible graphics instruction, graphics register, display/video
+controller behavior, graphics interrupt/resume path, and specified local-bus
+cycle class used by those facilities. Exact original-silicon instruction
+cycle counts, the optional instruction cache, first-silicon compatibility,
+TMS34020/TMS34082 features, external VRAM serial-pixel generation, and
+board-level analog/electrical validation remain outside this functional GPU
+gate. MAME is a differential cross-check; unambiguous TI documentation
+remains authoritative.
 
 ## Task index
 
@@ -254,6 +268,20 @@ architectural field onto the exact required ascending 16-bit word operations.
 | 0158 | Implement program-controlled VRAM register transfers | complete |
 | 0159 | Add the Cyclone V clock, reset, and pad boundary | complete |
 | 0160 | Close the Cyclone V implementation flow | complete |
+| 0161 | Define the production-revision GPU completion closure | complete |
+| 0162 | Correct empty arrays and terminal PIXBLT context | pending |
+| 0163 | Implement directional PIXBLT traversal | pending |
+| 0164 | Implement W=1 common-rectangle results | pending |
+| 0165 | Implement true W=3 array preclipping | pending |
+| 0166 | Make FILL and PIXBLT execution checkpointable | pending |
+| 0167 | Resume interrupted FILL and PIXBLT through PBX | pending |
+| 0168 | Resume interrupted LINE execution | pending |
+| 0169 | Close the graphics conformance matrix | pending |
+| 0170 | Reconcile the complete display/video controller | pending |
+| 0171 | Reclose graphics SRT and local-bus integration | pending |
+| 0172 | Add MAME graphics differential verification | pending |
+| 0173 | Run TI graphics software workloads | pending |
+| 0174 | Sign off production-revision GPU completion | pending |
 
 ---
 
@@ -5635,6 +5663,585 @@ Commit:
 
 ---
 
+### Task 0161: Define the production-revision GPU completion closure
+Status: complete
+Dependencies:
+- Task 0160 (closed processor/Cyclone V baseline).
+Spec sources:
+- 1988 TI TMS34010 User's Guide Chapters 6, 7, 9, 11, and the individual
+  Chapter 12 graphics-instruction pages (production-revision programmer-visible
+  graphics, display, interrupt, and bus behavior).
+- SPVS002C TMS34010 data sheet graphics/video/local-bus signal descriptions
+  and AC diagrams (processor-pin behavior).
+- `third_party/TMS34010_Info/bibliography/hdl-reimplementation/15-verification.md`
+  (secondary verification plan using MAME and surviving TI software).
+Acceptance Criteria:
+- Re-audit the recursively inventoried `third_party/TMS34010_Info/` evidence
+  against the current RTL and tests, treating the 1988 TI guide as the
+  functional design contract and the archive bibliography as navigation only.
+- Record every presently known GPU-visible gap as an ordered numbered task
+  with primary-spec references, dependencies, observable acceptance criteria,
+  focused tests, full-regression gates, and required documentation updates.
+- Define GPU completion narrowly enough to be testable: production-revision
+  graphics instructions/registers, display/video control, graphics
+  interrupt/resume, and associated specified local-bus behavior are in scope.
+- Explicitly keep the optional instruction cache, exact original-silicon
+  instruction timing, first-silicon compatibility, TMS34020/TMS34082,
+  external VRAM serial pixels, and board analog validation outside this gate.
+- Withdraw the overbroad GPU-complete interpretation of the Task 0160
+  baseline without rewriting Task 0160's valid Cyclone V implementation
+  evidence or its historical acceptance criteria.
+Tests:
+- `git diff --check` PASS and all task IDs/statuses/dependencies are
+  mechanically reviewed for a single ordered Task 0161–0174 sequence.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 147/147 self-checking benches;
+  no RTL behavior changes in this planning task.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/assumptions.md`, and `docs/completion_audit.md`.
+Commit:
+- pending
+
+---
+
+### Task 0162: Correct empty arrays and terminal PIXBLT context
+Status: pending
+Dependencies:
+- Task 0161 (GPU completion scope and ordered findings).
+Spec sources:
+- 1988 TI TMS34010 User's Guide DYDX register description
+  (a zero DX or DY suppresses the complete array operation).
+- 1988 TI TMS34010 User's Guide individual FILL and PIXBLT pages
+  (implicit B-register operands and completion values).
+Acceptance Criteria:
+- Make every FILL and PIXBLT form perform no source read, destination read,
+  or destination write when either DYDX dimension is zero; complete promptly
+  without unsigned `DX-1`/`DY-1` wraparound.
+- Preserve the individual instruction's defined/undefined status behavior and
+  documented implicit-register result for an empty array.
+- Correct full-color and binary PIXBLT terminal SADDR/DADDR values to the
+  first source/destination pixel of the next hypothetical row, as specified,
+  rather than merely the address immediately following the final pixel.
+- Retain the separately specified FILL terminal DADDR behavior and verify
+  positive, negative, and non-unit pitches without conflating it with
+  PIXBLT's terminal context.
+- Keep all memory requests and implicit-register writebacks stable through
+  arbitrary acknowledgements.
+Tests:
+- Add focused zero-DX/zero-DY tests for FILL L/XY and every full-color/binary
+  PIXBLT form, proving bounded completion and zero memory traffic.
+- Extend FILL/PIXBLT tests for exact final implicit registers over multiple
+  rows, pitches, PSIZE values, and injected memory stalls.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0163: Implement directional PIXBLT traversal
+Status: pending
+Dependencies:
+- Task 0162 (correct array bounds and terminal context).
+Spec sources:
+- 1988 TI TMS34010 User's Guide CONTROL register PBH/PBV descriptions.
+- 1988 TI TMS34010 User's Guide §7.2 and individual PIXBLT L,L; L,XY;
+  XY,L; and XY,XY pages (horizontal/vertical direction and XY corner
+  adjustment).
+Acceptance Criteria:
+- Consume CONTROL.PBH and CONTROL.PBV for every applicable full-color
+  PIXBLT form and walk source/destination pixels and rows in the selected
+  horizontal and vertical directions.
+- Perform the documented automatic starting-corner adjustment for applicable
+  XY forms; preserve the software-supplied starting-corner contract of linear
+  forms.
+- Produce exact final SADDR/DADDR and other documented B-register results for
+  all four PBH/PBV combinations, pitches, dimensions, and pixel sizes.
+- Keep binary-source PIXBLT direction behavior exactly as its individual
+  pages specify rather than accidentally inheriting full-color direction.
+- Copy overlapping source/destination rectangles without self-corruption when
+  software selects the appropriate direction.
+Tests:
+- Add all four PBH/PBV combinations for every applicable PIXBLT form,
+  including odd pitches, PSIZE 1/2/4/8/16, one-pixel/one-row edges, and
+  arbitrary stalls.
+- Add forward- and reverse-overlap framebuffer tests that fail if source data
+  is overwritten before it is consumed.
+- Keep binary PIXBLT direction/control-isolation tests passing.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0164: Implement W=1 common-rectangle results
+Status: pending
+Dependencies:
+- Task 0163 (complete directional array traversal rules).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §7.10.1
+  (window mode 1 array-intersection behavior).
+- 1988 TI TMS34010 User's Guide FILL XY and XY-destination PIXBLT pages
+  (window status and implicit-register results).
+Acceptance Criteria:
+- For FILL XY and every PIXBLT form with an XY destination, make CONTROL.W=1
+  suppress all pixel transfers while computing the common rectangle between
+  the destination array and WSTART/WEND.
+- Write the specified common-rectangle origin and dimensions to DADDR and
+  DYDX, including empty, edge-touching, one-pixel, and fully contained cases.
+- Apply the documented V/WVP result without changing architecturally
+  unaffected status bits or issuing speculative source/destination traffic.
+- Define the result from the geometric rectangle independently of PBH/PBV,
+  then encode any direction-dependent origin exactly as the specification
+  requires.
+- Complete with exact implicit-register results under arbitrary memory waits,
+  even though a conforming W=1 operation should issue no pixel request.
+Tests:
+- Replace overlap-only W=1 tests with direct common-rectangle DADDR/DYDX,
+  status, WVP, and zero-memory-traffic checks for FILL XY and all applicable
+  PIXBLT forms.
+- Cover disjoint, partial, contained, enclosing, boundary, zero-dimension,
+  and all PBH/PBV cases.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0165: Implement true W=3 array preclipping
+Status: pending
+Dependencies:
+- Task 0164 (exact common-rectangle geometry).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §7.10.3
+  (preclipping of destination and, for PIXBLT, source arrays).
+- 1988 TI TMS34010 User's Guide FILL XY and XY PIXBLT pages
+  (preclipped operands, transfers, final context, and V status).
+Acceptance Criteria:
+- Compute the effective clipped FILL rectangle before the first transfer,
+  adjusting its start address and dimensions instead of walking the original
+  rectangle and suppressing individual out-of-window writes.
+- Preclip both source and destination consistently for every applicable
+  PIXBLT form so corresponding pixels remain aligned after any left, right,
+  top, or bottom clip.
+- Issue no source read, destination read, MTR, RTM, or write for pixels that
+  preclipping removes; an empty clipped rectangle completes with no traffic.
+- Combine preclipping with every PBH/PBV traversal direction and preserve the
+  instruction pages' final implicit-register and V-status results.
+- Keep W=0, W=1, W=2, and single-pixel PIXT/DRAV/LINE behavior isolated.
+Tests:
+- Add a reference geometry model covering each edge/corner, full exclusion,
+  one-pixel remainder, pitches, PSIZE values, and all PBH/PBV combinations.
+- Assert exact source/destination request address sequences and prove that no
+  clipped address reaches the memory or SRT bus.
+- Verify source/destination framebuffer alignment and exact final B-register
+  and V/WVP state.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0166: Make FILL and PIXBLT execution checkpointable
+Status: pending
+Dependencies:
+- Task 0165 (final array geometry and traversal semantics).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §7.2.3
+  (array-operation interrupt boundaries and saved context).
+- 1988 TI TMS34010 User's Guide individual FILL and PIXBLT pages
+  (implicit B-register state during partial completion).
+Acceptance Criteria:
+- Replace completion-only array context with incremental architectural
+  B-register state that exactly describes the uncompleted FILL/PIXBLT work at
+  every documented word/row interrupt boundary.
+- Expose a single safe interrupt checkpoint only after all memory effects for
+  the completed unit are committed and never in the middle of a held request
+  or partial-word read/modify/write pair.
+- Preserve non-interrupted framebuffer, final-register, status, request-order,
+  window, direction, and SRT behavior.
+- Bound interrupt recognition by the documented checkpoint granularity even
+  when a large array, slow memory, plane mask, transparency, or pixel
+  processing is active.
+- Make reset and illegal/error recovery discard incomplete private microstate
+  without inventing architectural writes.
+Tests:
+- Add direct checkpoint-state tests for FILL and every PIXBLT family at first,
+  middle, row-end, and final possible boundaries, including stalls and
+  partial-word RMW.
+- Assert that each checkpoint's B-register context is sufficient to continue
+  the remaining operation with no duplicated or skipped pixel.
+- Keep all non-interrupted graphics address/data traces unchanged except
+  where Tasks 0162–0165 intentionally corrected them.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0167: Resume interrupted FILL and PIXBLT through PBX
+Status: pending
+Dependencies:
+- Task 0166 (checkpointable array microstate and architectural context).
+Spec sources:
+- 1988 TI TMS34010 User's Guide §7.2.3 and Chapter 8 interrupt processing
+  (graphics-array interruption, ST.PBX, stacked context, and RETI).
+- 1988 TI TMS34010 User's Guide FILL/PIXBLT and RETI pages.
+Acceptance Criteria:
+- Sample maskable and nonmaskable requests at each legal FILL/PIXBLT
+  checkpoint and enter the existing architectural interrupt sequence without
+  losing, repeating, or reordering a completed memory effect.
+- Set and stack ST.PBX exactly for an interrupted pixel-array operation; do
+  not set it for ordinary instruction-boundary entry or unrelated long
+  instructions.
+- Make RETI detect the saved PBX context and resume the unfinished operation
+  from its architectural B-register state, preserving the handler-visible
+  PC/ST contract.
+- Support repeated interrupts at later checkpoints after a resume, provided
+  software preserves the documented graphics context.
+- Preserve window interrupts, external interrupts, HLT/NMI priority,
+  partial-word RMW indivisibility, and SRT/local-bus transaction identity.
+Tests:
+- Add end-to-end handler/RETI programs for FILL L/XY and every PIXBLT family,
+  injecting each interrupt class at multiple checkpoints and memory stalls.
+- Check stacked ST/PC, PBX visibility, handler execution, final framebuffer,
+  final B registers, and exact no-duplicate/no-skip address traces.
+- Add negative tests proving ordinary and LINE interrupt entries do not
+  masquerade as PBX array resumes.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0168: Resume interrupted LINE execution
+Status: pending
+Dependencies:
+- Task 0167 (validated mid-instruction interrupt entry/return plumbing).
+Spec sources:
+- 1988 TI TMS34010 User's Guide LINE instruction pages, especially the
+  pixel-boundary interrupt description.
+- 1988 TI TMS34010 User's Guide Chapter 8 interrupt processing and RETI page.
+Acceptance Criteria:
+- Recognize an interrupt after every completed LINE pixel except the final
+  pixel, with no interruption inside a held memory request or partial-word
+  read/modify/write.
+- Preserve the documented LINE B-register continuation state and stack the
+  rewound PC value that causes RETI to re-enter and continue the same LINE.
+- Resume with no duplicated/skipped pixel and with exact Bresenham error,
+  COUNT, INC1/INC2, DADDR, and status behavior for every octant.
+- Keep ST.PBX reserved for FILL/PIXBLT array resumption rather than using it
+  for LINE.
+- Preserve the instruction pages' rule that W=1/W=2 LINE aborts are complete
+  aborts and are not resumed as interrupted lines.
+Tests:
+- Add end-to-end interrupt/RETI programs for horizontal, vertical, diagonal,
+  shallow, steep, positive, and negative lines with interrupts after the
+  first and middle pixels and near completion.
+- Check stacked/returned PC, B-register continuation context, final
+  framebuffer, status/WVP behavior, and exact memory request sequences under
+  arbitrary stalls.
+- Add W=1/W=2 abort tests proving no later RETI-style continuation occurs.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0169: Close the graphics conformance matrix
+Status: pending
+Dependencies:
+- Task 0168 (known graphics semantic and interruption gaps closed).
+Spec sources:
+- 1988 TI TMS34010 User's Guide Chapters 6 and 7 and every individual
+  ADDXY/SUBXY/CMPXY/CPW/CVXYL/PIXT/DRAV/FILL/PIXBLT/LINE page.
+- SPVU027 TMS340 Graphics Library User's Guide (TI software usage patterns,
+  secondary to the processor guide).
+Acceptance Criteria:
+- Build a checked-in conformance matrix mapping every production-revision
+  graphics instruction form and defined graphics-register field to a primary
+  source, RTL owner, expected side effects, and at least one named test.
+- Exhaustively verify PSIZE 1/2/4/8/16 and every architecturally defined
+  PPOP/PSIZE combination across register, linear, XY, and binary-source forms
+  as applicable; do not invent behavior for combinations the guide marks
+  undefined.
+- Cross plane masking, transparency, color expansion/bit order, source and
+  destination pitch, window modes, pixel/address boundaries, status effects,
+  and arbitrary memory stalls with a generated reference model.
+- Cover the graphics-adjacent arithmetic/address instructions and all
+  documented implicit B-register destruction/results, not only framebuffer
+  output.
+- Resolve every GPU-relevant primary-spec ambiguity found by the matrix or
+  record an explicit production-revision deterministic choice and regression;
+  no defined cell may remain `TBD`, untested, or incorrectly marked complete.
+Tests:
+- Add generated/self-checking graphics-matrix benches with deterministic
+  seeds and useful failure coordinates.
+- Keep focused tests small enough to diagnose a single matrix cell while the
+  strict regression executes the complete matrix.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/instruction_coverage.md`,
+  `docs/memory_map.md`, and `docs/status_audit.md`.
+Commit:
+- pending
+
+---
+
+### Task 0170: Reconcile the complete display/video controller
+Status: pending
+Dependencies:
+- Task 0169 (graphics-instruction conformance closed).
+Spec sources:
+- 1988 TI TMS34010 User's Guide display-register pages in Chapter 6 and
+  complete video-interface behavior in Chapter 9.
+- SPVS002C TMS34010 data sheet video-interface signal descriptions and AC
+  diagrams.
+Acceptance Criteria:
+- Build and close a primary-spec matrix for every production-revision display
+  register/field, reset value, read/write side effect, and live-update point.
+- Reverify and correct internal/external sync, HSD/DXV direction, progressive
+  and interlaced field phase, all equality/output delays and missing-sync
+  fallbacks, ENV/blank behavior, counter writes, and display interrupts.
+- Reverify and correct DPYSTRT/DPYADR/DPYTAP, SRE, LNCNT, DUDATE, ORG, frame
+  reload, line cadence, captured screen requests, and completion-qualified
+  address updates under asynchronous core/VCLK clocks.
+- Resolve GPU-relevant display questions such as DPYTAP units and DPYSTRT
+  update timing from the primary guide, using pinned MAME behavior only where
+  TI documentation is silent; document every deliberate divergence.
+- Define completion at the TMS34010 pins: external VRAM serial shifting and
+  RAMDAC pixel generation remain surrounding-system behavior.
+Tests:
+- Add or extend cycle-by-cycle reference models for every internal/external,
+  interlaced/noninterlaced, HSD, ENV, SRE, and ORG/DUDATE combination,
+  including live writes and unrelated-clock CDC stalls.
+- Assert exact screen request payloads/cadence, sync/output enables,
+  counter/address snapshots, DIP delivery, and reset recovery.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0171: Reclose graphics SRT and local-bus integration
+Status: pending
+Dependencies:
+- Task 0169 (complete graphics request semantics).
+- Task 0170 (complete display/video control semantics).
+Spec sources:
+- 1988 TI TMS34010 User's Guide DPYCTL.SRT pages and §9.10.2.
+- 1988 TI TMS34010 User's Guide §§11.3–11.4 and SPVS002C local-bus AC
+  diagrams (graphics MTR/RTM arbitration and physical phases).
+Acceptance Criteria:
+- Reverify every graphics engine after Tasks 0162–0170 so exactly the
+  architecturally required pixel reads/writes become MTR/RTM cycles when SRT
+  is enabled and all other traffic retains its existing cycle class.
+- Prove preclipped, empty, W=1, aborted, and already-completed pixels issue no
+  physical cycle, while interrupted/resumed work issues each remaining cycle
+  exactly once.
+- Preserve the required source/destination read ordering, partial-field RMW,
+  direct-replace optimization, IAQ/TR/QE/W/address-status phases, arbitration,
+  HOLD restart, LRDY behavior, and deterministic MTR read result.
+- Revalidate bounded refresh/screen/host service and no graphics request loss
+  under simultaneous clients and all relevant clock ratios.
+- Keep external VRAM serial data and electrical board validation outside the
+  processor RTL while proving every processor-side pin phase.
+Tests:
+- Extend end-to-end SRT programs across PIXT/DRAV/LINE/FILL/PIXBLT,
+  PSIZE/alignment, PPOP/PMASK/transparency, clipping, direction, and
+  interrupt/resume cases.
+- Assert complete phase-level traces and request counts at both the
+  architectural and original-pin boundaries under stalls, HOLD, refresh,
+  screen, and host contention.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, `docs/memory_map.md`, and
+  `docs/timing_notes.md`.
+Commit:
+- pending
+
+---
+
+### Task 0172: Add MAME graphics differential verification
+Status: pending
+Dependencies:
+- Task 0171 (spec-derived graphics/video/pin behavior closed).
+Spec sources:
+- 1988 TI TMS34010 User's Guide (authoritative expected behavior).
+- Pinned MAME TMS34010 revision and paths recorded in
+  `third_party/TMS34010_Info/emulation/mame/UPSTREAM.md`
+  (secondary functional reference).
+Acceptance Criteria:
+- Add a reproducible, license-compliant minimal MAME TMS34010 reference
+  runner or adapter pinned to an exact upstream revision without copying
+  emulator architecture into the RTL.
+- Feed identical generated short graphics programs, register state, and
+  memory images to MAME and the RTL, then compare final A/B/ST/PC state,
+  graphics I/O state, memory writes, and framebuffer regions.
+- Cover every graphics family, PSIZE, defined PPOP, plane-mask/transparency
+  mode, window mode, pitch/direction, array edge case, and interrupt/resume
+  class selected by the conformance matrix.
+- Classify every mismatch: fix the RTL when TI documentation is clear;
+  otherwise record a source-backed intentional divergence with a minimized
+  reproducer. No unexplained mismatch may remain.
+- Keep the external reference dependency cached/pinned and make its absence a
+  clear opt-in setup condition, while committing deterministic generated
+  vectors that remain runnable by the ordinary regression.
+Tests:
+- Add a one-command differential suite and a checked-in deterministic vector
+  replay bench for offline/full-regression use.
+- Run the complete differential corpus at the pinned reference revision.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench,
+  including offline replay of all accepted differential vectors.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and add reference-setup/divergence
+  documentation.
+Commit:
+- pending
+
+---
+
+### Task 0173: Run TI graphics software workloads
+Status: pending
+Dependencies:
+- Task 0172 (MAME reference runner and minimized differential workflow).
+Spec sources:
+- TI-shipped TMS34010 Graphics/Math Function Library documentation and media
+  preserved under `third_party/TMS34010_Info/software/graphics-library/` and
+  `third_party/TMS34010_Info/tools/original-disks/`.
+- 1988 TI TMS34010 User's Guide (authoritative resolution of workload
+  mismatches).
+Acceptance Criteria:
+- Add reproducible extraction/build/load tooling for at least one small TI
+  ROM demo, representative Graphics/Math Function Library programs, and the
+  1987 GSP Paint workload, recording hashes and entry/memory maps.
+- Run each selected workload on both RTL and the pinned MAME reference to a
+  deterministic milestone and compare framebuffer, documented memory regions,
+  and architectural state.
+- Minimize and resolve every mismatch; no unexplained hang, illegal opcode,
+  graphics-state difference, or framebuffer difference may remain.
+- Commit only scripts, metadata, tests, and assets whose redistribution is
+  permitted; consume preserved media in place and never add third-party
+  arcade ROMs.
+- Provide an optional adapter/readiness path for user-supplied legal arcade
+  ROM testing without making unavailable copyrighted ROMs a completion gate.
+Tests:
+- Add deterministic smoke/replay tests for the selected TI workloads with
+  timeouts, expected checkpoints, and framebuffer/state hashes.
+- Run the complete live RTL-versus-MAME TI workload comparison.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench,
+  including deterministic workload replays that do not require network
+  access.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
+  `docs/architecture.md`, `docs/assumptions.md`,
+  `docs/completion_audit.md`, and add workload provenance/run instructions.
+Commit:
+- pending
+
+---
+
+### Task 0174: Sign off production-revision GPU completion
+Status: pending
+Dependencies:
+- Tasks 0162–0173 (all functional, integration, differential, and workload
+  gates complete).
+Spec sources:
+- 1988 TI TMS34010 User's Guide production-revision graphics/display scope.
+- SPVS002C processor-pin requirements.
+- Every source-to-RTL-to-test row produced by Tasks 0169–0173.
+Acceptance Criteria:
+- Re-audit every Chapter 6 graphics/display register, Chapter 7 pixel rule,
+  individual graphics instruction, Chapter 9 display behavior, graphics
+  interrupt/resume path, and associated Chapter 11 pin cycle with no defined
+  behavior left unimplemented, `TBD`, or supported only by an untested claim.
+- Require every Task 0162–0173 acceptance criterion and focused test to be
+  complete, every MAME/TI-workload mismatch resolved, and every deliberate
+  deterministic divergence documented with its source and scope.
+- Run strict lint, the complete self-checking regression, differential
+  corpus, TI workload suite, and clean Quartus map/fit/assembly/TimeQuest
+  report-validation flow at the final RTL revision.
+- Update resource, CDC, pin, and multicorner timing evidence and reject any
+  regression from the Task 0160 constraints, approved warnings, or service
+  bounds.
+- Restore a GPU-complete claim only for the definition frozen by Task 0161;
+  continue to state the optional instruction cache, exact instruction-cycle
+  parity, first-silicon mode, external VRAM serial pixels, later-family
+  devices, and board analog validation as explicit non-goals.
+Tests:
+- Every focused test named by Tasks 0162–0173 PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS for every discovered bench.
+- Complete pinned MAME differential suite and TI workload suite PASS with no
+  unexplained divergence.
+- `QUARTUS_SH=<Quartus-17-path>/quartus_sh scripts/synth_quartus.sh` PASS
+  from a clean build with refreshed accepted evidence.
+Docs:
+- Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`, every affected
+  file under `docs/`, and final FPGA implementation evidence.
+Commit:
+- pending
+
+---
+
 ## Task entry template (for future tasks)
 
 ```
@@ -5654,11 +6261,11 @@ Commit:
 
 ---
 
-## Completed roadmap
+## Historical completed roadmap
 
 The historical coarse phases below are all complete through the numbered Task
-0160 baseline. Future work begins with a new numbered task rather than
-silently extending this closed roadmap.
+0160 baseline. Task 0161 opened the separate production-revision GPU closure
+milestone above; it does not rewrite this historical baseline.
 
 - **Phase 1 — Core shell**: package constants, top-level ports, clock/reset,
   PC skeleton, memory IF, fetch/decode/execute FSM scaffold.

@@ -1,8 +1,10 @@
 # Completion audit
 
 > Baseline: functional implementation and reproducible Cyclone V
-> implementation sign-off through Task 0160. All seven ordered gates for the
-> TMS34010-only scope in A0002 are complete.
+> implementation sign-off through Task 0160. Task 0161's production-revision
+> GPU re-audit found remaining programmer-visible graphics behavior, so the
+> prior seven gates remain historical baseline evidence rather than a
+> GPU-complete sign-off. GPU completion is withheld until Tasks 0162–0174.
 
 ## Official ISA reconciliation
 
@@ -295,14 +297,25 @@ report-validation, CDC, resource, and refresh-service closure. These do not
 excuse missing architectural state or interface behavior; future differences
 from the signed-off baseline must be documented as deliberate boundaries.
 
-## System integration gaps
+## Production-revision GPU completion gaps
 
-None within the TMS34010 processor/Cyclone V scope. External VRAM/DRAM,
-level translation, board-level signal integrity, and the VRAM serial-pixel
-path are surrounding-system responsibilities rather than unfinished
-processor behavior.
+Task 0161 found concrete functional gaps beyond the Task 0160 baseline:
+zero-sized arrays can wrap into long operations; terminal PIXBLT context is
+not exact; CONTROL.PBH/PBV are stored but do not control traversal; W=1 does
+not return the specified common rectangle; W=3 suppresses individual writes
+instead of truly preclipping the arrays; and FILL, PIXBLT, and LINE do not
+implement their architectural mid-instruction interrupt/resume contracts.
+The existing tests also lack a complete graphics/display conformance matrix,
+pinned MAME differential coverage, and TI-shipped graphics workloads.
 
-## Ordered exit gates
+Tasks 0162–0171 close those functional and pin-integration items, Tasks
+0172–0173 add independent differential and surviving-software evidence, and
+Task 0174 performs the final full-regression and Quartus sign-off. External
+VRAM/DRAM, level translation, board-level signal integrity, and the VRAM
+serial-pixel path remain surrounding-system responsibilities rather than
+unfinished processor behavior.
+
+## Historical Task 0160 exit gates
 
 1. **Complete (Task 0135):** resolve all active ISA/status assumptions and
    correct discovered semantic mismatches.
@@ -336,5 +349,9 @@ processor behavior.
 7. **Complete (Task 0160):** strict lint, all 147 self-checking simulations,
    the clean real Quartus flow, and the final spec/documentation audit pass.
 
-All seven gates are satisfied. Task evidence is recorded in `tasks.md`,
-`changelog.md`, and `fpga/IMPLEMENTATION_EVIDENCE.md`.
+All seven historical baseline gates are satisfied. They do not supersede the
+Task 0161 GPU findings or establish production-revision GPU completion. The
+new ordered gate is Task 0162 through Task 0174 in `tasks.md`; Task 0174 may
+restore the scoped GPU-complete claim only after every predecessor passes.
+Task evidence is recorded in `tasks.md`, `changelog.md`, and
+`fpga/IMPLEMENTATION_EVIDENCE.md`.

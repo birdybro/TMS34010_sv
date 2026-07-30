@@ -12,8 +12,10 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The planned processor and Cyclone V implementation scope is complete through
-Task 0160. Task 0124
+The original processor and Cyclone V implementation baseline is complete
+through Task 0160. Task 0161's production-revision GPU re-audit found
+remaining programmer-visible graphics work; do not claim GPU completion until
+the ordered Task 0162–0174 closure plan in `tasks.md` passes. Task 0124
 audited the complete official instruction summary and system integration
 scope; Task 0125 corrected and verified the complete logical family's status
 semantics, and Tasks 0126–0127 implemented both missing memory-to-memory MOVE
@@ -120,6 +122,15 @@ plus report validation, measured timing/resource/CDC evidence, and an
 end-to-end final-clock-ratio refresh-service proof. The complete task gate is
 147 self-checking benches, zero-diagnostic RTL lint, and the real Quartus
 flow.
+Task 0161 defines the current milestone: correct empty arrays and terminal
+PIXBLT context, implement PBH/PBV direction and exact W=1/W=3 array
+semantics, add resumable FILL/PIXBLT/LINE interrupt paths, close exhaustive
+graphics and video matrices, reclose SRT/local-bus integration, validate
+against pinned MAME and TI software, then rerun full simulation and Quartus
+sign-off. Task 0162 is the next implementation task. The optional instruction
+cache, exact original-silicon instruction timing, first-silicon mode, external
+VRAM serial output, TMS34020/TMS34082, and board analog validation remain
+outside this functional GPU gate.
 The implementation includes the multicycle CPU core, the currently tracked
 instruction set, bit-field memory operations, graphics operations through
 LINE/DRAV/PIXT/PIXBLT/FILL with window checking, I/O registers, reset-vector
@@ -290,9 +301,10 @@ commit hash in `tasks.md`. When the user requests publication, push only after
 the local commit and validation are confirmed. Report any authentication or
 network failure; never claim a push succeeded when it did not.
 
-The original completion roadmap ends at Task 0160. New changes still require
-a new numbered task with explicit scope and acceptance criteria; do not
-silently extend the signed-off baseline.
+The historical completion roadmap ends at Task 0160. The active
+production-revision GPU roadmap is Task 0161–0174. New work after it still
+requires a new numbered task with explicit scope and acceptance criteria; do
+not silently extend either baseline.
 
 Historical task entries and changelog entries describe what was true at the
 time. Correct current summaries when they drift, but do not rewrite historical

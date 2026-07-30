@@ -6,8 +6,10 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-The planned TMS34010 processor and Cyclone V implementation scope is complete
-through Task 0160. Task 0124
+The original TMS34010 processor and Cyclone V implementation baseline is
+complete through Task 0160. Task 0161's production-revision GPU re-audit found
+remaining programmer-visible graphics work, so the GPU-complete claim is
+withheld until the ordered Task 0162–0174 closure plan passes. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -110,6 +112,14 @@ with +0.747 ns worst setup and +0.128 ns worst hold slack; all 27 required
 two-stage synchronizers are reported. A final-ratio integration test proves
 minimum-interval DRAM refresh completes in at most 11 of the available 32
 core clocks when HOLD is inactive and LRDY is bounded.
+Task 0161 defines the new functional GPU gate and records all currently known
+remaining work: empty-array and terminal-context corrections, directional
+PIXBLT, W=1/W=3 array semantics, resumable FILL/PIXBLT/LINE execution,
+exhaustive graphics/display conformance, SRT/pin reintegration, MAME
+differential testing, TI software workloads, and final regression/Quartus
+sign-off. Exact instruction-cycle parity, the optional instruction cache,
+first-silicon compatibility, external VRAM serial pixels, later-family
+devices, and board analog validation are explicit non-goals.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -173,10 +183,11 @@ The repository currently contains:
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.
 
-The processor RTL and its reproducible Cyclone V implementation flow are
-complete for the documented scope. A board-level system still needs external
-VRAM/DRAM or an equivalent memory/video subsystem, level translation, and
-signal-integrity validation to consume the landed transfer cycles and emit
+The Task 0160 processor/FPGA baseline and its reproducible Cyclone V
+implementation flow remain complete, but production-revision functional GPU
+completion now requires Tasks 0162–0174. A board-level system also needs
+external VRAM/DRAM or an equivalent memory/video subsystem, level translation,
+and signal-integrity validation to consume the landed transfer cycles and emit
 pixels; those surrounding-device responsibilities are not part of this
 processor.
 
