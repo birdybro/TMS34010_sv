@@ -1,8 +1,9 @@
 # Cyclone V implementation evidence
 
-Task 0160 closes the reproducible FPGA implementation gate for
-`tms34010_cyclone_v_top`. The checked-in project is the source of truth; full
-generated reports remain ignored build artifacts.
+Task 0174 re-signs the reproducible FPGA implementation gate for
+`tms34010_cyclone_v_top` after the complete production-revision GPU closure.
+The checked-in project is the source of truth; full generated reports remain
+ignored build artifacts.
 
 ## Reproduce
 
@@ -29,13 +30,13 @@ timestamp-free summary to
 | Top | `tms34010_cyclone_v_top` |
 | Assigned/fitted user pins | 63 / 63 |
 | Core / bus / VCLK | 50 / 200 / 50 MHz |
-| Logic utilization | 10,017 / 41,910 ALMs (24%) |
-| Registers | 8,039 |
+| Logic utilization | 12,645 / 41,910 ALMs (30%) |
+| Registers | 10,479 |
 | Block memory | 0 bits |
 | DSP blocks | 6 / 112 (5%) |
 | PLLs | 2 / 6 (33%) |
-| Worst setup slack | +0.747 ns |
-| Worst hold slack | +0.128 ns |
+| Worst setup slack | +0.556 ns |
+| Worst hold slack | +0.147 ns |
 | Worst minimum-pulse-width slack | +1.250 ns |
 | Ignored SDC constraints | 0 |
 | Programming file | `tms34010_cyclone_v.sof` |
@@ -58,12 +59,12 @@ this is an explicit reset protocol result, not an unconstrained-path result.
 Quartus finds 375 candidate synchronizer chains with a minimum length of two
 registers. The source attributes identify exactly 54 required stages forming
 27 required two-register chains, and all 27 are included in the
-metastability calculation. Their slow -40 °C aggregate worst-case design
-MTBF is 1.23 years; the other analyzed corners are at least 4.24 million
-years. The remaining auto-detected candidates include stable bundled-payload
-and ordinary shift structures and are not claimed as architectural
-synchronizers. The validator checks the required source-attributed chain and
-stage counts independently of the broader automatic report.
+metastability calculation. The validator's worst required-chain result across
+the analyzed corners is 242 years. The remaining auto-detected candidates
+include stable bundled-payload and ordinary shift structures and are not
+claimed as architectural synchronizers. The validator checks the required
+source-attributed chain and stage counts independently of the broader
+automatic report.
 
 ## Refresh-service bound
 

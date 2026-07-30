@@ -3,6 +3,9 @@
 Task 0172 uses MAME only as a secondary functional reference. The TI 1988
 TMS34010 User's Guide remains authoritative. No MAME processor implementation,
 generated decode table, or emulator architecture is copied into the RTL.
+Task 0174 reruns the complete live 137-case suite at the final RTL revision:
+all 156 classified case/field groups remain explained and the unexplained
+count remains zero.
 
 ## Provenance and license boundary
 

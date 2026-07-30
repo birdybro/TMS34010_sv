@@ -178,7 +178,10 @@ package tms34010_pkg;
     CORE_ARRAY_RESUME4    = 6'd57, // PBX resume: read expansion/fill colors
     CORE_LINE_CKPT_D      = 6'd58, // LINE checkpoint: next error term -> B0
     CORE_LINE_CKPT_DADDR  = 6'd59, // LINE checkpoint: next destination -> B2
-    CORE_LINE_CKPT_COUNT  = 6'd60  // LINE checkpoint: remaining count -> B10
+    CORE_LINE_CKPT_COUNT  = 6'd60, // LINE checkpoint: remaining count -> B10
+    CORE_PBLT_WIN_EVAL    = 6'd61, // evaluate registered PIXBLT window geometry
+    CORE_PBLT_WIN_OFFSETS = 6'd62, // register clipped PIXBLT address offsets
+    CORE_PBLT_WIN_APPLY   = 6'd63  // apply clipped PIXBLT working geometry
   } core_state_t;
 
   // ---------------------------------------------------------------------------

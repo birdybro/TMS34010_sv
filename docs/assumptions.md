@@ -1670,13 +1670,19 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Regression evidence**: `tb_ti_workload_replay`,
   `scripts/ti_workloads.sh`, and `ti_workload_divergences.json`.
 
-## TODO / spec-uncertain (waiting on detailed read)
+## Closed compatibility audit and explicit exclusions
 
-Task 0124 consolidated the then-known assumptions that affected observable
-compatibility and system integration into `completion_audit.md`. Task 0161's
-production-revision GPU re-audit supersedes the earlier no-gap interpretation:
-Tasks 0162–0174 now track the remaining graphics, video-reconciliation,
-interrupt/resume, differential, workload, and final-sign-off work. The
-optional instruction cache, exact original-silicon instruction timing,
+No active `TODO/spec-uncertain` item remains inside the Task 0161
+production-revision GPU scope. Task 0124 consolidated the earlier observable
+compatibility assumptions, Task 0161 reopened the scope from primary sources,
+and Tasks 0162–0174 resolved every resulting graphics, display,
+interrupt/resume, differential, workload, and implementation item. The final
+source-to-evidence audit is `gpu_completion_signoff.md`.
+
+The optional instruction cache, exact original-silicon instruction timing,
 first-silicon compatibility, external VRAM serial pixels, later-family
-devices, and board analog validation remain outside that functional GPU gate.
+devices, and board analog validation are explicit exclusions rather than
+unresolved assumptions. Any future ambiguity introduced by new work must
+receive a numbered assumption, primary-source investigation, and a test or
+clearly bounded project-level deviation before it can alter the signed-off
+claim.

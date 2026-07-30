@@ -1,6 +1,7 @@
 # Program-controlled VRAM transfer conformance
 
-> Status: **closed through Task 0171** for the TMS34010 processor boundary.
+> Status: **closed through Task 0171 and re-signed by Task 0174** for the
+> TMS34010 processor boundary.
 > Attached VRAM serial storage/output, board electrical behavior, and analog
 > video generation are surrounding-system responsibilities.
 

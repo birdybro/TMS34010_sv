@@ -3,7 +3,10 @@
 Task 0173 runs surviving TI-authored TMS34010 software as an integration gate.
 It does not add an emulator to the RTL and does not redistribute extracted TI
 executables. The pinned disk images remain the source of truth; generated
-files are written only below ignored `work/`.
+files are written only below ignored `work/`. Task 0174 rebuilds the original
+ROM tutorial and reruns all five live programs at the final RTL revision: the
+nine precisely classified case/field groups remain explained and the
+unexplained count remains zero.
 
 ## Provenance and redistribution boundary
 

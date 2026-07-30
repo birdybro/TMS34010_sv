@@ -3,7 +3,9 @@
 Task 0135 reconciled every implemented TMS34010 instruction family against
 the individual `Status Bits` tables in the 1988 TI TMS34010 User's Guide.
 Task 0169 rechecked every production graphics row while closing the complete
-graphics conformance matrix; no status policy changed.
+graphics conformance matrix; no status policy changed. Task 0174's final
+repository-wide audit found no unresolved defined status behavior and the
+complete regression revalidates the matrix.
 This document is the compact review matrix behind the per-instruction
 `Flags` column in `instruction_coverage.md`.
 

@@ -12,13 +12,16 @@ This is RTL, not a software emulator. Model explicit hardware structure:
 datapaths, muxes, registers, FSMs, counters, and memory transactions. Do not
 translate a software implementation into one large procedural HDL block.
 
-The original processor and Cyclone V implementation baseline is complete
-through Task 0160. Task 0161's production-revision GPU re-audit found
-remaining programmer-visible graphics work; do not claim GPU completion until
-the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0173
-close the production graphics-instruction semantic, direction, window,
-checkpoint/resume, LINE-interrupt, complete PPOP/PSIZE/register matrix, and
-display/video/SRT-local-bus conformance gates. Treat
+The production-revision TMS34010 GPU scope frozen by Task 0161 is complete
+through Task 0174. The claim is limited to the processor behavior and Cyclone
+V boundary enumerated in `docs/gpu_completion_signoff.md`; it does not include
+the optional instruction cache, exact original-silicon cycle parity,
+first-silicon behavior, external VRAM serial pixels, later-family devices, or
+board analog validation. Tasks 0162–0174 close the production
+graphics-instruction semantic, direction, window, checkpoint/resume,
+LINE-interrupt, complete PPOP/PSIZE/register matrix,
+display/video/SRT-local-bus conformance, independent-reference, surviving
+software, and final implementation gates. Treat
 `docs/graphics_conformance.md`, `docs/display_conformance.md`, and
 `docs/srt_conformance.md` as the authoritative production ledgers. For
 display addressing, DPYADR is the raw stored representation and always
@@ -297,6 +300,9 @@ RTL, tests, task log, changelog, and specification first.
   corpus/result contract, license boundary, and divergence classifications.
 - `docs/ti_workloads.md` — preserved media provenance, original-tool ROM
   rebuild, software milestones, result locks, and legal-ROM boundary.
+- `docs/gpu_completion_signoff.md` — final Task 0161 scope definition,
+  source-to-RTL-to-test closure matrix, independent gates, and explicit
+  non-goals.
 - `docs/completion_audit.md` — complete ISA reconciliation and ordered
   project-level exit gates.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.
@@ -409,10 +415,10 @@ commit hash in `tasks.md`. When the user requests publication, push only after
 the local commit and validation are confirmed. Report any authentication or
 network failure; never claim a push succeeded when it did not.
 
-The historical completion roadmap ends at Task 0160. The active
-production-revision GPU roadmap is Task 0161–0174. New work after it still
-requires a new numbered task with explicit scope and acceptance criteria; do
-not silently extend either baseline.
+The historical completion roadmap ends at Task 0160. The
+production-revision GPU closure roadmap ends at Task 0174. New work after it
+still requires a new numbered task with explicit scope and acceptance
+criteria; do not silently extend either signed-off boundary.
 
 Historical task entries and changelog entries describe what was true at the
 time. Correct current summaries when they drift, but do not rewrite historical

@@ -6,12 +6,15 @@ This is FPGA RTL, not a software emulator.
 
 ## Current status
 
-The original TMS34010 processor and Cyclone V implementation baseline is
-complete through Task 0160. Task 0161's production-revision GPU re-audit found
-remaining programmer-visible graphics work, so the GPU-complete claim is
-withheld until the ordered Task 0162–0174 closure plan passes. Tasks
-0162–0168 closed array semantics, direction, windowing, coherent checkpoints,
-PBX resume, and interruptible LINE. Task 0169 closes the complete production
+The production-revision TMS34010 GPU scope frozen by Task 0161 is complete
+through Task 0174. Every defined graphics, display, interrupt/resume, and
+associated original-pin behavior in that scope has primary-source ownership
+and self-checking evidence; the complete regression, pinned MAME differential,
+preserved TI workloads, and clean Quartus implementation flow all pass at the
+signed-off revision. The final matrix and exact boundary are in
+`docs/gpu_completion_signoff.md`. Tasks 0162–0168 closed array semantics,
+direction, windowing, coherent checkpoints, PBX resume, and interruptible
+LINE. Task 0169 closes the complete production
 graphics-instruction/register matrix and adds a 1,186-case generated oracle:
 1,176 PPOP/PSIZE/backend cells plus 10 PMASK-read cells. It includes
 destination-aligned COLOR0/COLOR1 dithering, physical-word-aligned PMASK,
@@ -277,10 +280,9 @@ The repository currently contains:
   65,536-opcode static status-policy sweep.
 
 The Task 0160 processor/FPGA baseline and its reproducible Cyclone V
-implementation flow remain complete. Tasks 0162–0173 close every identified
-production functional and surviving-software gate; Task 0174's final complete
-regression/differential/workload/Quartus sign-off remains before restoring
-the scoped GPU-complete claim. A board-level system also needs
+implementation flow remain complete. Tasks 0162–0174 close every identified
+production functional, surviving-software, and final implementation gate, so
+the Task 0161 scoped GPU-complete claim is restored. A board-level system also needs
 external VRAM/DRAM or an equivalent memory/video subsystem, level translation,
 and signal-integrity validation to consume the landed transfer cycles and emit
 pixels; those surrounding-device responsibilities are not part of this

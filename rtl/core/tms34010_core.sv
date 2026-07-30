@@ -165,6 +165,23 @@ module tms34010_core
     endcase
   endfunction
 
+  // The graphics engines are mutually exclusive at instruction granularity.
+  // Route their operands through one PPOP datapath instead of synthesizing a
+  // complete Boolean/arithmetic processor for every engine.
+  logic [DATA_WIDTH-1:0] pixel_ppop_src;
+  logic [DATA_WIDTH-1:0] pixel_ppop_dest;
+  logic [DATA_WIDTH-1:0] pixel_ppop_fmask;
+  logic [DATA_WIDTH-1:0] pixel_ppop_result;
+  logic [DATA_WIDTH-1:0] pixel_ppop_raw_dest;
+  logic [DATA_WIDTH-1:0] pixel_ppop_pmask;
+  logic [DATA_WIDTH-1:0] pixel_ppop_merged;
+  logic [DATA_WIDTH-1:0] pixel_size_mask_q;
+  logic [15:0]           pixel_plane_mask_q;
+  logic [4:0]            pixel_ppop_code_q;
+  logic                  pixel_transp_en_q;
+  logic                  pixel_ppop_inhibit;
+  logic                  pixel_ppop_transp;
+
   // COLOR0/COLOR1 contain four/sixteen/etc. independently selectable pixel
   // fields in their low 16 bits. The production guide requires the selected
   // source field to correspond to the destination pixel's position in its
@@ -507,8 +524,6 @@ module tms34010_core
   logic                  fill_dest_read_q;
   logic [DATA_WIDTH-1:0] fill_dest_q;      // destination pixel latched at read
   logic [DATA_WIDTH-1:0] fill_pixel_mask, fill_pmask_field;
-  logic [DATA_WIDTH-1:0] fill_processed, fill_merged;
-  logic                  fill_transp;
   // Window handling (FILL XY only). WSTART/WEND are inclusive XY corners.
   // W=3 replaces the working geometry with the intersection before the first
   // request; the per-pixel predicate remains as a defensive backstop. W=1/W=2
@@ -667,21 +682,8 @@ module tms34010_core
                  || (pixt_win_wb && (((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) && pixt_inside_q)
                                   || ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2) && !pixt_inside_q)));
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign fill_pmask_field = aligned_pmask(io_pmask, fill_addr_q,
+  assign fill_pmask_field = aligned_pmask(pixel_plane_mask_q, fill_addr_q,
                                           fill_pixel_mask);
-  assign fill_processed   = ppop_apply(
-                                       aligned_color(fill_color_q, fill_addr_q,
-                                                     fill_pixel_mask),
-                                       fill_dest_q & ~fill_pmask_field,
-                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], fill_pixel_mask);
-  // The architectural order is source/destination mask, PPOP, result mask,
-  // then transparency. A protected-only result is therefore transparent.
-  assign fill_transp      = io_control[CTRL_T_BIT]
-                          && ((fill_processed & ~fill_pmask_field
-                               & fill_pixel_mask) == '0);
-  assign fill_merged      = (fill_transp || fill_clip_out)
-                          ? fill_dest_q
-                          : ((fill_processed & ~fill_pmask_field) | (fill_dest_q & fill_pmask_field));
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -842,8 +844,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_pix_q, pblt_dst_pix_q;
   logic [DATA_WIDTH-1:0] pblt_psize_ext, pblt_pixel_mask;
   logic [DATA_WIDTH-1:0] pblt_src_pmask_field, pblt_pmask_field;
-  logic [DATA_WIDTH-1:0] pblt_processed, pblt_merged;
-  logic                  pblt_empty, pblt_row_end, pblt_done, pblt_transp;
+  logic                  pblt_empty, pblt_row_end, pblt_done;
   // PIXBLT B (color expand): COLOR0/COLOR1 latched at SETUP2; the source read is
   // 1 bit (mem_size 1, src step 1) and expands to COLOR1 / COLOR0.
   logic [DATA_WIDTH-1:0] pblt_color0_q, pblt_color1_q;
@@ -851,9 +852,9 @@ module tms34010_core
   assign pblt_psize_ext   = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
   assign pblt_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign pblt_src_pmask_field = aligned_pmask(
-      io_pmask, pblt_src_access_addr, pblt_pixel_mask);
+      pixel_plane_mask_q, pblt_src_access_addr, pblt_pixel_mask);
   assign pblt_pmask_field = aligned_pmask(
-      io_pmask, pblt_dst_access_addr, pblt_pixel_mask);
+      pixel_plane_mask_q, pblt_dst_access_addr, pblt_pixel_mask);
   assign pblt_empty       = (pblt_dx_q == 16'd0) || (pblt_dy_q == 16'd0);
   assign pblt_row_end     = !pblt_empty
                           && (pblt_x_q == pblt_dx_q - 16'd1);
@@ -869,13 +870,6 @@ module tms34010_core
                           : (pblt_src_pix_q & ~pblt_src_pmask_field);
   // Source advances 1 bit/pixel for the binary form, PSIZE bits otherwise.
   assign pblt_src_step    = decoded.blt_binary ? 32'd1 : pblt_psize_ext;
-  assign pblt_processed   = ppop_apply(
-                                       pblt_src_eff,
-                                       pblt_dst_pix_q & ~pblt_pmask_field,
-                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], pblt_pixel_mask);
-  assign pblt_transp      = io_control[CTRL_T_BIT]
-                          && ((pblt_processed & ~pblt_pmask_field
-                               & pblt_pixel_mask) == '0);
   // Window handling for PIXBLTs with an XY destination. W=3 preclips both
   // arrays before traffic; the raw/effective XY destination remains available
   // for W=1/W=2 geometry and as a defensive in-window check in the pixel loop.
@@ -898,9 +892,9 @@ module tms34010_core
         (pblt_px >= pblt_wstart_q[15:0]) && (pblt_px <= pblt_wend_q[15:0])
      && (pblt_py >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_py <= pblt_wend_q[DATA_WIDTH-1:16]);
   assign pblt_clip_out = pblt_win_en_q && !pblt_in_window;
-  // W=2 (miss detection): array containment test on the dest corners, evaluated
-  // combinationally at CORE_PBLT_SETUP_WIN from the live WSTART(port1)/WEND
-  // (port2) reads (mirrors the FILL W=2 path).
+  // W=2 (miss detection): array containment test on the destination corners,
+  // evaluated from WSTART/WEND after CORE_PBLT_SETUP_WIN registers both
+  // operands. This keeps register-file selection out of the geometry path.
   logic        pblt_array_inside;
   logic [15:0] pblt_arr_x0, pblt_arr_y0, pblt_arr_x1, pblt_arr_y1;
   assign pblt_arr_x0 = pblt_dst_xy_raw_q[15:0];
@@ -911,10 +905,12 @@ module tms34010_core
                                   : pblt_arr_y0 + pblt_dy_q - 16'd1;
   assign pblt_array_inside = !pblt_empty
      &&
-        (pblt_arr_x0 >= rf_rs1_data[15:0]) && (pblt_arr_x1 <= rf_rs2_data[15:0])
-     && (pblt_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
-  // W=3 effective geometry, evaluated from the live window operands in
-  // CORE_PBLT_SETUP_WIN. Source and destination receive identical pixel
+        (pblt_arr_x0 >= pblt_wstart_q[15:0])
+     && (pblt_arr_x1 <= pblt_wend_q[15:0])
+     && (pblt_arr_y0 >= pblt_wstart_q[DATA_WIDTH-1:16])
+     && (pblt_arr_y1 <= pblt_wend_q[DATA_WIDTH-1:16]);
+  // W=3 effective geometry is evaluated in CORE_PBLT_WIN_EVAL from the
+  // registered window. Source and destination receive identical pixel
   // offsets, then the effective rectangle receives normal PBH/PBV corner
   // adjustment. Result pointers remain tied to the original array context.
   logic                  pblt_clip_hit;
@@ -922,29 +918,37 @@ module tms34010_core
   logic [15:0]           pblt_clip_x1, pblt_clip_y1;
   logic [15:0]           pblt_clip_dx, pblt_clip_dy;
   logic [15:0]           pblt_clip_left, pblt_clip_top;
+  logic                  pblt_array_inside_q, pblt_clip_hit_q;
+  logic [15:0]           pblt_clip_x0_q, pblt_clip_y0_q;
+  logic [15:0]           pblt_clip_dx_q, pblt_clip_dy_q;
+  logic [15:0]           pblt_clip_left_q, pblt_clip_top_q;
   logic [DATA_WIDTH-1:0] pblt_clip_src_left_bits, pblt_clip_dst_left_bits;
   logic [DATA_WIDTH-1:0] pblt_clip_src_top_bits, pblt_clip_dst_top_bits;
   logic [DATA_WIDTH-1:0] pblt_clip_src_default, pblt_clip_dst_default;
   logic [DATA_WIDTH-1:0] pblt_clip_src_h_adjust, pblt_clip_dst_h_adjust;
   logic [DATA_WIDTH-1:0] pblt_clip_src_v_adjust, pblt_clip_dst_v_adjust;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_default_q, pblt_clip_dst_default_q;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_h_adjust_q, pblt_clip_dst_h_adjust_q;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_v_adjust_q, pblt_clip_dst_v_adjust_q;
   logic [DATA_WIDTH-1:0] pblt_clip_src_corner, pblt_clip_dst_corner;
   logic [DATA_WIDTH-1:0] pblt_original_src_result, pblt_original_dst_result;
   assign pblt_clip_hit = !pblt_empty
-      && (rf_rs1_data[15:0] <= rf_rs2_data[15:0])
-      && (rf_rs1_data[DATA_WIDTH-1:16]
-          <= rf_rs2_data[DATA_WIDTH-1:16])
+      && (pblt_wstart_q[15:0] <= pblt_wend_q[15:0])
+      && (pblt_wstart_q[DATA_WIDTH-1:16]
+          <= pblt_wend_q[DATA_WIDTH-1:16])
       && !(
-        (pblt_arr_x1 < rf_rs1_data[15:0]) || (pblt_arr_x0 > rf_rs2_data[15:0])
-     || (pblt_arr_y1 < rf_rs1_data[DATA_WIDTH-1:16])
-     || (pblt_arr_y0 > rf_rs2_data[DATA_WIDTH-1:16]));
-  assign pblt_clip_x0 = (pblt_arr_x0 > rf_rs1_data[15:0])
-                      ? pblt_arr_x0 : rf_rs1_data[15:0];
-  assign pblt_clip_y0 = (pblt_arr_y0 > rf_rs1_data[DATA_WIDTH-1:16])
-                      ? pblt_arr_y0 : rf_rs1_data[DATA_WIDTH-1:16];
-  assign pblt_clip_x1 = (pblt_arr_x1 < rf_rs2_data[15:0])
-                      ? pblt_arr_x1 : rf_rs2_data[15:0];
-  assign pblt_clip_y1 = (pblt_arr_y1 < rf_rs2_data[DATA_WIDTH-1:16])
-                      ? pblt_arr_y1 : rf_rs2_data[DATA_WIDTH-1:16];
+        (pblt_arr_x1 < pblt_wstart_q[15:0])
+     || (pblt_arr_x0 > pblt_wend_q[15:0])
+     || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16])
+     || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
+  assign pblt_clip_x0 = (pblt_arr_x0 > pblt_wstart_q[15:0])
+                      ? pblt_arr_x0 : pblt_wstart_q[15:0];
+  assign pblt_clip_y0 = (pblt_arr_y0 > pblt_wstart_q[DATA_WIDTH-1:16])
+                      ? pblt_arr_y0 : pblt_wstart_q[DATA_WIDTH-1:16];
+  assign pblt_clip_x1 = (pblt_arr_x1 < pblt_wend_q[15:0])
+                      ? pblt_arr_x1 : pblt_wend_q[15:0];
+  assign pblt_clip_y1 = (pblt_arr_y1 < pblt_wend_q[DATA_WIDTH-1:16])
+                      ? pblt_arr_y1 : pblt_wend_q[DATA_WIDTH-1:16];
   assign pblt_clip_dx = pblt_clip_hit
                       ? pblt_clip_x1 - pblt_clip_x0 + 16'd1 : 16'd0;
   assign pblt_clip_dy = pblt_clip_hit
@@ -954,14 +958,14 @@ module tms34010_core
   assign pblt_clip_top = pblt_clip_hit
                        ? pblt_clip_y0 - pblt_arr_y0 : 16'd0;
   assign pblt_clip_src_left_bits =
-      {{16{1'b0}}, pblt_clip_left}
+      {{16{1'b0}}, pblt_clip_left_q}
       << (decoded.blt_binary ? 5'd0 : pix_xy_xsh);
   assign pblt_clip_dst_left_bits =
-      {{16{1'b0}}, pblt_clip_left} << pix_xy_xsh;
+      {{16{1'b0}}, pblt_clip_left_q} << pix_xy_xsh;
   assign pblt_clip_src_top_bits =
-      {{16{1'b0}}, pblt_clip_top} << (5'd31 - io_convsp[4:0]);
+      {{16{1'b0}}, pblt_clip_top_q} << (5'd31 - io_convsp[4:0]);
   assign pblt_clip_dst_top_bits =
-      {{16{1'b0}}, pblt_clip_top} << (5'd31 - io_convdp[4:0]);
+      {{16{1'b0}}, pblt_clip_top_q} << (5'd31 - io_convdp[4:0]);
   assign pblt_clip_src_default = pblt_src_result_q
                                 + pblt_clip_src_left_bits
                                 + pblt_clip_src_top_bits;
@@ -969,22 +973,22 @@ module tms34010_core
                                 + pblt_clip_dst_left_bits
                                 + pblt_clip_dst_top_bits;
   assign pblt_clip_src_h_adjust =
-      {{16{1'b0}}, pblt_clip_dx}
+      {{16{1'b0}}, pblt_clip_dx_q}
       << (decoded.blt_binary ? 5'd0 : pix_xy_xsh);
   assign pblt_clip_dst_h_adjust =
-      {{16{1'b0}}, pblt_clip_dx} << pix_xy_xsh;
+      {{16{1'b0}}, pblt_clip_dx_q} << pix_xy_xsh;
   assign pblt_clip_src_v_adjust =
-      {{16{1'b0}}, (pblt_clip_hit ? pblt_clip_dy - 16'd1 : 16'd0)}
+      {{16{1'b0}}, (pblt_clip_hit_q ? pblt_clip_dy_q - 16'd1 : 16'd0)}
       << (5'd31 - io_convsp[4:0]);
   assign pblt_clip_dst_v_adjust =
-      {{16{1'b0}}, (pblt_clip_hit ? pblt_clip_dy - 16'd1 : 16'd0)}
+      {{16{1'b0}}, (pblt_clip_hit_q ? pblt_clip_dy_q - 16'd1 : 16'd0)}
       << (5'd31 - io_convdp[4:0]);
-  assign pblt_clip_src_corner = pblt_clip_src_default
-      + (pblt_hrev_q ? pblt_clip_src_h_adjust : 32'd0)
-      + (pblt_vrev_q ? pblt_clip_src_v_adjust : 32'd0);
-  assign pblt_clip_dst_corner = pblt_clip_dst_default
-      + (pblt_hrev_q ? pblt_clip_dst_h_adjust : 32'd0)
-      + (pblt_vrev_q ? pblt_clip_dst_v_adjust : 32'd0);
+  assign pblt_clip_src_corner = pblt_clip_src_default_q
+      + (pblt_hrev_q ? pblt_clip_src_h_adjust_q : 32'd0)
+      + (pblt_vrev_q ? pblt_clip_src_v_adjust_q : 32'd0);
+  assign pblt_clip_dst_corner = pblt_clip_dst_default_q
+      + (pblt_hrev_q ? pblt_clip_dst_h_adjust_q : 32'd0)
+      + (pblt_vrev_q ? pblt_clip_dst_v_adjust_q : 32'd0);
   assign pblt_original_src_result = pblt_src_result_q
       + ({{16{1'b0}}, pblt_dy_q} << (5'd31 - io_convsp[4:0]));
   assign pblt_original_dst_result = pblt_dst_result_q
@@ -1020,9 +1024,6 @@ module tms34010_core
       pblt_common_y1 - pblt_common_y0 + 16'd1,
       pblt_common_x1 - pblt_common_x0 + 16'd1
   };
-  assign pblt_merged      = (pblt_transp || pblt_clip_out)
-                          ? pblt_dst_pix_q
-                          : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
 
   // PIXBLT XY variants: convert the XY SADDR/DADDR (latched raw at EXECUTE) to a
   // linear address at SETUP (source via CONVSP, dest via CONVDP, + OFFSET on
@@ -1048,8 +1049,12 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_row_step, pblt_dst_row_step;
   logic [DATA_WIDTH-1:0] pblt_src_access_addr, pblt_dst_access_addr;
   logic [DATA_WIDTH-1:0] pblt_dst_after_addr;
-  logic [DATA_WIDTH-1:0] pblt_resume_src_x_offset;
-  logic [DATA_WIDTH-1:0] pblt_resume_dst_x_offset;
+  // PBX resume rebuild is deliberately pipelined across the otherwise quiet
+  // architectural-context read states.  Keeping these offsets registered
+  // prevents a decode -> register-file -> variable-shift -> multi-adder path
+  // from landing directly on the working row registers in CORE_EXECUTE.
+  logic [DATA_WIDTH-1:0] pblt_resume_src_x_offset_q;
+  logic [DATA_WIDTH-1:0] pblt_resume_dst_x_offset_q;
   logic                  pblt_checkpoint_due;
   assign pblt_src_base = decoded.blt_src_xy ? pblt_src_conv
                                             : pblt_src_addr_q;
@@ -1083,11 +1088,6 @@ module tms34010_core
                               ? pblt_dst_addr_q - pblt_psize_ext
                               : pblt_dst_addr_q;
   assign pblt_dst_after_addr = pblt_dst_access_addr + pblt_psize_ext;
-  assign pblt_resume_src_x_offset = decoded.blt_binary
-      ? {{16{1'b0}}, rf_rs3_data[15:0]}
-      : ({{16{1'b0}}, rf_rs3_data[15:0]} << pix_xy_xsh);
-  assign pblt_resume_dst_x_offset =
-      {{16{1'b0}}, rf_rs3_data[15:0]} << pix_xy_xsh;
   // Checkpoints follow completed destination writes at a 16-bit word edge or
   // nonfinal row edge. Reverse traversal crosses a word edge after writing
   // the aligned low-address field; forward traversal crosses when the next
@@ -1128,6 +1128,22 @@ module tms34010_core
       pblt_w1_q       <= 1'b0;
       pblt_preclip_changed_q <= 1'b0;
       pblt_w3_empty_q <= 1'b0;
+      pblt_resume_src_x_offset_q <= '0;
+      pblt_resume_dst_x_offset_q <= '0;
+      pblt_array_inside_q <= 1'b0;
+      pblt_clip_hit_q <= 1'b0;
+      pblt_clip_x0_q <= '0;
+      pblt_clip_y0_q <= '0;
+      pblt_clip_dx_q <= '0;
+      pblt_clip_dy_q <= '0;
+      pblt_clip_left_q <= '0;
+      pblt_clip_top_q <= '0;
+      pblt_clip_src_default_q <= '0;
+      pblt_clip_dst_default_q <= '0;
+      pblt_clip_src_h_adjust_q <= '0;
+      pblt_clip_dst_h_adjust_q <= '0;
+      pblt_clip_src_v_adjust_q <= '0;
+      pblt_clip_dst_v_adjust_q <= '0;
     end else begin
       // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3). Window
       // clipping engages only for an XY destination with CONTROL.W=3; keep the
@@ -1135,22 +1151,11 @@ module tms34010_core
       if (state_q == CORE_EXECUTE && is_pblt) begin
         if (array_resume) begin
           // PBX re-entry reads {B0,B2,B10}. B0/B2 are the next actual
-          // accesses; rebuild the engine's reverse-X one-past convention and
-          // current row bases from the saved cursor.
-          pblt_src_addr_q <= (!decoded.blt_binary
-                              && io_control[CTRL_PBH_BIT])
-                           ? rf_rs1_data + pblt_src_step : rf_rs1_data;
-          pblt_dst_addr_q <= (!decoded.blt_binary
-                              && io_control[CTRL_PBH_BIT])
-                           ? rf_rs2_data + pblt_psize_ext : rf_rs2_data;
-          pblt_src_row_q <= (!decoded.blt_binary
-                             && io_control[CTRL_PBH_BIT])
-              ? rf_rs1_data + pblt_src_step + pblt_resume_src_x_offset
-              : rf_rs1_data - pblt_resume_src_x_offset;
-          pblt_dst_row_q <= (!decoded.blt_binary
-                             && io_control[CTRL_PBH_BIT])
-              ? rf_rs2_data + pblt_psize_ext + pblt_resume_dst_x_offset
-              : rf_rs2_data - pblt_resume_dst_x_offset;
+          // accesses and B10 is the next effective traversal cursor. Capture
+          // those architectural values first; the four quiet resume states
+          // below rebuild the engine's internal row/corner convention.
+          pblt_src_addr_q <= rf_rs1_data;
+          pblt_dst_addr_q <= rf_rs2_data;
           pblt_x_q <= rf_rs3_data[15:0];
           pblt_y_q <= rf_rs3_data[DATA_WIDTH-1:16];
         end else begin
@@ -1182,18 +1187,37 @@ module tms34010_core
         pblt_w3_empty_q <= 1'b0;
       end
       if (state_q == CORE_ARRAY_RESUME1 && is_pblt) begin
-        // {B1,B3,B11}: pitches and effective dimensions.
+        // {B1,B3,B11}: pitches and effective dimensions. In parallel, turn
+        // the saved next-access pointers into the reverse-X one-past form and
+        // register the cursor-to-row offsets.
         pblt_sptch_q <= rf_rs1_data;
         pblt_dptch_q <= rf_rs2_data;
         pblt_dx_q    <= rf_rs3_data[15:0];
         pblt_dy_q    <= rf_rs3_data[DATA_WIDTH-1:16];
+        if (pblt_hrev_q) begin
+          pblt_src_addr_q <= pblt_src_addr_q + pblt_psize_ext;
+          pblt_dst_addr_q <= pblt_dst_addr_q + pblt_psize_ext;
+        end
+        pblt_resume_src_x_offset_q <= decoded.blt_binary
+            ? {{16{1'b0}}, pblt_x_q}
+            : ({{16{1'b0}}, pblt_x_q} << pix_xy_xsh);
+        pblt_resume_dst_x_offset_q <=
+            {{16{1'b0}}, pblt_x_q} << pix_xy_xsh;
       end
       if (state_q == CORE_ARRAY_RESUME2 && is_pblt) begin
         // {B12,B13,B14}: architectural completion results and effective raw
-        // destination geometry.
+        // destination geometry. Reconstruct the row bases from only
+        // registered resume operands; reverse pointers are already one past
+        // the next access after CORE_ARRAY_RESUME1.
         pblt_src_result_q  <= rf_rs1_data;
         pblt_dst_result_q  <= rf_rs2_data;
         pblt_dst_xy_raw_q  <= rf_rs3_data;
+        pblt_src_row_q <= pblt_hrev_q
+            ? pblt_src_addr_q + pblt_resume_src_x_offset_q
+            : pblt_src_addr_q - pblt_resume_src_x_offset_q;
+        pblt_dst_row_q <= pblt_hrev_q
+            ? pblt_dst_addr_q + pblt_resume_dst_x_offset_q
+            : pblt_dst_addr_q - pblt_resume_dst_x_offset_q;
       end
       if (state_q == CORE_ARRAY_RESUME3 && is_pblt) begin
         // {B5,B6,B7}: preserved window/original dimensions.
@@ -1212,20 +1236,46 @@ module tms34010_core
       if (state_q == CORE_PBLT_SETUP_WIN) begin
         pblt_wstart_q <= rf_rs1_data;
         pblt_wend_q   <= rf_rs2_data;
+      end
+      if (state_q == CORE_PBLT_WIN_EVAL) begin
+        // First stage: comparisons and 16-bit intersection geometry.
+        pblt_array_inside_q <= pblt_array_inside;
+        pblt_clip_hit_q     <= pblt_clip_hit;
+        pblt_clip_x0_q      <= pblt_clip_x0;
+        pblt_clip_y0_q      <= pblt_clip_y0;
+        pblt_clip_dx_q      <= pblt_clip_dx;
+        pblt_clip_dy_q      <= pblt_clip_dy;
+        pblt_clip_left_q    <= pblt_clip_left;
+        pblt_clip_top_q     <= pblt_clip_top;
+      end
+      if (state_q == CORE_PBLT_WIN_OFFSETS) begin
+        // Second stage: variable shifts and the first address-add layer.
+        pblt_clip_src_default_q  <= pblt_clip_src_default;
+        pblt_clip_dst_default_q  <= pblt_clip_dst_default;
+        pblt_clip_src_h_adjust_q <= pblt_clip_src_h_adjust;
+        pblt_clip_dst_h_adjust_q <= pblt_clip_dst_h_adjust;
+        pblt_clip_src_v_adjust_q <= pblt_clip_src_v_adjust;
+        pblt_clip_dst_v_adjust_q <= pblt_clip_dst_v_adjust;
         if (pblt_win_en_q) begin
-          pblt_preclip_changed_q <= !pblt_array_inside;
-          pblt_w3_empty_q        <= !pblt_clip_hit;
-          if (pblt_clip_hit) begin
-            pblt_dst_xy_raw_q <= {pblt_clip_y0, pblt_clip_x0};
-            pblt_dx_q         <= pblt_clip_dx;
-            pblt_dy_q         <= pblt_clip_dy;
+          pblt_src_result_q <= pblt_original_src_result;
+          pblt_dst_result_q <= pblt_original_dst_result;
+        end
+      end
+      // Apply the registered geometry only after both calculation stages.
+      // These are quiet core cycles with no externally visible bus phase.
+      if (state_q == CORE_PBLT_WIN_APPLY) begin
+        if (pblt_win_en_q) begin
+          pblt_preclip_changed_q <= !pblt_array_inside_q;
+          pblt_w3_empty_q        <= !pblt_clip_hit_q;
+          if (pblt_clip_hit_q) begin
+            pblt_dst_xy_raw_q <= {pblt_clip_y0_q, pblt_clip_x0_q};
+            pblt_dx_q         <= pblt_clip_dx_q;
+            pblt_dy_q         <= pblt_clip_dy_q;
             pblt_src_addr_q   <= pblt_clip_src_corner;
             pblt_src_row_q    <= pblt_clip_src_corner;
             pblt_dst_addr_q   <= pblt_clip_dst_corner;
             pblt_dst_row_q    <= pblt_clip_dst_corner;
           end
-          pblt_src_result_q <= pblt_original_src_result;
-          pblt_dst_result_q <= pblt_original_dst_result;
         end
       end
       // CORE_PBLT_SETUP: latch SPTCH(port1) / DPTCH(port2); for the XY variants
@@ -1302,6 +1352,7 @@ module tms34010_core
   // CORE_WRITEBACK. Task 0112 adds the per-pixel W=1/2/3 behavior below.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] drav_rd_q, drav_rs_q, drav_linear_q, drav_dest_q;
+  logic [DATA_WIDTH-1:0] drav_color_q;
   logic                  drav_substep_q;    // 0 = read dest, 1 = write merged
   logic                  drav_dest_read_q;
   // Per-pixel window check (CONTROL.W, Task 0112). Rd's XY is tested against the
@@ -1316,24 +1367,14 @@ module tms34010_core
         (drav_rd_q[15:0] >= rf_rs1_data[15:0]) && (drav_rd_q[15:0] <= rf_rs2_data[15:0])
      && (drav_rd_q[DATA_WIDTH-1:16] >= rf_rs1_data[DATA_WIDTH-1:16])
      && (drav_rd_q[DATA_WIDTH-1:16] <= rf_rs2_data[DATA_WIDTH-1:16]);
-  logic [DATA_WIDTH-1:0] drav_pixel_mask, drav_pmask_field, drav_processed, drav_merged;
-  logic                  drav_transp;
+  logic [DATA_WIDTH-1:0] drav_pixel_mask, drav_pmask_field;
   logic [DATA_WIDTH-1:0] drav_advance;
   assign drav_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign drav_pmask_field = aligned_pmask(io_pmask, drav_linear_q,
+  assign drav_pmask_field = aligned_pmask(pixel_plane_mask_q, drav_linear_q,
                                           drav_pixel_mask);
-  // COLOR1 is rf_rs1_data in CORE_DRAV (port1 reads B9 there).
-  assign drav_processed   = ppop_apply(
-                                       aligned_color(rf_rs1_data, drav_linear_q,
-                                                     drav_pixel_mask),
-                                       drav_dest_q & ~drav_pmask_field,
-                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], drav_pixel_mask);
-  assign drav_transp      = io_control[CTRL_T_BIT]
-                          && ((drav_processed & ~drav_pmask_field
-                               & drav_pixel_mask) == '0);
-  assign drav_merged      = drav_transp
-                          ? drav_dest_q
-                          : ((drav_processed & ~drav_pmask_field) | (drav_dest_q & drav_pmask_field));
+  // COLOR1 is captured through port3 in the quiet setup cycle so the draw
+  // request never includes a decode -> register-file -> pixel-processing
+  // path.
   // Rd advanced by Rs: independent 16-bit X and Y adds, no carry X->Y.
   assign drav_advance = {drav_rd_q[DATA_WIDTH-1:16] + drav_rs_q[DATA_WIDTH-1:16],
                          drav_rd_q[15:0]            + drav_rs_q[15:0]};
@@ -1344,6 +1385,7 @@ module tms34010_core
       drav_rs_q      <= '0;
       drav_linear_q  <= '0;
       drav_dest_q    <= '0;
+      drav_color_q   <= '0;
       drav_substep_q <= 1'b0;
       drav_dest_read_q <= 1'b0;
       drav_w_q       <= 2'd0;
@@ -1357,8 +1399,12 @@ module tms34010_core
         drav_dest_read_q <= pixel_dest_read_required;
         drav_w_q       <= io_control[CTRL_W_HI:CTRL_W_LO];
       end
-      // CORE_DRAV_SETUP_WIN: latch the window test (WSTART=port1, WEND=port2).
-      if (state_q == CORE_DRAV_SETUP_WIN) drav_inside_q <= drav_in_window;
+      // CORE_DRAV_SETUP_WIN is also the unconditional COLOR1 capture cycle:
+      // ports 1/2 read WSTART/WEND and port 3 reads B9.
+      if (state_q == CORE_DRAV_SETUP_WIN) begin
+        drav_inside_q <= drav_in_window;
+        drav_color_q  <= rf_rs3_data;
+      end
       if (state_q == CORE_DRAV && mem_ack) begin
         if (!drav_substep_q) begin
           drav_dest_q    <= mem_rdata_eff;  // read ack
@@ -1393,19 +1439,10 @@ module tms34010_core
       (({{16{line_daddr_q[DATA_WIDTH-1]}}, line_daddr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convdp[4:0]))
        | ({16'b0, line_daddr_q[15:0]} << pix_xy_xsh)) + line_offset_q;
   // Pixel merge (PPOP / transparency / PMASK), COLOR1 = line_color_q.
-  logic [DATA_WIDTH-1:0] line_pixel_mask, line_pmask_field, line_processed, line_merged;
-  logic                  line_transp;
+  logic [DATA_WIDTH-1:0] line_pixel_mask, line_pmask_field;
   assign line_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
-  assign line_pmask_field = aligned_pmask(io_pmask, line_linear,
+  assign line_pmask_field = aligned_pmask(pixel_plane_mask_q, line_linear,
                                           line_pixel_mask);
-  assign line_processed   = ppop_apply(
-                                       aligned_color(line_color_q, line_linear,
-                                                     line_pixel_mask),
-                                       line_dest_q & ~line_pmask_field,
-                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], line_pixel_mask);
-  assign line_transp      = io_control[CTRL_T_BIT]
-                          && ((line_processed & ~line_pmask_field
-                               & line_pixel_mask) == '0);
   // Per-pixel window clip (CONTROL.W=3, Task 0115). LINE inhibits writes to
   // pixels outside the window (no preclip — tested at draw time); the V bit at
   // the end reflects whether the last pixel calculated was inside. W=1/W=2
@@ -1430,9 +1467,6 @@ module tms34010_core
   assign line_clip_out   = line_win_en && !line_draw_pixel;
   assign line_abort      = (line_w_mode == 2'd1 &&  line_in_window)
                          || (line_w_mode == 2'd2 && !line_in_window);
-  assign line_merged      = (line_transp || line_clip_out)
-                          ? line_dest_q
-                          : ((line_processed & ~line_pmask_field) | (line_dest_q & line_pmask_field));
   // Bresenham decision: branch (diagonal, +INC1) when d>0 (Z=0) or d>=0 (Z=1).
   logic        line_branch;
   logic [DATA_WIDTH-1:0] line_2b, line_2a, line_d_next, line_daddr_next, line_count_next;
@@ -1795,6 +1829,8 @@ module tms34010_core
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
+                     : (is_drav && (state_q == CORE_DRAV_SETUP_WIN))
+                     ? B_COLOR1_IDX
                      : ((is_fill || is_pblt) && array_resume)
                      ? ((state_q == CORE_ARRAY_RESUME1) ? reg_idx_t'(11)
                       : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(14)
@@ -1855,6 +1891,7 @@ module tms34010_core
   logic                  is_mv_store, is_mv_load;
   logic                  mv_postinc, mv_predec, mv_incdec;
   logic [DATA_WIDTH-1:0] mv_ptr, mv_addr, mv_ptr_new;
+  logic [DATA_WIDTH-1:0] mv_addr_q, mv_store_data_q;
   logic                  mv_load_ptr_wr;
   assign is_mv_store = (decoded.iclass == INSTR_MOVE_FIELD_STORE);
   assign is_mv_load  = (decoded.iclass == INSTR_MOVE_FIELD_LOAD);
@@ -1896,7 +1933,7 @@ module tms34010_core
                    ? '1 : ((32'd1 << mv_fs) - 32'd1);
   assign mv_read_data = (decoded.force_pixel && is_mv_load)
                       ? (mem_rdata_eff
-                         & ~aligned_pmask(io_pmask, mv_addr, mv_fmask))
+                         & ~aligned_pmask(io_pmask, mv_addr_q, mv_fmask))
                       : mem_rdata_eff;
   // The FS=32 arm below bypasses this index; for FS=1..31, five bits address
   // the selected sign bit without an implicit 6-to-5-bit truncation.
@@ -1930,9 +1967,6 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pixt_source_pmask_field;
   logic [DATA_WIDTH-1:0] pixt_dest_address, pixt_pmask_field;
   logic [DATA_WIDTH-1:0] pix_dest_q;     // dest pixel latched at the read step
-  logic [DATA_WIDTH-1:0] pixt_processed; // PPOP(src, dest)
-  logic                  pixt_transp;    // transparency inhibits this write
-  logic [DATA_WIDTH-1:0] pixt_merged;    // value written at final pixel step
   // Arithmetic-PPOP operands: the PSIZE-bit pixels as unsigned values, and
   // the unsigned add. Arith ops are only defined for pixels of 4/8/16 bits
   // (SPVU001A); they are computed for all sizes (1/2-bit results are
@@ -1942,21 +1976,73 @@ module tms34010_core
   assign pixt_m2m         = decoded.force_pixel
                           && (decoded.iclass == INSTR_MOVE_FIELD_M2M);
   assign pixt_m2m_rmw     = pixt_m2m && pixel_dest_read_required;
-  assign pixt_dest_address = pixt_m2m ? m2m_dst_addr : mv_addr;
+  assign pixt_dest_address = pixt_m2m ? m2m_dst_addr_q : mv_addr_q;
   assign pixt_source_pmask_field =
-      aligned_pmask(io_pmask, m2m_src_addr, mv_fmask);
+      aligned_pmask(pixel_plane_mask_q, m2m_src_addr_q, mv_fmask);
   assign pixt_pmask_field =
-      aligned_pmask(io_pmask, pixt_dest_address, mv_fmask);
+      aligned_pmask(pixel_plane_mask_q, pixt_dest_address, mv_fmask);
   assign pixt_source_pixel = pixt_m2m
                            ? (move_data_q & ~pixt_source_pmask_field)
-                           : rf_rs1_data;
-  assign pixt_processed   = ppop_apply(
-                                       pixt_source_pixel,
-                                       pix_dest_q & ~pixt_pmask_field,
-                                       io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], mv_fmask);
-  assign pixt_transp  = io_control[CTRL_T_BIT]
-                      && ((pixt_processed & ~pixt_pmask_field
-                           & mv_fmask) == '0);
+                           : mv_store_data_q;
+  always_comb begin
+    pixel_ppop_src   = pixt_source_pixel;
+    pixel_ppop_raw_dest = pix_dest_q;
+    pixel_ppop_pmask = pixt_pmask_field;
+    pixel_ppop_fmask = pixel_size_mask_q;
+    pixel_ppop_inhibit = pixt_clip_out;
+    if (is_fill) begin
+      pixel_ppop_src = aligned_color(fill_color_q, fill_addr_q,
+                                     pixel_size_mask_q);
+      pixel_ppop_raw_dest = fill_dest_q;
+      pixel_ppop_pmask = fill_pmask_field;
+      pixel_ppop_inhibit = fill_clip_out;
+    end else if (is_pblt) begin
+      pixel_ppop_src   = pblt_src_eff;
+      pixel_ppop_raw_dest = pblt_dst_pix_q;
+      pixel_ppop_pmask = pblt_pmask_field;
+      pixel_ppop_inhibit = pblt_clip_out;
+    end else if (is_drav) begin
+      pixel_ppop_src = aligned_color(drav_color_q, drav_linear_q,
+                                     pixel_size_mask_q);
+      pixel_ppop_raw_dest = drav_dest_q;
+      pixel_ppop_pmask = drav_pmask_field;
+      pixel_ppop_inhibit = 1'b0;
+    end else if (is_line) begin
+      pixel_ppop_src = aligned_color(line_color_q, line_linear,
+                                     pixel_size_mask_q);
+      pixel_ppop_raw_dest = line_dest_q;
+      pixel_ppop_pmask = line_pmask_field;
+      pixel_ppop_inhibit = line_clip_out;
+    end
+    pixel_ppop_dest = pixel_ppop_raw_dest & ~pixel_ppop_pmask;
+  end
+  assign pixel_ppop_result =
+      ppop_apply(pixel_ppop_src, pixel_ppop_dest,
+                 pixel_ppop_code_q, pixel_ppop_fmask);
+  // Architectural ordering is source/destination plane mask, PPOP, result
+  // mask, then transparency. A protected-only result is transparent.
+  assign pixel_ppop_transp = pixel_transp_en_q
+      && ((pixel_ppop_result & ~pixel_ppop_pmask
+           & pixel_ppop_fmask) == '0);
+  assign pixel_ppop_merged = (pixel_ppop_transp || pixel_ppop_inhibit)
+      ? pixel_ppop_raw_dest
+      : ((pixel_ppop_result & ~pixel_ppop_pmask)
+         | (pixel_ppop_raw_dest & pixel_ppop_pmask));
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pixel_size_mask_q  <= '0;
+      pixel_plane_mask_q <= '0;
+      pixel_ppop_code_q  <= '0;
+      pixel_transp_en_q  <= 1'b0;
+    end else if (state_q == CORE_EXECUTE) begin
+      pixel_size_mask_q  <= (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0])
+                          - 32'd1;
+      pixel_plane_mask_q <= io_pmask;
+      pixel_ppop_code_q  <= io_control[CTRL_PPOP_HI:CTRL_PPOP_LO];
+      pixel_transp_en_q  <= io_control[CTRL_T_BIT];
+    end
+  end
   // Per-pixel window check for PIXT operations with an XY destination,
   // mirroring DRAV. This includes register-to-XY and XY-to-XY forms.
   // WSTART/WEND are read at CORE_PIXT_SETUP_WIN; the destination point is
@@ -1984,9 +2070,6 @@ module tms34010_core
   // W=1 never draws; W=2/W=3 draw inside.
   assign pixt_clip_out = pixt_xy_win &&
                          ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) || !pixt_in_window);
-  assign pixt_merged  = (pixt_transp || pixt_clip_out)
-                      ? pix_dest_q
-                      : ((pixt_processed & ~pixt_pmask_field) | (pix_dest_q & pixt_pmask_field));
   always_ff @(posedge clk) begin
     if (rst) begin
       pixt_wstart_q <= '0;
@@ -2060,6 +2143,7 @@ module tms34010_core
   logic                  is_move_off_m2m, is_move_abs_m2m;
   logic                  m2m_same_reg, m2m_src_wr;
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
+  logic [DATA_WIDTH-1:0] m2m_src_addr_q, m2m_dst_addr_q;
   logic [DATA_WIDTH-1:0] m2m_src_offset, m2m_dst_offset;
   assign is_movb_off_m2m = (decoded.iclass == INSTR_MOVB_OFF_M2M);
   assign is_movb_abs_m2m = (decoded.iclass == INSTR_MOVB_ABS_M2M);
@@ -2096,6 +2180,28 @@ module tms34010_core
                       : mv_predec       ? (rf_rs2_data - mv_fs_ext) : rf_rs2_data;
   assign m2m_src_new  = mv_predec ? (rf_rs1_data - mv_fs_ext) : (rf_rs1_data + mv_fs_ext);
   assign m2m_dst_new  = mv_predec ? (rf_rs2_data - mv_fs_ext) : (rf_rs2_data + mv_fs_ext);
+  // Register every field-memory operand at EXECUTE. This keeps the memory
+  // request and PIXT processing stages independent of the asynchronous
+  // register-file/decode/address-conversion path. When an indirect M2M uses
+  // the same register for both pointers, the source update happens after the
+  // read; preserve the architecturally required updated destination address.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      mv_addr_q        <= '0;
+      mv_store_data_q  <= '0;
+      m2m_src_addr_q   <= '0;
+      m2m_dst_addr_q   <= '0;
+    end else if (state_q == CORE_EXECUTE) begin
+      mv_addr_q        <= mv_addr;
+      mv_store_data_q  <= rf_rs1_data;
+      m2m_src_addr_q   <= m2m_src_addr;
+      m2m_dst_addr_q   <= (m2m_same_reg && mv_incdec
+                           && !is_m2m_dst_only_pi)
+                        ? (mv_predec ? (m2m_dst_addr - mv_fs_ext)
+                                     : (m2m_dst_addr + mv_fs_ext))
+                        : m2m_dst_addr;
+    end
+  end
   // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
                      && !is_m2m_dst_only_pi
@@ -3251,6 +3357,9 @@ module tms34010_core
   logic        io_write_next_q;
   logic [ADDR_WIDTH-1:0] io_next_addr_q;
   logic [15:0] io_write_data_next_q;
+  logic [FIELD_SIZE_WIDTH-1:0] io_request_size_q;
+  logic [DATA_WIDTH-1:0] io_request_wdata_q;
+  logic [DATA_WIDTH-1:0] io_rdata_words_q;
   logic [5:0]  io_field_width;
   logic [DATA_WIDTH-1:0] io_field_mask;
   logic [DATA_WIDTH-1:0] io_field_rdata;
@@ -3261,18 +3370,21 @@ module tms34010_core
     // space. A MOVE may address a subfield (for example CONTROL+5 with
     // FS=10), so present a right-justified read field and merge writes into
     // the addressed bits exactly as the external field sequencer would.
-    io_rdata_words = {io_rdata_next16, io_rdata16};
-    if (mem_size >= FIELD_SIZE_WIDTH'(6'd32 - {2'b0, mem_addr[3:0]}))
-      io_field_width = 6'd32 - {2'b0, mem_addr[3:0]};
+    io_rdata_words = io_rdata_words_q;
+    if (io_request_size_q
+        >= FIELD_SIZE_WIDTH'(6'd32 - {2'b0, io_access_addr_q[3:0]}))
+      io_field_width = 6'd32 - {2'b0, io_access_addr_q[3:0]};
     else
-      io_field_width = mem_size;
+      io_field_width = io_request_size_q;
     io_field_mask = (io_field_width >= 6'd32)
                   ? 32'hFFFF_FFFF
                   : (32'h0000_0001 << io_field_width) - 32'h0000_0001;
-    io_field_rdata = (io_rdata_words >> mem_addr[3:0]) & io_field_mask;
+    io_field_rdata =
+        (io_rdata_words >> io_access_addr_q[3:0]) & io_field_mask;
     io_field_wdata =
-        (io_rdata_words & ~(io_field_mask << mem_addr[3:0]))
-      | ((mem_wdata & io_field_mask) << mem_addr[3:0]);
+        (io_rdata_words & ~(io_field_mask << io_access_addr_q[3:0]))
+      | ((io_request_wdata_q & io_field_mask)
+          << io_access_addr_q[3:0]);
   end
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -3283,20 +3395,33 @@ module tms34010_core
       io_write_next_q  <= 1'b0;
       io_next_addr_q   <= '0;
       io_write_data_next_q <= '0;
+      io_request_size_q <= '0;
+      io_request_wdata_q <= '0;
+      io_rdata_words_q <= '0;
     end else begin
       // The integrated memory fabric registers every request before it can
-      // acknowledge it. Hold the processor I/O read view and write payload
-      // at the core boundary as well, removing a live register-file/address
-      // mux round-trip from the eventual completion-qualified writeback.
+      // acknowledge it. First hold the raw processor request and two-word
+      // I/O read view at the core boundary.
       if (mem_req) begin
-        io_rdata_q       <= io_field_rdata;
         io_is_io_q       <= io_is_io;
         io_access_addr_q <= mem_addr;
-        io_write_data_q  <= io_field_wdata[15:0];
-        io_write_next_q  <=
-            ({2'b0, mem_addr[3:0]} + mem_size) > FIELD_SIZE_WIDTH'(16);
+        io_request_size_q <= mem_size;
+        io_request_wdata_q <= mem_wdata;
+        io_rdata_words_q <= {io_rdata_next16, io_rdata16};
         io_next_addr_q   <= {mem_addr[ADDR_WIDTH-1:4], 4'b0000}
                           + ADDR_WIDTH'(16);
+      end
+      // Then align/merge only registered operands. The physical I/O cycle
+      // cannot acknowledge before the fabric's registered ingress and local
+      // bus phases, so this stage is complete before the completion pulse.
+      // Separating it removes a decode/register-file/address-mux path from
+      // the I/O write payload flops.
+      if (io_is_io_q) begin
+        io_rdata_q       <= io_field_rdata;
+        io_write_data_q  <= io_field_wdata[15:0];
+        io_write_next_q  <=
+            ({2'b0, io_access_addr_q[3:0]} + io_request_size_q)
+            > FIELD_SIZE_WIDTH'(16);
         io_write_data_next_q <= io_field_wdata[31:16];
       end
     end
@@ -3637,10 +3762,9 @@ module tms34010_core
         else if (is_pblt)
           state_d = array_resume ? CORE_ARRAY_RESUME1 : CORE_PBLT_SETUP;
         else if (is_drav)
-          // DRAV: latched Rd/Rs/linear here. A windowed DRAV (W!=0) first reads
-          // WSTART/WEND to test Rd's pixel; W=0 goes straight to the draw.
-          state_d = (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0) ? CORE_DRAV_SETUP_WIN
-                                                              : CORE_DRAV;
+          // DRAV: latched Rd/Rs/linear here. The setup cycle captures COLOR1
+          // and, when W!=0, WSTART/WEND before any pixel request.
+          state_d = CORE_DRAV_SETUP_WIN;
         else if (is_line)
           state_d = CORE_LINE_SETUP1;  // LINE: read the implied B operands
         else if (pixt_xy_win)
@@ -3694,10 +3818,13 @@ module tms34010_core
       end
 
       CORE_DRAV_SETUP_WIN: begin
-        // One cycle to read WSTART(B5)/WEND(B6) and test Rd's pixel. If the
-        // pixel is drawn (W=2/3 inside) go to its access; otherwise skip straight
-        // to CORE_WRITEBACK, which still advances Rd and writes V/WVP.
-        state_d = (((drav_w_q == 2'd2) || (drav_w_q == 2'd3)) && drav_in_window)
+        // Read WSTART(B5)/WEND(B6), COLOR1(B9), and test Rd's pixel. W=0
+        // always draws. For a window, only W=2/3 inside proceeds to the
+        // access; otherwise advance Rd and write V/WVP without pixel traffic.
+        state_d = (drav_w_q == 2'd0)
+                ? CORE_DRAV
+                : (((drav_w_q == 2'd2) || (drav_w_q == 2'd3))
+                   && drav_in_window)
                 ? CORE_DRAV : CORE_WRITEBACK;
       end
 
@@ -3724,7 +3851,7 @@ module tms34010_core
           mem_we_int = 1'b0;            // read the destination pixel
         end else begin
           mem_we_int = 1'b1;           // write the merged pixel
-          mem_wdata  = drav_merged;
+          mem_wdata  = pixel_ppop_merged;
         end
         if (mem_ack && drav_substep_q)
           state_d = CORE_WRITEBACK;
@@ -3752,7 +3879,7 @@ module tms34010_core
           mem_we_int = 1'b0;            // read the destination pixel
         end else begin
           mem_we_int = 1'b1;           // write the merged pixel
-          mem_wdata  = line_merged;
+          mem_wdata  = pixel_ppop_merged;
         end
         if (mem_ack && line_substep_q) begin
           // Final pixels and W=1/W=2 aborts complete normally. Every other
@@ -3787,7 +3914,7 @@ module tms34010_core
           mem_we_int = 1'b0;            // read the destination pixel
         end else begin
           mem_we_int = 1'b1;            // write the processed pixel
-          mem_wdata  = fill_merged;
+          mem_wdata  = pixel_ppop_merged;
         end
         if (mem_ack && fill_substep_q) begin
           state_d = fill_done            ? CORE_FILL_WB
@@ -3822,12 +3949,25 @@ module tms34010_core
       end
 
       CORE_PBLT_SETUP_WIN: begin
-        // Latch WSTART(B5)/WEND(B6). W=3 preclips both working arrays before
-        // any request; a fully excluded rectangle goes to status-only WB2.
-        // W=2 checks containment. W=1 never draws.
+        // Latch WSTART(B5)/WEND(B6) before evaluating any window geometry.
+        state_d = CORE_PBLT_WIN_EVAL;
+      end
+
+      CORE_PBLT_WIN_EVAL: begin
+        state_d = CORE_PBLT_WIN_OFFSETS;
+      end
+
+      CORE_PBLT_WIN_OFFSETS: begin
+        state_d = CORE_PBLT_WIN_APPLY;
+      end
+
+      CORE_PBLT_WIN_APPLY: begin
+        // W=3 preclips both working arrays before any request; a fully
+        // excluded rectangle goes to status-only WB2. W=2 checks containment.
+        // W=1 never draws.
         state_d = pblt_w1_q                         ? CORE_PBLT_WIN_HIT
-                : (pblt_w2_q && !pblt_array_inside) ? CORE_PBLT_WIN_MISS
-                : (pblt_win_en_q && !pblt_clip_hit) ? CORE_PBLT_WB2
+                : (pblt_w2_q && !pblt_array_inside_q) ? CORE_PBLT_WIN_MISS
+                : (pblt_win_en_q && !pblt_clip_hit_q) ? CORE_PBLT_WB2
                                                     : CORE_PBLT;
       end
 
@@ -3865,7 +4005,7 @@ module tms34010_core
           default: begin
             mem_we_int = 1'b1;             // write the processed pixel
             mem_addr   = pblt_dst_access_addr;
-            mem_wdata  = pblt_merged;
+            mem_wdata  = pixel_ppop_merged;
           end
         endcase
         if (mem_ack && pblt_substep_q == 2'd2) begin
@@ -4043,13 +4183,13 @@ module tms34010_core
             // and writes the merged value at step 1. A regular MOVE or direct
             // replace PIXT store is a single write.
             mem_req   = 1'b1;
-            mem_addr  = mv_addr;           // = Rd or Rd-FS (predec)
+            mem_addr  = mv_addr_q;         // = Rd or Rd-FS (predec)
             mem_size  = mv_fs;             // field size (1..32)
             if (pixt_rmw && mem_op_step == 2'd0) begin
               mem_we_int = 1'b0;           // step 0: read the destination pixel
             end else begin
               mem_we_int = 1'b1;           // write (single, or step 1 of RMW)
-              mem_wdata  = pixt_rmw ? pixt_merged : rf_rs1_data;
+              mem_wdata  = pixt_rmw ? pixel_ppop_merged : mv_store_data_q;
             end
           end
           INSTR_MOVE_FIELD_LOAD: begin
@@ -4060,7 +4200,7 @@ module tms34010_core
             // mv_load_ptr_wr path on this ack.
             mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = mv_addr;           // = Rs or Rs-FS (predec)
+            mem_addr  = mv_addr_q;         // = Rs or Rs-FS (predec)
             mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_OFF_STORE: begin
@@ -4116,14 +4256,14 @@ module tms34010_core
             mem_size  = mv_fs;             // field size (1..32)
             if (mem_op_step == 2'd0) begin
               mem_we_int   = 1'b0;
-              mem_addr = m2m_src_addr;     // = Rs (or Rs-FS predec)
+              mem_addr = m2m_src_addr_q;   // = Rs (or Rs-FS predec)
             end else if (pixt_m2m_rmw && mem_op_step == 2'd1) begin
               mem_we_int = 1'b0;
-              mem_addr = m2m_dst_addr;
+              mem_addr = m2m_dst_addr_q;
             end else begin
               mem_we_int   = 1'b1;
-              mem_addr = m2m_dst_addr;     // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
-              mem_wdata = pixt_m2m ? pixt_merged : move_data_q;
+              mem_addr = m2m_dst_addr_q;   // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
+              mem_wdata = pixt_m2m ? pixel_ppop_merged : move_data_q;
             end
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)

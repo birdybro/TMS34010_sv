@@ -317,7 +317,8 @@ the package. Pixel bits come from the attached VRAM serial port. An FPGA board
 design may model or connect that external memory/video path, but it is outside
 the TMS34010-only processor memory map.
 
-## Uncertain / partially implemented areas
+## Closed scope and surrounding memory
 
-- No unresolved TMS34010 architectural memory-map item remains. Physical
-  pin mapping and timing closure belong to the Quartus realization gate.
+- No unresolved TMS34010 architectural memory-map item remains. Task 0174
+  revalidates physical pin mapping and timing closure. External VRAM/DRAM
+  storage and VRAM serial pixels remain surrounding-system responsibilities.

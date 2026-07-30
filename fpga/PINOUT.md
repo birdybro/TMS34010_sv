@@ -16,6 +16,10 @@ power pins are not FPGA I/O and are not listed below.
 The top-level port retains the package label `BLANK`, but its electrical
 polarity is active low, matching the original TMS34010 pin.
 
+Task 0174's clean fit revalidates all 63 entries below with no unassigned or
+unfitted user pin. The exact report result is recorded in
+`IMPLEMENTATION_EVIDENCE.md`.
+
 ## Board-owned inputs
 
 | Top port | Board signal | FPGA pin |

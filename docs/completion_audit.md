@@ -1,10 +1,10 @@
 # Completion audit
 
-> Baseline: functional implementation and reproducible Cyclone V
-> implementation sign-off through Task 0160. Task 0161's production-revision
-> GPU re-audit found remaining programmer-visible graphics behavior, so the
-> prior seven gates remain historical baseline evidence rather than a
-> GPU-complete sign-off. GPU completion is withheld until Tasks 0162–0174.
+> Status: **production-revision GPU completion signed off through Task
+> 0174**. The historical Task 0160 processor/FPGA baseline remains intact;
+> Tasks 0162–0174 close every finding from Task 0161 and pass the final
+> regression, independent-reference, surviving-software, and Quartus gates.
+> `gpu_completion_signoff.md` freezes the exact claim and non-goals.
 
 ## Official ISA reconciliation
 
@@ -163,7 +163,7 @@ end to end, and the pin-level regression proves reset initialization precedes
 the two-word vector and real instruction fetches. At that checkpoint,
 physical HOLD release, on-chip I/O bus completion, host pins, and Quartus CDC
 sign-off remained; Tasks 0149–0153 close every functional pin-side item,
-while Quartus CDC sign-off remains.
+while Task 0160 closed the Quartus CDC sign-off.
 
 Task 0149 completes physical on-chip I/O cycles for processor accesses. A
 registered fabric stage classifies and holds the architectural CPU request;
@@ -299,7 +299,7 @@ report-validation, CDC, resource, and refresh-service closure. These do not
 excuse missing architectural state or interface behavior; future differences
 from the signed-off baseline must be documented as deliberate boundaries.
 
-## Production-revision GPU completion gaps
+## Production-revision GPU closure
 
 Task 0161 found concrete functional gaps beyond the Task 0160 baseline:
 FILL, PIXBLT, and LINE lacked their architectural mid-instruction
@@ -309,7 +309,8 @@ The original audit also found missing complete graphics/display/SRT
 conformance matrices, pinned MAME differential coverage, and TI-shipped
 graphics workloads. Tasks 0169–0171 close the three specification-derived
 matrices, Task 0172 closes the independent MAME gate, and Task 0173 closes
-the TI workload gate; only final implementation sign-off remains.
+the TI workload gate. Task 0174 closes the final implementation and
+repository-wide sign-off.
 
 Task 0162 closed the empty-array and terminal-context findings. Zero DX or DY
 now exits every FILL/PIXBLT form without graphics traffic or architectural
@@ -445,9 +446,12 @@ locks, and original tests are committed. Optional arcade readiness consumes
 only a user-supplied legal ROM directory and is not a completion dependency.
 `docs/ti_workloads.md` is the authoritative workload ledger.
 
-Task 0174 performs the final full-regression and Quartus sign-off. External
-VRAM/DRAM, level translation, board-level signal integrity, and the VRAM
-serial-pixel path remain surrounding-system responsibilities rather than
+Task 0174 completes the final full-regression and Quartus sign-off. It also
+removes stale `TBD`/unfinished labels from current coverage, pipelines the
+remaining long graphics/I/O paths, and shares the mutually exclusive graphics
+pixel processor so the final design closes the frozen 30% ALM envelope.
+External VRAM/DRAM, level translation, board-level signal integrity, and the
+VRAM serial-pixel path remain surrounding-system responsibilities rather than
 unfinished processor behavior.
 
 ## Historical Task 0160 exit gates
@@ -484,9 +488,8 @@ unfinished processor behavior.
 7. **Complete (Task 0160):** strict lint, all 147 self-checking simulations,
    the clean real Quartus flow, and the final spec/documentation audit pass.
 
-All seven historical baseline gates are satisfied. They do not supersede the
-Task 0161 GPU findings or establish production-revision GPU completion. The
-new ordered gate is Task 0162 through Task 0174 in `tasks.md`; Task 0174 may
-restore the scoped GPU-complete claim only after every predecessor passes.
-Task evidence is recorded in `tasks.md`, `changelog.md`, and
-`fpga/IMPLEMENTATION_EVIDENCE.md`.
+All seven historical baseline gates and all Task 0161 closure gates are
+satisfied. Task 0174 restores the scoped production-revision GPU-complete
+claim. Exact source coverage, independent gates, implementation results, and
+non-goals are recorded in `gpu_completion_signoff.md`, `tasks.md`,
+`changelog.md`, and `fpga/IMPLEMENTATION_EVIDENCE.md`.

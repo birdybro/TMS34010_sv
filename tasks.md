@@ -6486,7 +6486,7 @@ Commit:
 ---
 
 ### Task 0174: Sign off production-revision GPU completion
-Status: pending
+Status: complete
 Dependencies:
 - Tasks 0162–0173 (all functional, integration, differential, and workload
   gates complete).
@@ -6523,6 +6523,52 @@ Tests:
 Docs:
 - Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`, every affected
   file under `docs/`, and final FPGA implementation evidence.
+Implementation:
+- Re-audited every production Chapter 6 graphics/display register, Chapter 7
+  pixel rule, graphics instruction, Chapter 9 display behavior,
+  interrupt/resume path, and associated Chapter 11 cycle. Added
+  `docs/gpu_completion_signoff.md` as the final source-to-RTL-to-test matrix;
+  no defined in-scope behavior remains unimplemented, `TBD`, or supported
+  only by an untested claim.
+- Registered PIXBLT PBX resume reconstruction across its quiet context-read
+  states and split W=3 geometry into registered compare, offset, and apply
+  stages. Registered processor-I/O field alignment/merge plus field/M2M
+  effective address/data operands, and made DRAV capture COLOR1 in setup.
+- Snapshotted PSIZE, PMASK, PPOP, and transparency configuration at execute
+  and consolidated PIXT, DRAV, LINE, FILL, and PIXBLT onto one shared
+  mutually exclusive PPOP/PMASK/transparency processor. This retains exact
+  functional behavior while closing both core timing and the frozen Task 0160
+  30% ALM envelope.
+- Removed stale current-status `TBD`, placeholder, and unfinished labels.
+  Reclassified the optional cache and prospective BRAM wrappers as explicit
+  non-goals/refactors, restored the scoped GPU-complete claim, and retained
+  exact cycle parity, first-silicon behavior, later-family devices, external
+  VRAM serial pixels, and board analog validation as explicit exclusions.
+- Refreshed the accepted Cyclone V evidence: 63/63 pins, 12,645/41,910 ALMs
+  (30%), 10,479 registers, zero block-memory bits, 6/112 DSPs, 2/6 PLLs,
+  +0.556 ns worst setup, +0.147 ns worst hold, +1.250 ns minimum-pulse slack,
+  zero TNS/ignored constraints, all 27 required two-stage CDC chains, and a
+  242-year worst required-chain MTBF. The only fitter warnings remain the two
+  reviewed `177007` PLL messages and reviewed `292013` LogicLock message.
+Validation:
+- Every focused Task 0162–0173 bench PASS as part of the complete discovered
+  regression, including the generated 1,186-case graphics matrix, generated
+  577-case display matrix, array/LINE checkpoint and interrupt suites,
+  all-engine SRT system proof, and original-pin SRT trace.
+- `scripts/lint.sh` PASS with zero RTL diagnostics.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 159/159 benches.
+- `scripts/mame_graphics_diff.sh` PASS: 137/137 live cases, 156 classified
+  case/field groups, zero unexplained mismatches.
+- `scripts/ti_workloads.sh --build-rom` PASS: identical original-tool ROM
+  load-image SHA-256
+  `c37fc1d12a47c0e2b4878ea5feff577fbee0c7da81d3105f45a072cb8cc73a2c`,
+  5/5 live program milestones, nine classified case/field groups, zero
+  unexplained mismatches.
+- Clean
+  `QUARTUS_SH=/home/aberu/intelFPGA_lite/17.0/quartus/bin/quartus_sh
+  scripts/synth_quartus.sh` PASS at the final RTL: map, fit, assembly,
+  multicorner TimeQuest, programming file, and strict report validation all
+  accepted. Final `scripts/check_quartus_reports.sh` recheck PASS.
 Commit:
 - pending
 

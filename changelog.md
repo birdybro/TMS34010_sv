@@ -5,6 +5,34 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## Unreleased
 
+## 2026-07-30
+
+### Completed (Task 0174 — production-revision GPU sign-off)
+- Completed the final primary-source re-audit across every defined Chapter 6
+  graphics/display register, Chapter 7 pixel rule, graphics instruction,
+  Chapter 9 display behavior, interrupt/resume path, and associated Chapter
+  11 pin cycle. Added `docs/gpu_completion_signoff.md` as the frozen
+  source-to-RTL-to-test claim and explicit non-goal boundary.
+- Registered PIXBLT PBX resume and W=3 geometry, processor-I/O field
+  alignment/merge, field/M2M effective operands, and DRAV color setup to close
+  final core timing paths. Snapshotted graphics configuration at execute and
+  shared one PPOP/PMASK/transparency processor across the mutually exclusive
+  graphics engines, retaining functional behavior within the 30% ALM cap.
+- Removed stale current `TBD`, placeholder, and unfinished classifications;
+  the optional cache and prospective BRAM wrappers are explicit
+  non-goals/refactors. Restored the Task 0161 scoped GPU-complete claim while
+  preserving exact cycle parity, first-silicon behavior, external VRAM serial
+  pixels, later-family devices, and board analog validation as exclusions.
+- Refreshed clean Quartus evidence: 63 fitted pins, 12,645 ALMs (30%),
+  10,479 registers, 6 DSPs, 2 PLLs, +0.556 ns setup, +0.147 ns hold,
+  +1.250 ns minimum-pulse slack, zero TNS/ignored constraints, and all 27
+  required CDC chains with 242-year worst required-chain MTBF.
+- Validation: strict lint clean; complete regression 159/159 PASS; pinned
+  MAME live differential 137/137 with 156 classified groups and zero
+  unexplained; five live TI workloads plus exact ROM rebuild PASS with nine
+  classified groups and zero unexplained; clean Quartus map, fit, assembly,
+  multicorner TimeQuest, programming file, and strict report validation PASS.
+
 ## 2026-07-29
 
 ### Added (Task 0173 — preserved TI graphics software workloads)

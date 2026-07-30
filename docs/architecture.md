@@ -126,10 +126,10 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 
 | Path                                    | Phase | Status      | Notes |
 |-----------------------------------------|-------|-------------|-------|
-| `rtl/tms34010_pkg.sv`                   | 0+    | **landed** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
-| `rtl/tms34010_system.sv`                | 6     | **reclosed through Task 0171** | functional-system wrapper connecting all core memory clients, explicit VCLK/reset, raw video-sync pins, and the graphics SRT tag to the core/fabric boundary |
-| `rtl/tms34010_pin_system.sv`            | 6     | **reclosed through Task 0171** | integrated separately reset core/VCLK/8× system, MCP bridges, original-pin local bus including SRT transfers, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, shared HLDA/EMUA, and split video-sync direction |
-| `rtl/core/tms34010_core.sv`             | 0+    | **graphics/SRT reclosed through Task 0171** | multicycle CPU with registered decode/ordinary-result/I/O-completion timing boundaries, memory/host/interrupt/graphics engines, explicit VCLK/reset, coherent DRAM/screen/video boundaries, and graphics-only DPYCTL.SRT tagging |
+| `rtl/tms34010_pkg.sv`                   | 0+    | **signed off through Task 0174** | architectural constants, I/O/interrupt/graphics constants, FSM and decode types |
+| `rtl/tms34010_system.sv`                | 6     | **re-signed through Task 0174** | functional-system wrapper connecting all core memory clients, explicit VCLK/reset, raw video-sync pins, and the graphics SRT tag to the core/fabric boundary |
+| `rtl/tms34010_pin_system.sv`            | 6     | **re-signed through Task 0174** | integrated separately reset core/VCLK/8× system, MCP bridges, original-pin local bus including SRT transfers, physical HOLD/RUN-EMU/host controls, HRDY, split HD direction, shared HLDA/EMUA, and split video-sync direction |
+| `rtl/core/tms34010_core.sv`             | 0+    | **signed off through Task 0174** | multicycle CPU with registered decode/ordinary-result/I/O-completion timing boundaries, memory/host/interrupt/graphics engines, staged PIXBLT geometry/resume, shared execute-snapshotted pixel processing, explicit VCLK/reset, coherent DRAM/screen/video boundaries, and graphics-only DPYCTL.SRT tagging |
 | `rtl/core/tms34010_pc.sv`               | 1     | **landed**  | bit-addressed PC: reset/load/advance, advance amount in bits |
 | `rtl/core/tms34010_regfile.sv`          | 2+    | **landed**  | A0–A14, B0–B14, shared SP (A15/B15 alias); 3R/1W; async read |
 | `rtl/core/tms34010_alu.sv`              | 2     | **landed**  | combinational ADD/ADDC/SUB/SUBB/CMP/AND/ANDN/OR/XOR/NOT/NEG/PASS_A/PASS_B + N/C/Z/V flags |
@@ -139,7 +139,7 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/core/tms34010_control.sv`          | 3     | merged into core.sv | top-level control and graphics FSMs; extraction remains an optimization option |
 | `rtl/memory/tms34010_field_sequencer.sv` | 5, 6 | **landed (Task 0136)** | translates one bit-addressed 1–32-bit request into ascending aligned 16-bit word cycles; direct full-word writes, partial-word RMW lock, arbitrary word-side stalls |
 | `rtl/memory/tms34010_local_bus.sv`      | 6     | **reclosed through Task 0171** | 8× original-pin LCLK/row/column/data phases, address/status encoding, screen and explicit MTR/RTM transfers, LRDY waits, I/O/reset cycles, and phased HOLD/HOLDA output-enable release |
-| `rtl/memory/tms34010_cache.sv`          | 6     | not started | optional instruction cache |
+| `rtl/memory/tms34010_cache.sv`          | 6     | explicit non-goal | optional instruction cache; no file or processor-completion dependency |
 | `rtl/memory/tms34010_bus_arbiter.sv`    | 6     | **reclosed through Task 0171** | registered HOLD/screen/DRAM/host/CPU priority; held active owner; refresh capture; CPU RMW/HOLD restart; I/O and graphics MTR/RTM cycle selection |
 | `rtl/memory/tms34010_memory_fabric.sv`  | 6     | **reclosed through Task 0171** | registered CPU request/SRT classification; external field sequencing; processor-I/O bypass; host-I/O classification; screen/DRAM/host/CPU arbitration |
 | `rtl/graphics/tms34010_pixel_addr.sv`   | 5, 7  | not separate | XY/linear conversion currently resides in the core |
@@ -164,8 +164,8 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/fpga/tms34010_cyclone_v_video_pll.sv` | 10 | **signed off (Task 0160)** | independent phase-zero 50 MHz internal VCLK and 180-degree VIDEO_VCLK output, with no fabric clock inversion |
 | `rtl/fpga/tms34010_reset_sync.sv`       | 10    | **signed off (Task 0160)** | two-stage active-high per-domain reset conditioners recognized in the implementation CDC report |
 | `rtl/fpga/tms34010_fpga_io.sv`          | 10    | **reconciled through Task 0170** | sole IOE-boundary tri-state owner for HD/LAD/local controls, active-low bidirectional video sync, and active-low BLANK |
-| `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
-| `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
+| `rtl/fpga/bram_1r1w.sv`                 | 1     | optional refactor | prospective Cyclone V BRAM wrapper, 1R1W, sync read; no current architectural memory owner requires it |
+| `rtl/fpga/bram_rom.sv`                  | 1     | optional refactor | prospective sync-read ROM wrapper; no current architectural memory owner requires it |
 
 Rows without files describe planned integration boundaries or possible
 refactoring, not stub modules. Unsupported instruction encodings route to the
@@ -400,11 +400,19 @@ TR/QE, W-at-RAS, RAS/CAS/LAL, and the no-LAD-data second period. Direct LRDY,
 HOLD, RMW restart, simultaneous-client, zero-work, preclip, abort, and
 interrupt/resume evidence is indexed in `srt_conformance.md`.
 
+Task 0174 re-signs the whole structure. The core now registers
+processor-I/O alignment/merge operands, field and memory-to-memory effective
+addresses/data, PIXBLT resume offsets, and the three W=3 geometry stages.
+Graphics configuration is snapshotted at execute and the five mutually
+exclusive engines share one PPOP/PMASK/transparency processor. These
+boundaries retain functional sequencing while closing the 50 MHz core path
+and frozen 30% ALM envelope.
+
 The audit also consolidated the I/O, interrupt-source, physical-memory, host,
-refresh, video, CDC, and Quartus work into seven ordered exit gates. Task 0160
-closes the last two gates with the real implementation flow and clean final
-validation. `completion_audit.md` is the authoritative completion ledger;
-this document describes the resulting structure.
+refresh, video, CDC, and Quartus work into the historical Task 0160 gates and
+the Task 0161 production-revision closure gates. `completion_audit.md` and
+`gpu_completion_signoff.md` are the authoritative completion ledgers; this
+document describes the resulting structure.
 
 ## Datapath strategy
 
@@ -487,8 +495,10 @@ same push/vector states with an unmaskable request fixed at vector 30
 (`0xFFFF_FC20`). Because opcode fetch already advanced PC, the stacked PC is
 the following word, matching TRAP 30. The old ST is stacked, SP decreases by
 64 bits, and live ST becomes `ST_RESET_VALUE`. The broader
-`illegal_opcode_o` decoder-miss diagnostic remains sticky until reset while
-valid-but-unimplemented encodings retain their existing placeholder path.
+`illegal_opcode_o` decoder-miss diagnostic remains sticky until reset. Every
+defined production encoding has an implemented path; reserved Table 8-6
+words take the architectural illegal-opcode entry rather than a placeholder
+execution path.
 
 **NMI** (Task 0103): a nonmaskable interrupt (host sets HSTCTLH.NMI) is sampled
 at the same `CORE_FETCH` boundary with priority over maskable requests and
@@ -865,8 +875,9 @@ classifier leave zero unexplained differences. See `ti_workloads.md`.
 
 ## FPGA resource strategy
 
-- Future architecturally-sized memories should use `rtl/fpga/bram_*.sv`
-  wrappers so inference stays localized. Those wrappers do not exist yet.
+- A future optional cache or surrounding-system memory may introduce
+  `rtl/fpga/bram_*.sv` wrappers so vendor-specific inference stays localized.
+  No signed-off processor behavior currently depends on such a wrapper.
 - Avoid wide muxes where a small FSM can sequence the choice across
   cycles instead.
 - No vendor-locked primitives in core RTL. Cyclone V-specific primitives
@@ -876,10 +887,11 @@ classifier leave zero unexplained differences. See `ti_workloads.md`.
 
 - Optional instruction cache.
 - A cycle-accuracy contract against original silicon.
+- First-silicon compatibility and later-family TMS34020/TMS34082 behavior.
 - External VRAM/DRAM, level translation, board buffering/termination, and the
   VRAM serial-pixel output path.
 
-These are optional extensions or surrounding hardware, not open work in the
-completed TMS34010 processor/Cyclone V baseline. Measured implementation
-results and their reproducible validation command are recorded in
-`fpga/IMPLEMENTATION_EVIDENCE.md`.
+These are explicit non-goals or surrounding hardware, not open work in the
+Task 0174 production-revision GPU sign-off. The complete boundary is recorded
+in `gpu_completion_signoff.md`; measured implementation results and their
+reproducible validation command are in `fpga/IMPLEMENTATION_EVIDENCE.md`.

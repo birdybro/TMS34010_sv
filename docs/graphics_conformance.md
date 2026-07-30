@@ -1,6 +1,7 @@
 # Graphics conformance matrix
 
-> Status: **closed for the production TMS34010 revision through Task 0169**.
+> Status: **closed for the production TMS34010 revision and re-signed by Task
+> 0174**.
 > Every defined cell below has a primary source, an RTL owner, observable
 > side effects, and named self-checking evidence. Reserved or architecturally
 > undefined combinations are identified explicitly and are not assigned

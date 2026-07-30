@@ -1,9 +1,8 @@
 # Display and video conformance matrix
 
-> Status: **closed for the production TMS34010 revision through Task 0170**.
-> Every production display register, timing mode, automatic screen-refresh
-> event, and processor-side video pin has a primary source, an RTL owner, and
-> named self-checking evidence below.
+> Status: **closed for the production TMS34010 revision through Task 0170 and
+> re-signed by Task 0174**. Every defined display register, mode, transaction,
+> and processor pin below has primary-source ownership and named evidence.
 
 The authority is the 1988 TI TMS34010 User's Guide at
 `third_party/TMS34010_Info/docs/ti-official/1988_TI_TMS34010_Users_Guide.pdf`.

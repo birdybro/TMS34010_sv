@@ -1,9 +1,9 @@
 # Timing notes
 
-> Status: **functional latency reconciled through Task 0171 and measured
-> Cyclone V implementation evidence through Task 0160**. Quartus Prime Lite
+> Status: **functional latency and measured Cyclone V implementation
+> re-signed through Task 0174**. Quartus Prime Lite
 > 17.0.2 closes the complete design at
-> 50/200/50 MHz with +0.747 ns worst setup, +0.128 ns worst hold, zero TNS,
+> 50/200/50 MHz with +0.556 ns worst setup, +0.147 ns worst hold, zero TNS,
 > and no ignored constraints.
 
 ## Known long paths and measured disposition
@@ -21,8 +21,11 @@
 | Core↔VCLK mailboxes and screen transaction | Task 0155 | constrained asynchronous groups/MCPs; chains recognized | retain one-outstanding source-held contracts |
 | External HSYNC/VSYNC → VCLK         | Task 0157        | constrained inputs; both level chains recognized | retain delayed edge recognition |
 | Graphics SRT request classification | Tasks 0158/0171 | reclosed through pins for every engine and zero-work/continuation class | retain captured SRT sideband |
+| PIXBLT resume/window geometry | Task 0174 | closed with registered resume offsets and three quiet W=3 geometry stages | preserve the architectural quiet states and registered operands |
+| Graphics PPOP/PMASK/transparency | Task 0174 | closed with one mutually exclusive shared pixel processor and execute-time configuration snapshot | do not duplicate the processor per engine or restore live configuration paths |
+| Processor I/O/field/M2M operands | Task 0174 | closed with registered request alignment, merge, and effective addresses/data | preserve execute-to-memory register boundaries |
 | Board reset / PLL locks             | Task 0159        | assertion cut, three release chains recognized | preserve synchronous destination-domain release |
-| HD/LAD/control/sync/blank IOEs      | Tasks 0159/0170 | 63 fitted pins with bounded min/max paths; BLANK functional polarity corrected | re-run full implementation at Task 0174 |
+| HD/LAD/control/sync/blank IOEs      | Tasks 0159/0170/0174 | 63 fitted pins with bounded min/max paths; BLANK functional polarity corrected and final flow re-signed | preserve the QSF/SDC/report validator contract |
 | MPYS/MPYU 32×32 multiply            | Task 0071        | closed using 6 DSP blocks total | pipeline only after new measured evidence and full regression |
 
 ## Multi-cycle operations
@@ -482,12 +485,13 @@ phase/evidence matrix is `srt_conformance.md`.
 
 Task 0159 isolates `altera_pll` under `rtl/fpga/`, isolates every high
 impedance assignment in `tms34010_fpga_io`, and provides one reset-release
-chain per clock domain. Task 0160 measures 10,017 ALMs (24%), 8,039
-registers, zero block-memory bits, 6 DSP blocks (5%), and 2 PLLs (33%). The
-fit uses all 63 assigned pins. Across all enabled corners, worst setup is
-+0.747 ns, worst hold is +0.128 ns, worst minimum-pulse slack is +1.250 ns,
-and TNS is zero. Recovery/removal reports have no paths because asynchronous
-assertion is cut before the first stage and release is synchronized. Exactly
-54 forced stages form the 27 required two-register synchronizer chains, all
-of which enter MTBF analysis. `fpga/IMPLEMENTATION_EVIDENCE.md` records the
-complete reproducible result and accepted warning set.
+chain per clock domain. Task 0174's clean rebuild measures 12,645 ALMs (30%),
+10,479 registers, zero block-memory bits, 6 DSP blocks (5%), and 2 PLLs
+(33%). The fit uses all 63 assigned pins. Across all enabled corners, worst
+setup is +0.556 ns, worst hold is +0.147 ns, worst minimum-pulse slack is
++1.250 ns, and TNS is zero. Recovery/removal reports have no paths because
+asynchronous assertion is cut before the first stage and release is
+synchronized. Exactly 54 forced stages form the 27 required two-register
+synchronizer chains, all of which enter MTBF analysis; the validator's
+required-chain worst case is 242 years. `fpga/IMPLEMENTATION_EVIDENCE.md`
+records the complete reproducible result and accepted warning set.
