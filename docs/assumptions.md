@@ -1381,7 +1381,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0031 — Window-checking scope and implementation
 - **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117), audited
-  2026-07-28 (Task 0135), refined 2026-07-29 (Task 0164).
+  2026-07-28 (Task 0135), refined 2026-07-29 (Tasks 0164–0165).
 - **Status**: implemented for every drawing instruction currently present.
 - **Source**: 1988 UG §7.10 (Window Checking): W=0 off; W=1 hit detection;
   W=2 miss detection; W=3 clipping. WSTART=B5 and WEND=B6 are inclusive XY
@@ -1392,8 +1392,15 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   corner; directional full-color forms encode the PBH/PBV-selected corner
   after computing the same geometric rectangle. A disjoint result leaves
   DADDR/DYDX architecturally indeterminate (deterministically preserved
-  here). W=2 requires full rectangle containment; W=3 clips per pixel and
-  reports V=1 when any preclipping was required.
+  here). W=2 requires full rectangle containment. W=3 computes the
+  intersection before the first transfer, adjusts FILL's working destination
+  and both PIXBLT arrays by the same excluded pixel rows/columns, and reports
+  V=1 when any preclipping was required. A fully excluded W=3 operation is
+  traffic-free and deterministically preserves supplied address registers.
+  Consistent with §7.10.4, either reversed WSTART/WEND axis defines an empty
+  window and therefore a fully excluded result.
+  Nonempty partial/contained operations retain the instruction pages'
+  original-array terminal context.
 - **Incremental engines**: DRAV implements its per-pixel W=1/2/3 rules and
   always performs the XY advance. LINE clips in W=3 and aborts on the first
   hit/miss condition in W=1/W=2. PIXT operations with an XY destination
@@ -1410,6 +1417,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   W=3 V coverage and added XY-to-XY PIXT draw/skip/status cases. Task 0164's
   `tb_window_common_rect` adds exact W=1 DADDR/DYDX, direction, status/WVP,
   empty/disjoint/boundary geometry, no-traffic, and stalled-protocol coverage.
+  Task 0165's `tb_window_preclip` adds a request-by-request reference model
+  for all W=3 edges/corners, forms, directions, pixel sizes, legal conversion
+  pitches, destination-read modes, SRT, full exclusion, context, and stalls.
 
 ## A0030 — RESOLVED: every interrupt initializes the live ST service context
 - **Date**: 2026-06-04 (Task 0100); **resolved 2026-07-28 (Task 0123)**.

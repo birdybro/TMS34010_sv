@@ -269,10 +269,10 @@ remains authoritative.
 | 0159 | Add the Cyclone V clock, reset, and pad boundary | complete |
 | 0160 | Close the Cyclone V implementation flow | complete |
 | 0161 | Define the production-revision GPU completion closure | complete |
-| 0162 | Correct empty arrays and terminal PIXBLT context | pending |
-| 0163 | Implement directional PIXBLT traversal | pending |
-| 0164 | Implement W=1 common-rectangle results | pending |
-| 0165 | Implement true W=3 array preclipping | pending |
+| 0162 | Correct empty arrays and terminal PIXBLT context | complete |
+| 0163 | Implement directional PIXBLT traversal | complete |
+| 0164 | Implement W=1 common-rectangle results | complete |
+| 0165 | Implement true W=3 array preclipping | complete |
 | 0166 | Make FILL and PIXBLT execution checkpointable | pending |
 | 0167 | Resume interrupted FILL and PIXBLT through PBX | pending |
 | 0168 | Resume interrupted LINE execution | pending |
@@ -5873,7 +5873,7 @@ Commit:
 ---
 
 ### Task 0165: Implement true W=3 array preclipping
-Status: pending
+Status: complete
 Dependencies:
 - Task 0164 (exact common-rectangle geometry).
 Spec sources:
@@ -5907,6 +5907,34 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
+Results:
+- Replaced per-pixel W=3 suppression with an inclusive pre-execution
+  intersection for FILL XY and PIXBLT B,XY/L,XY/XY,XY. Fully excluded
+  rectangles complete without graphics traffic.
+- Adjusted PIXBLT source and destination by identical excluded pixel
+  columns/rows before directional corner selection. Binary source columns
+  advance one bit, full-color columns advance PSIZE, and removed rows use
+  CONVSP/CONVDP.
+- Preserved original-array completion context for nonempty partial/contained
+  operations, deterministic supplied address registers on full exclusion,
+  exact V-only status, no WVP, and W=0/W=1/W=2 plus incremental-engine
+  isolation.
+- Removed W=3's unnecessary destination read on the direct-replace fast path;
+  PPOP/PMASK modes still read only surviving destination pixels.
+- Added `tb_window_preclip`: 23 reference-model cases covering all applicable
+  forms/directions, every edge/corner, containment, full exclusion,
+  one-pixel remainder, PSIZE 1/2/4/8/16, legal independent pitches,
+  framebuffer alignment, exact read/write/SRT sequences, result/status
+  context, PPOP/PMASK reads, and three inserted physical-word waits.
+- Explicitly rejected reversed WSTART/WEND axes as empty windows in live W=3
+  and latched W=1 geometry, with X- and Y-invalid focused cases.
+- Corrected the legacy focused W=3 benches' CONVSP/CONVDP encodings to match
+  their programmed 128-bit pitches.
+- Existing focused W=0/W=1/W=2/W=3, direction, array-edge, and SRT benches
+  PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 151/151 benches.
 Commit:
 - pending
 

@@ -7,6 +7,31 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Fixed (Task 0165 — true W=3 array preclipping)
+- Replaced per-pixel W=3 suppression with an up-front inclusive intersection
+  for FILL XY and PIXBLT B,XY/L,XY/XY,XY. FILL now starts at the effective
+  top-left address and runs only the clipped dimensions.
+- Preclipped PIXBLT source and destination together. Left clipping advances
+  binary sources by one bit and full-color sources/destinations by PSIZE;
+  top clipping uses CONVSP/CONVDP, after which PBH/PBV selects the effective
+  traversal corner without disturbing source/destination correspondence.
+- Kept architectural completion results tied to the original nonempty array,
+  preserved supplied address registers on full exclusion, and retained exact
+  V-only preclip status with no WVP. Direct replacement no longer performs a
+  synthetic destination read merely because W=3 is selected.
+- Added `tb_window_preclip`, a 23-case reference geometry and transaction
+  model covering every edge/corner, containment, one-pixel remainder, full
+  exclusion, every applicable form and direction, PSIZE 1/2/4/8/16,
+  independent legal pitches, PPOP/PMASK destination reads, SRT marking,
+  framebuffer alignment, context/status, and three-cycle memory waits.
+- Made reversed WSTART/WEND limits explicitly produce the specified empty
+  window for both live W=3 preclipping and latched W=1 intersection; extended
+  both geometry benches with X- and Y-empty-window cases.
+- Corrected the legacy focused W=3 benches to encode their programmed
+  128-bit pitches consistently in CONVSP/CONVDP.
+- Validation: focused W=0/W=1/W=2/W=3, direction, array-edge, and SRT tests
+  PASS; `scripts/lint.sh` clean; full regression 151/151 PASS.
+
 ### Fixed (Task 0164 — W=1 common-rectangle results)
 - Completed the 1988 User's Guide §7.10.1 array-pick contract for FILL XY and
   PIXBLT B,XY/L,XY/XY,XY. W=1 continues to issue no pixel request, but a hit

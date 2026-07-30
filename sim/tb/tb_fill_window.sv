@@ -111,8 +111,8 @@ module tb_fill_window;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));      // FS0=16 for MOVE-to-I/O
     p = place_movi_il  (p, 4'd0, 32'h0000_0008);
     p = place_store_abs(p, 4'd0, A_PSIZE);               // PSIZE = 8
-    p = place_movi_il  (p, 4'd0, 32'h0000_001B);
-    p = place_store_abs(p, 4'd0, A_CONVDP);              // CONVDP = 0x1B
+    p = place_movi_il  (p, 4'd0, 32'h0000_0018);
+    p = place_store_abs(p, 4'd0, A_CONVDP);              // CONVDP = ~log2(0x80)
     p = place_movi_il  (p, 4'd0, {16'h0, CTRL_W3});
     p = place_store_abs(p, 4'd0, A_CONTROL);             // CONTROL.W = 3 (clip)
     p = place_movi_il_b(p, 4'd2, 32'h0001_0020);         // DADDR XY (X=0x20,Y=1)
@@ -134,14 +134,14 @@ module tb_fill_window;
     #1;
 
     // Window keeps X=0x20 (low byte), clips X=0x21 (high byte) → 0x00AA.
-    check_word("row0 word145 clipped to 0x00AA", 145, 16'h00AA);
-    check_word("row1 word153 clipped to 0x00AA", 153, 16'h00AA);
+    check_word("row0 word152 clipped to 0x00AA", 152, 16'h00AA);
+    check_word("row1 word160 clipped to 0x00AA", 160, 16'h00AA);
     // Pixels fully outside (the gap) remain zero.
-    check_word("gap word146 = 0", 146, 16'h0000);
-    check_word("gap word152 = 0", 152, 16'h0000);
+    check_word("gap word153 = 0", 153, 16'h0000);
+    check_word("gap word159 = 0", 159, 16'h0000);
     // DADDR (B2) still advances over the whole array (clip doesn't change it).
-    if (u_core.u_regfile.b_regs[2] !== 32'h0000_09A0) begin
-      $display("TEST_RESULT: FAIL: DADDR(B2)=%08h expected 000009A0",
+    if (u_core.u_regfile.b_regs[2] !== 32'h0000_0A10) begin
+      $display("TEST_RESULT: FAIL: DADDR(B2)=%08h expected 00000A10",
                u_core.u_regfile.b_regs[2]);
       failures++;
     end

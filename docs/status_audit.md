@@ -99,11 +99,13 @@ The audit found and corrected these observable mismatches:
 - Odd-destination MPYS/MPYU flags had been derived from the discarded
   64-bit product. They now use the stored low 32-bit result.
 - FILL XY and PIXBLT with an XY destination clipped correctly in W=3 but did
-  not report preclipping in V. They now write V after array completion.
+  not report preclipping in V. Task 0135 added the completion-time V write;
+  Task 0165 additionally made the operation true up-front array preclipping,
+  without changing that V-only result.
 - XY-to-XY PIXT did not enter the destination-window path. It now applies the
   same W=1/2/3 draw/skip, V, and WV rules as other XY-destination PIXT writes.
 
 Focused evidence is in `tb_div_flags`, `tb_mpy_flags`, `tb_fill_window`,
-`tb_pixblt_window`, and `tb_pixt_win`. Existing arithmetic, logical, move,
-shift, field, control, and graphics benches remain part of the complete
-regression.
+`tb_pixblt_window`, `tb_window_preclip`, and `tb_pixt_win`. Existing
+arithmetic, logical, move, shift, field, control, and graphics benches remain
+part of the complete regression.

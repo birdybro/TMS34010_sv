@@ -371,6 +371,9 @@ module tb_window_common_rect;
     run_case(16'h0FE0, 0, 0, 32'h000A_000A, 3, 3,
              32'h000C_000C, 32'h0014_0014, 1, 0,
              32'h000C_000C, 32'h0001_0001, "FILL boundary pixel");
+    run_case(16'h0FE0, 0, 0, 32'h000A_000A, 3, 3,
+             32'h0000_000C, 32'h0014_000B, 0, 0,
+             32'h000A_000A, 32'h0003_0003, "FILL empty-X window");
     run_case(16'h0FE0, 0, 0, 32'h000A_000A, 0, 3,
              32'h0000_0000, 32'h0014_0014, 0, 1,
              32'h000A_000A, 32'h0003_0000, "FILL DX zero");
@@ -437,6 +440,9 @@ module tb_window_common_rect;
     run_case(16'h0F60, 1, 1, 32'h000A_000A, 3, 3,
              32'h001E_001E, 32'h0020_0020, 0, 0,
              32'h000A_000A, 32'h0003_0003, "XY,XY disjoint");
+    run_case(16'h0F60, 1, 1, 32'h000A_000A, 3, 3,
+             32'h000C_0000, 32'h000B_0014, 0, 0,
+             32'h000A_000A, 32'h0003_0003, "XY,XY empty-Y window");
     run_case(16'h0F60, 1, 1, 32'h000A_000A, 0, 3,
              32'h0000_0000, 32'h0014_0014, 0, 1,
              32'h000A_000A, 32'h0003_0000, "XY,XY empty");

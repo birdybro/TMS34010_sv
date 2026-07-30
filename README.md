@@ -140,7 +140,16 @@ set V/WVP from intersection, and, on a hit, return the exact intersection
 dimensions in DYDX plus its lowest-address or PBH/PBV-selected starting corner
 in DADDR. Miss results remain architecturally indeterminate but are
 deterministically preserved; zero dimensions retain the Task 0162 no-op
-contract. Task 0165 true W=3 array preclipping is next.
+contract.
+Task 0165 implements true W=3 array preclipping. FILL XY computes its
+effective destination intersection before issuing traffic; B,XY/L,XY/XY,XY
+apply identical left/top pixel offsets to source and destination and then
+traverse only the effective rectangle in the selected direction. Clipped
+pixels generate no source read, destination read, MTR, RTM, or write, and
+full exclusion is memory-quiescent. Exact original-array completion context,
+V-only status, PBH/PBV, PPOP/PMASK, arbitrary waits, and SRT tagging are
+locked by a request-by-request reference model. Task 0166 checkpointable
+FILL/PIXBLT execution is next.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -199,7 +208,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 150 self-checking SystemVerilog testbenches, including non-integer-clock
+- 151 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.

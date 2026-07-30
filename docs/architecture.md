@@ -598,6 +598,21 @@ XY-destination PIXBLTs select its left/right and top/bottom corner from the
 latched PBH/PBV direction. Both paths remain memory-quiescent, and only the
 first result state writes V and may set WVP.
 
+Task 0165 reuses that inclusive geometry for true W=3 preclipping in
+`CORE_FILL_SETUP_WIN` and `CORE_PBLT_SETUP_WIN`, before a pixel request can
+be presented. FILL replaces its private raw corner, linear row base, and
+dimensions with the intersection. PIXBLT applies the same clipped left/top
+pixel offsets to both arrays—one bit per binary-source pixel, PSIZE otherwise,
+and CONVSP/CONVDP for rows—then applies PBH/PBV to the effective rectangle.
+The pixel loop therefore cannot name a clipped source or destination address.
+A reversed WSTART/WEND axis is rejected as the empty window defined by
+§7.10.4 rather than allowing max/min subtraction to wrap.
+A separate saved result retains the original nonempty array's specified final
+context; full exclusion bypasses both loops and preserves supplied address
+registers while publishing only V=1. PPOP, transparency, PMASK, SRT, and held
+request behavior remain downstream of the preclip boundary and operate only
+on surviving pixels.
+
 ## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control

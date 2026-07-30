@@ -416,13 +416,13 @@ module tms34010_core
   // DADDR (B2), rows DPTCH (B3) bits apart. Each pixel is a PSIZE-bit field
   // write. Operands are latched at EXECUTE (DADDR/DPTCH/DYDX, read on the 3
   // ports) and CORE_FILL_SETUP (COLOR1); the pixel loop runs in CORE_FILL,
-  // one write per ack. Replace mode only (window checking is never used for
-  // FILL; PMASK/transparency/PPOP default to no-op at reset and are not yet
-  // applied). DADDR is updated to the address following the last pixel.
+  // one write per ack. FILL XY additionally implements all window modes;
+  // PPOP, transparency, and PMASK share the normal pixel merge. DADDR is
+  // updated to the address following the last pixel.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] fill_dptch_q, fill_color_q, fill_daddr_raw_q;
   logic [15:0]           fill_dx_q, fill_dy_q;
-  logic [DATA_WIDTH-1:0] fill_addr_q, fill_row_base_q;
+  logic [DATA_WIDTH-1:0] fill_addr_q, fill_row_base_q, fill_result_q;
   logic [15:0]           fill_x_q, fill_y_q;
   logic [DATA_WIDTH-1:0] fill_psize_ext;
   logic                  fill_empty, fill_row_end, fill_done;
@@ -464,13 +464,14 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] fill_pixel_mask, fill_pmask_field;
   logic [DATA_WIDTH-1:0] fill_processed, fill_merged;
   logic                  fill_transp;
-  // Window clipping (CONTROL.W = 3, FILL XY only — Task 0105). WSTART/WEND are
-  // XY (X in [15:0], Y in [31:16]). A pixel outside the inclusive window
-  // rectangle is left unchanged (write-back of the read dest, the same skip
-  // mechanism as transparency). W=1/W=2 implement hit/miss detection and WV.
+  // Window handling (FILL XY only). WSTART/WEND are inclusive XY corners.
+  // W=3 replaces the working geometry with the intersection before the first
+  // request; the per-pixel predicate remains as a defensive backstop. W=1/W=2
+  // implement hit/miss detection and WV.
   logic [DATA_WIDTH-1:0] fill_wstart_q, fill_wend_q;
-  logic                  fill_win_en_q;    // W=3 clipping active for this FILL
+  logic                  fill_win_en_q;    // W=3 preclipping active for this FILL
   logic                  fill_w2_q;        // W=2 (miss detection) active for this FILL
+  logic                  fill_preclip_changed_q, fill_w3_empty_q;
   logic [15:0]           fill_px, fill_py; // current pixel absolute XY
   logic                  fill_in_window, fill_clip_out;
   assign fill_px = fill_daddr_raw_q[15:0]            + fill_x_q;
@@ -483,7 +484,7 @@ module tms34010_core
   // within the window. Containment is a single rectangle test on the array's
   // corners, evaluated combinationally at CORE_FILL_SETUP_WIN from the live
   // WSTART(port1)/WEND(port2) reads (X=[15:0], Y=[31:16]).
-  logic                  fill_array_inside, fill_array_inside_latched;
+  logic                  fill_array_inside;
   logic [15:0]           fill_arr_x0, fill_arr_y0, fill_arr_x1, fill_arr_y1;
   assign fill_arr_x0 = fill_daddr_raw_q[15:0];
   assign fill_arr_y0 = fill_daddr_raw_q[DATA_WIDTH-1:16];
@@ -495,10 +496,50 @@ module tms34010_core
      &&
         (fill_arr_x0 >= rf_rs1_data[15:0]) && (fill_arr_x1 <= rf_rs2_data[15:0])
      && (fill_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (fill_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
-  assign fill_array_inside_latched = !fill_empty
-     &&
-        (fill_arr_x0 >= fill_wstart_q[15:0]) && (fill_arr_x1 <= fill_wend_q[15:0])
-     && (fill_arr_y0 >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_arr_y1 <= fill_wend_q[DATA_WIDTH-1:16]);
+  // W=3 preclipping is calculated from the live window read in
+  // CORE_FILL_SETUP_WIN, before the first pixel request. The working start
+  // becomes the top-left intersection and the working dimensions shrink to
+  // the intersection. DADDR's architectural completion value is kept
+  // separately from these internal working operands.
+  logic                  fill_clip_hit;
+  logic [15:0]           fill_clip_x0, fill_clip_y0;
+  logic [15:0]           fill_clip_x1, fill_clip_y1;
+  logic [15:0]           fill_clip_dx, fill_clip_dy;
+  logic [15:0]           fill_clip_left, fill_clip_top;
+  logic [DATA_WIDTH-1:0] fill_clip_left_bits, fill_clip_top_bits;
+  logic [DATA_WIDTH-1:0] fill_clip_start, fill_original_result;
+  assign fill_clip_hit = !fill_empty
+      && (rf_rs1_data[15:0] <= rf_rs2_data[15:0])
+      && (rf_rs1_data[DATA_WIDTH-1:16]
+          <= rf_rs2_data[DATA_WIDTH-1:16])
+      && !(
+        (fill_arr_x1 < rf_rs1_data[15:0]) || (fill_arr_x0 > rf_rs2_data[15:0])
+     || (fill_arr_y1 < rf_rs1_data[DATA_WIDTH-1:16])
+     || (fill_arr_y0 > rf_rs2_data[DATA_WIDTH-1:16]));
+  assign fill_clip_x0 = (fill_arr_x0 > rf_rs1_data[15:0])
+                      ? fill_arr_x0 : rf_rs1_data[15:0];
+  assign fill_clip_y0 = (fill_arr_y0 > rf_rs1_data[DATA_WIDTH-1:16])
+                      ? fill_arr_y0 : rf_rs1_data[DATA_WIDTH-1:16];
+  assign fill_clip_x1 = (fill_arr_x1 < rf_rs2_data[15:0])
+                      ? fill_arr_x1 : rf_rs2_data[15:0];
+  assign fill_clip_y1 = (fill_arr_y1 < rf_rs2_data[DATA_WIDTH-1:16])
+                      ? fill_arr_y1 : rf_rs2_data[DATA_WIDTH-1:16];
+  assign fill_clip_dx = fill_clip_hit
+                      ? fill_clip_x1 - fill_clip_x0 + 16'd1 : 16'd0;
+  assign fill_clip_dy = fill_clip_hit
+                      ? fill_clip_y1 - fill_clip_y0 + 16'd1 : 16'd0;
+  assign fill_clip_left = fill_clip_hit
+                        ? fill_clip_x0 - fill_arr_x0 : 16'd0;
+  assign fill_clip_top = fill_clip_hit
+                       ? fill_clip_y0 - fill_arr_y0 : 16'd0;
+  assign fill_clip_left_bits = {{16{1'b0}}, fill_clip_left} << pix_xy_xsh;
+  assign fill_clip_top_bits =
+      {{16{1'b0}}, fill_clip_top} << (5'd31 - io_convdp[4:0]);
+  assign fill_clip_start = fill_addr_q
+                         + fill_clip_left_bits + fill_clip_top_bits;
+  assign fill_original_result = fill_addr_q
+      + ({{16{1'b0}}, fill_dy_q - 16'd1} << (5'd31 - io_convdp[4:0]))
+      + ({{16{1'b0}}, fill_dx_q} << pix_xy_xsh);
   // W=1 (hit detection/common rectangle): no pixels are drawn. The array
   // "hits" the window if it overlaps at all; computed from the LATCHED
   // WSTART/WEND (valid after CORE_FILL_SETUP_WIN). Inclusive corners. On a
@@ -507,7 +548,11 @@ module tms34010_core
   logic [15:0] fill_common_x0, fill_common_y0;
   logic [15:0] fill_common_x1, fill_common_y1;
   logic [DATA_WIDTH-1:0] fill_common_daddr, fill_common_dydx;
-  assign fill_array_hit = !fill_empty && !(
+  assign fill_array_hit = !fill_empty
+      && (fill_wstart_q[15:0] <= fill_wend_q[15:0])
+      && (fill_wstart_q[DATA_WIDTH-1:16]
+          <= fill_wend_q[DATA_WIDTH-1:16])
+      && !(
         (fill_arr_x1 < fill_wstart_q[15:0]) || (fill_arr_x0 > fill_wend_q[15:0])
      || (fill_arr_y1 < fill_wstart_q[DATA_WIDTH-1:16]) || (fill_arr_y0 > fill_wend_q[DATA_WIDTH-1:16]));
   assign fill_common_x0 = (fill_arr_x0 > fill_wstart_q[15:0])
@@ -548,9 +593,9 @@ module tms34010_core
                             || ((state_q == CORE_FILL_WIN_HIT) && !fill_array_hit)
                             || ((state_q == CORE_PBLT_WIN_HIT) && !pblt_array_hit)
                             || ((state_q == CORE_FILL_WB) && fill_win_en_q
-                                && !fill_array_inside_latched)
+                                && fill_preclip_changed_q)
                             || ((state_q == CORE_PBLT_WB2) && pblt_win_en_q
-                                && !pblt_array_inside_latched)
+                                && pblt_preclip_changed_q)
                             || (drav_win_wb && !drav_inside_q)
                             || (line_win_wb && !line_last_inside_q)
                             || (pixt_win_wb && !pixt_inside_q);
@@ -594,6 +639,7 @@ module tms34010_core
       fill_dy_q        <= '0;
       fill_addr_q      <= '0;
       fill_row_base_q  <= '0;
+      fill_result_q    <= '0;
       fill_x_q         <= '0;
       fill_y_q         <= '0;
       fill_substep_q   <= 1'b0;
@@ -604,6 +650,8 @@ module tms34010_core
       fill_win_en_q    <= 1'b0;
       fill_w2_q        <= 1'b0;
       fill_w1_q        <= 1'b0;
+      fill_preclip_changed_q <= 1'b0;
+      fill_w3_empty_q  <= 1'b0;
     end else begin
       // EXECUTE: latch DADDR(port1)/DPTCH(port2)/DYDX(port3) for FILL. The
       // start address (possibly XY-converted) is finalized at SETUP. Window
@@ -621,14 +669,26 @@ module tms34010_core
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
         fill_w1_q        <= fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
-        fill_dest_read_q <= pixel_dest_read_required
-                         || (fill_is_xy
-                             && (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3));
+        fill_dest_read_q <= pixel_dest_read_required;
+        fill_preclip_changed_q <= 1'b0;
+        fill_w3_empty_q  <= 1'b0;
       end
       // CORE_FILL_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_FILL_SETUP_WIN) begin
         fill_wstart_q <= rf_rs1_data;
         fill_wend_q   <= rf_rs2_data;
+        if (fill_win_en_q) begin
+          fill_preclip_changed_q <= !fill_array_inside;
+          fill_w3_empty_q        <= !fill_clip_hit;
+          if (fill_clip_hit) begin
+            fill_daddr_raw_q <= {fill_clip_y0, fill_clip_x0};
+            fill_dx_q        <= fill_clip_dx;
+            fill_dy_q        <= fill_clip_dy;
+            fill_addr_q      <= fill_clip_start;
+            fill_row_base_q  <= fill_clip_start;
+          end
+          fill_result_q <= fill_original_result;
+        end
       end
       // CORE_FILL_SETUP: latch COLOR1 (port1) and the linear start address
       // (port3 = OFFSET for the XY conversion); start at the read sub-step.
@@ -636,6 +696,7 @@ module tms34010_core
         fill_color_q    <= rf_rs1_data;        // COLOR1
         fill_addr_q     <= fill_start;
         fill_row_base_q <= fill_start;
+        fill_result_q   <= fill_start;
         fill_substep_q  <= !fill_dest_read_q;
       end
       // CORE_FILL: direct replace writes start/stay at sub-step 1; all other
@@ -676,8 +737,9 @@ module tms34010_core
   // reads its destination when processing requires it, then writes; both
   // pointers advance by PSIZE per pixel and row-step by their pitch.
   // SADDR/DADDR are updated to the first pixels of the hypothetical next rows
-  // (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2). Direction/corner adjustment is
-  // added separately; this engine currently walks top-left to bottom-right.
+  // (CORE_PBLT_WB → B0, CORE_PBLT_WB2 → B2). Internal traversal and
+  // architectural completion pointers are separate so PBH/PBV and W=3
+  // preclipping do not perturb final context.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] pblt_sptch_q, pblt_dptch_q;
   logic [15:0]           pblt_dx_q, pblt_dy_q;
@@ -713,14 +775,13 @@ module tms34010_core
   assign pblt_processed   = ppop_apply(pblt_src_eff, pblt_dst_pix_q,
                                        io_control[CTRL_PPOP_HI:CTRL_PPOP_LO], pblt_pixel_mask);
   assign pblt_transp      = io_control[CTRL_T_BIT] && ((pblt_processed & pblt_pixel_mask) == '0);
-  // Window clipping (CONTROL.W=3, PIXBLT with XY dest — Task 0106). The raw XY
-  // DADDR is preserved (pblt_dst_xy_raw_q) because pblt_dst_addr_q is converted
-  // to linear at SETUP; each pixel's absolute XY = (rawX+col, rawY+row) is
-  // tested against the inclusive [WSTART..WEND] rectangle and out-of-window
-  // pixels are left unchanged (same skip path as transparency).
+  // Window handling for PIXBLTs with an XY destination. W=3 preclips both
+  // arrays before traffic; the raw/effective XY destination remains available
+  // for W=1/W=2 geometry and as a defensive in-window check in the pixel loop.
   logic [DATA_WIDTH-1:0] pblt_dst_xy_raw_q, pblt_wstart_q, pblt_wend_q;
-  logic                  pblt_win_en_q;    // W=3 per-pixel clip active
+  logic                  pblt_win_en_q;    // W=3 array preclip active
   logic                  pblt_w2_q;        // W=2 (miss detection) active
+  logic                  pblt_preclip_changed_q, pblt_w3_empty_q;
   logic [15:0]           pblt_px, pblt_py;
   logic [15:0]           pblt_col_index, pblt_row_index;
   logic                  pblt_in_window, pblt_clip_out;
@@ -739,7 +800,7 @@ module tms34010_core
   // W=2 (miss detection): array containment test on the dest corners, evaluated
   // combinationally at CORE_PBLT_SETUP_WIN from the live WSTART(port1)/WEND
   // (port2) reads (mirrors the FILL W=2 path).
-  logic        pblt_array_inside, pblt_array_inside_latched;
+  logic        pblt_array_inside;
   logic [15:0] pblt_arr_x0, pblt_arr_y0, pblt_arr_x1, pblt_arr_y1;
   assign pblt_arr_x0 = pblt_dst_xy_raw_q[15:0];
   assign pblt_arr_y0 = pblt_dst_xy_raw_q[DATA_WIDTH-1:16];
@@ -751,10 +812,82 @@ module tms34010_core
      &&
         (pblt_arr_x0 >= rf_rs1_data[15:0]) && (pblt_arr_x1 <= rf_rs2_data[15:0])
      && (pblt_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
-  assign pblt_array_inside_latched = !pblt_empty
-     &&
-        (pblt_arr_x0 >= pblt_wstart_q[15:0]) && (pblt_arr_x1 <= pblt_wend_q[15:0])
-     && (pblt_arr_y0 >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= pblt_wend_q[DATA_WIDTH-1:16]);
+  // W=3 effective geometry, evaluated from the live window operands in
+  // CORE_PBLT_SETUP_WIN. Source and destination receive identical pixel
+  // offsets, then the effective rectangle receives normal PBH/PBV corner
+  // adjustment. Result pointers remain tied to the original array context.
+  logic                  pblt_clip_hit;
+  logic [15:0]           pblt_clip_x0, pblt_clip_y0;
+  logic [15:0]           pblt_clip_x1, pblt_clip_y1;
+  logic [15:0]           pblt_clip_dx, pblt_clip_dy;
+  logic [15:0]           pblt_clip_left, pblt_clip_top;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_left_bits, pblt_clip_dst_left_bits;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_top_bits, pblt_clip_dst_top_bits;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_default, pblt_clip_dst_default;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_h_adjust, pblt_clip_dst_h_adjust;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_v_adjust, pblt_clip_dst_v_adjust;
+  logic [DATA_WIDTH-1:0] pblt_clip_src_corner, pblt_clip_dst_corner;
+  logic [DATA_WIDTH-1:0] pblt_original_src_result, pblt_original_dst_result;
+  assign pblt_clip_hit = !pblt_empty
+      && (rf_rs1_data[15:0] <= rf_rs2_data[15:0])
+      && (rf_rs1_data[DATA_WIDTH-1:16]
+          <= rf_rs2_data[DATA_WIDTH-1:16])
+      && !(
+        (pblt_arr_x1 < rf_rs1_data[15:0]) || (pblt_arr_x0 > rf_rs2_data[15:0])
+     || (pblt_arr_y1 < rf_rs1_data[DATA_WIDTH-1:16])
+     || (pblt_arr_y0 > rf_rs2_data[DATA_WIDTH-1:16]));
+  assign pblt_clip_x0 = (pblt_arr_x0 > rf_rs1_data[15:0])
+                      ? pblt_arr_x0 : rf_rs1_data[15:0];
+  assign pblt_clip_y0 = (pblt_arr_y0 > rf_rs1_data[DATA_WIDTH-1:16])
+                      ? pblt_arr_y0 : rf_rs1_data[DATA_WIDTH-1:16];
+  assign pblt_clip_x1 = (pblt_arr_x1 < rf_rs2_data[15:0])
+                      ? pblt_arr_x1 : rf_rs2_data[15:0];
+  assign pblt_clip_y1 = (pblt_arr_y1 < rf_rs2_data[DATA_WIDTH-1:16])
+                      ? pblt_arr_y1 : rf_rs2_data[DATA_WIDTH-1:16];
+  assign pblt_clip_dx = pblt_clip_hit
+                      ? pblt_clip_x1 - pblt_clip_x0 + 16'd1 : 16'd0;
+  assign pblt_clip_dy = pblt_clip_hit
+                      ? pblt_clip_y1 - pblt_clip_y0 + 16'd1 : 16'd0;
+  assign pblt_clip_left = pblt_clip_hit
+                        ? pblt_clip_x0 - pblt_arr_x0 : 16'd0;
+  assign pblt_clip_top = pblt_clip_hit
+                       ? pblt_clip_y0 - pblt_arr_y0 : 16'd0;
+  assign pblt_clip_src_left_bits =
+      {{16{1'b0}}, pblt_clip_left}
+      << (decoded.blt_binary ? 5'd0 : pix_xy_xsh);
+  assign pblt_clip_dst_left_bits =
+      {{16{1'b0}}, pblt_clip_left} << pix_xy_xsh;
+  assign pblt_clip_src_top_bits =
+      {{16{1'b0}}, pblt_clip_top} << (5'd31 - io_convsp[4:0]);
+  assign pblt_clip_dst_top_bits =
+      {{16{1'b0}}, pblt_clip_top} << (5'd31 - io_convdp[4:0]);
+  assign pblt_clip_src_default = pblt_src_result_q
+                                + pblt_clip_src_left_bits
+                                + pblt_clip_src_top_bits;
+  assign pblt_clip_dst_default = pblt_dst_result_q
+                                + pblt_clip_dst_left_bits
+                                + pblt_clip_dst_top_bits;
+  assign pblt_clip_src_h_adjust =
+      {{16{1'b0}}, pblt_clip_dx}
+      << (decoded.blt_binary ? 5'd0 : pix_xy_xsh);
+  assign pblt_clip_dst_h_adjust =
+      {{16{1'b0}}, pblt_clip_dx} << pix_xy_xsh;
+  assign pblt_clip_src_v_adjust =
+      {{16{1'b0}}, (pblt_clip_hit ? pblt_clip_dy - 16'd1 : 16'd0)}
+      << (5'd31 - io_convsp[4:0]);
+  assign pblt_clip_dst_v_adjust =
+      {{16{1'b0}}, (pblt_clip_hit ? pblt_clip_dy - 16'd1 : 16'd0)}
+      << (5'd31 - io_convdp[4:0]);
+  assign pblt_clip_src_corner = pblt_clip_src_default
+      + (pblt_hrev_q ? pblt_clip_src_h_adjust : 32'd0)
+      + (pblt_vrev_q ? pblt_clip_src_v_adjust : 32'd0);
+  assign pblt_clip_dst_corner = pblt_clip_dst_default
+      + (pblt_hrev_q ? pblt_clip_dst_h_adjust : 32'd0)
+      + (pblt_vrev_q ? pblt_clip_dst_v_adjust : 32'd0);
+  assign pblt_original_src_result = pblt_src_result_q
+      + ({{16{1'b0}}, pblt_dy_q} << (5'd31 - io_convsp[4:0]));
+  assign pblt_original_dst_result = pblt_dst_result_q
+      + ({{16{1'b0}}, pblt_dy_q} << (5'd31 - io_convdp[4:0]));
   // W=1 (hit detection/common rectangle): never draws; overlap and intersection
   // use the geometric top-left destination rectangle independently of PBH/PBV.
   // The returned DADDR then identifies the selected traversal corner for
@@ -763,7 +896,11 @@ module tms34010_core
   logic [15:0] pblt_common_x0, pblt_common_y0;
   logic [15:0] pblt_common_x1, pblt_common_y1;
   logic [DATA_WIDTH-1:0] pblt_common_daddr, pblt_common_dydx;
-  assign pblt_array_hit = !pblt_empty && !(
+  assign pblt_array_hit = !pblt_empty
+      && (pblt_wstart_q[15:0] <= pblt_wend_q[15:0])
+      && (pblt_wstart_q[DATA_WIDTH-1:16]
+          <= pblt_wend_q[DATA_WIDTH-1:16])
+      && !(
         (pblt_arr_x1 < pblt_wstart_q[15:0]) || (pblt_arr_x0 > pblt_wend_q[15:0])
      || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16]) || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
   assign pblt_common_x0 = (pblt_arr_x0 > pblt_wstart_q[15:0])
@@ -870,6 +1007,8 @@ module tms34010_core
       pblt_win_en_q   <= 1'b0;
       pblt_w2_q       <= 1'b0;
       pblt_w1_q       <= 1'b0;
+      pblt_preclip_changed_q <= 1'b0;
+      pblt_w3_empty_q <= 1'b0;
     end else begin
       // EXECUTE: latch SADDR(port1) / DADDR(port2) / DYDX(port3). Window
       // clipping engages only for an XY destination with CONTROL.W=3; keep the
@@ -897,14 +1036,29 @@ module tms34010_core
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
         pblt_w1_q       <= decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
-        pblt_dest_read_q <= pixel_dest_read_required
-                         || (decoded.blt_dst_xy
-                             && (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3));
+        pblt_dest_read_q <= pixel_dest_read_required;
+        pblt_preclip_changed_q <= 1'b0;
+        pblt_w3_empty_q <= 1'b0;
       end
       // CORE_PBLT_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_PBLT_SETUP_WIN) begin
         pblt_wstart_q <= rf_rs1_data;
         pblt_wend_q   <= rf_rs2_data;
+        if (pblt_win_en_q) begin
+          pblt_preclip_changed_q <= !pblt_array_inside;
+          pblt_w3_empty_q        <= !pblt_clip_hit;
+          if (pblt_clip_hit) begin
+            pblt_dst_xy_raw_q <= {pblt_clip_y0, pblt_clip_x0};
+            pblt_dx_q         <= pblt_clip_dx;
+            pblt_dy_q         <= pblt_clip_dy;
+            pblt_src_addr_q   <= pblt_clip_src_corner;
+            pblt_src_row_q    <= pblt_clip_src_corner;
+            pblt_dst_addr_q   <= pblt_clip_dst_corner;
+            pblt_dst_row_q    <= pblt_clip_dst_corner;
+          end
+          pblt_src_result_q <= pblt_original_src_result;
+          pblt_dst_result_q <= pblt_original_dst_result;
+        end
       end
       // CORE_PBLT_SETUP: latch SPTCH(port1) / DPTCH(port2); for the XY variants
       // convert the XY SADDR/DADDR to linear (port3 = OFFSET here).
@@ -946,8 +1100,10 @@ module tms34010_core
             pblt_dst_row_q    <= pblt_dst_row_q + pblt_dst_row_step;
             pblt_src_addr_q   <= pblt_src_row_q + pblt_src_row_step;
             pblt_dst_addr_q   <= pblt_dst_row_q + pblt_dst_row_step;
-            pblt_src_result_q <= pblt_src_result_q + pblt_sptch_q;
-            pblt_dst_result_q <= pblt_dst_result_q + pblt_dptch_q;
+            if (!pblt_win_en_q) begin
+              pblt_src_result_q <= pblt_src_result_q + pblt_sptch_q;
+              pblt_dst_result_q <= pblt_dst_result_q + pblt_dptch_q;
+            end
             if (!pblt_done) begin
               pblt_y_q <= pblt_y_q + 16'd1;
               pblt_x_q <= 16'd0;
@@ -1728,9 +1884,9 @@ module tms34010_core
   logic fill_w1_daddr_wb, fill_w1_dydx_wb;
   logic pblt_w1_daddr_wb, pblt_w1_dydx_wb;
   logic common_daddr_wb, common_dydx_wb, graphics_wb;
-  assign fill_wb       = (state_q == CORE_FILL_WB);
+  assign fill_wb       = (state_q == CORE_FILL_WB) && !fill_w3_empty_q;
   assign pblt_wb_saddr = (state_q == CORE_PBLT_WB);
-  assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2);
+  assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2) && !pblt_w3_empty_q;
   assign fill_w1_daddr_wb = (state_q == CORE_FILL_WIN_HIT) && fill_array_hit;
   assign fill_w1_dydx_wb  = (state_q == CORE_FILL_W1_DYDX);
   assign pblt_w1_daddr_wb = (state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit;
@@ -2221,7 +2377,8 @@ module tms34010_core
       INSTR_MOVE_ABS_LOAD,
       INSTR_MOVE_OFF_LOAD:  rf_wr_data = mv_load_data;
       INSTR_FILL_L,
-      INSTR_FILL_XY: rf_wr_data = fill_addr_q;  // final (linear) DADDR -> B2 (CORE_FILL_WB)
+      INSTR_FILL_XY: rf_wr_data = fill_win_en_q ? fill_result_q
+                                               : fill_addr_q;  // final linear DADDR -> B2
       INSTR_PIXBLT_LL: rf_wr_data = pblt_wb_saddr ? pblt_src_result_q   // SADDR -> B0
                                                   : pblt_dst_result_q;  // DADDR -> B2
       INSTR_LINE:    rf_wr_data = line_wb_d     ? line_d_q      // d -> B0
@@ -3124,12 +3281,12 @@ module tms34010_core
       end
 
       CORE_FILL_SETUP_WIN: begin
-        // Latch WSTART(B5)/WEND(B6). W=3 proceeds to the (per-pixel-clipped)
-        // fill. W=2 (miss detection) checks array containment now: draw only if
-        // the whole array is inside, else skip to CORE_FILL_WIN_MISS (no draw).
-        // W=1 (hit detection) never draws — go straight to CORE_FILL_WIN_HIT.
+        // Latch WSTART(B5)/WEND(B6). W=3 preclips the working rectangle now,
+        // before any pixel request; a fully excluded rectangle goes to the
+        // status-only WB cycle. W=2 checks containment. W=1 never draws.
         state_d = fill_w1_q                          ? CORE_FILL_WIN_HIT
                 : (fill_w2_q && !fill_array_inside)  ? CORE_FILL_WIN_MISS
+                : (fill_win_en_q && !fill_clip_hit)  ? CORE_FILL_WB
                                                      : CORE_FILL;
       end
 
@@ -3263,12 +3420,12 @@ module tms34010_core
       end
 
       CORE_PBLT_SETUP_WIN: begin
-        // Latch WSTART(B5)/WEND(B6). W=3 proceeds to the per-pixel-clipped blt;
-        // W=2 (miss detection) checks array containment now — draw only if the
-        // whole array is inside, else skip to CORE_PBLT_WIN_MISS (no draw).
-        // W=1 (hit detection) never draws — go straight to CORE_PBLT_WIN_HIT.
+        // Latch WSTART(B5)/WEND(B6). W=3 preclips both working arrays before
+        // any request; a fully excluded rectangle goes to status-only WB2.
+        // W=2 checks containment. W=1 never draws.
         state_d = pblt_w1_q                         ? CORE_PBLT_WIN_HIT
                 : (pblt_w2_q && !pblt_array_inside) ? CORE_PBLT_WIN_MISS
+                : (pblt_win_en_q && !pblt_clip_hit) ? CORE_PBLT_WB2
                                                     : CORE_PBLT;
       end
 

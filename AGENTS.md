@@ -140,7 +140,15 @@ XY-destination PIXBLTs: hit geometry writes DADDR/DYDX without pixel traffic,
 directional full-color forms encode the selected common corner, binary/FILL
 use the lowest-address corner, and V/WVP retain their specified meanings.
 `tb_window_common_rect` covers every geometry class, form, and direction under
-stalls. Task 0165 true W=3 array preclipping is next. The optional instruction
+stalls. Task 0165 implements true W=3 preclipping before the first request:
+FILL intersects its destination geometry, while B,XY/L,XY/XY,XY offset source
+and destination consistently and traverse only the effective rectangle.
+`tb_window_preclip` compares exact read/write/SRT request sequences and
+framebuffer correspondence across every edge/corner, all PBH/PBV directions,
+PSIZE 1/2/4/8/16, independent legal pitches, PPOP/PMASK reads, full exclusion,
+and injected waits. It also locks original-array completion context, V-only
+status, no WVP, and binary direction isolation. Task 0166 checkpointable
+FILL/PIXBLT execution is next. The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
 outside this functional GPU gate.

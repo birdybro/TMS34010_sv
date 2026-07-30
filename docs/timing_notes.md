@@ -185,6 +185,18 @@
   single B-register port. A miss returns directly to fetch. Interrupt
   recognition remains at the subsequent fetch boundary, after both hit-result
   writes have retired.
+- **W=3 array-preclip sequencing** — the same inclusive intersection is
+  evaluated in `CORE_FILL_SETUP_WIN`/`CORE_PBLT_SETUP_WIN`, before the first
+  pixel request. The following edge atomically installs effective dimensions,
+  row bases, and traversal corners. PIXBLT offsets source and destination by
+  the same removed columns/rows before PBH/PBV selection; binary source X
+  offsets are one bit and full-color offsets are PSIZE. A disjoint rectangle
+  or reversed-axis empty window advances directly to status-only completion,
+  so no source/destination field
+  request or SRT-tagged MTR/RTM command exists to enter the fabric. Surviving
+  read, optional destination-read, and write requests retain the ordinary
+  acknowledge-only advancement and held-payload rules. Separate saved result
+  pointers publish original-array terminal context after the effective loop.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

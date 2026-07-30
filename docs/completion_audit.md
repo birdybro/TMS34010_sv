@@ -300,9 +300,9 @@ from the signed-off baseline must be documented as deliberate boundaries.
 ## Production-revision GPU completion gaps
 
 Task 0161 found concrete functional gaps beyond the Task 0160 baseline:
-W=3 suppresses individual writes instead of truly preclipping the arrays, and
-FILL, PIXBLT, and LINE do not implement their architectural mid-instruction
-interrupt/resume contracts.
+FILL, PIXBLT, and LINE lacked their architectural mid-instruction
+interrupt/resume contracts, and the now-closed early tasks included
+empty-array/context, direction, and W=1/W=3 geometry defects.
 The existing tests also lack a complete graphics/display conformance matrix,
 pinned MAME differential coverage, and TI-shipped graphics workloads.
 
@@ -329,7 +329,17 @@ binary forms use the lowest-address corner. The 26-case
 classes, exact V/WVP and B-register results, empty arrays, stalls, and
 memory quiescence.
 
-Tasks 0165–0171 close the remaining functional and pin-integration items, Tasks
+Task 0165 closed true W=3 preclipping. FILL XY and PIXBLT
+B,XY/L,XY/XY,XY now replace private working geometry before the first
+transfer; PIXBLT advances both arrays by identical excluded pixel offsets
+before applying direction. Clipped and fully excluded pixels cannot issue
+source, destination, MTR, RTM, or write traffic, while original-array final
+context and V-only/no-WVP behavior remain intact. The 23-case
+`tb_window_preclip` reference model checks exact request sequences,
+framebuffer alignment, every form/direction/edge, all pixel sizes, legal
+pitches, PPOP/PMASK destination reads, SRT, and arbitrary waits.
+
+Tasks 0166–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

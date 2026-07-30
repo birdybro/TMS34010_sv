@@ -118,10 +118,10 @@ module tb_pixblt_window;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));
     p = place_movi_il  (p, 4'd0, 32'h0000_0008);
     p = place_store_abs(p, 4'd0, A_PSIZE);               // PSIZE=8
-    p = place_movi_il  (p, 4'd0, 32'h0000_001B);
-    p = place_store_abs(p, 4'd0, A_CONVSP);              // CONVSP=0x1B
-    p = place_movi_il  (p, 4'd0, 32'h0000_001B);
-    p = place_store_abs(p, 4'd0, A_CONVDP);              // CONVDP=0x1B
+    p = place_movi_il  (p, 4'd0, 32'h0000_0018);
+    p = place_store_abs(p, 4'd0, A_CONVSP);              // CONVSP=~log2(0x80)
+    p = place_movi_il  (p, 4'd0, 32'h0000_0018);
+    p = place_store_abs(p, 4'd0, A_CONVDP);              // CONVDP=~log2(0x80)
     p = place_movi_il  (p, 4'd0, {16'h0, CTRL_W3});
     p = place_store_abs(p, 4'd0, A_CONTROL);             // CONTROL.W=3
     p = place_movi_il_b(p, 4'd0, 32'h0000_0000);         // SADDR XY (0,0)
