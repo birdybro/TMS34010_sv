@@ -213,7 +213,7 @@ module tb_jacc;
     u_mem.mem[84] = 16'd7;
     u_mem.mem[85] = 16'd0;
     u_mem.mem[86] = cmpi_iw_enc(REG_FILE_A, 4'd0);
-    u_mem.mem[87] = 16'sd7;        // CMPI A0, 7 → Z=1
+    u_mem.mem[87] = ~16'sd7;       // complemented CMPI extension for 7
     u_mem.mem[88] = jacc_op_enc(CC_EQ);
     u_mem.mem[89] = target2_bits[15:0];
     u_mem.mem[90] = target2_bits[31:16];
@@ -227,7 +227,7 @@ module tb_jacc;
     // We already set A0=7 in scen 2, so just CMPI A0, 7 → Z=1.
     // JANE with Z=1 should NOT take → fall-through writes A3 ← FALL_VAL.
     u_mem.mem[103] = cmpi_iw_enc(REG_FILE_A, 4'd0);
-    u_mem.mem[104] = 16'sd7;        // CMPI A0, 7 → Z=1
+    u_mem.mem[104] = ~16'sd7;       // complemented CMPI extension for 7
     u_mem.mem[105] = jacc_op_enc(CC_NE);
     u_mem.mem[106] = 32'd200 * 32'd16;          // bogus target (shouldn't be reached)
     u_mem.mem[107] = (32'd200 * 32'd16) >> 16;

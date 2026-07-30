@@ -378,7 +378,9 @@ module tms34010_core
         || (decoded.iclass == INSTR_MOVE_OFF_M2M_PI)
         || (decoded.iclass == INSTR_MOVE_ABS_M2M_PI)
         || (decoded.iclass == INSTR_MOVB_OFF_M2M)
-        || (decoded.iclass == INSTR_MOVB_ABS_M2M))
+        || (decoded.iclass == INSTR_MOVB_ABS_M2M)
+        || (decoded.iclass == INSTR_MOVE_OFF_M2M)
+        || (decoded.iclass == INSTR_MOVE_ABS_M2M))
        && mem_op_step == 2'd0) begin
         move_data_q <= mem_rdata_eff;
       end
@@ -418,7 +420,9 @@ module tms34010_core
         INSTR_MOVE_OFF_M2M_PI,
         INSTR_MOVE_ABS_M2M_PI,
         INSTR_MOVB_OFF_M2M,
-        INSTR_MOVB_ABS_M2M:
+        INSTR_MOVB_ABS_M2M,
+        INSTR_MOVE_OFF_M2M,
+        INSTR_MOVE_ABS_M2M:
                     mem_op_step <=
                         (mem_op_step
                          == (pixt_m2m_rmw ? 2'd2 : 2'd1))
@@ -1518,10 +1522,15 @@ module tms34010_core
   //   is cleared after each mem_ack.
   //   mm_rp_q (32-bit) is the working stack pointer / current transaction
   //   address.
-  //   mm_iter_idx is the priority-encoded current bit:
-  //     - MMTM: LOWEST set bit  (lowest-order register saved first).
-  //     - MMFM: HIGHEST set bit (highest-order register restored first).
-  //   It indexes both the register file and the bit to clear after ack.
+  //   mm_mask_idx is the priority-encoded current mask bit and mm_iter_idx
+  //   is the corresponding register. The two architected list encodings are
+  //   intentionally asymmetric:
+  //     - MMTM: mask[15-N] selects Rn. A highest mask-bit scan therefore
+  //       saves the lowest-order selected register first.
+  //     - MMFM: mask[N] selects Rn. The same highest mask-bit scan restores
+  //       the highest-order selected register first.
+  //   TI's assembler confirms both layouts: MMTM A2-A6,A10-A14 emits 0x3E3E,
+  //   while MMFM A4,A8-A13 emits 0x3F10.
   //
   // Address sequencing (predecrement vs postincrement, per SPVU001A
   // pages 12-111 / 12-109):
@@ -1534,14 +1543,13 @@ module tms34010_core
   //     final value (= initial + 32*count) points one word past the data,
   //     written back as the new Rp.
   //
-  // Assumption A0026: bit N of the mask = register R(N) for both
-  // instructions. The spec's chart was a graphical figure unrecoverable
-  // from pdftotext; the MMTM→MMFM round-trip test is the real check, and
-  // it only depends on MMTM/MMFM agreeing on the mapping, not its
-  // absolute value.
+  // The focused tests use both the User's Guide worked example and exact
+  // masks emitted by TI's original assembler, so a self-consistent but
+  // reversed push/pop implementation cannot pass.
   // ---------------------------------------------------------------------------
   logic [DATA_WIDTH-1:0] mm_rp_q;
   logic [15:0]           mm_mask_q;
+  logic [3:0]            mm_mask_idx;
   logic [3:0]            mm_iter_idx;
   logic                  mm_mask_will_be_empty;
   logic                  is_mmtm, is_mmfm, is_mm;
@@ -1551,25 +1559,19 @@ module tms34010_core
   assign is_mm   = is_mmtm || is_mmfm;
 
   always_comb begin
-    mm_iter_idx = 4'd0;
-    if (is_mmfm) begin
-      // MMFM: highest set bit. Iterate low→high so the LAST overwrite
-      // (the largest i with mm_mask_q[i]=1) wins.
-      for (int i = 0; i < 16; i++) begin
-        if (mm_mask_q[i]) mm_iter_idx = i[3:0];
-      end
-    end else begin
-      // MMTM: lowest set bit. Iterate high→low so the loop terminates
-      // on the smallest i with mm_mask_q[i]=1.
-      for (int i = 15; i >= 0; i--) begin
-        if (mm_mask_q[i]) mm_iter_idx = i[3:0];
-      end
+    mm_mask_idx = 4'd0;
+    // Both encodings select their architecturally first register via the
+    // highest set mask bit. Iterate low-to-high so the last match wins.
+    for (int i = 0; i < 16; i++) begin
+      if (mm_mask_q[i]) mm_mask_idx = i[3:0];
     end
+    mm_iter_idx = is_mmfm ? mm_mask_idx : (4'd15 - mm_mask_idx);
   end
   // After we clear the bit at mm_iter_idx, will the mask be empty? Gates
   // the FSM transition (last transaction → WRITEBACK) and, for MMTM,
   // suppresses the final Rp-decrement.
-  assign mm_mask_will_be_empty = ((mm_mask_q & ~(16'd1 << mm_iter_idx)) == 16'd0);
+  assign mm_mask_will_be_empty =
+      ((mm_mask_q & ~(16'd1 << mm_mask_idx)) == 16'd0);
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -1586,7 +1588,7 @@ module tms34010_core
     end else if (state_q == CORE_MEMORY
               && is_mm
               && mem_ack) begin
-      mm_mask_q[mm_iter_idx] <= 1'b0;
+      mm_mask_q[mm_mask_idx] <= 1'b0;
       if (is_mmfm) begin
         // Post-increment after every read, including the last.
         mm_rp_q <= mm_rp_q + WORD_BIT_SIZE;
@@ -2055,17 +2057,21 @@ module tms34010_core
   logic                  is_mv_m2m, is_move_off_m2m_pi;
   logic                  is_move_abs_m2m_pi, is_m2m_dst_only_pi;
   logic                  is_movb_off_m2m, is_movb_abs_m2m;
+  logic                  is_move_off_m2m, is_move_abs_m2m;
   logic                  m2m_same_reg, m2m_src_wr;
   logic [DATA_WIDTH-1:0] m2m_src_addr, m2m_dst_addr, m2m_src_new, m2m_dst_new;
   logic [DATA_WIDTH-1:0] m2m_src_offset, m2m_dst_offset;
   assign is_movb_off_m2m = (decoded.iclass == INSTR_MOVB_OFF_M2M);
   assign is_movb_abs_m2m = (decoded.iclass == INSTR_MOVB_ABS_M2M);
+  assign is_move_off_m2m = (decoded.iclass == INSTR_MOVE_OFF_M2M);
+  assign is_move_abs_m2m = (decoded.iclass == INSTR_MOVE_ABS_M2M);
   assign is_move_off_m2m_pi = (decoded.iclass == INSTR_MOVE_OFF_M2M_PI);
   assign is_move_abs_m2m_pi = (decoded.iclass == INSTR_MOVE_ABS_M2M_PI);
   assign is_m2m_dst_only_pi = is_move_off_m2m_pi || is_move_abs_m2m_pi;
   assign is_mv_m2m       = (decoded.iclass == INSTR_MOVE_FIELD_M2M)
                         || is_m2m_dst_only_pi
-                        || is_movb_off_m2m || is_movb_abs_m2m;
+                        || is_movb_off_m2m || is_movb_abs_m2m
+                        || is_move_off_m2m || is_move_abs_m2m;
   assign m2m_same_reg = (decoded.rs_idx == decoded.rd_idx);
   assign m2m_src_offset =
       {{(DATA_WIDTH-INSTR_WORD_WIDTH){imm_lo_q[INSTR_WORD_WIDTH-1]}}, imm_lo_q};
@@ -2074,14 +2080,18 @@ module tms34010_core
   // Field-size aware (Task 0079): both pointers step by ±FS, not ±32. XY PIXT
   // M2M (Task 0086): the pointers hold XY values — convert the source with
   // CONVSP (pix_xy_linear) and the destination with CONVDP (pix_xy_dst_linear).
-  assign m2m_src_addr = is_movb_abs_m2m ? {imm_hi_q, imm_lo_q}
+  assign m2m_src_addr = (is_movb_abs_m2m || is_move_abs_m2m)
+                      ? {imm_hi_q, imm_lo_q}
                       : is_move_abs_m2m_pi ? {imm_hi_q, imm_lo_q}
-                      : is_movb_off_m2m ? (rf_rs1_data + m2m_src_offset)
+                      : (is_movb_off_m2m || is_move_off_m2m)
+                      ? (rf_rs1_data + m2m_src_offset)
                       : is_move_off_m2m_pi ? (rf_rs1_data + m2m_src_offset)
                       : decoded.xy_addr ? pix_xy_linear
                       : mv_predec       ? (rf_rs1_data - mv_fs_ext) : rf_rs1_data;
-  assign m2m_dst_addr = is_movb_abs_m2m ? {imm_ext_hi_q, imm_ext_lo_q}
-                      : is_movb_off_m2m ? (rf_rs2_data + m2m_dst_offset)
+  assign m2m_dst_addr = (is_movb_abs_m2m || is_move_abs_m2m)
+                      ? {imm_ext_hi_q, imm_ext_lo_q}
+                      : (is_movb_off_m2m || is_move_off_m2m)
+                      ? (rf_rs2_data + m2m_dst_offset)
                       : decoded.xy_addr ? pix_xy_dst_linear
                       : mv_predec       ? (rf_rs2_data - mv_fs_ext) : rf_rs2_data;
   assign m2m_src_new  = mv_predec ? (rf_rs1_data - mv_fs_ext) : (rf_rs1_data + mv_fs_ext);
@@ -2725,14 +2735,17 @@ module tms34010_core
       INSTR_MOVI_IW,
       INSTR_MOVI_IL,
       INSTR_ADDI_IW,
-      INSTR_SUBI_IW,
-      INSTR_CMPI_IW,
       INSTR_ADDI_IL,
-      INSTR_SUBI_IL,
-      INSTR_CMPI_IL,
       INSTR_ANDI_IL,
       INSTR_ORI_IL,
       INSTR_XORI_IL: alu_b = imm32;
+      // SUBI and CMPI carry the one's complement of the source-level
+      // immediate. TI's assembler, disassembler, and shipped C workloads
+      // all use this object-code encoding for both IW and IL forms.
+      INSTR_SUBI_IW,
+      INSTR_SUBI_IL,
+      INSTR_CMPI_IW,
+      INSTR_CMPI_IL: alu_b = ~imm32;
       INSTR_MOVK,
       INSTR_ADDK,
       INSTR_SUBK:   alu_b = (decoded.k5 == 5'd0)
@@ -3026,6 +3039,7 @@ module tms34010_core
   // 16-bit; the core accesses them with 16-bit fields (set FS=16).
   logic                  io_is_io;
   logic [15:0]           io_rdata16;
+  logic [15:0]           io_rdata_next16;
   logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT/CVXYL)
   logic [15:0]           io_convdp;    // CONVDP register (XY->linear dest pitch)
   logic [15:0]           io_convsp;    // CONVSP register (XY->linear source pitch)
@@ -3071,7 +3085,11 @@ module tms34010_core
     .addr     (mem_addr),
     .req_addr_i(io_access_addr_q),
     .wdata    (io_write_data_q),
+    .req_next_i(io_write_next_q),
+    .req_next_addr_i(io_next_addr_q),
+    .wdata_next_i(io_write_data_next_q),
     .rdata    (io_rdata16),
+    .rdata_next(io_rdata_next16),
     .is_io    (io_is_io),
     .psize_o  (io_psize),
     .convdp_o (io_convdp),
@@ -3226,31 +3244,65 @@ module tms34010_core
   // address, and write data on the held request. Completion and WRITEBACK then
   // consume only these stable values rather than rebuilding a long live
   // core/register/I/O mux path.
-  logic [15:0] io_rdata_q;
+  logic [DATA_WIDTH-1:0] io_rdata_q;
   logic        io_is_io_q;
   logic [ADDR_WIDTH-1:0] io_access_addr_q;
   logic [15:0] io_write_data_q;
+  logic        io_write_next_q;
+  logic [ADDR_WIDTH-1:0] io_next_addr_q;
+  logic [15:0] io_write_data_next_q;
+  logic [5:0]  io_field_width;
+  logic [DATA_WIDTH-1:0] io_field_mask;
+  logic [DATA_WIDTH-1:0] io_field_rdata;
+  logic [DATA_WIDTH-1:0] io_field_wdata;
+  logic [DATA_WIDTH-1:0] io_rdata_words;
+  always_comb begin
+    // On-chip registers are 16-bit words in the processor's bit-addressed
+    // space. A MOVE may address a subfield (for example CONTROL+5 with
+    // FS=10), so present a right-justified read field and merge writes into
+    // the addressed bits exactly as the external field sequencer would.
+    io_rdata_words = {io_rdata_next16, io_rdata16};
+    if (mem_size >= FIELD_SIZE_WIDTH'(6'd32 - {2'b0, mem_addr[3:0]}))
+      io_field_width = 6'd32 - {2'b0, mem_addr[3:0]};
+    else
+      io_field_width = mem_size;
+    io_field_mask = (io_field_width >= 6'd32)
+                  ? 32'hFFFF_FFFF
+                  : (32'h0000_0001 << io_field_width) - 32'h0000_0001;
+    io_field_rdata = (io_rdata_words >> mem_addr[3:0]) & io_field_mask;
+    io_field_wdata =
+        (io_rdata_words & ~(io_field_mask << mem_addr[3:0]))
+      | ((mem_wdata & io_field_mask) << mem_addr[3:0]);
+  end
   always_ff @(posedge clk) begin
     if (rst) begin
       io_rdata_q       <= '0;
       io_is_io_q       <= 1'b0;
       io_access_addr_q <= '0;
       io_write_data_q  <= '0;
+      io_write_next_q  <= 1'b0;
+      io_next_addr_q   <= '0;
+      io_write_data_next_q <= '0;
     end else begin
       // The integrated memory fabric registers every request before it can
       // acknowledge it. Hold the processor I/O read view and write payload
       // at the core boundary as well, removing a live register-file/address
       // mux round-trip from the eventual completion-qualified writeback.
       if (mem_req) begin
-        io_rdata_q       <= io_rdata16;
+        io_rdata_q       <= io_field_rdata;
         io_is_io_q       <= io_is_io;
         io_access_addr_q <= mem_addr;
-        io_write_data_q  <= mem_wdata[15:0];
+        io_write_data_q  <= io_field_wdata[15:0];
+        io_write_next_q  <=
+            ({2'b0, mem_addr[3:0]} + mem_size) > FIELD_SIZE_WIDTH'(16);
+        io_next_addr_q   <= {mem_addr[ADDR_WIDTH-1:4], 4'b0000}
+                          + ADDR_WIDTH'(16);
+        io_write_data_next_q <= io_field_wdata[31:16];
       end
     end
   end
   assign mem_rdata_eff =
-      io_is_io_q ? {{(DATA_WIDTH-16){1'b0}}, io_rdata_q} : mem_rdata;
+      io_is_io_q ? io_rdata_q : mem_rdata;
 
   tms34010_alu u_alu (
     .op    (alu_op),
@@ -4053,7 +4105,9 @@ module tms34010_core
           INSTR_MOVE_OFF_M2M_PI,
           INSTR_MOVE_ABS_M2M_PI,
           INSTR_MOVB_OFF_M2M,
-          INSTR_MOVB_ABS_M2M: begin
+          INSTR_MOVB_ABS_M2M,
+          INSTR_MOVE_OFF_M2M,
+          INSTR_MOVE_ABS_M2M: begin
             // Ordinary indirect-to-indirect MOVE is read then write. PIXT
             // uses the same direct two-step path only for replace/T=0/
             // PMASK=0; otherwise it inserts a destination read and writes the
@@ -4087,7 +4141,9 @@ module tms34010_core
             INSTR_MOVE_OFF_M2M_PI,
             INSTR_MOVE_ABS_M2M_PI,
             INSTR_MOVB_OFF_M2M,
-            INSTR_MOVB_ABS_M2M:
+            INSTR_MOVB_ABS_M2M,
+            INSTR_MOVE_OFF_M2M,
+            INSTR_MOVE_ABS_M2M:
                         if (mem_op_step
                             == (pixt_m2m_rmw ? 2'd2 : 2'd1))
                           state_d = CORE_WRITEBACK;

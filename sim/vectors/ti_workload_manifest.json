@@ -1,0 +1,340 @@
+{
+  "cases": [
+    {
+      "category": "TI ROM/demo tutorial",
+      "checkpoint": "00020270",
+      "coff_sha256": "9a3ff91300e2470494ae07d422f2ae9b679b2d8b8275702b72309b73223d46bb",
+      "deterministic_patches": [
+        {
+          "address": "00020270",
+          "word": "c0ff"
+        }
+      ],
+      "entry": "00020000",
+      "id": "17300001",
+      "load_image_sha256": "c37fc1d12a47c0e2b4878ea5feff577fbee0c7da81d3105f45a072cb8cc73a2c",
+      "name": "rom_tutorial",
+      "related_media": [],
+      "sections": [
+        {
+          "address": "00000000",
+          "load_sha256": null,
+          "name": "screen",
+          "size_bits": 131072
+        },
+        {
+          "address": "00020000",
+          "load_sha256": "cb8448bcbdc43bbbde44daacdd9103e89d73e8ae88d9f8da3a97b3f5f322d9f8",
+          "name": ".text",
+          "size_bits": 37456
+        },
+        {
+          "address": "00029250",
+          "load_sha256": "1e50cb76201c250ad28f4d1cfcbee0bcfaf96525e2348270e5d25c40647ac954",
+          "name": ".data",
+          "size_bits": 18352
+        },
+        {
+          "address": "0002da00",
+          "load_sha256": null,
+          "name": "fill_sec",
+          "size_bits": 0
+        },
+        {
+          "address": "0002da00",
+          "load_sha256": null,
+          "name": ".bss",
+          "size_bits": 131072
+        },
+        {
+          "address": "0004da00",
+          "load_sha256": null,
+          "name": "end_bss",
+          "size_bits": 0
+        },
+        {
+          "address": "fffffc00",
+          "load_sha256": "be93af15c51669009a8663820b9917c6b3c08f2d4d436f1e4deaf8a862ebf7a1",
+          "name": "int_vect",
+          "size_bits": 1024
+        }
+      ],
+      "source_disk": "rom_prebuilt",
+      "source_path": "TUTOR_C.OUT",
+      "timeout_polls": 2000000,
+      "watches": [
+        {
+          "address": "00000000",
+          "name": "framebuffer",
+          "words": 8192
+        },
+        {
+          "address": "00020000",
+          "name": "program_workspace",
+          "words": 11680
+        }
+      ]
+    },
+    {
+      "category": "TI Sample Function Library display-list demo",
+      "checkpoint": "00080260",
+      "coff_sha256": "40a4519569b2d085bd6f5c6bf45bd2f7014bd356b726a27a0fd1090a40e2435c",
+      "deterministic_patches": [],
+      "entry": "00080000",
+      "id": "17300002",
+      "load_image_sha256": "07012cd0cd0003206a6424a072b0c89e128f7e43a9c291ecf478be2cb9439da0",
+      "name": "sample_function_library",
+      "related_media": [],
+      "sections": [
+        {
+          "address": "00080000",
+          "load_sha256": "ff9fb26cee4b0f708d3d2ce396e66b93da7b6f15e181c7646adbc57e5fc22dda",
+          "name": ".text",
+          "size_bits": 10784
+        },
+        {
+          "address": "00082a20",
+          "load_sha256": "c261ef1d7decd9cb4f0dcd1ceb459ebde488976aa3f0e4ab66a9cc6c74d86965",
+          "name": ".data",
+          "size_bits": 12048
+        },
+        {
+          "address": "00085930",
+          "load_sha256": null,
+          "name": ".bss",
+          "size_bits": 0
+        }
+      ],
+      "source_disk": "sample",
+      "source_path": "INTERP.OUT",
+      "timeout_polls": 2000000,
+      "watches": [
+        {
+          "address": "00000000",
+          "name": "framebuffer",
+          "words": 32768
+        },
+        {
+          "address": "00080000",
+          "name": "program_workspace",
+          "words": 1427
+        }
+      ]
+    },
+    {
+      "category": "Math/Graphics Function Library TEST06",
+      "checkpoint": "ffc01160",
+      "coff_sha256": "7c6680b550cf6d175b8936ab4783e9f9408e35b03a05c1d9f0b19360b5d621b1",
+      "deterministic_patches": [
+        {
+          "address": "ffc01160",
+          "word": "c0ff"
+        }
+      ],
+      "entry": "ffc107f0",
+      "id": "17300003",
+      "load_image_sha256": "d6854d54e7b6da42dc2faa1e66f1920234dff5bafab680f0e294f757e742ca2b",
+      "name": "graphics_math_arcs",
+      "related_media": [
+        "graphics_math"
+      ],
+      "sections": [
+        {
+          "address": "ffc00000",
+          "load_sha256": "545c4bafb87d87da97affbad25871de224dda0123527280a01ed8e4d1f8dcc17",
+          "name": ".text",
+          "size_bits": 69520
+        },
+        {
+          "address": "ffc10f90",
+          "load_sha256": null,
+          "name": ".data",
+          "size_bits": 0
+        },
+        {
+          "address": "ffc10f90",
+          "load_sha256": "d4e8814cd344dd39e8f3e9f95a7bd561b369d937f3827bc16ab98b9ca13eb428",
+          "name": ".cinit",
+          "size_bits": 12512
+        },
+        {
+          "address": "ffc14070",
+          "load_sha256": null,
+          "name": ".bss",
+          "size_bits": 87168
+        }
+      ],
+      "source_disk": "paint",
+      "source_path": "TESTS/TEST06.OUT",
+      "timeout_polls": 2000000,
+      "watches": [
+        {
+          "address": "00000000",
+          "name": "framebuffer",
+          "words": 76800
+        },
+        {
+          "address": "ffc00000",
+          "name": "program_workspace",
+          "words": 262144
+        }
+      ]
+    },
+    {
+      "category": "Math/Graphics Function Library TEST09",
+      "checkpoint": "ffc01570",
+      "coff_sha256": "f9a83fd276369d4bb3fc467b27f5e288cdab9ffd4a9743f7809318d00746dac8",
+      "deterministic_patches": [
+        {
+          "address": "ffc01570",
+          "word": "c0ff"
+        }
+      ],
+      "entry": "ffc0cb00",
+      "id": "17300004",
+      "load_image_sha256": "13b6632ec6740e882e5797fd79db3b94bf72d31345aa80f7d53cee7ce2a6c478",
+      "name": "graphics_math_transfer",
+      "related_media": [
+        "graphics_math"
+      ],
+      "sections": [
+        {
+          "address": "ffc00000",
+          "load_sha256": "b1e3a65a87aee0d217975332c3da1e273bbff2bd6290bcabcc29057cf7f3d427",
+          "name": ".text",
+          "size_bits": 53920
+        },
+        {
+          "address": "ffc0d2a0",
+          "load_sha256": null,
+          "name": ".data",
+          "size_bits": 0
+        },
+        {
+          "address": "ffc0d2a0",
+          "load_sha256": "6af2c3264273f6dbd6c4843f7c8c2bc232220f88263c32d9ef2ea638086920cf",
+          "name": ".cinit",
+          "size_bits": 11424
+        },
+        {
+          "address": "ffc0ff40",
+          "load_sha256": null,
+          "name": ".bss",
+          "size_bits": 85056
+        }
+      ],
+      "source_disk": "paint",
+      "source_path": "TESTS/TEST09.OUT",
+      "timeout_polls": 2000000,
+      "watches": [
+        {
+          "address": "00000000",
+          "name": "framebuffer",
+          "words": 76800
+        },
+        {
+          "address": "ffc00000",
+          "name": "program_workspace",
+          "words": 262144
+        }
+      ]
+    },
+    {
+      "category": "1987 TI GSP Paint",
+      "checkpoint": "ffc7eea0",
+      "coff_sha256": "4420a10615d3ab9c549f2a4a651399229992c5d813247f708c79c6a623bec35e",
+      "deterministic_patches": [
+        {
+          "address": "ffc7eea0",
+          "word": "c0ff"
+        }
+      ],
+      "entry": "ffca1000",
+      "id": "17300005",
+      "load_image_sha256": "dbb96318c2131944923d8391481795cdaa6c75e2a0919dd430dbb82f0c27bf1e",
+      "name": "gsp_paint",
+      "related_media": [],
+      "sections": [
+        {
+          "address": "ffc00000",
+          "load_sha256": "f6b58b148b48f6b8f8639cedc9a9cbe33938f36aa1b5bd061c5971975a78ad1a",
+          "name": ".text",
+          "size_bits": 661712
+        },
+        {
+          "address": "ffca18d0",
+          "load_sha256": null,
+          "name": ".data",
+          "size_bits": 0
+        },
+        {
+          "address": "ffca18d0",
+          "load_sha256": "d7b05d397932d3a43792ef43f05f84f3fb6a76e67561bd96bbf0d2b71b7a40d8",
+          "name": ".cinit",
+          "size_bits": 15808
+        },
+        {
+          "address": "ffca5690",
+          "load_sha256": null,
+          "name": ".bss",
+          "size_bits": 3081216
+        }
+      ],
+      "source_disk": "paint",
+      "source_path": "PAINTLIB/PAINT.OUT",
+      "timeout_polls": 2000000,
+      "watches": [
+        {
+          "address": "00000000",
+          "name": "framebuffer",
+          "words": 76800
+        },
+        {
+          "address": "ffc00000",
+          "name": "program_workspace",
+          "words": 262144
+        }
+      ]
+    }
+  ],
+  "copyright_policy": "Metadata only; executables are extracted from preserved do-not-redistribute media into ignored work space.",
+  "disks": {
+    "assembler": {
+      "path": "1985-05-20 TMS34010 Assembly Language Package (1 of 4) ASM-LNK-ARCH revD 1604811-1601.img",
+      "sha256": "3dd3fe2dd751f3b48ac53409d4c67d72a7564c3c102d3a48acd85de5942d92a9"
+    },
+    "graphics_math": {
+      "path": "1987-12-03 TMS34010 Graphics Math Function Library r1.0.img",
+      "sha256": "e1390cc7efb008785f962269286a71e791978fcecf2258e1130516562996068e"
+    },
+    "paint": {
+      "path": "1987-12-04 TMS34010 GSP Paint.img",
+      "sha256": "15b066507b8e9970523706782946ade8121b4f64e5c6958812cd7ae9bd1a6392"
+    },
+    "rom_prebuilt": {
+      "path": "1985-05-20 TMS34010 Assembly Language Package (2 of 4) GSPSIM-COMP revD 1604811-1602.img",
+      "sha256": "9ba15c34b1add956a002ba1e0f22fc35be41b6e95c67a62baa1fda6a98c52244"
+    },
+    "rom_sources": {
+      "path": "1985-05-20 TMS34010 Assembly Language Package (4 of 4) ROM-DEMO revD 1604811-1604.img",
+      "sha256": "5fe40c36e33073b9ce332ff23c6499405ea1f6bef24865f01561476686672115"
+    },
+    "sample": {
+      "path": "1987-05-19 TMS34010 Sample Function Library Package rev2547232-1601.img",
+      "sha256": "e929970e757abf4cbccb49b29d22c8821e86ae4925ba4a13f4610a70791cfa2d"
+    }
+  },
+  "format": "tms34010-ti-workloads-v1",
+  "rom_source_build": {
+    "commands": [
+      "gspa -l tutor_c",
+      "gspa data",
+      "gspa label",
+      "gsplnk tutor_c.cmd"
+    ],
+    "identical_load_image_sha256": "c37fc1d12a47c0e2b4878ea5feff577fbee0c7da81d3105f45a072cb8cc73a2c",
+    "note": "The preserved linker emits time-dependent COFF metadata; the rebuilt and prebuilt address/word load images are identical.",
+    "prebuilt_coff_sha256": "9a3ff91300e2470494ae07d422f2ae9b679b2d8b8275702b72309b73223d46bb",
+    "rebuilt_coff_sha256": "cf332d767088f1d9cd4f2dc8d5d4ea7001633e1ae4806704da35efa068ec0d08"
+  }
+}

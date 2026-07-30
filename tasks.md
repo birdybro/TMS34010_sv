@@ -281,7 +281,7 @@ remains authoritative.
 | 0170 | Reconcile the complete display/video controller | complete |
 | 0171 | Reclose graphics SRT and local-bus integration | complete |
 | 0172 | Add MAME graphics differential verification | complete |
-| 0173 | Run TI graphics software workloads | pending |
+| 0173 | Run TI graphics software workloads | complete |
 | 0174 | Sign off production-revision GPU completion | pending |
 
 ---
@@ -962,8 +962,10 @@ Acceptance Criteria:
 - Decoder grows a `top11` view; three new arms matching 11-bit prefixes:
   ADDI=11'b0000_1011_000, SUBI=11'b0000_1011_111, CMPI=11'b0000_1011_010.
 - All three set needs_imm16=1, imm_sign_extend=1.
-- alu_a routes Rd via the swap group; alu_b routes imm32 via the
-  MOVI-IW arm.
+- alu_a routes Rd via the swap group. ADDI routes the raw sign-extended
+  word; SUBI/CMPI complement their sign-extended object-code word to recover
+  the source-level immediate per User's Guide pages 12-54 and 12-249
+  (corrected and workload-locked by Task 0173).
 - CMPI has wb_reg_en=0 (same as CMP Rs, Rd).
 - `sim/tb/tb_immi_iw.sv` covers add-positive, sub-to-zero, add-
   negative-immediate (verifies sign-extension), CMPI equal, B-file
@@ -1011,7 +1013,9 @@ Acceptance Criteria:
 - Decoder: six new top11 patterns. ADDI/CMPI/ANDI/ORI/XORI share
   base prefix 0000_1011_XXX; SUBI IL has its own base 0000_1101_000.
 - All set needs_imm32=1 (use MOVI IL fetch path).
-- alu_a and alu_b muxes extended with all six new iclasses.
+- alu_a and alu_b muxes extended with all six new iclasses. SUBI/CMPI
+  complement their object-code extension to recover the source-level
+  immediate per User's Guide pages 12-55 and 12-250 (corrected by Task 0173).
 - CMPI IL uses wb_reg_en=0.
 - `sim/tb/tb_immi_il.sv` covers all six with characteristic 32-bit-
   immediate cases. Encoder verified against 0x0B20 (ADDI IL,A0)
@@ -2228,8 +2232,8 @@ Acceptance Criteria:
   after the current bit clear) for INSTR_MMTM.
 - rf_wr_data mux: INSTR_MMTM returns `mmtm_rp_q` (final Rp = address
   of the last push).
-- Bit-to-register mapping per assumption A0026: bit N = R(N) for
-  both MMTM and MMFM. Graphical figure didn't survive pdftotext.
+- Task 0173 later resolved the two formats with TI's original assembler:
+  MMTM bit 15-N selects R(N), while MMFM bit N selects R(N).
 - `sim/tb/tb_mmtm.sv`: loads A0..A15 with recognisable sentinel
   values, sets Rp=A1=0x800, executes MMTM A1, {A0, A2, A4, A8,
   A12, A13, A14, A15(=SP)} (mask=0xF115). Verifies:
@@ -2272,7 +2276,10 @@ Acceptance Criteria:
 - Core: the MMTM iterator generalised to a shared MMTM/MMFM iterator.
   `mmtm_*` renamed to `mm_*` (`mm_rp_q`, `mm_mask_q`, `mm_iter_idx`,
   `mm_mask_will_be_empty`); new `is_mmtm`/`is_mmfm`/`is_mm` selectors.
-  `mm_iter_idx` = lowest set bit for MMTM, highest set bit for MMFM.
+  `mm_iter_idx` originally used the same direct mask mapping for both forms.
+  Task 0173 corrected MMTM to its reverse bit 15-N mapping; both forms now
+  select the architecturally highest mask bit while MMTM reverses that bit
+  to obtain its lowest-order register.
 - Seed/step asymmetry: on CORE_EXECUTE → CORE_MEMORY, MMTM seeds
   `mm_rp_q <= Rp - 32`, MMFM seeds `mm_rp_q <= Rp`. On each ack MMFM
   does `mm_rp_q <= mm_rp_q + 32` (every read, incl. last); MMTM does
@@ -2286,9 +2293,9 @@ Acceptance Criteria:
   two write users never target the same index.
 - CORE_MEMORY → CORE_WRITEBACK gates on `mm_mask_will_be_empty` for
   both MMTM and MMFM.
-- Bit-to-register mapping per assumption A0026 (bit N = R(N)). The
-  TI worked example (page 12-110) now confirms this **absolutely**
-  for MMFM, not just by internal consistency.
+- The TI worked example confirms bit N = R(N) **for MMFM**. Task 0173's
+  preserved TI assembler proves that MMTM deliberately uses the opposite
+  bit 15-N mapping; A0026 records the resolved asymmetric formats.
 - `sim/tb/tb_mmfm.sv`: two subtests.
     (1) TI page-12-110 example in the B file: B0=0x10000 (stack
         pointer), memory pre-seeded with TI's exact stack image,
@@ -6405,7 +6412,7 @@ Commit:
 ---
 
 ### Task 0173: Run TI graphics software workloads
-Status: pending
+Status: complete
 Dependencies:
 - Task 0172 (MAME reference runner and minimized differential workflow).
 Spec sources:
@@ -6440,6 +6447,39 @@ Docs:
 - Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, and add workload provenance/run instructions.
+Implementation:
+- `tools/ti/prepare_workloads.py` hash-verifies six preserved TI disk images,
+  extracts only into ignored work space, parses TMS34010 COFF, and emits one
+  deterministic address/word stream plus a checked-in provenance manifest.
+  Five cases cover the ROM tutorial, Sample Function Library INTERP demo,
+  Graphics/Math TEST06/TEST09, and 1987 GSP Paint. Each records entry,
+  sections/load hash, terminal patch, timeout, framebuffer, and workspace.
+- `tools/ti/build_rom_demo.py` runs the preserved GSPA/GSPLNK DOS toolchain.
+  The rebuilt COFF hash is fixed and its sorted address/word load image is
+  exactly identical to the preserved prebuilt load image despite variable
+  COFF metadata.
+- Added a minimal BSD-3-Clause MAME adapter, dual-window RTL test memory,
+  `tb_ti_workload_replay`, independent exact result locks, and an exact-shape
+  divergence classifier. `scripts/ti_workloads.sh` verifies pinned MAME
+  commit `70725158b4e9d2e1230c0515faec754f9cee86a2`, builds/runs both engines,
+  and accepts only nine source-backed case/field groups inherited from the
+  minimized Task 0172 classes; zero differences are unexplained.
+- Added optional user-supplied legal arcade-ROM verification/smoke without
+  downloading or committing media and without making it a completion gate.
+- The workloads exposed and closed complemented SUBI/CMPI IW/IL extensions,
+  asymmetric MMTM/MMFM mask encodings, both missing field M2M MOVE forms, and
+  processor subfield/two-adjacent-register access on the on-chip I/O page.
+  Focused benches independently lock every correction.
+Validation:
+- Original TI ROM source build PASS; rebuilt/prebuilt load-image SHA-256
+  `c37fc1d12a47c0e2b4878ea5feff577fbee0c7da81d3105f45a072cb8cc73a2c`.
+- Exact pinned live five-workload MAME/RTL suite PASS: all checkpoints
+  reached, no illegal opcode or timeout, nine classified case/field groups,
+  zero unexplained mismatches.
+- Focused immediate/branch, MMTM/MMFM, both field M2M MOVE, processor I/O,
+  and workload replay suites PASS.
+- `scripts/lint.sh` PASS with zero RTL diagnostics.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 159/159 benches.
 Commit:
 - pending
 

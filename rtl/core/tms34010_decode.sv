@@ -180,7 +180,15 @@ module tms34010_decode
   localparam logic [6:0] MOVB_OFF_STORE_TOP7 = 7'b1010_110;
   localparam logic [6:0] MOVB_OFF_LOAD_TOP7  = 7'b1010_111;
   localparam logic [6:0] MOVB_OFF_M2M_TOP7   = 7'b1011_110;
+  // Three-word offset-to-offset MOVE:
+  //   1011 10FS SSSR DDDD + signed source offset + signed destination offset.
+  localparam logic [5:0] MOVE_OFF_M2M_TOP6   = 6'b101110;
   localparam instr_word_t MOVB_ABS_M2M_OPCODE = 16'h0340;
+  // Five-word absolute-to-absolute MOVE (User's Guide pp. 12-157/158):
+  //   0000 01 F1 1100 0000 + source LO/HI + destination LO/HI.
+  // Bit 9 selects F0/F1; both encodings share this masked value.
+  localparam instr_word_t MOVE_ABS_M2M_MASK   = 16'hFDFF;
+  localparam instr_word_t MOVE_ABS_M2M_OPCODE = 16'h05C0;
 
   // PIXT (pixel transfer), LINEAR forms — a pixel-size (PSIZE) field move
   // (SPVU001A 12-? / encoding table). The XY forms (1111 000S/001S/010S) need
@@ -301,9 +309,9 @@ module tms34010_decode
   // page 12-111. Encoding `0000 1001 100R DDDD` (top11 =
   // 11'b00001001_100), where R=instr[4] is the register file and
   // DDDD=instr[3:0] is Rp's index. The second instruction word is a
-  // 16-bit binary mask indicating which registers are in the list
-  // (assumption A0026: bit N of mask = register R(N) for both MMTM
-  // and MMFM). Iteration order is lowest-order register first per
+  // 16-bit binary mask indicating which registers are in the list.
+  // MMTM mask bit (15-N) selects R(N). Iteration order is lowest-order
+  // register first per
   // the spec's "lowest order register is always saved first".
   // For each set bit, Rp is predecremented by 32 and the matching
   // register's 32-bit value is written. Final Rp is left pointing
@@ -314,8 +322,8 @@ module tms34010_decode
   // counterpart of MMTM). Per SPVU001A page 12-109. Encoding
   // `0000 1001 101R DDDD` (top11 = 11'b00001001_101), with R=instr[4]
   // the register file and DDDD=instr[3:0] the Rp index. The second
-  // instruction word is the same 16-bit register-list mask used by
-  // MMTM (A0026: bit N = register R(N)). Iteration order is
+  // instruction word uses MMFM's direct mapping: bit N selects R(N),
+  // unlike MMTM's reverse mapping. Iteration order is
   // HIGHEST-order register first per the spec ("the highest order
   // register is always restored first"). For each set bit, a 32-bit
   // value is read from mem[Rp] into the register and Rp is then
@@ -615,10 +623,11 @@ module tms34010_decode
     //   bits[15:5] = 11-bit prefix selecting the op
     //   bit[4]     = R   (file)
     //   bits[3:0]  = Rd index
-    //   next word  = 16-bit immediate (sign-extended to 32 bits)
+    //   next word  = 16-bit extension (sign-extended to 32 bits)
     //
-    // CMPI does not write Rd (wb_reg_en = 0), matching the same
-    // contract as CMP Rs, Rd.
+    // SUBI and CMPI extensions are the one's complement of the source-level
+    // immediate; the execute operand mux complements them back after
+    // extension. CMPI does not write Rd, matching CMP Rs,Rd.
     // -----------------------------------------------------------------------
     if (top11 == ADDI_IW_TOP11) begin
       decoded.illegal         = 1'b0;
@@ -667,7 +676,8 @@ module tms34010_decode
     //   XORI IL  =  0000 1011 110R DDDD + 32-bit imm
     //
     // All reuse MOVI IL's CORE_FETCH_IMM_LO/HI path (needs_imm32=1,
-    // imm_sign_extend=0). The 32-bit extension is already full-width.
+    // imm_sign_extend=0). The 32-bit extension is already full-width. SUBI
+    // and CMPI carry the one's complement of their source-level immediate.
     // -----------------------------------------------------------------------
     if (top11 == ADDI_IL_TOP11) begin
       decoded.illegal     = 1'b0;
@@ -1545,12 +1555,38 @@ module tms34010_decode
       decoded.wb_flags_en     = 1'b0;
     end
 
+    // MOVE *Rs(SOffset),*Rd(DOffset)[,F]: opcode followed by independent
+    // signed source and destination offsets. F selects the architectural
+    // field definition; neither pointer nor status is modified.
+    if (top6 == MOVE_OFF_M2M_TOP6) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_OFF_M2M;
+      decoded.rd_file         = reg_file_from_instr;
+      decoded.rd_idx          = reg_idx_from_instr;
+      decoded.rs_idx          = rs_idx_from_instr;
+      decoded.needs_imm32     = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+    end
+
     // MOVB @SAddress,@DAddress: fixed opcode followed by source low/high,
     // then destination low/high. No register operand or writeback.
     if (instr == MOVB_ABS_M2M_OPCODE) begin
       decoded.illegal         = 1'b0;
       decoded.iclass          = INSTR_MOVB_ABS_M2M;
       decoded.force_byte      = 1'b1;
+      decoded.needs_imm64     = 1'b1;
+      decoded.needs_memory_op = 1'b1;
+      decoded.wb_reg_en       = 1'b0;
+      decoded.wb_flags_en     = 1'b0;
+    end
+
+    // MOVE @SAddress,@DAddress[,F]: source low/high then destination
+    // low/high. F chooses FS0/FS1. Registers and status are unaffected.
+    if ((instr & MOVE_ABS_M2M_MASK) == MOVE_ABS_M2M_OPCODE) begin
+      decoded.illegal         = 1'b0;
+      decoded.iclass          = INSTR_MOVE_ABS_M2M;
       decoded.needs_imm64     = 1'b1;
       decoded.needs_memory_op = 1'b1;
       decoded.wb_reg_en       = 1'b0;

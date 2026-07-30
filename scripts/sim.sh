@@ -58,6 +58,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$ROOT/work"
 mkdir -p "$WORK"
 
+if [ "$TB" = "tb_ti_workload_replay" ]; then
+  python3 "$ROOT/tools/ti/prepare_workloads.py" --check
+fi
+
 # Collect sources. Order matters: package first, then RTL modules, then
 # behavioral sim models, then TB.
 SRCS=("$ROOT/rtl/tms34010_pkg.sv")
@@ -113,6 +117,10 @@ fi
 
 if grep -q "TEST_RESULT: PASS" "$LOG" &&
    ! grep -q "TEST_RESULT: FAIL" "$LOG"; then
+  if [ "$TB" = "tb_ti_workload_replay" ]; then
+    python3 "$ROOT/tools/ti/compare_workloads.py" \
+      --rtl "$ROOT/work/rtl_ti_workload_actual.txt"
+  fi
   if [ "${SIM_CLEAN_BUILD:-0}" = "1" ]; then
     rm -rf "$BUILD_DIR"
   fi

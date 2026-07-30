@@ -488,35 +488,28 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **How to apply going forward**: any new instruction whose spec lists a flag as "Unaffected" should override `wb_flag_mask` in its decoder arm. The default initialization in the decoder's always_comb sets the mask to all-ones, so arithmetic instructions continue to update all four flags without explicit `wb_flag_mask` lines.
 
 ## A0026 — MMTM / MMFM mask bit-to-register mapping
-- **Date**: 2026-05-30 (Task 0055).
-- **Status**: **confirmed** as of Task 0056 (2026-05-30). The
-  graphical mask chart on SPVU001A page 12-110 / 12-112 still does
-  not survive `pdftotext -layout` extraction, but the worked MMFM
-  example on page 12-110 (text + published register results, which
-  *did* extract) pins the mapping down absolutely: `MMFM B0, {B1,
-  B2,B4,B8,B12,B13,B14,SP}` with mask 0xF116 produces exactly TI's
-  listed results (SP=FFFFBFBF restored from the lowest address,
-  B1=1111B1B1 from the highest), which is only consistent with
-  **bit N = R(N)**, not the bit N = R(15-N) alternative. tb_mmfm
-  subtest (1) checks this bit-for-bit, so the assumption is now
-  test-locked, not just self-consistent.
-- **Assumption**: **bit N of the mask = register R(N)**, identical
-  for both MMTM and MMFM. Iteration direction differs by spec:
-  MMTM iterates LSB → MSB (lowest-order register pushed first);
-  MMFM iterates MSB → LSB (highest-order register restored first).
-- **Justification**: this reading is self-consistent — an MMTM
-  followed by an MMFM with the same mask losslessly round-trips
-  the register list. The TMS34010 example on page 12-111
-  (`MMTM A1, A0,A2,A4,A8,A12,A13,A14,SP`) doesn't show the
-  encoded mask word, so it can't directly disprove the
-  alternative mapping (bit N = R(15-N)).
-- **How to apply going forward**: tb_mmtm and any future MMFM
-  testbench should round-trip via MMTM→MMFM (catches internal
-  inconsistency even if the bit-to-register mapping doesn't
-  match TI's actual convention). If we later learn the TI
-  convention differs, the fix is a single line: invert the
-  index used to drive `rf_rs1_idx` in core.sv.
-- **Spec source**: SPVU001A pages 12-109..12-112 (MMFM / MMTM).
+- **Date**: 2026-05-30 (Tasks 0055/0056); **resolved 2026-07-29
+  by Task 0173**.
+- **Status**: **RESOLVED; the original assumption that both instructions
+  shared one direct mapping was incorrect.**
+- **Decision**: MMTM mask bit **15-N** selects R(N); MMFM mask bit **N**
+  selects R(N). Both scan the highest remaining mask bit. Consequently MMTM
+  saves the lowest-order selected register first, while MMFM restores the
+  highest-order selected register first.
+- **Primary/tool evidence**: User's Guide pages 12-109 through 12-112 define
+  the register order. TI's preserved original assembler supplies the missing
+  graphical encoding evidence: `MMTM A2-A6,A10-A14` emits mask `0x3E3E`,
+  whereas `MMFM A4,A8-A13` emits `0x3F10`. The page-12-110 MMFM worked
+  example independently confirms its direct mapping.
+- **Regression evidence**: `tb_mmtm` uses the assembler-produced reverse
+  mask, `tb_mmfm` checks both the published MMFM stack image and a
+  deliberately asymmetric push/pop pair, and `tb_ti_workload_replay` runs
+  the original compiled register-save/restore sequences.
+- **How to apply going forward**: never generate one mask and reuse it for
+  the opposite mnemonic. Source-level lists are identical; their encoded
+  mask words are deliberately asymmetric.
+- **Spec source**: 1988 User's Guide pages 12-109 through 12-112 and the
+  preserved TI assembler media recorded in `ti_workloads.md`.
 
 ## A0027 — SUBXY greater-than comparison signedness
 - **Date**: 2026-05-31; **resolved 2026-07-28 (Task 0134)**.
@@ -1652,6 +1645,30 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `scripts/mame_graphics_diff.sh` reruns the exact pinned reference;
   `compare_graphics_results.py` rejects output drift and any difference
   outside the source-backed classes in `mame_graphics_divergences.json`.
+
+## A0050 — Preserved TI software is an integration witness, not distributable output
+
+- **Date**: 2026-07-29 (Task 0173).
+- **Status**: resolved verification and redistribution boundary.
+- **Decision**: the original TI disk images remain in the pinned
+  `third_party/TMS34010_Info` tree. Extraction, COFF parsing, patched
+  milestones, and generated execution vectors live only under ignored
+  `work/`; the repository commits hashes, source paths, loaders, result
+  locks, and tests, but no extracted executable.
+- **Build equivalence**: the ROM tutorial is reproducibly assembled and
+  linked with TI's original DOS tools. Linker metadata makes the rebuilt COFF
+  container differ from the preserved binary, but their sorted
+  address/16-bit-word load images have identical SHA-256
+  `c37fc1d12a47c0e2b4878ea5feff577fbee0c7da81d3105f45a072cb8cc73a2c`.
+- **Reference policy**: Task 0172's exact MAME revision remains secondary.
+  Live outputs must byte-match independent checked-in locks, and every
+  MAME/RTL difference must map to a precise existing minimized class. The TI
+  User's Guide and focused RTL tests remain authoritative.
+- **Arcade boundary**: no arcade ROM is required, acquired, or committed.
+  `mame_arcade_smoke.sh` only validates a user-supplied legal ROM directory
+  against a full build from the pinned MAME checkout.
+- **Regression evidence**: `tb_ti_workload_replay`,
+  `scripts/ti_workloads.sh`, and `ti_workload_divergences.json`.
 
 ## TODO / spec-uncertain (waiting on detailed read)
 

@@ -183,7 +183,7 @@ module tb_dsj;
     q = p;
     q = place_movi_il(q, REG_FILE_A, counter_idx, counter_init);
     u_mem.mem[q] = cmpi_iw_enc(REG_FILE_A, 4'd0);            q = q + 1;
-    u_mem.mem[q] = want_z ? 16'sd7 : 16'sd99;                q = q + 1;
+    u_mem.mem[q] = want_z ? ~16'sd7 : ~16'sd99;              q = q + 1;
     u_mem.mem[q] = dsj_opcode;                               q = q + 1;
     u_mem.mem[q] = 16'sd3;  q = q + 1;  /* offset = +3 words */
     q = place_movi_il(q, REG_FILE_A, sentinel_idx, FALL_VAL);
@@ -261,7 +261,7 @@ module tb_dsj;
     //   Scen 6: B1 counter init = 9, DSJEQ B1 with Z=0 → no-work
     p = place_movi_il(p, REG_FILE_B, 4'd1, 32'd9);
     u_mem.mem[p] = cmpi_iw_enc(REG_FILE_A, 4'd0);             p = p + 1;
-    u_mem.mem[p] = 16'sd99;                                    p = p + 1;
+    u_mem.mem[p] = ~16'sd99;                                   p = p + 1;
     u_mem.mem[p] = dsjeq_enc(REG_FILE_B, 4'd1);                p = p + 1;
     u_mem.mem[p] = 16'sd3;                                     p = p + 1;
     p = place_movi_il(p, REG_FILE_A, 4'd9, FALL_VAL);          // fall-through sentinel A9
@@ -269,7 +269,7 @@ module tb_dsj;
     //   Scen 7: B2 counter init = 9, DSJNE B2 with Z=0 → take
     p = place_movi_il(p, REG_FILE_B, 4'd2, 32'd9);
     u_mem.mem[p] = cmpi_iw_enc(REG_FILE_A, 4'd0);             p = p + 1;
-    u_mem.mem[p] = 16'sd99;                                    p = p + 1;
+    u_mem.mem[p] = ~16'sd99;                                   p = p + 1;
     u_mem.mem[p] = dsjne_enc(REG_FILE_B, 4'd2);                p = p + 1;
     u_mem.mem[p] = 16'sd3;                                     p = p + 1;
     p = place_movi_il(p, REG_FILE_A, 4'd10, FALL_VAL);
@@ -277,7 +277,7 @@ module tb_dsj;
     //   Scen 8: B12 counter init = 9, DSJNE B12 with Z=1 → no-work
     p = place_movi_il(p, REG_FILE_B, 4'd12, 32'd9);
     u_mem.mem[p] = cmpi_iw_enc(REG_FILE_A, 4'd0);             p = p + 1;
-    u_mem.mem[p] = 16'sd7;                                     p = p + 1;
+    u_mem.mem[p] = ~16'sd7;                                    p = p + 1;
     u_mem.mem[p] = dsjne_enc(REG_FILE_B, 4'd12);               p = p + 1;
     u_mem.mem[p] = 16'sd3;                                     p = p + 1;
     p = place_movi_il(p, REG_FILE_A, 4'd11, FALL_VAL);

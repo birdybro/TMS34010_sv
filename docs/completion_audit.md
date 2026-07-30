@@ -308,8 +308,8 @@ empty-array/context, direction, and W=1/W=3 geometry defects.
 The original audit also found missing complete graphics/display/SRT
 conformance matrices, pinned MAME differential coverage, and TI-shipped
 graphics workloads. Tasks 0169–0171 close the three specification-derived
-matrices, and Task 0172 closes the independent MAME gate; the TI workload and
-final implementation gates remain.
+matrices, Task 0172 closes the independent MAME gate, and Task 0173 closes
+the TI workload gate; only final implementation sign-off remains.
 
 Task 0162 closed the empty-array and terminal-context findings. Zero DX or DY
 now exits every FILL/PIXBLT form without graphics traffic or architectural
@@ -418,8 +418,34 @@ with zero unexplained differences. Exact source-backed classes and minimized
 reproducers are in `docs/mame_graphics_reference.md` and the generated JSON
 ledger.
 
-Task 0173 adds surviving-software evidence, and Task 0174 performs the final
-full-regression and Quartus sign-off. External
+Task 0173 closed the surviving-software gate. Hash-verified original disks
+supply the ROM tutorial, Sample Function Library display-list interpreter,
+two Graphics/Math tests, and 1987 GSP Paint. A direct COFF loader records
+entry points, sections, terminal patches, timeouts, framebuffer/workspace
+ranges, and exact load hashes. The ROM tutorial additionally rebuilds with
+TI's original DOS assembler/linker; variable COFF metadata differs while its
+sorted address/word load image is SHA-256 identical to the prebuilt program.
+
+Every program reaches its deterministic milestone on RTL and exact pinned
+MAME without an illegal opcode or timeout. Both sides serialize PC/SP/ST,
+complete A/B state, six graphics I/O registers, and full declared memory
+hashes. Exact independent result locks prevent drift. The ROM case agrees
+completely; nine remaining case/field groups map to exact Task 0172 minimized
+legacy graphics classes or stack residue from those legacy scratch values.
+The precise case/field/register-index classifier rejects all other
+differences and reports zero unexplained mismatches.
+
+The software gate found and corrected four compatibility defects:
+SUBI/CMPI IW/IL one's-complement extensions, MMTM's reverse mask versus
+MMFM's direct mask, the two missing field memory-to-memory MOVE forms, and
+processor subfield/cross-register access to the on-chip I/O page. Each has
+focused coverage independent of the five-workload replay. Extraction and
+generated binaries remain ignored; only provenance metadata, scripts, result
+locks, and original tests are committed. Optional arcade readiness consumes
+only a user-supplied legal ROM directory and is not a completion dependency.
+`docs/ti_workloads.md` is the authoritative workload ledger.
+
+Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM
 serial-pixel path remain surrounding-system responsibilities rather than
 unfinished processor behavior.

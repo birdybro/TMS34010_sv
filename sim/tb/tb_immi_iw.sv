@@ -3,8 +3,8 @@
 //
 // Tests the IW-form immediate-arithmetic instructions:
 //   ADDI IW K, Rd     Rd + sign_extend(K16) → Rd       (flags N/C/Z/V)
-//   SUBI IW K, Rd     Rd - sign_extend(K16) → Rd       (flags N/C/Z/V)
-//   CMPI IW K, Rd     flags from Rd - sign_extend(K16); Rd unchanged
+//   SUBI IW K, Rd     complemented K16 extension; Rd - K → Rd
+//   CMPI IW K, Rd     complemented K16 extension; flags from Rd - K; unchanged
 //
 // Encoding (SPVU001A A-14):
 //   ADDI IW K, Rd  = 0000 1011 000R DDDD  + 16-bit imm
@@ -155,13 +155,13 @@ module tb_immi_iw;
     p = place_imm_iw (p, ADDI_IW_TOP11, REG_FILE_A, 4'd1, 16'd50);
 
     p = place_movi_il(p, REG_FILE_A, 4'd2, 32'd100);
-    p = place_imm_iw (p, SUBI_IW_TOP11, REG_FILE_A, 4'd2, 16'd100);
+    p = place_imm_iw (p, SUBI_IW_TOP11, REG_FILE_A, 4'd2, ~16'd100);
 
     p = place_movi_il(p, REG_FILE_A, 4'd3, 32'd50);
     p = place_imm_iw (p, ADDI_IW_TOP11, REG_FILE_A, 4'd3, 16'hFFF6);  // -10
 
     p = place_movi_il(p, REG_FILE_A, 4'd4, 32'd5);
-    p = place_imm_iw (p, CMPI_IW_TOP11, REG_FILE_A, 4'd4, 16'd5);
+    p = place_imm_iw (p, CMPI_IW_TOP11, REG_FILE_A, 4'd4, ~16'd5);
 
     p = place_movi_il(p, REG_FILE_B, 4'd1, 32'd100);
     p = place_imm_iw (p, ADDI_IW_TOP11, REG_FILE_B, 4'd1, 16'd200);

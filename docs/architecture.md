@@ -1,8 +1,8 @@
 # Architecture
 
 > Status: **implemented, ISA/status-audited, and Cyclone V-signed-off through
-> Task 0160, with production graphics, display, SRT/local-bus, and pinned-MAME
-> differential matrices closed through Task 0172**.
+> Task 0160, with production graphics, display, SRT/local-bus, pinned-MAME
+> differential, and preserved TI software gates closed through Task 0173**.
 > The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -826,6 +826,23 @@ target, reruns both engines, and byte-compares both outputs before applying a
 closed field-level divergence classifier. The TI specification, not MAME,
 resolves array terminal and checkpoint behavior. See
 `mame_graphics_reference.md`.
+
+Task 0173 extends the same non-RTL boundary to complete TI applications.
+`prepare_workloads.py` verifies and extracts pinned media into ignored work
+space, parses TMS34010 COFF, applies only documented terminal patches, and
+emits one address/word stream. A minimal cache-local MAME driver and
+`tb_ti_workload_replay` load that identical stream into separate low and
+`FFC00000h` memory windows. Both engines stop before a patched self-loop,
+serialize complete architectural/graphics-I/O state, and hash declared
+framebuffer and program/workspace regions.
+
+The workload itself exposed and closed ordinary processor integration paths:
+complemented SUBI/CMPI extensions, asymmetric MMTM/MMFM register-list masks,
+both remaining field M2M MOVE forms, and 1–32-bit processor fields within and
+across adjacent on-chip I/O registers. These stay in the normal core/decode/
+I/O datapaths and have independent focused tests; no application-specific
+opcode or address hook exists. The checked-in result pair and exact-shape
+classifier leave zero unexplained differences. See `ti_workloads.md`.
 
 ## Clock / reset strategy
 

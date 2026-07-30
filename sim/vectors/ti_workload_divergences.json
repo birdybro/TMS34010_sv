@@ -1,0 +1,106 @@
+{
+  "case_count": 5,
+  "classes": [
+    {
+      "class": "array_terminal_context",
+      "description": "Pinned MAME exposes legacy array scratch/terminal registers; production RTL follows the TI terminal-context rules closed by Tasks 0162, 0163, and 0166.",
+      "instances": [
+        {
+          "case": "17300002",
+          "field": "B",
+          "indices": [
+            2,
+            10,
+            11,
+            12,
+            14
+          ],
+          "name": "sample_function_library"
+        },
+        {
+          "case": "17300005",
+          "field": "B",
+          "indices": [
+            5,
+            6
+          ],
+          "name": "gsp_paint"
+        }
+      ],
+      "mismatching_case_field_groups": 2
+    },
+    {
+      "class": "production_graphics_reference_semantics",
+      "description": "The framebuffer is affected only by pinned-MAME legacy subword, plane-mask, window, direction, or array semantics already minimized and classified by the complete Task 0172 differential corpus; production RTL follows the TI User's Guide.",
+      "instances": [
+        {
+          "case": "17300002",
+          "field": "HASH:framebuffer",
+          "indices": [
+            0
+          ],
+          "name": "sample_function_library"
+        },
+        {
+          "case": "17300003",
+          "field": "HASH:framebuffer",
+          "indices": [
+            0
+          ],
+          "name": "graphics_math_arcs"
+        },
+        {
+          "case": "17300004",
+          "field": "HASH:framebuffer",
+          "indices": [
+            0
+          ],
+          "name": "graphics_math_transfer"
+        },
+        {
+          "case": "17300005",
+          "field": "HASH:framebuffer",
+          "indices": [
+            0
+          ],
+          "name": "gsp_paint"
+        }
+      ],
+      "mismatching_case_field_groups": 4
+    },
+    {
+      "class": "saved_graphics_context_residue",
+      "description": "The watched program/workspace range includes stack slots where the workload saved legacy MAME graphics scratch context. Endpoint PC/SP/ST, nonscratch registers, and I/O state agree.",
+      "instances": [
+        {
+          "case": "17300003",
+          "field": "HASH:program_workspace",
+          "indices": [
+            0
+          ],
+          "name": "graphics_math_arcs"
+        },
+        {
+          "case": "17300004",
+          "field": "HASH:program_workspace",
+          "indices": [
+            0
+          ],
+          "name": "graphics_math_transfer"
+        },
+        {
+          "case": "17300005",
+          "field": "HASH:program_workspace",
+          "indices": [
+            0
+          ],
+          "name": "gsp_paint"
+        }
+      ],
+      "mismatching_case_field_groups": 3
+    }
+  ],
+  "format": 1,
+  "mame_commit": "70725158b4e9d2e1230c0515faec754f9cee86a2",
+  "unexplained_mismatches": 0
+}

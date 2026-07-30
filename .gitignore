@@ -30,6 +30,8 @@ c5_pin_model_dump.txt
 *~
 .DS_Store
 Thumbs.db
+__pycache__/
+*.py[cod]
 
 # Legacy Claude Code local session/scheduler state (not project content)
 .claude/

@@ -709,7 +709,13 @@ package tms34010_pkg;
                               //                     destination postincrements by FS.
     INSTR_MOVE_ABS_M2M_PI  = 7'd102, // MOVE @SAddr,*Rd+: absolute source;
                               //                     destination postincrements by FS.
-    INSTR_EMU              = 7'd103  // EMU: pulse EMUA; NOP in RUN or halt in EMU
+    INSTR_EMU              = 7'd103, // EMU: pulse EMUA; NOP in RUN or halt in EMU
+    INSTR_MOVE_ABS_M2M     = 7'd104, // MOVE @SAddr,@DAddr[,F]: two 32-bit
+                              //                     absolute bit addresses; FS-bit
+                              //                     transfer, all status unaffected.
+    INSTR_MOVE_OFF_M2M     = 7'd105  // MOVE *Rs(SOff),*Rd(DOff)[,F]:
+                              //                     two signed 16-bit offsets; FS-bit
+                              //                     transfer, pointers unaffected.
   } instr_class_t;
 
   // Condition codes used by JRcc / JAcc (and other conditional ops).

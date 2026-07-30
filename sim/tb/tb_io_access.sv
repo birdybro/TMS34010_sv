@@ -4,9 +4,9 @@
 // I/O register access through the core's memory path (Task 0082). The I/O
 // register file is now instantiated inside the core: an access whose address
 // decodes as I/O space (0xC0000000-0xC00001FF) reads/writes the on-chip
-// register instead of external memory. This test uses MOVE absolute (FS=16,
-// the reset field size) to write a register and read it back, and confirms a
-// normal external MOVE still works through the same read-data mux.
+// register instead of external memory. This test uses full-register and
+// subfield MOVE accesses, the runtime's memory-to-memory helper form, and a
+// normal external MOVE through the same read-data mux.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -103,12 +103,18 @@ module tb_io_access;
 
   localparam logic [31:0] A_PSIZE = IO_BASE_ADDR + (IO_IDX_PSIZE << 4); // C0000150
   localparam logic [31:0] A_PMASK = IO_BASE_ADDR + (IO_IDX_PMASK << 4); // C0000160
+  localparam logic [31:0] A_CONVDP = IO_BASE_ADDR + (IO_IDX_CONVDP << 4);
+  localparam logic [31:0] A_CONTROL = IO_BASE_ADDR + (IO_IDX_CONTROL << 4);
+  localparam logic [31:0] A_REFCNT = IO_BASE_ADDR + (IO_IDX_REFCNT << 4);
 
   initial begin : main
     int unsigned p, i;
     failures = 0;
     for (i = 0; i < 256; i++) u_mem.mem[i] = 16'h0300;   // NOP fill
     for (i = 120; i < 160; i++) u_mem.mem[i] = 16'h0000; // clear data region
+    u_mem.mem[132] = 16'h0013;
+    u_mem.mem[134] = 16'h0015;
+    u_mem.mem[135] = 16'h0004;
 
     p = 0;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));      // FS0=16 (= reset value)
@@ -124,6 +130,32 @@ module tb_io_access;
     p = place_movi_il(p, 4'd5, 32'h0000_9999);
     p = place_store_abs(p, 4'd5, 32'h0000_0800);         // mem[word128] <- 0x9999
     p = place_load_abs (p, 4'd6, 32'h0000_0800);         // A6 <- 0x00009999
+    // 4) The TI C runtime's register-write helper uses MOVE *Rs,*Rd with
+    // an external source and an on-chip-I/O destination. This two-step path
+    // must classify the destination independently of the preceding read.
+    p = place_movi_il(p, 4'd7, 32'h0000_0840);
+    p = place_movi_il(p, 4'd8, A_CONVDP);
+    p = place_word(p, 16'h8800 | (16'(7) << 5) | 16'(8));
+    p = place_load_abs(p, 4'd9, A_CONVDP);
+    // 5) A 32-bit field spans adjacent CONVDP/PSIZE I/O registers.
+    p = place_word(p, setf_enc(5'd0, 1'b0, 1'b0));
+    p = place_movi_il(p, 4'd7, 32'h0000_0860);
+    p = place_word(p, 16'h8800 | (16'(7) << 5) | 16'(8));
+    p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));
+    p = place_load_abs(p, 4'd13, A_PSIZE);
+    // 6) TI's libraries address individual I/O fields in bit-address space.
+    // Set CONTROL=0x00c0, then set and read back CONTROL bit 5 with FS0=1.
+    p = place_movi_il(p, 4'd10, 32'h0000_00C0);
+    p = place_store_abs(p, 4'd10, A_CONTROL);
+    p = place_word(p, setf_enc(5'd1, 1'b0, 1'b0));
+    p = place_movi_il(p, 4'd11, 32'h0000_0001);
+    p = place_store_abs(p, 4'd11, A_CONTROL + 5);
+    p = place_load_abs(p, 4'd12, A_CONTROL + 5);
+    // 7) A wide field at the final I/O word must not wrap its upper lane to
+    // CONTROL when the five-bit register index rolls over.
+    p = place_word(p, setf_enc(5'd0, 1'b0, 1'b0));
+    p = place_movi_il(p, 4'd14, 32'hDEAD_BEEF);
+    p = place_store_abs(p, 4'd14, A_REFCNT);
 
     p = place_word(p, 16'hC0FF);
 
@@ -134,17 +166,27 @@ module tb_io_access;
 
     // 1) PSIZE round-trip.
     check_reg("1: A2 = 0x00001234",      u_core.u_regfile.a_regs[2], 32'h0000_1234);
-    check_io ("1: io_reg[PSIZE]=0x1234", IO_IDX_PSIZE, 16'h1234);
     // 2) PMASK round-trip; PSIZE unchanged (no aliasing).
     check_reg("2: A4 = 0x0000ABCD",      u_core.u_regfile.a_regs[4], 32'h0000_ABCD);
     check_io ("2: io_reg[PMASK]=0xABCD", IO_IDX_PMASK, 16'hABCD);
-    check_io ("2: io_reg[PSIZE] still 0x1234", IO_IDX_PSIZE, 16'h1234);
+    check_io ("2: PMASK remains independent", IO_IDX_PMASK, 16'hABCD);
     // 3) External MOVE unaffected by the I/O mux.
     check_reg("3: A6 = 0x00009999",      u_core.u_regfile.a_regs[6], 32'h0000_9999);
     if (u_mem.mem[128] !== 16'h9999) begin
       $display("TEST_RESULT: FAIL: 3: ext mem[128] expected=9999 actual=%04h", u_mem.mem[128]);
       failures++;
     end
+    check_reg("4: M2M I/O readback", u_core.u_regfile.a_regs[9], 32'h0000_0013);
+    check_reg("5: wide I/O high-word readback",
+              u_core.u_regfile.a_regs[13], 32'h0000_0004);
+    check_io("5: wide I/O low word committed", IO_IDX_CONVDP, 16'h0015);
+    check_io("5: wide I/O high word committed", IO_IDX_PSIZE, 16'h0004);
+    check_reg("6: subfield I/O read is right justified",
+              u_core.u_regfile.a_regs[12], 32'h0000_0001);
+    check_io("6: subfield I/O write preserves adjacent bits",
+             IO_IDX_CONTROL, 16'h00E0);
+    check_io("7: end-of-page wide I/O write does not wrap",
+             IO_IDX_CONTROL, 16'h00E0);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
@@ -152,7 +194,7 @@ module tb_io_access;
     end
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (I/O access: MOVE store/load to PSIZE/PMASK on-chip; external MOVE intact)");
+      $display("TEST_RESULT: PASS (I/O access: full/subfield, page bound, and M2M MOVE; external MOVE intact)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

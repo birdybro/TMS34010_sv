@@ -19,19 +19,20 @@
 //     register results are checked bit-for-bit. This is the strongest
 //     ABSOLUTE-correctness test and pins down the bit-to-register
 //     mapping (assumption A0026) against TI's own numbers.
-//       mask = {B1,B2,B4,B8,B12,B13,B14,SP} = bits 1,2,4,8,12,13,14,15
-//            = 0xF116.
+//       mask = {B1,B2,B3,B7,B12,B13,B14,SP}, encoded directly, is 0xF08E.
 //
 //   PHASE 1 (run first, A file): MMTM → corrupt → MMFM round-trip. This
 //     is the strongest INTERNAL-CONSISTENCY test: it only relies on MMTM
 //     and MMFM agreeing on the mask mapping, not on its absolute value,
 //     and it also regression-checks that the shared mm_* iterator still
 //     pushes correctly after the MMTM/MMFM merge.
-//       mask = {A0,A2,A4,A8,A12,A13,A14} = bits 0,2,4,8,12,13,14 = 0x7115
+//       MMTM mask = 0xA88E; MMFM mask = 0x7115.
 //       (SP/bit15 deliberately omitted so PHASE 1 and PHASE 2 don't fight
 //        over the shared SP register).
 //
-// Assumption A0026 (shared with MMTM): bit N of the mask = register R(N).
+// The asymmetric mappings are checked independently against TI's published
+// worked example and original-assembler encodings; a same-mask round trip is
+// specifically forbidden because it would hide this production incompatibility.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -124,13 +125,14 @@ module tb_mmfm;
   // ---- PHASE-1 (round-trip) parameters -------------------------------------
   localparam logic [DATA_WIDTH-1:0] RP1_INIT = 32'h0000_0800;   // A1 = Rp
   // {A0,A2,A4,A8,A12,A13,A14} (no SP) = bits 0,2,4,8,12,13,14 = 0x7115.
-  localparam logic [15:0]           MASK1    = 16'h7115;
+  localparam logic [15:0]           MASK1_PUSH = 16'hA88E;
+  localparam logic [15:0]           MASK1_POP  = 16'h7115;
   localparam logic [DATA_WIDTH-1:0] GARBAGE  = 32'hDEAD_BEEF;
 
   // ---- PHASE-2 (TI spec example) parameters --------------------------------
   localparam logic [DATA_WIDTH-1:0] RP2_INIT = 32'h0001_0000;   // B0 = Rp
-  // {B1,B2,B4,B8,B12,B13,B14,SP} = bits 1,2,4,8,12,13,14,15 = 0xF116.
-  localparam logic [15:0]           MASK2    = 16'hF116;
+  // {B1,B2,B3,B7,B12,B13,B14,SP}; MMFM mask bit N selects register N.
+  localparam logic [15:0]           MASK2    = 16'hF08E;
 
   // The list of A-file registers touched by PHASE 1 (excludes Rp=A1).
   localparam int unsigned LIST1 [0:6] = '{0, 2, 4, 8, 12, 13, 14};
@@ -170,7 +172,7 @@ module tb_mmfm;
 
     // MMTM A1, MASK1 — push the 7 registers. Encoding 0x0981 + mask.
     p = place_word(p, 16'h0981);
-    p = place_word(p, MASK1);
+    p = place_word(p, MASK1_PUSH);
 
     // Corrupt every pushed register so a failed restore is visible.
     foreach (LIST1[i]) begin
@@ -180,7 +182,7 @@ module tb_mmfm;
     // MMFM A1, MASK1 — pop them back. Encoding 0x09A1 + mask.
     //   top11=00001001_101, R=0, DDDD=1 ⇒ 0x09A1.
     p = place_word(p, 16'h09A1);
-    p = place_word(p, MASK1);
+    p = place_word(p, MASK1_POP);
 
     // =========================== PHASE 2 ==================================
     p = place_movi_il(p, 1'b1, 4'd0, RP2_INIT);          // B0 = Rp (B file)
@@ -205,8 +207,8 @@ module tb_mmfm;
     check_reg("MMFM spec: B14 = EEEEBEBE", u_core.u_regfile.b_regs[14], 32'hEEEE_BEBE);
     check_reg("MMFM spec: B13 = DDDDBDBD", u_core.u_regfile.b_regs[13], 32'hDDDD_BDBD);
     check_reg("MMFM spec: B12 = CCCCBCBC", u_core.u_regfile.b_regs[12], 32'hCCCC_BCBC);
-    check_reg("MMFM spec: B8  = 7777B7B7", u_core.u_regfile.b_regs[8],  32'h7777_B7B7);
-    check_reg("MMFM spec: B4  = 3333B3B3", u_core.u_regfile.b_regs[4],  32'h3333_B3B3);
+    check_reg("MMFM spec: B7  = 7777B7B7", u_core.u_regfile.b_regs[7],  32'h7777_B7B7);
+    check_reg("MMFM spec: B3  = 3333B3B3", u_core.u_regfile.b_regs[3],  32'h3333_B3B3);
     check_reg("MMFM spec: B2  = 2222B2B2", u_core.u_regfile.b_regs[2],  32'h2222_B2B2);
     check_reg("MMFM spec: B1  = 1111B1B1", u_core.u_regfile.b_regs[1],  32'h1111_B1B1);
     // Final Rp = initial + 8*32 = 0x10000 + 0x100 = 0x10100.

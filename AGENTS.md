@@ -15,7 +15,7 @@ translate a software implementation into one large procedural HDL block.
 The original processor and Cyclone V implementation baseline is complete
 through Task 0160. Task 0161's production-revision GPU re-audit found
 remaining programmer-visible graphics work; do not claim GPU completion until
-the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0172
+the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0173
 close the production graphics-instruction semantic, direction, window,
 checkpoint/resume, LINE-interrupt, complete PPOP/PSIZE/register matrix, and
 display/video/SRT-local-bus conformance gates. Treat
@@ -214,6 +214,19 @@ generated input, and the checked-in MAME/RTL result pair plus
 `tb_mame_graphics_replay` in every ordinary regression. TI pages remain
 authoritative over the secondary model; a new difference must either correct
 RTL or acquire a source-backed, minimized class—there is no catch-all class.
+Task 0173 adds the preserved TI software gate. Never commit extracted TI COFF
+files, generated execution vectors, DOS tools, MAME binaries, or arcade ROMs.
+`prepare_workloads.py --check` must reproduce the checked-in hashes/metadata;
+`tb_ti_workload_replay` must byte-lock the accepted RTL result; and
+`scripts/ti_workloads.sh` must lock both live engines and report zero
+unexplained differences. Preserve the precise mismatch shapes in
+`ti_workload_divergences.json`; do not broaden them into a catch-all. The
+source/object contracts exposed by these programs are mandatory:
+SUBI/CMPI extensions are one's-complement; MMTM uses bit 15-N while MMFM uses
+bit N; both field M2M MOVE forms are implemented; and processor I/O fields
+may span adjacent 16-bit registers. See `docs/ti_workloads.md` for
+provenance, deterministic stops, rebuild equivalence, and the legal-ROM
+boundary.
 The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
@@ -282,6 +295,8 @@ RTL, tests, task log, changelog, and specification first.
   evidence.
 - `docs/mame_graphics_reference.md` — pinned external-reference setup,
   corpus/result contract, license boundary, and divergence classifications.
+- `docs/ti_workloads.md` — preserved media provenance, original-tool ROM
+  rebuild, software milestones, result locks, and legal-ROM boundary.
 - `docs/completion_audit.md` — complete ISA reconciliation and ordered
   project-level exit gates.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.
@@ -353,6 +368,7 @@ scripts/sim.sh <tb_name>
 scripts/regress.sh
 scripts/lint.sh
 scripts/synth_quartus.sh
+scripts/ti_workloads.sh
 ```
 
 Tool overrides are `VLOG`, `VSIM`, `VLIB`, `VERILATOR`, and `QUARTUS_SH`.

@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal/external video timing, and live DPYADR
-> reconciled through Task 0171**. The core issues bit-addressed 1–32-bit
+> reconciled through Task 0173**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -133,6 +133,17 @@ All engine families now have exact controller address/count evidence, and a
 full pin-supplied program proves the MTR/RTM row/column/status phases after
 CDC. `srt_conformance.md` is the authoritative classification and scope
 ledger.
+Task 0173 completes processor field semantics on the I/O page. A MOVE may
+start at any bit within a register, and the right-justified field may cross
+into the immediately adjacent 16-bit I/O register. Reads concatenate the two
+architectural words before selection; writes merge the field into both words
+and commit each lane through the same register-specific masks and side
+effects. A second lane is enabled only when its full address remains inside
+the I/O page, so a wide REFCNT access cannot wrap to CONTROL. The request
+remains one processor I/O completion—external memory
+field sequencing is not inserted into the internal page. `tb_io_access`
+checks full-word, subfield, adjacent-register, and memory-to-memory forms,
+including the CONVDP/PSIZE pair used by preserved TI software.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request

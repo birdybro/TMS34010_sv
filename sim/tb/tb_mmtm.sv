@@ -10,18 +10,15 @@
 // memory transactions is data-dependent — it equals the population
 // count of the second instruction word. Up to 16 32-bit writes.
 //
-// Assumption A0026 (also called out in tms34010_core.sv): bit N of
-// the mask = register R(N). The spec's actual chart is a graphical
-// figure that didn't survive pdftotext extraction; this reading is
-// consistent with the spec's "lowest-order register is always saved
-// first" requirement when the iterator scans LSB-first.
+// MMTM's binary list is reverse ordered: mask[15] selects R0 through
+// mask[0] selecting R15. (MMFM is intentionally direct ordered.) This
+// matches masks emitted by TI's original assembler.
 //
 // Test plan:
 //   1. Pre-load A0..A14 with recognisable values (0xAnAnAnAn-style).
 //   2. Set Rp (A1) to a mid-memory bit address (0x0000_0800 = word 128).
 //   3. MMTM A1, {A0, A2, A4, A8, A12, A13, A14, A15(=SP)}:
-//        mask = bit 0 + 2 + 4 + 8 + 12 + 13 + 14 + 15 = 0xF115.
-//        ⇒ second word = 0xF115.
+//        reverse-encoded mask = 0xA88F.
 //   4. Verify final A1 = 0x0800 - 8*32 = 0x0800 - 0x100 = 0x0700.
 //   5. Verify memory layout (lowest addr has highest-order register):
 //        mem[bit 0x0700] = SP (A15)
@@ -119,9 +116,9 @@ module tb_mmtm;
 
   // Rp = A1; initial Rp bit-address = 0x0800 = word 128.
   localparam logic [DATA_WIDTH-1:0] RP_INIT = 32'h0000_0800;
-  // Mask for {A0, A2, A4, A8, A12, A13, A14, A15} = bits 0,2,4,8,12,13,14,15
-  // = 0xF115 (1111_0001_0001_0101).
-  localparam logic [15:0]           MASK    = 16'hF115;
+  // Mask for {A0, A2, A4, A8, A12, A13, A14, A15}: mask bit 15-N
+  // selects register N, yielding 0xA88F.
+  localparam logic [15:0]           MASK    = 16'hA88F;
 
   // Per-register sentinel values for A0..A15. A1 (Rp) is set
   // separately and must NOT be in the list per spec.

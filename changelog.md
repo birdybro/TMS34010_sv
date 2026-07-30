@@ -7,6 +7,44 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0173 — preserved TI graphics software workloads)
+- Added hash-verified extraction and direct TMS34010 COFF loading for five
+  TI-authored programs: the ROM tutorial, Sample Function Library
+  display-list demo, Graphics/Math TEST06 and TEST09, and 1987 GSP Paint.
+  The checked-in manifest records every disk/executable/load hash, section,
+  entry point, deterministic terminal patch, timeout, and watched
+  framebuffer/program range without redistributing extracted binaries.
+- Added a reproducible original-tool ROM build. TI's preserved DOS assembler
+  and linker produce a COFF with expected metadata-dependent container hash
+  and an address/word load image exactly identical to the prebuilt tutorial.
+- Added `tb_ti_workload_replay`, a bounded dual-window memory model, exact
+  accepted RTL/MAME result locks, and a closed divergence classifier.
+  `scripts/ti_workloads.sh` rebuilds the minimal adapter at exact MAME commit
+  `70725158b4e9d2e1230c0515faec754f9cee86a2`, runs both engines, byte-locks
+  their outputs, and reports nine classified case/field groups with zero
+  unexplained mismatches. Ordinary regression remains network/MAME-free.
+- Added optional `mame_arcade_smoke.sh` readiness for a user-supplied legal
+  ROM directory. Arcade media is never downloaded, committed, or made a
+  completion dependency.
+- Documented provenance, redistribution rules, build equivalence, workload
+  maps/milestones, comparison policy, and commands in `docs/ti_workloads.md`.
+
+### Fixed (Task 0173 — TI software compatibility findings)
+- Corrected SUBI and CMPI IW/IL to complement their one's-complement
+  object-code extensions before subtraction, per User's Guide pages 12-54,
+  12-55, 12-249, and 12-250.
+- Corrected the asymmetric register-list formats proved by TI's original
+  assembler: MMTM bit 15-N selects R(N), while MMFM bit N selects R(N).
+- Implemented the two remaining field memory-to-memory MOVE forms,
+  `*Rs(SOff)` to `*Rd(DOff)` and absolute-to-absolute, for F0/F1, unaligned
+  fields, independent offsets/addresses, and status preservation.
+- Made processor MOVE access to the on-chip I/O page field-aware, including
+  subfields and a field spanning two adjacent registers. Register-specific
+  masks and side effects still apply independently to each committed lane.
+- Validation: reproducible ROM build PASS; exact pinned live five-workload
+  comparison PASS with zero unexplained differences; all affected focused
+  suites PASS; `scripts/lint.sh` clean; full regression 159/159 PASS.
+
 ### Added (Task 0172 — pinned MAME graphics differential verification)
 - Added a BSD-3-Clause minimal MAME driver adapter pinned to exact upstream
   commit `70725158b4e9d2e1230c0515faec754f9cee86a2`. MAME remains an ignored
@@ -2113,11 +2151,10 @@ Dates are ISO 8601. Each completed task should add at least one entry.
     `mmtm_mask_will_be_empty` for INSTR_MMTM.
   - rf_wr_data mux returns `mmtm_rp_q` for INSTR_MMTM (= final
     Rp value = address of last push).
-- Assumption A0026: bit N of the mask = register R(N) for both
-  MMTM and MMFM. The spec's actual chart is a graphical figure
-  that didn't survive `pdftotext -layout` extraction. The natural
-  reading is self-consistent and matches the spec's "lowest-order
-  register saved first" requirement when scanning LSB-first.
+- The original A0026 implementation assumed bit N selected R(N) for both
+  MMTM and MMFM because the graphical chart did not survive text extraction.
+  Task 0173 later proved with TI's assembler that MMTM actually uses bit
+  15-N while MMFM retains the direct bit-N format and corrected the RTL/test.
 - Added `sim/tb/tb_mmtm.sv`. Loads A0..A15 with recognisable
   sentinel values (0xAnAnAnAn-style), sets Rp=A1=0x800, executes
   `MMTM A1, {A0, A2, A4, A8, A12, A13, A14, SP}` (mask=0xF115).

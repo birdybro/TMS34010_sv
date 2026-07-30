@@ -38,7 +38,19 @@ MAME and RTL. Checked-in MAME and accepted RTL results keep the ordinary
 regression offline, while `scripts/mame_graphics_diff.sh` rebuilds and reruns
 the live reference. Every secondary-reference difference is machine-classified
 with a minimized reproducer; none is unexplained. The setup and divergence
-ledger is `docs/mame_graphics_reference.md`. Task 0124
+ledger is `docs/mame_graphics_reference.md`. Task 0173 adds a
+preserved-software integration gate. Five TI-authored
+programs—the ROM tutorial, Sample Function Library display-list demo, two
+Graphics/Math tests, and 1987 GSP Paint—are hash-verified and loaded from the
+pinned original disks, then run to deterministic milestones on RTL and exact
+pinned MAME. The ROM tutorial also rebuilds with TI's original DOS
+assembler/linker to an identical address/word load image. This found and
+fixed complemented SUBI/CMPI extensions, asymmetric MMTM/MMFM masks, the two
+remaining field memory-to-memory MOVE forms, and subfield/two-register
+processor I/O access. Exact engine result locks and a closed nine-group
+ledger leave zero unexplained differences. No extracted executable or arcade
+ROM is committed. Provenance and run instructions are in
+`docs/ti_workloads.md`. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -258,15 +270,17 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 157 self-checking SystemVerilog testbenches, including non-integer-clock
+- 159 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   the generated 577-case display scheduler matrix, end-to-end SRT
   graphics-cycle coverage, direct FPGA pad/reset checks, and an exhaustive
   65,536-opcode static status-policy sweep.
 
 The Task 0160 processor/FPGA baseline and its reproducible Cyclone V
-implementation flow remain complete, but production-revision functional GPU
-completion now requires Tasks 0162–0174. A board-level system also needs
+implementation flow remain complete. Tasks 0162–0173 close every identified
+production functional and surviving-software gate; Task 0174's final complete
+regression/differential/workload/Quartus sign-off remains before restoring
+the scoped GPU-complete claim. A board-level system also needs
 external VRAM/DRAM or an equivalent memory/video subsystem, level translation,
 and signal-integrity validation to consume the landed transfer cycles and emit
 pixels; those surrounding-device responsibilities are not part of this
@@ -281,8 +295,10 @@ scripts/regress.sh
 scripts/sim.sh tb_smoke
 scripts/sim.sh tb_pixt_win
 scripts/sim.sh tb_mame_graphics_replay
+scripts/sim.sh tb_ti_workload_replay
 # Explicit first-time network/build step for the optional live reference:
 scripts/mame_graphics_diff.sh --setup
+scripts/ti_workloads.sh --setup --build-rom
 QUARTUS_SH=/path/to/quartus-17.0/quartus/bin/quartus_sh \
   scripts/synth_quartus.sh
 ```
@@ -322,6 +338,9 @@ pinned `third_party/TMS34010_Info` submodule.
 - `docs/mame_graphics_reference.md` — exact MAME provenance/license boundary,
   deterministic differential corpus, opt-in setup, and the closed
   secondary-reference divergence ledger.
+- `docs/ti_workloads.md` — preserved TI media hashes, original-tool ROM
+  rebuild, workload entry/memory maps, deterministic milestones, result
+  locks, closed divergence classes, and optional legal arcade-ROM readiness.
 - `scripts/` — lint, simulation, and Quartus entry points.
 - `tasks.md` / `changelog.md` — task-level design and implementation history.
 - `third_party/TMS34010_Info/` — pinned primary/reference documentation.

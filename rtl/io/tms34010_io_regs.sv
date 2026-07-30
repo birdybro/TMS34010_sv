@@ -97,8 +97,12 @@ module tms34010_io_regs
   input  logic [ADDR_WIDTH-1:0] addr,     // full 32-bit bit-address
   input  logic [ADDR_WIDTH-1:0] req_addr_i, // held address for req completion
   input  logic [15:0]           wdata,
+  input  logic                  req_next_i, // same field crosses next I/O word
+  input  logic [ADDR_WIDTH-1:0] req_next_addr_i,
+  input  logic [15:0]           wdata_next_i,
 
   output logic [15:0]           rdata,    // selected register (0 if not I/O)
+  output logic [15:0]           rdata_next, // following register for wide fields
   output logic                  is_io,    // addr decodes to I/O space
 
   // Dedicated taps for the graphics datapath (combinational views of the
@@ -143,15 +147,21 @@ module tms34010_io_regs
   // C00001FF). The register index is addr[8:4].
   logic [IO_REG_IDX_W-1:0] idx;
   logic [IO_REG_IDX_W-1:0] req_idx;
+  logic [IO_REG_IDX_W-1:0] req_next_idx;
   logic [IO_REG_IDX_W-1:0] cpu_access_idx;
   logic                    req_is_io;
+  logic                    req_next_is_io;
   assign is_io = (addr[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
               && (addr[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
   assign idx   = addr[IO_REG_IDX_W+3 : 4];
   assign req_is_io =
       (req_addr_i[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
       && (req_addr_i[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
+  assign req_next_is_io =
+      (req_next_addr_i[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
+      && (req_next_addr_i[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
   assign req_idx = req_addr_i[IO_REG_IDX_W+3 : 4];
+  assign req_next_idx = req_next_addr_i[IO_REG_IDX_W+3 : 4];
   assign cpu_access_idx = req ? req_idx : idx;
 
   // Register storage.
@@ -417,6 +427,32 @@ module tms34010_io_regs
     end
   end
 
+  // A processor field may span two adjacent 16-bit I/O registers (TI's
+  // libraries use a 32-bit MOVE to save/restore CONVDP and PSIZE together).
+  // Supply the following word in parallel so the core can apply the same
+  // bit-field extraction used by the external memory sequencer.
+  always_comb begin
+    rdata_next = 16'h0000;
+    if (is_io && (idx != IO_REG_IDX_W'(IO_REG_COUNT - 1))) begin
+      unique case (idx + IO_REG_IDX_W'(1))
+        IO_IDX_RESERVED_17,
+        IO_IDX_RESERVED_18,
+        IO_IDX_RESERVED_19,
+        IO_IDX_RESERVED_1A: rdata_next = 16'h0000;
+        IO_IDX_INTPEND: rdata_next = intpend_value;
+        IO_IDX_REFCNT:  rdata_next = refcnt_o;
+        IO_IDX_HCOUNT:  rdata_next = hcount_o;
+        IO_IDX_VCOUNT:  rdata_next = vcount_o;
+        IO_IDX_DPYADR:  rdata_next = dpyadr_o;
+        // Wide accesses to the host-indirect triplet are not architected.
+        IO_IDX_HSTADRL,
+        IO_IDX_HSTADRH,
+        IO_IDX_HSTDATA: rdata_next = 16'h0000;
+        default: rdata_next = io_reg[idx + IO_REG_IDX_W'(1)];
+      endcase
+    end
+  end
+
   // Independent host-indirect read view. The selected word is carried in the
   // coherent local-cycle command and returned during the physical I/O read.
   always_comb begin
@@ -557,6 +593,45 @@ module tms34010_io_regs
           end
 
           default: io_reg[io_write_idx] <= io_write_data;
+        endcase
+      end
+
+      // The processor's single architectural field write may cover the next
+      // 16-bit register as well. This second lane is completion-qualified by
+      // the same request and is intentionally unavailable to host-indirect
+      // cycles, which are always one local word wide.
+      if (req && we && req_is_io && req_next_i && req_next_is_io) begin
+        unique case (req_next_idx)
+          IO_IDX_CONTROL:
+            io_reg[IO_IDX_CONTROL] <=
+                wdata_next_i & CONTROL_WRITABLE_MASK;
+          IO_IDX_DPYCTL:
+            io_reg[IO_IDX_DPYCTL] <=
+                wdata_next_i & DPYCTL_WRITABLE_MASK;
+          IO_IDX_INTENB:
+            io_reg[IO_IDX_INTENB] <= wdata_next_i & INT_SOURCE_MASK;
+          IO_IDX_HSTCTLH:
+            io_reg[IO_IDX_HSTCTLH] <=
+                wdata_next_i & HSTCTLH_WRITABLE_MASK;
+          IO_IDX_DPYTAP:
+            io_reg[IO_IDX_DPYTAP] <= wdata_next_i & DPYTAP_MASK;
+          IO_IDX_RESERVED_17,
+          IO_IDX_RESERVED_18,
+          IO_IDX_RESERVED_19,
+          IO_IDX_RESERVED_1A,
+          IO_IDX_HSTADRL,
+          IO_IDX_HSTADRH,
+          IO_IDX_HSTDATA,
+          IO_IDX_REFCNT,
+          IO_IDX_HCOUNT,
+          IO_IDX_VCOUNT,
+          IO_IDX_DPYADR,
+          IO_IDX_INTPEND,
+          IO_IDX_HSTCTLL: begin
+            // These registers have source-specific write semantics and are
+            // not legal second lanes of a processor multiword I/O field.
+          end
+          default: io_reg[req_next_idx] <= wdata_next_i;
         endcase
       end
 

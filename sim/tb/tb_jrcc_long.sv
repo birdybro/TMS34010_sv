@@ -197,7 +197,7 @@ module tb_jrcc_long;
     //   Then JREQ long +3 words.
     p = place_movi_il(p, REG_FILE_A, 4'd2, 32'sd42);
     u_mem.mem[p]     = cmpi_iw_enc(REG_FILE_A, 4'd2); p = p + 1;
-    u_mem.mem[p]     = 16'sd42;                       p = p + 1;
+    u_mem.mem[p]     = ~16'sd42;                      p = p + 1;
     u_mem.mem[p]     = jrcc_long_op_enc(CC_EQ);       // [0]
     u_mem.mem[p + 1] = 16'sd3;                         // [1] disp = +3
     u_mem.mem[p + 2] = movi_il_enc(REG_FILE_A, 4'd4);  // fall-through (skipped)
@@ -213,7 +213,7 @@ module tb_jrcc_long;
     //   Then JREQ long +3 — branch should NOT take, A5 gets FALL_VAL.
     p = place_movi_il(p, REG_FILE_A, 4'd2, 32'sd7);
     u_mem.mem[p]     = cmpi_iw_enc(REG_FILE_A, 4'd2); p = p + 1;
-    u_mem.mem[p]     = 16'sd8;                         p = p + 1;
+    u_mem.mem[p]     = ~16'sd8;                        p = p + 1;
     u_mem.mem[p]     = jrcc_long_op_enc(CC_EQ);       // [0]
     u_mem.mem[p + 1] = 16'sd3;                         // [1] disp = +3
     u_mem.mem[p + 2] = movi_il_enc(REG_FILE_A, 4'd5);  // fall-through RUNS

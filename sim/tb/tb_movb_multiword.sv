@@ -1,14 +1,14 @@
 // -----------------------------------------------------------------------------
 // tb_movb_multiword.sv
 //
-// Completes the two multiword MOVB memory-to-memory forms:
+// Covers the multiword MOVB forms and production field MOVE offset form:
 //   - *Rs(SOffset),*Rd(DOffset): opcode, signed source offset, signed dest offset
 //   - @SAddress,@DAddress: opcode, source low/high, destination low/high
 //
-// 1988 TI TMS34010 User's Guide pp. 12-120/121 and 12-123/124. Both forms
-// transfer exactly eight bits between bit addresses and leave registers and
-// status flags unaffected. The vectors deliberately cross 16-bit memory-word
-// boundaries so operand ordering or accidental word-sized transfers fail.
+// 1988 TI TMS34010 User's Guide pp. 12-120/121, 12-123/124, and 12-151/152.
+// MOVB transfers eight bits; MOVE uses the F-selected field definition. All
+// forms leave registers and status unaffected. The vectors deliberately cross
+// word boundaries or use independent signed offsets so operand ordering fails.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -93,6 +93,20 @@ module tb_movb_multiword;
     return p + 5;
   endfunction
 
+  function automatic int unsigned place_move_off_m2m(
+      input int unsigned p,
+      input logic f_select,
+      input reg_idx_t rs,
+      input reg_idx_t rd,
+      input logic [15:0] src_offset,
+      input logic [15:0] dst_offset);
+    u_mem.mem[p] = 16'hB800 | (instr_word_t'(f_select) << 9)
+                 | (instr_word_t'(rs) << 5) | instr_word_t'(rd);
+    u_mem.mem[p + 1] = src_offset;
+    u_mem.mem[p + 2] = dst_offset;
+    return p + 3;
+  endfunction
+
   int unsigned failures;
 
   task automatic check_word(
@@ -134,6 +148,8 @@ module tb_movb_multiword;
     u_mem.mem[144] = 16'h0555;
     u_mem.mem[145] = 16'hAAA0;
     u_mem.mem[176] = 16'h8007;
+    u_mem.mem[200] = 16'h0ABC;
+    u_mem.mem[210] = 16'hF000;
 
     p = 0;
     // A0 + (-0x3C) = 0x804; A1 + 0x0C = 0x90C (straddles words).
@@ -148,6 +164,15 @@ module tb_movb_multiword;
 
     // Absolute operands are source low/high followed by destination low/high.
     p = place_movb_abs_m2m(p, 32'h0000_0A09, 32'h0000_0B03);
+
+    // F1=12: source A4+0 at word 200, destination A5-0x20 at word 210.
+    p = place_movi_il(p, 4'd4, 32'h0000_0C80);
+    p = place_movi_il(p, 4'd5, 32'h0000_0D40);
+    p = place_movi_il(p, 4'd3, 32'hD000_0310);
+    u_mem.mem[p] = putst_enc(4'd3);
+    p++;
+    p = place_move_off_m2m(
+        p, 1'b1, 4'd4, 4'd5, 16'h0000, 16'hFFE0);
 
     // This flag-neutral instruction must execute after all four absolute
     // address words, proving five-word PC advancement.
@@ -167,11 +192,14 @@ module tb_movb_multiword;
     check_word("offset destination high", 145, 16'hAAAC);
     // Absolute destination 0xB03: C3 occupies bits 3..10; bit 15 sentinel stays.
     check_word("absolute destination", 176, 16'h861F);
+    check_word("field offset destination", 210, 16'hFABC);
 
     check_reg("offset source base preserved", u_core.u_regfile.a_regs[0], 32'h0000_0840);
     check_reg("offset dest base preserved",   u_core.u_regfile.a_regs[1], 32'h0000_0900);
     check_reg("post-instruction sentinel",    u_core.u_regfile.a_regs[2], 32'd21);
-    check_reg("status unaffected", u_core.u_status_reg.st_o, 32'hD000_0010);
+    check_reg("field source base preserved",  u_core.u_regfile.a_regs[4], 32'h0000_0C80);
+    check_reg("field dest base preserved",    u_core.u_regfile.a_regs[5], 32'h0000_0D40);
+    check_reg("status unaffected", u_core.u_status_reg.st_o, 32'hD000_0310);
 
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set");
@@ -179,7 +207,7 @@ module tb_movb_multiword;
     end
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (multiword MOVB offset/absolute memory-to-memory)");
+      $display("TEST_RESULT: PASS (multiword MOVB and field MOVE offset memory-to-memory)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

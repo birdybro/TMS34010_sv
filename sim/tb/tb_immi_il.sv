@@ -3,8 +3,8 @@
 //
 // Tests the six IL-form immediate instructions (32-bit immediate):
 //   ADDI IL K, Rd     Rd + K32 → Rd     (N/C/Z/V)
-//   SUBI IL K, Rd     Rd - K32 → Rd     (N/C/Z/V)
-//   CMPI IL K, Rd     flags from Rd - K32; Rd unchanged
+//   SUBI IL K, Rd     complemented K32 extension; Rd - K → Rd
+//   CMPI IL K, Rd     complemented K32 extension; flags from Rd - K; unchanged
 //   ANDI/ANDNI IL,Rd  Rd & ~extension → Rd (Z only)
 //   ORI  IL K, Rd     Rd | K32 → Rd     (Z only)
 //   XORI IL K, Rd     Rd ^ K32 → Rd     (Z only)
@@ -145,10 +145,10 @@ module tb_immi_il;
     p = place_imm_il (p, ADDI_IL_TOP11, REG_FILE_A, 4'd1, 32'h0002_0000);
 
     p = place_movi_il(p, REG_FILE_A, 4'd2, 32'h0100_0000);
-    p = place_imm_il (p, SUBI_IL_TOP11, REG_FILE_A, 4'd2, 32'h0001_0000);
+    p = place_imm_il (p, SUBI_IL_TOP11, REG_FILE_A, 4'd2, ~32'h0001_0000);
 
     p = place_movi_il(p, REG_FILE_A, 4'd3, 32'hCAFE_BABE);
-    p = place_imm_il (p, CMPI_IL_TOP11, REG_FILE_A, 4'd3, 32'hCAFE_BABE);
+    p = place_imm_il (p, CMPI_IL_TOP11, REG_FILE_A, 4'd3, ~32'hCAFE_BABE);
 
     p = place_movi_il(p, REG_FILE_A, 4'd4, 32'hF0F0_F0F0);
     p = place_imm_il (p, ANDI_IL_TOP11, REG_FILE_A, 4'd4, 32'hF00F_00F0);
