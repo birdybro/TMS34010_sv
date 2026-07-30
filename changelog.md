@@ -7,6 +7,28 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0166 — checkpointable FILL/PIXBLT execution)
+- Added architectural context checkpoints after completed destination
+  16-bit-word and nonfinal-row boundaries for FILL L/XY and every PIXBLT
+  form. Forward and reverse traversal use their corresponding word-crossing
+  edges, and the final pixel proceeds directly to ordinary completion.
+- Serialized B0/B2/B10-B14 through the single B-file write port in seven
+  memory-quiescent states. The image records the next actual source and
+  destination pixels, next traversal cursor, effective dimensions, saved
+  completion results, and effective raw destination geometry.
+- Defined the B14 commit cycle as the sole coherent array checkpoint for
+  Task 0167 interrupt recognition. It follows all pixel writes and
+  field-sequencer partial-word RMW effects and cannot overlap a held memory
+  request.
+- Added `tb_array_checkpoint`, an eight-form reference model covering
+  direction, W=0/W=3, PSIZE 2/4/8/16, PPOP/PMASK destination reads, SRT,
+  partial-word RMW, and three-cycle waits. It checks exact execution traffic,
+  every checkpoint image, framebuffer/final context, held-request stability,
+  absence of a post-final checkpoint, and restart reconstruction with no
+  duplicated or skipped request.
+- Validation: focused FILL/PIXBLT, direction, window, context, processing,
+  and SRT tests PASS; `scripts/lint.sh` clean; full regression 152/152 PASS.
+
 ### Fixed (Task 0165 — true W=3 array preclipping)
 - Replaced per-pixel W=3 suppression with an up-front inclusive intersection
   for FILL XY and PIXBLT B,XY/L,XY/XY,XY. FILL now starts at the effective

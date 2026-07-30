@@ -273,7 +273,7 @@ remains authoritative.
 | 0163 | Implement directional PIXBLT traversal | complete |
 | 0164 | Implement W=1 common-rectangle results | complete |
 | 0165 | Implement true W=3 array preclipping | complete |
-| 0166 | Make FILL and PIXBLT execution checkpointable | pending |
+| 0166 | Make FILL and PIXBLT execution checkpointable | complete |
 | 0167 | Resume interrupted FILL and PIXBLT through PBX | pending |
 | 0168 | Resume interrupted LINE execution | pending |
 | 0169 | Close the graphics conformance matrix | pending |
@@ -5941,7 +5941,7 @@ Commit:
 ---
 
 ### Task 0166: Make FILL and PIXBLT execution checkpointable
-Status: pending
+Status: complete
 Dependencies:
 - Task 0165 (final array geometry and traversal semantics).
 Spec sources:
@@ -5978,6 +5978,37 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
+Results:
+- Added destination-word and nonfinal-row checkpoint detection after the
+  completed destination write for FILL L/XY and all six PIXBLT forms.
+  Forward traversal checkpoints when the next pixel is 16-bit aligned;
+  reverse traversal checkpoints after the aligned low-address pixel. No
+  checkpoint is inserted after the final pixel.
+- Serialized a coherent architectural image through the single B-file write
+  port with no active memory request. B0/B2 contain the next actual
+  source/destination pixels, B10/B11 contain the next cursor/effective
+  dimensions, and B12-B14 retain result and effective-geometry context.
+  FILL preserves its non-source B0 and unused B13.
+- Exposed one internal `array_checkpoint` recognition cycle only as B14
+  commits, after all earlier context writes and every field/partial-word
+  memory effect. Task 0167 can therefore take an interrupt only from a
+  complete restart image, never between an RMW read/write pair or while a
+  request is held.
+- Kept zero/fully-clipped arrays, W=1 result operations, final architectural
+  context, framebuffer contents, status, PBH/PBV, PPOP/PMASK, SRT, and
+  request order unchanged.
+- Added `tb_array_checkpoint`, covering FILL L/XY and PIXBLT
+  L,L/L,XY/XY,L/XY,XY/B,L/B,XY across W=0/W=3, PBH/PBV, PSIZE 2/4/8/16,
+  direct and destination-read paths, SRT, partial-word RMW, and three
+  inserted word waits. It checks every coherent image, exact request
+  traffic, held-request protocol, no final-pixel checkpoint, and reconstructs
+  the complete remaining request suffix from every captured image without
+  duplicate or skipped pixels.
+- Focused FILL/PIXBLT, direction, array-edge, W=1/W=3, PPOP/PMASK, and SRT
+  regressions PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 152/152 benches.
 Commit:
 - pending
 

@@ -164,7 +164,14 @@ package tms34010_pkg;
     CORE_DECODE_WAIT      = 6'd43, // second decode-settle cycle before capture
     CORE_DISPATCH         = 6'd44, // registered decode selects operand/immediate path
     CORE_FILL_W1_DYDX     = 6'd45, // FILL XY W=1 hit: write common-rectangle DYDX
-    CORE_PBLT_W1_DYDX     = 6'd46  // PIXBLT XY-dest W=1 hit: write common DYDX
+    CORE_PBLT_W1_DYDX     = 6'd46, // PIXBLT XY-dest W=1 hit: write common DYDX
+    CORE_ARRAY_CKPT_B0    = 6'd47, // array checkpoint: next source address
+    CORE_ARRAY_CKPT_B2    = 6'd48, // array checkpoint: next destination address
+    CORE_ARRAY_CKPT_B10   = 6'd49, // array checkpoint: next {row,column} cursor
+    CORE_ARRAY_CKPT_B11   = 6'd50, // array checkpoint: effective {height,width}
+    CORE_ARRAY_CKPT_B12   = 6'd51, // array checkpoint: source/FILL result context
+    CORE_ARRAY_CKPT_B13   = 6'd52, // array checkpoint: destination result context
+    CORE_ARRAY_CKPT_B14   = 6'd53  // array checkpoint: effective raw destination XY
   } core_state_t;
 
   // ---------------------------------------------------------------------------

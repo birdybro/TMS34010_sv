@@ -148,8 +148,15 @@ traverse only the effective rectangle in the selected direction. Clipped
 pixels generate no source read, destination read, MTR, RTM, or write, and
 full exclusion is memory-quiescent. Exact original-array completion context,
 V-only status, PBH/PBV, PPOP/PMASK, arbitrary waits, and SRT tagging are
-locked by a request-by-request reference model. Task 0166 checkpointable
-FILL/PIXBLT execution is next.
+locked by a request-by-request reference model.
+Task 0166 makes every FILL and PIXBLT form checkpointable at the specified
+destination-word and row boundaries. A quiet seven-cycle sequence publishes
+the next source/destination pixels, traversal cursor, effective dimensions,
+and saved result/geometry context through B0/B2/B10-B14; its final cycle is
+the sole safe interrupt-recognition point. Exact request traces and every
+captured restart suffix are reference-checked under direction, W=3,
+PPOP/PMASK, SRT, partial-word RMW, and memory stalls. Task 0167 PBX interrupt
+entry and RETI resume is next.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -208,7 +215,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 151 self-checking SystemVerilog testbenches, including non-integer-clock
+- 152 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.

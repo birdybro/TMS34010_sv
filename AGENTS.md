@@ -147,8 +147,14 @@ and destination consistently and traverse only the effective rectangle.
 framebuffer correspondence across every edge/corner, all PBH/PBV directions,
 PSIZE 1/2/4/8/16, independent legal pitches, PPOP/PMASK reads, full exclusion,
 and injected waits. It also locks original-array completion context, V-only
-status, no WVP, and binary direction isolation. Task 0166 checkpointable
-FILL/PIXBLT execution is next. The optional instruction
+status, no WVP, and binary direction isolation. Task 0166 adds coherent
+FILL/PIXBLT context publication after completed destination-word and row
+boundaries. B0/B2 name the next actual pixels and B10-B14 retain cursor,
+effective geometry, and result state; the final quiet writeback state is the
+only safe array-interrupt checkpoint. `tb_array_checkpoint` covers all eight
+forms and reconstructs the exact remaining request suffix from every image
+under direction, W=3, PPOP/PMASK, SRT, partial-word RMW, and stalls. Task 0167
+PBX entry/RETI resume is next. The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
 outside this functional GPU gate.

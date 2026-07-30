@@ -339,7 +339,15 @@ context and V-only/no-WVP behavior remain intact. The 23-case
 framebuffer alignment, every form/direction/edge, all pixel sizes, legal
 pitches, PPOP/PMASK destination reads, SRT, and arbitrary waits.
 
-Tasks 0166–0171 close the remaining functional and pin-integration items, Tasks
+Task 0166 closed checkpointable FILL/PIXBLT execution. Every form now
+publishes a coherent B-file restart image after completed destination-word
+and nonfinal-row boundaries, with no active request and only after any
+partial-word RMW has retired. The final B14 commit is the sole safe
+recognition point. `tb_array_checkpoint` checks all eight forms and proves
+that every captured B0/B2/B10-B14 image reconstructs the exact remaining
+request suffix under direction, W=3, processing, SRT, and stalls.
+
+Tasks 0167–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

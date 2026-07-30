@@ -1339,6 +1339,37 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
+## A0035 — RESOLVED: architectural FILL/PIXBLT checkpoint image
+- **Date**: 2026-07-29 (Task 0166).
+- **Status**: **RESOLVED** against the 1988 TI User's Guide §7.2.3, the
+  FILL/PIXBLT instruction pages, and §§13.3.4/13.4.4.
+- **Primary rule**: an array operation may be interrupted after a completed
+  destination 16-bit word or row. At that point its implied operands,
+  SADDR/SPTCH/DADDR/DPTCH as applicable, and B10-B14 must be sufficient for
+  RETI to resume the partial operation.
+- **Deterministic image**: B0/B2 contain the next actual source/destination
+  pixels; B10 is the next `{row,column}` cursor; B11 is the effective
+  `{height,width}`; B12/B13 retain completion-result context; and B14 retains
+  the effective raw destination geometry. FILL has no source pointer and
+  therefore preserves B0; it also preserves unused B13. B1/B3, B7, the other
+  implied B registers, CONTROL, conversion registers, PSIZE, PMASK, and
+  DPYCTL remain the configuration software must preserve across the handler.
+- **Boundary mapping**: a forward transfer checkpoints when its next
+  destination pixel is 16-bit aligned; a reverse transfer checkpoints after
+  writing an aligned low-address pixel, so its next pixel lies in the
+  preceding word. A nonfinal row always checkpoints. The final pixel does not
+  add a checkpoint because normal instruction completion follows.
+- **Atomicity**: seven memory-quiescent writeback states serialize the image
+  through the single B-file port. The internal `array_checkpoint` condition
+  is true only for the final B14 state. Thus Task 0167 can recognize an
+  interrupt only after all destination and partial-word RMW effects are
+  complete and all prior context words have committed.
+- **Regression evidence**: `tb_array_checkpoint` covers both FILL and all six
+  PIXBLTs, forward/reverse traversal, W=0/W=3, four pixel sizes,
+  destination-read processing, SRT, partial-word RMW, and inserted waits. It
+  verifies exact images and reconstructs the remaining request suffix from
+  every one.
+
 ## A0034 — RESOLVED: PBH/PBV form-specific traversal
 - **Date**: 2026-07-29 (Task 0163).
 - **Status**: **RESOLVED** against the 1988 TI User's Guide §7.2.2 and the

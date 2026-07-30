@@ -613,6 +613,26 @@ registers while publishing only V=1. PPOP, transparency, PMASK, SRT, and held
 request behavior remain downstream of the preclip boundary and operate only
 on surviving pixels.
 
+Task 0166 adds an architectural checkpoint layer to both array loops. After
+the acknowledged destination write, a nonfinal operation enters the layer
+when it has crossed a 16-bit destination-word boundary or completed a row.
+Forward traversal tests the next address for alignment; reverse traversal
+tests the just-written low-address pixel. No checkpoint is generated after
+the final pixel because the following instruction fetch is already an
+ordinary interrupt boundary.
+
+The B file has one write port, so
+`CORE_ARRAY_CKPT_B0` through `CORE_ARRAY_CKPT_B14` serialize the complete
+image without issuing memory traffic. PIXBLT B0 and all operations' B2 name
+the next actual pixels, including reverse traversal. B10 is the next
+`{row,column}` cursor, B11 is the effective `{height,width}`, B12/B13 preserve
+the saved completion-result context, and B14 preserves the effective raw
+destination geometry. FILL deliberately leaves its non-source B0 and unused
+B13 unchanged. Only the B14 state asserts the internal `array_checkpoint`
+condition, so an interrupt consumer cannot observe a torn image or split a
+held request/partial-word read-modify-write. Task 0167 consumes this
+condition for PBX entry and reconstructs the private array engine after RETI.
+
 ## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control

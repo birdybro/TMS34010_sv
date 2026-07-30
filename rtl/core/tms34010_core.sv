@@ -425,7 +425,9 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] fill_addr_q, fill_row_base_q, fill_result_q;
   logic [15:0]           fill_x_q, fill_y_q;
   logic [DATA_WIDTH-1:0] fill_psize_ext;
+  logic [DATA_WIDTH-1:0] fill_next_addr;
   logic                  fill_empty, fill_row_end, fill_done;
+  logic                  fill_checkpoint_due;
   // The destination is not read for the documented fast path: replace
   // processing, transparency disabled, and no protected planes. Field
   // insertion still performs any alignment-required word RMW in the memory
@@ -436,6 +438,13 @@ module tms34010_core
   assign fill_row_end   = !fill_empty && (fill_x_q == fill_dx_q - 16'd1);
   assign fill_done      = fill_row_end
                        && (fill_y_q == fill_dy_q - 16'd1);
+  assign fill_next_addr = fill_addr_q + fill_psize_ext;
+  // The architectural interrupt points are destination word/row boundaries.
+  // A checkpoint is never inserted after the final pixel; the following
+  // fetch boundary handles that as an ordinary completed instruction.
+  assign fill_checkpoint_due = !fill_done
+                             && (fill_row_end
+                                 || (fill_next_addr[3:0] == 4'd0));
   assign pixel_dest_read_required =
       (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO] != 5'd0)
       || io_control[CTRL_T_BIT]
@@ -946,6 +955,8 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_corner, pblt_dst_corner;
   logic [DATA_WIDTH-1:0] pblt_src_row_step, pblt_dst_row_step;
   logic [DATA_WIDTH-1:0] pblt_src_access_addr, pblt_dst_access_addr;
+  logic [DATA_WIDTH-1:0] pblt_dst_after_addr;
+  logic                  pblt_checkpoint_due;
   assign pblt_src_base = decoded.blt_src_xy ? pblt_src_conv
                                             : pblt_src_addr_q;
   assign pblt_dst_base = decoded.blt_dst_xy ? pblt_dst_conv
@@ -977,6 +988,15 @@ module tms34010_core
   assign pblt_dst_access_addr = pblt_hrev_q
                               ? pblt_dst_addr_q - pblt_psize_ext
                               : pblt_dst_addr_q;
+  assign pblt_dst_after_addr = pblt_dst_access_addr + pblt_psize_ext;
+  // Checkpoints follow completed destination writes at a 16-bit word edge or
+  // nonfinal row edge. Reverse traversal crosses a word edge after writing
+  // the aligned low-address field; forward traversal crosses when the next
+  // address is aligned.
+  assign pblt_checkpoint_due = !pblt_done
+      && (pblt_row_end
+          || (pblt_hrev_q ? (pblt_dst_access_addr[3:0] == 4'd0)
+                           : (pblt_dst_after_addr[3:0] == 4'd0)));
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -1893,6 +1913,46 @@ module tms34010_core
   assign pblt_w1_dydx_wb  = (state_q == CORE_PBLT_W1_DYDX);
   assign common_daddr_wb = fill_w1_daddr_wb || pblt_w1_daddr_wb;
   assign common_dydx_wb  = fill_w1_dydx_wb  || pblt_w1_dydx_wb;
+  // Interruptible-array checkpoint image (Task 0166). The seven quiet states
+  // serialize the architecturally visible B-file image through the single
+  // write port. B0/B2 identify the next actual source/destination pixels;
+  // B10-B14 retain the private cursor/geometry/results needed by PBX resume.
+  // FILL does not alter B0 or B13. `array_checkpoint` marks the only cycle at
+  // which the complete image is coherent and an array interrupt may be taken.
+  logic array_ckpt_b0_wb, array_ckpt_b2_wb, array_ckpt_b10_wb;
+  logic array_ckpt_b11_wb, array_ckpt_b12_wb, array_ckpt_b13_wb;
+  logic array_ckpt_b14_wb, array_ckpt_wb, array_checkpoint;
+  logic [DATA_WIDTH-1:0] array_ckpt_saddr, array_ckpt_daddr;
+  logic [DATA_WIDTH-1:0] array_ckpt_cursor, array_ckpt_dims;
+  logic [DATA_WIDTH-1:0] array_ckpt_b12_data, array_ckpt_b13_data;
+  logic [DATA_WIDTH-1:0] array_ckpt_b14_data;
+  assign array_checkpoint   = (state_q == CORE_ARRAY_CKPT_B14);
+  assign array_ckpt_b0_wb   = (state_q == CORE_ARRAY_CKPT_B0) && is_pblt;
+  assign array_ckpt_b2_wb   = (state_q == CORE_ARRAY_CKPT_B2);
+  assign array_ckpt_b10_wb  = (state_q == CORE_ARRAY_CKPT_B10);
+  assign array_ckpt_b11_wb  = (state_q == CORE_ARRAY_CKPT_B11);
+  assign array_ckpt_b12_wb  = (state_q == CORE_ARRAY_CKPT_B12);
+  assign array_ckpt_b13_wb  = (state_q == CORE_ARRAY_CKPT_B13) && is_pblt;
+  assign array_ckpt_b14_wb  = array_checkpoint;
+  assign array_ckpt_wb = array_ckpt_b0_wb || array_ckpt_b2_wb
+                       || array_ckpt_b10_wb || array_ckpt_b11_wb
+                       || array_ckpt_b12_wb || array_ckpt_b13_wb
+                       || array_ckpt_b14_wb;
+  assign array_ckpt_saddr = pblt_hrev_q
+                          ? pblt_src_addr_q - pblt_src_step
+                          : pblt_src_addr_q;
+  assign array_ckpt_daddr = is_fill ? fill_addr_q
+                          : pblt_hrev_q
+                          ? pblt_dst_addr_q - pblt_psize_ext
+                          : pblt_dst_addr_q;
+  assign array_ckpt_cursor = is_fill ? {fill_y_q, fill_x_q}
+                                     : {pblt_y_q, pblt_x_q};
+  assign array_ckpt_dims = is_fill ? {fill_dy_q, fill_dx_q}
+                                   : {pblt_dy_q, pblt_dx_q};
+  assign array_ckpt_b12_data = is_fill ? fill_result_q : pblt_src_result_q;
+  assign array_ckpt_b13_data = pblt_dst_result_q;
+  assign array_ckpt_b14_data = is_fill ? fill_daddr_raw_q
+                                       : pblt_dst_xy_raw_q;
   // LINE writebacks: d -> B0, DADDR -> B2, COUNT -> B10, one per cycle.
   logic line_wb_d, line_wb_daddr, line_wb_count, line_wb;
   assign line_wb_d     = (state_q == CORE_LINE_WB_D);
@@ -1900,7 +1960,8 @@ module tms34010_core
   assign line_wb_count = (state_q == CORE_LINE_WB_COUNT);
   assign line_wb       = line_wb_d || line_wb_daddr || line_wb_count;
   assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr
-                       || common_daddr_wb || common_dydx_wb || line_wb;
+                       || common_daddr_wb || common_dydx_wb || array_ckpt_wb
+                       || line_wb;
   // Interrupt-entry SP writeback: at CORE_INT_DONE, SP <- SP-64 (two 32-bit
   // pushes done). Only when context was actually pushed (an NMI with NMIM=1
   // saves nothing, so SP is unchanged). Highest-priority regfile write.
@@ -1922,10 +1983,17 @@ module tms34010_core
                     : graphics_wb ? REG_FILE_B : decoded.rd_file;
   assign rf_wr_idx  = int_sp_wb ? REG_SP_IDX
                     : line_wb_count              ? B_COUNT_IDX
+                    : array_ckpt_b14_wb           ? reg_idx_t'(14)
+                    : array_ckpt_b13_wb           ? reg_idx_t'(13)
+                    : array_ckpt_b12_wb           ? reg_idx_t'(12)
+                    : array_ckpt_b11_wb           ? reg_idx_t'(11)
+                    : array_ckpt_b10_wb           ? reg_idx_t'(10)
                     : common_dydx_wb              ? B_DYDX_IDX
-                    : (fill_wb || pblt_wb_daddr || line_wb_daddr) ? B_DADDR_IDX
+                    : (fill_wb || pblt_wb_daddr || line_wb_daddr
+                       || array_ckpt_b2_wb)        ? B_DADDR_IDX
                     : common_daddr_wb             ? B_DADDR_IDX
-                    : (pblt_wb_saddr || line_wb_d) ? B_SADDR_IDX  // LINE d -> B0
+                    : (pblt_wb_saddr || line_wb_d || array_ckpt_b0_wb)
+                                                  ? B_SADDR_IDX  // LINE d -> B0
                     : mmfm_pop_wr                ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
                     : ((is_mpy || is_div) && pair_wb_step) ? (decoded.rd_idx + 4'd1)  // pair low/rem -> Rd+1
@@ -2326,6 +2394,20 @@ module tms34010_core
     if (int_sp_wb) begin
       // Interrupt entry: SP <- SP - 64 (two 32-bit pushes complete).
       rf_wr_data = rf_sp - WORD_BIT_SIZE_2;
+    end else if (array_ckpt_b0_wb) begin
+      rf_wr_data = array_ckpt_saddr;
+    end else if (array_ckpt_b2_wb) begin
+      rf_wr_data = array_ckpt_daddr;
+    end else if (array_ckpt_b10_wb) begin
+      rf_wr_data = array_ckpt_cursor;
+    end else if (array_ckpt_b11_wb) begin
+      rf_wr_data = array_ckpt_dims;
+    end else if (array_ckpt_b12_wb) begin
+      rf_wr_data = array_ckpt_b12_data;
+    end else if (array_ckpt_b13_wb) begin
+      rf_wr_data = array_ckpt_b13_data;
+    end else if (array_ckpt_b14_wb) begin
+      rf_wr_data = array_ckpt_b14_data;
     end else if (fill_w1_daddr_wb) begin
       rf_wr_data = fill_common_daddr;
     end else if (fill_w1_dydx_wb) begin
@@ -3390,10 +3472,13 @@ module tms34010_core
           mem_we_int = 1'b1;            // write the processed pixel
           mem_wdata  = fill_merged;
         end
-        if (mem_ack && fill_substep_q && fill_done)
-          state_d = CORE_FILL_WB;
-        else
+        if (mem_ack && fill_substep_q) begin
+          state_d = fill_done            ? CORE_FILL_WB
+                  : fill_checkpoint_due  ? CORE_ARRAY_CKPT_B0
+                                         : CORE_FILL;
+        end else begin
           state_d = CORE_FILL;
+        end
       end
 
       CORE_FILL_WB: begin
@@ -3466,10 +3551,13 @@ module tms34010_core
             mem_wdata  = pblt_merged;
           end
         endcase
-        if (mem_ack && pblt_substep_q == 2'd2 && pblt_done)
-          state_d = CORE_PBLT_WB;
-        else
+        if (mem_ack && pblt_substep_q == 2'd2) begin
+          state_d = pblt_done            ? CORE_PBLT_WB
+                  : pblt_checkpoint_due  ? CORE_ARRAY_CKPT_B0
+                                         : CORE_PBLT;
+        end else begin
           state_d = CORE_PBLT;
+        end
       end
 
       CORE_PBLT_WB: begin
@@ -3481,6 +3569,18 @@ module tms34010_core
         // Write the final DADDR back to B2, then fetch the next instruction.
         state_d = CORE_FETCH;
       end
+
+      // Serialize one coherent, restart-sufficient array context after a
+      // completed destination word/row. No memory request is active anywhere
+      // in this chain. Task 0167 will sample interrupts only in the final
+      // state, after B14 and every preceding context word are committed.
+      CORE_ARRAY_CKPT_B0:  state_d = CORE_ARRAY_CKPT_B2;
+      CORE_ARRAY_CKPT_B2:  state_d = CORE_ARRAY_CKPT_B10;
+      CORE_ARRAY_CKPT_B10: state_d = CORE_ARRAY_CKPT_B11;
+      CORE_ARRAY_CKPT_B11: state_d = CORE_ARRAY_CKPT_B12;
+      CORE_ARRAY_CKPT_B12: state_d = CORE_ARRAY_CKPT_B13;
+      CORE_ARRAY_CKPT_B13: state_d = CORE_ARRAY_CKPT_B14;
+      CORE_ARRAY_CKPT_B14: state_d = is_fill ? CORE_FILL : CORE_PBLT;
 
       CORE_MEMORY: begin
         // Memory transaction state for instructions that set
