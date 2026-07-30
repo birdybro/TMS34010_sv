@@ -1381,15 +1381,19 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 
 ## A0031 — Window-checking scope and implementation
 - **Date**: 2026-06-07 through 2026-06-15 (Tasks 0105–0117), audited
-  2026-07-28 (Task 0135).
+  2026-07-28 (Task 0135), refined 2026-07-29 (Task 0164).
 - **Status**: implemented for every drawing instruction currently present.
 - **Source**: 1988 UG §7.10 (Window Checking): W=0 off; W=1 hit detection;
   W=2 miss detection; W=3 clipping. WSTART=B5 and WEND=B6 are inclusive XY
   corners; the window-violation pending bit is INTPEND.WV (bit 11).
 - **Array engines**: FILL XY and every PIXBLT with an XY destination implement
-  all four modes. W=1 performs no drawing and reports overlap; W=2 requires
-  full rectangle containment; W=3 clips per pixel and reports V=1 when any
-  preclipping was required.
+  all four modes. W=1 performs no drawing and returns the inclusive
+  intersection in DADDR/DYDX on a hit. FILL and B,XY use the lowest-address
+  corner; directional full-color forms encode the PBH/PBV-selected corner
+  after computing the same geometric rectangle. A disjoint result leaves
+  DADDR/DYDX architecturally indeterminate (deterministically preserved
+  here). W=2 requires full rectangle containment; W=3 clips per pixel and
+  reports V=1 when any preclipping was required.
 - **Incremental engines**: DRAV implements its per-pixel W=1/2/3 rules and
   always performs the XY advance. LINE clips in W=3 and aborts on the first
   hit/miss condition in W=1/W=2. PIXT operations with an XY destination
@@ -1403,7 +1407,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Tests**: `tb_fill_window`, `tb_fill_w1`, `tb_fill_w2`,
   `tb_pixblt_window`, `tb_pixblt_w1`, `tb_pixblt_w2`, `tb_drav_win`,
   `tb_line_win`, `tb_line_abort`, and `tb_pixt_win`. Task 0135 strengthened
-  W=3 V coverage and added XY-to-XY PIXT draw/skip/status cases.
+  W=3 V coverage and added XY-to-XY PIXT draw/skip/status cases. Task 0164's
+  `tb_window_common_rect` adds exact W=1 DADDR/DYDX, direction, status/WVP,
+  empty/disjoint/boundary geometry, no-traffic, and stalled-protocol coverage.
 
 ## A0030 — RESOLVED: every interrupt initializes the live ST service context
 - **Date**: 2026-06-04 (Task 0100); **resolved 2026-07-28 (Task 0123)**.

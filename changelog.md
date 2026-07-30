@@ -7,6 +7,25 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Fixed (Task 0164 — W=1 common-rectangle results)
+- Completed the 1988 User's Guide §7.10.1 array-pick contract for FILL XY and
+  PIXBLT B,XY/L,XY/XY,XY. W=1 continues to issue no pixel request, but a hit
+  now writes the exact intersection corner to DADDR and its height/width to
+  DYDX in two dedicated register-port cycles.
+- Kept geometric intersection independent of traversal. FILL and binary
+  PIXBLT return the lowest-address corner; full-color XY-destination PIXBLTs
+  encode the PBH/PBV-selected starting corner. Miss results are
+  architecturally indeterminate and deterministically preserve input B2/B7;
+  zero dimensions remain complete no-ops.
+- Preserved the V-only status update and WVP interrupt request: hit gives V=0
+  and WVP=1, while a disjoint nonempty array gives V=1 without WVP.
+- Added `tb_window_common_rect`, covering partial, disjoint, contained,
+  enclosing, boundary-pixel, and zero-axis geometry; every applicable form;
+  all directional corners; binary/FILL direction isolation; exact B/status
+  results; zero graphics traffic; and held requests with injected waits.
+- Validation: focused W=1/W=2/W=3, direction, and array-edge tests PASS;
+  `scripts/lint.sh` clean; full regression 150/150 PASS.
+
 ### Added (Task 0163 — directional PIXBLT traversal)
 - Implemented PBH/PBV for every full-color PIXBLT. PBH selects
   left-to-right versus predecrement right-to-left pixel access; PBV selects

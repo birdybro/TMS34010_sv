@@ -178,6 +178,13 @@
   pitch according to PBV, while a separate architectural result pointer
   always adds positive pitch. This prevents stalls or reverse traversal from
   perturbing final SADDR/DADDR. Binary-source forms latch neither direction.
+- **W=1 common-rectangle sequencing** — after WSTART/WEND are latched, the
+  array/window intersection is purely combinational and issues no memory
+  request. On a hit, the existing hit state writes DADDR and performs the
+  V/WVP update; one dedicated following state writes DYDX through the same
+  single B-register port. A miss returns directly to fetch. Interrupt
+  recognition remains at the subsequent fetch boundary, after both hit-result
+  writes have retired.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

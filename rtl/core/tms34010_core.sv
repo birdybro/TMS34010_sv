@@ -499,14 +499,30 @@ module tms34010_core
      &&
         (fill_arr_x0 >= fill_wstart_q[15:0]) && (fill_arr_x1 <= fill_wend_q[15:0])
      && (fill_arr_y0 >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_arr_y1 <= fill_wend_q[DATA_WIDTH-1:16]);
-  // W=1 (hit detection): no pixels are drawn. The array "hits" the window if it
-  // overlaps at all; computed from the LATCHED WSTART/WEND (valid in
-  // CORE_FILL_WIN_HIT, after the SETUP_WIN latch). Overlap = NOT fully to one
-  // side. Inclusive corners.
+  // W=1 (hit detection/common rectangle): no pixels are drawn. The array
+  // "hits" the window if it overlaps at all; computed from the LATCHED
+  // WSTART/WEND (valid after CORE_FILL_SETUP_WIN). Inclusive corners. On a
+  // hit FILL returns the lowest-address corner and intersection dimensions.
   logic fill_w1_q, fill_array_hit;
+  logic [15:0] fill_common_x0, fill_common_y0;
+  logic [15:0] fill_common_x1, fill_common_y1;
+  logic [DATA_WIDTH-1:0] fill_common_daddr, fill_common_dydx;
   assign fill_array_hit = !fill_empty && !(
         (fill_arr_x1 < fill_wstart_q[15:0]) || (fill_arr_x0 > fill_wend_q[15:0])
      || (fill_arr_y1 < fill_wstart_q[DATA_WIDTH-1:16]) || (fill_arr_y0 > fill_wend_q[DATA_WIDTH-1:16]));
+  assign fill_common_x0 = (fill_arr_x0 > fill_wstart_q[15:0])
+                        ? fill_arr_x0 : fill_wstart_q[15:0];
+  assign fill_common_y0 = (fill_arr_y0 > fill_wstart_q[DATA_WIDTH-1:16])
+                        ? fill_arr_y0 : fill_wstart_q[DATA_WIDTH-1:16];
+  assign fill_common_x1 = (fill_arr_x1 < fill_wend_q[15:0])
+                        ? fill_arr_x1 : fill_wend_q[15:0];
+  assign fill_common_y1 = (fill_arr_y1 < fill_wend_q[DATA_WIDTH-1:16])
+                        ? fill_arr_y1 : fill_wend_q[DATA_WIDTH-1:16];
+  assign fill_common_daddr = {fill_common_y0, fill_common_x0};
+  assign fill_common_dydx = {
+      fill_common_y1 - fill_common_y0 + 16'd1,
+      fill_common_x1 - fill_common_x0 + 16'd1
+  };
   // Window-violation flag write (sets V; detection paths may also pulse
   // wvp_set):
   //   CORE_FILL_WIN_MISS — array outside the window → V=1, request WVP.
@@ -739,12 +755,33 @@ module tms34010_core
      &&
         (pblt_arr_x0 >= pblt_wstart_q[15:0]) && (pblt_arr_x1 <= pblt_wend_q[15:0])
      && (pblt_arr_y0 >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_arr_y1 <= pblt_wend_q[DATA_WIDTH-1:16]);
-  // W=1 (hit detection): never draws; overlap test from the LATCHED WSTART/WEND
-  // (valid in CORE_PBLT_WIN_HIT). Mirrors the FILL W=1 path.
+  // W=1 (hit detection/common rectangle): never draws; overlap and intersection
+  // use the geometric top-left destination rectangle independently of PBH/PBV.
+  // The returned DADDR then identifies the selected traversal corner for
+  // full-color forms; binary-to-XY ignores PBH/PBV and returns top-left.
   logic pblt_w1_q, pblt_array_hit;
+  logic [15:0] pblt_common_x0, pblt_common_y0;
+  logic [15:0] pblt_common_x1, pblt_common_y1;
+  logic [DATA_WIDTH-1:0] pblt_common_daddr, pblt_common_dydx;
   assign pblt_array_hit = !pblt_empty && !(
         (pblt_arr_x1 < pblt_wstart_q[15:0]) || (pblt_arr_x0 > pblt_wend_q[15:0])
      || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16]) || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
+  assign pblt_common_x0 = (pblt_arr_x0 > pblt_wstart_q[15:0])
+                        ? pblt_arr_x0 : pblt_wstart_q[15:0];
+  assign pblt_common_y0 = (pblt_arr_y0 > pblt_wstart_q[DATA_WIDTH-1:16])
+                        ? pblt_arr_y0 : pblt_wstart_q[DATA_WIDTH-1:16];
+  assign pblt_common_x1 = (pblt_arr_x1 < pblt_wend_q[15:0])
+                        ? pblt_arr_x1 : pblt_wend_q[15:0];
+  assign pblt_common_y1 = (pblt_arr_y1 < pblt_wend_q[DATA_WIDTH-1:16])
+                        ? pblt_arr_y1 : pblt_wend_q[DATA_WIDTH-1:16];
+  assign pblt_common_daddr = {
+      pblt_vrev_q ? pblt_common_y1 : pblt_common_y0,
+      pblt_hrev_q ? pblt_common_x1 : pblt_common_x0
+  };
+  assign pblt_common_dydx = {
+      pblt_common_y1 - pblt_common_y0 + 16'd1,
+      pblt_common_x1 - pblt_common_x0 + 16'd1
+  };
   assign pblt_merged      = (pblt_transp || pblt_clip_out)
                           ? pblt_dst_pix_q
                           : ((pblt_processed & ~pblt_pmask_field) | (pblt_dst_pix_q & pblt_pmask_field));
@@ -1686,17 +1723,28 @@ module tms34010_core
 
   // FILL writes the final DADDR back to B2 in CORE_FILL_WB; PIXBLT writes the
   // final SADDR (B0) in CORE_PBLT_WB and the final DADDR (B2) in CORE_PBLT_WB2.
-  logic fill_wb, pblt_wb_saddr, pblt_wb_daddr, graphics_wb;
+  // W=1 hits instead write common-rectangle DADDR then DYDX in two cycles.
+  logic fill_wb, pblt_wb_saddr, pblt_wb_daddr;
+  logic fill_w1_daddr_wb, fill_w1_dydx_wb;
+  logic pblt_w1_daddr_wb, pblt_w1_dydx_wb;
+  logic common_daddr_wb, common_dydx_wb, graphics_wb;
   assign fill_wb       = (state_q == CORE_FILL_WB);
   assign pblt_wb_saddr = (state_q == CORE_PBLT_WB);
   assign pblt_wb_daddr = (state_q == CORE_PBLT_WB2);
+  assign fill_w1_daddr_wb = (state_q == CORE_FILL_WIN_HIT) && fill_array_hit;
+  assign fill_w1_dydx_wb  = (state_q == CORE_FILL_W1_DYDX);
+  assign pblt_w1_daddr_wb = (state_q == CORE_PBLT_WIN_HIT) && pblt_array_hit;
+  assign pblt_w1_dydx_wb  = (state_q == CORE_PBLT_W1_DYDX);
+  assign common_daddr_wb = fill_w1_daddr_wb || pblt_w1_daddr_wb;
+  assign common_dydx_wb  = fill_w1_dydx_wb  || pblt_w1_dydx_wb;
   // LINE writebacks: d -> B0, DADDR -> B2, COUNT -> B10, one per cycle.
   logic line_wb_d, line_wb_daddr, line_wb_count, line_wb;
   assign line_wb_d     = (state_q == CORE_LINE_WB_D);
   assign line_wb_daddr = (state_q == CORE_LINE_WB_DADDR);
   assign line_wb_count = (state_q == CORE_LINE_WB_COUNT);
   assign line_wb       = line_wb_d || line_wb_daddr || line_wb_count;
-  assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr || line_wb;
+  assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr
+                       || common_daddr_wb || common_dydx_wb || line_wb;
   // Interrupt-entry SP writeback: at CORE_INT_DONE, SP <- SP-64 (two 32-bit
   // pushes done). Only when context was actually pushed (an NMI with NMIM=1
   // saves nothing, so SP is unchanged). Highest-priority regfile write.
@@ -1718,7 +1766,9 @@ module tms34010_core
                     : graphics_wb ? REG_FILE_B : decoded.rd_file;
   assign rf_wr_idx  = int_sp_wb ? REG_SP_IDX
                     : line_wb_count              ? B_COUNT_IDX
+                    : common_dydx_wb              ? B_DYDX_IDX
                     : (fill_wb || pblt_wb_daddr || line_wb_daddr) ? B_DADDR_IDX
+                    : common_daddr_wb             ? B_DADDR_IDX
                     : (pblt_wb_saddr || line_wb_d) ? B_SADDR_IDX  // LINE d -> B0
                     : mmfm_pop_wr                ? mm_iter_idx
                     : (mv_load_ptr_wr || m2m_src_wr) ? decoded.rs_idx  // update pointer Rs
@@ -2120,6 +2170,14 @@ module tms34010_core
     if (int_sp_wb) begin
       // Interrupt entry: SP <- SP - 64 (two 32-bit pushes complete).
       rf_wr_data = rf_sp - WORD_BIT_SIZE_2;
+    end else if (fill_w1_daddr_wb) begin
+      rf_wr_data = fill_common_daddr;
+    end else if (fill_w1_dydx_wb) begin
+      rf_wr_data = fill_common_dydx;
+    end else if (pblt_w1_daddr_wb) begin
+      rf_wr_data = pblt_common_daddr;
+    end else if (pblt_w1_dydx_wb) begin
+      rf_wr_data = pblt_common_dydx;
     end else
     unique case (decoded.iclass)
       INSTR_DRAV:   rf_wr_data = drav_advance;   // Rd advanced by Rs (XY add)
@@ -3083,7 +3141,12 @@ module tms34010_core
 
       CORE_FILL_WIN_HIT: begin
         // W=1 hit detection: no pixels drawn. V and WVP are driven
-        // combinationally from fill_array_hit (overlap), then fetch.
+        // combinationally from fill_array_hit. A hit also writes common DADDR
+        // in this cycle, followed by common DYDX in its own write-port cycle.
+        state_d = fill_array_hit ? CORE_FILL_W1_DYDX : CORE_FETCH;
+      end
+
+      CORE_FILL_W1_DYDX: begin
         state_d = CORE_FETCH;
       end
 
@@ -3215,7 +3278,12 @@ module tms34010_core
       end
 
       CORE_PBLT_WIN_HIT: begin
-        // W=1 hit detection: no pixels drawn; V/WVP from pblt_array_hit, fetch.
+        // W=1 hit detection: no pixels drawn. Write the selected common-
+        // rectangle corner now and its dimensions in the following cycle.
+        state_d = pblt_array_hit ? CORE_PBLT_W1_DYDX : CORE_FETCH;
+      end
+
+      CORE_PBLT_W1_DYDX: begin
         state_d = CORE_FETCH;
       end
 

@@ -5816,7 +5816,7 @@ Commit:
 ---
 
 ### Task 0164: Implement W=1 common-rectangle results
-Status: pending
+Status: complete
 Dependencies:
 - Task 0163 (complete directional array traversal rules).
 Spec sources:
@@ -5850,6 +5850,23 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
+Results:
+- Implemented inclusive destination/window intersection for FILL XY and
+  PIXBLT B,XY/L,XY/XY,XY with dedicated DADDR and DYDX result cycles and no
+  source, destination, MTR, RTM, or write request.
+- FILL and binary-to-XY return the common rectangle's lowest-address corner;
+  full-color XY-destination forms return its PBH/PBV-selected corner after
+  direction-independent geometric clipping.
+- Hit, disjoint, edge-touching, contained, enclosing, and zero-dimension
+  outcomes preserve exact V-only status, WVP, unaffected SADDR, and the
+  architecturally defined/indeterminate B-register contract.
+- Added `tb_window_common_rect`: 26 geometry/form/direction cases, exact
+  DADDR/DYDX/status/WVP, zero graphics traffic, and stable requests with
+  three inserted physical-word waits.
+- Existing focused W=1/W=2/W=3, direction, and array-edge benches PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 150/150 benches.
 Commit:
 - pending
 

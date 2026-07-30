@@ -587,6 +587,17 @@ edge); L,XY, XY,L, and XY,XY add `DX*PSIZE` and/or `(DY-1)*pitch` internally
 as selected. B,L and B,XY force forward traversal because their individual
 instruction pages explicitly ignore PBH/PBV.
 
+Task 0164 replaces overlap-only W=1 array handling with an explicit
+common-rectangle datapath. Inclusive max/min comparisons intersect the raw
+top-left destination geometry with latched WSTART/WEND before any internal
+PIXBLT corner adjustment. A hit writes DADDR in
+`CORE_FILL_WIN_HIT`/`CORE_PBLT_WIN_HIT`, then writes DYDX through the
+dedicated second write-port state; a miss performs neither write. FILL XY and
+binary-to-XY select the intersection's lowest-address corner. Full-color
+XY-destination PIXBLTs select its left/right and top/bottom corner from the
+latched PBH/PBV direction. Both paths remain memory-quiescent, and only the
+first result state writes V and may set WVP.
+
 ## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control

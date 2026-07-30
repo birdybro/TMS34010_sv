@@ -135,8 +135,12 @@ PIXBLT traversal implements all PBH/PBV combinations: L,L accepts
 software-adjusted corners, mixed/XY full-color forms adjust automatically,
 and binary-source forms ignore both bits. `tb_pixblt_direction` locks exact
 pixels/context, degenerate edges, stalls, and overlap-safe forward/reverse
-copies. Task 0164 W=1 common-rectangle results is the next implementation
-task. The optional instruction
+copies. Task 0164 completes W=1 common-rectangle results for FILL XY and all
+XY-destination PIXBLTs: hit geometry writes DADDR/DYDX without pixel traffic,
+directional full-color forms encode the selected common corner, binary/FILL
+use the lowest-address corner, and V/WVP retain their specified meanings.
+`tb_window_common_rect` covers every geometry class, form, and direction under
+stalls. Task 0165 true W=3 array preclipping is next. The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
 outside this functional GPU gate.

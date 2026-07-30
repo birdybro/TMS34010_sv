@@ -134,7 +134,13 @@ automatically adjust both source and destination from their default
 top-left addresses. Binary-source forms remain direction-independent as
 specified. Exact terminal context is decoupled from traversal state, and
 stalled-memory tests include safe forward/reverse overlapping copies.
-Task 0164 W=1 common-rectangle results is next.
+Task 0164 completes W=1 array hit detection as the specified common-rectangle
+operation. FILL XY and every XY-destination PIXBLT suppress all pixel traffic,
+set V/WVP from intersection, and, on a hit, return the exact intersection
+dimensions in DYDX plus its lowest-address or PBH/PBV-selected starting corner
+in DADDR. Miss results remain architecturally indeterminate but are
+deterministically preserved; zero dimensions retain the Task 0162 no-op
+contract. Task 0165 true W=3 array preclipping is next.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;
@@ -193,7 +199,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 149 self-checking SystemVerilog testbenches, including non-integer-clock
+- 150 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
   an exhaustive 65,536-opcode static status-policy sweep.

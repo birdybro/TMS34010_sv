@@ -300,9 +300,9 @@ from the signed-off baseline must be documented as deliberate boundaries.
 ## Production-revision GPU completion gaps
 
 Task 0161 found concrete functional gaps beyond the Task 0160 baseline:
-W=1 does not return the specified common rectangle; W=3 suppresses individual
-writes instead of truly preclipping the arrays; and FILL, PIXBLT, and LINE do
-not implement their architectural mid-instruction interrupt/resume contracts.
+W=3 suppresses individual writes instead of truly preclipping the arrays, and
+FILL, PIXBLT, and LINE do not implement their architectural mid-instruction
+interrupt/resume contracts.
 The existing tests also lack a complete graphics/display conformance matrix,
 pinned MAME differential coverage, and TI-shipped graphics workloads.
 
@@ -320,7 +320,16 @@ retain exact completion context. `tb_pixblt_direction` covers the 16-case
 form/direction matrix, degenerate edges, signed traversal, stalls, and safe
 forward/reverse overlapping copies.
 
-Tasks 0164–0171 close the remaining functional and pin-integration items, Tasks
+Task 0164 closed W=1 common-rectangle results. FILL XY and all
+XY-destination PIXBLTs compute the inclusive destination/window intersection
+without pixel traffic and return exact DADDR/DYDX on a hit. Full-color
+direction selects the returned corner without changing geometry; FILL and
+binary forms use the lowest-address corner. The 26-case
+`tb_window_common_rect` matrix covers all forms/directions and geometry
+classes, exact V/WVP and B-register results, empty arrays, stalls, and
+memory quiescence.
+
+Tasks 0165–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM
