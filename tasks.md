@@ -274,7 +274,7 @@ remains authoritative.
 | 0164 | Implement W=1 common-rectangle results | complete |
 | 0165 | Implement true W=3 array preclipping | complete |
 | 0166 | Make FILL and PIXBLT execution checkpointable | complete |
-| 0167 | Resume interrupted FILL and PIXBLT through PBX | pending |
+| 0167 | Resume interrupted FILL and PIXBLT through PBX | complete |
 | 0168 | Resume interrupted LINE execution | pending |
 | 0169 | Close the graphics conformance matrix | pending |
 | 0170 | Reconcile the complete display/video controller | pending |
@@ -6015,7 +6015,7 @@ Commit:
 ---
 
 ### Task 0167: Resume interrupted FILL and PIXBLT through PBX
-Status: pending
+Status: complete
 Dependencies:
 - Task 0166 (checkpointable array microstate and architectural context).
 Spec sources:
@@ -6050,6 +6050,32 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
+Completion:
+- Sampled enabled maskable requests and NMI at only the complete B14
+  FILL/PIXBLT checkpoint. Entry reuses the shared interrupt sequence, stacks
+  the current one-word array opcode address, and sets PBX only in the stacked
+  ST copy while retaining the normal clean handler-visible ST.
+- Made a PBX-restored RETI refetch enter four memory-quiescent resume states.
+  Together with the execute-state read, they reconstruct pitches, effective
+  dimensions, source/destination cursor and row bases, direction convention,
+  saved terminal results, W=3 geometry/V state, colors, and processing
+  substep exclusively from the architectural B image and preserved I/O
+  configuration.
+- Kept PBX live across resumed execution and repeated later checkpoint
+  interrupts, then cleared it atomically at successful FILL/PIXBLT completion.
+  Partial-word RMW, held field requests, SRT tagging, HLT/NMI priority, window
+  behavior, and ordinary fetch-boundary entry remain unchanged.
+- Extended `tb_array_checkpoint` so every legal checkpoint in all eight forms
+  takes DI or NMIM=0 NMI through a real handler/RETI under three inserted
+  word waits. It checks exact stacked PC/ST/PBX and stack addresses,
+  handler/SP/status restoration, repeated resume, framebuffer/final B
+  context, request stability, and the unchanged no-duplicate/no-skip trace.
+- Strengthened `tb_int_reti` and `tb_line` to prove ordinary and LINE
+  interrupt entries stack PBX clear.
+- Focused array, maskable-interrupt, NMI, and LINE tests PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 152/152 benches.
 Commit:
 - pending
 

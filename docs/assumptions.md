@@ -1339,6 +1339,33 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
+## A0036 — RESOLVED: PBX array entry and RETI reconstruction
+- **Date**: 2026-07-29 (Task 0167).
+- **Status**: **RESOLVED** against the 1988 TI User's Guide §§7.2.3/8.5,
+  the FILL/PIXBLT pages, and RETI.
+- **Entry contract**: a pending interrupt is accepted only on the completed
+  B14 checkpoint image. The stacked PC is rewound by one 16-bit opcode word,
+  and the stacked ST copy has PBX set. Handler-visible ST is still the normal
+  clean interrupt value. Maskable sources and NMIM=0 NMI share this contract;
+  ordinary fetch-boundary, illegal, and LINE entry never synthesize PBX.
+- **Resume contract**: RETI restores PBX and the opcode address. Refetch
+  selects four quiet reconstruction states that read the handler-preserved
+  B-file image and rebuild all private loop state. No pre-interrupt private
+  engine register is required for correctness.
+- **Software preservation**: B0-B14 and the applicable CONTROL, PSIZE,
+  CONVSP/CONVDP, PMASK, and DPYCTL configuration are part of the documented
+  graphics context and must be saved/restored by a handler that changes them.
+  A handler that leaves them untouched may interrupt the resumed array again
+  at any later legal checkpoint.
+- **Completion**: PBX remains set during resumed execution and repeated
+  entries, then clears only at successful array completion. A resumed W=3
+  completion publishes its reconstructed V result on the same full-ST write.
+- **Regression evidence**: `tb_array_checkpoint` takes DI or NMI at every
+  legal checkpoint in all eight forms and checks exact stacked PC/ST/PBX,
+  handler/RETI execution, repeated resume, framebuffer/final B state, held
+  protocol, and an unchanged request trace. `tb_int_reti` and `tb_line`
+  explicitly prove non-array entries stack PBX=0.
+
 ## A0035 — RESOLVED: architectural FILL/PIXBLT checkpoint image
 - **Date**: 2026-07-29 (Task 0166).
 - **Status**: **RESOLVED** against the 1988 TI User's Guide §7.2.3, the
@@ -1361,7 +1388,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   add a checkpoint because normal instruction completion follows.
 - **Atomicity**: seven memory-quiescent writeback states serialize the image
   through the single B-file port. The internal `array_checkpoint` condition
-  is true only for the final B14 state. Thus Task 0167 can recognize an
+  is true only for the final B14 state. Thus Task 0167 recognizes an
   interrupt only after all destination and partial-word RMW effects are
   complete and all prior context words have committed.
 - **Regression evidence**: `tb_array_checkpoint` covers both FILL and all six

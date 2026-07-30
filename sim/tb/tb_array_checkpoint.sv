@@ -1,12 +1,15 @@
 // -----------------------------------------------------------------------------
 // tb_array_checkpoint.sv
 //
-// Task 0166: architectural FILL/PIXBLT checkpoint images.
+// Tasks 0166-0167: architectural FILL/PIXBLT checkpoint/resume images.
 //
 // Every completed destination 16-bit-word or nonfinal-row boundary is followed
 // by one coherent B-file checkpoint. The reference model checks the complete
 // image, exact unchanged graphics traffic, and reconstructs the remaining
 // request suffix using only that image plus preserved implied configuration.
+// Every checkpoint is then interrupted: alternating cases use maskable DI or
+// NMI (NMIM=0), a real handler preserves B state and returns through RETI, and
+// the array must continue without changing the uninterrupted request oracle.
 //
 // Coverage:
 //   * FILL L/XY and PIXBLT L,L / L,XY / XY,L / XY,XY / B,L / B,XY;
@@ -53,6 +56,26 @@ module tb_array_checkpoint;
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_PMASK) << 4);
   localparam logic [DATA_WIDTH-1:0] A_DPYCTL =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_DPYCTL) << 4);
+  localparam logic [DATA_WIDTH-1:0] A_INTENB =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_INTENB) << 4);
+  localparam logic [DATA_WIDTH-1:0] A_INTPEND =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_INTPEND) << 4);
+  localparam logic [DATA_WIDTH-1:0] SP_INIT = 32'h0000_1800;
+  localparam int unsigned ISR_WORD = 256;
+  localparam logic [DATA_WIDTH-1:0] ISR_PC =
+      DATA_WIDTH'(ISR_WORD * INSTR_WORD_BITS);
+  localparam int unsigned DI_VEC_WORD =
+      (INT_VEC_DI >> LOCAL_WORD_ADDR_LSB) & (MEM_WORDS - 1);
+  localparam int unsigned NMI_VEC_WORD =
+      (INT_VEC_NMI >> LOCAL_WORD_ADDR_LSB) & (MEM_WORDS - 1);
+  localparam logic [15:0] DI_MASK = 16'(1 << INT_DI_BIT);
+  // The final setup MOVI loads the negative B14 seed, so N is live when the
+  // array reaches its first checkpoint and remains unaffected thereafter.
+  localparam logic [DATA_WIDTH-1:0] ARRAY_ST =
+      ST_RESET_VALUE | (DATA_WIDTH'(1) << ST_IE_BIT)
+                     | (DATA_WIDTH'(1) << ST_N_BIT);
+  localparam logic [DATA_WIDTH-1:0] ARRAY_PBX_ST =
+      ARRAY_ST | (DATA_WIDTH'(1) << ST_PBX_BIT);
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -70,6 +93,13 @@ module tb_array_checkpoint;
   logic [ADDR_WIDTH-1:0]       pc_w;
   instr_word_t                 instr_w;
   logic                        illegal_w;
+  logic                        dpyint_set;
+  logic                        host_req;
+  logic                        host_we;
+  host_reg_sel_t               host_reg;
+  logic [1:0]                  host_be;
+  logic [15:0]                 host_wdata;
+  logic                        host_ack;
 
   tms34010_core u_core (
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1),
@@ -80,12 +110,12 @@ module tb_array_checkpoint;
     .mem_rdata(mem_rdata), .mem_ack(mem_ack), .state_o(state_w),
     .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w),
     .run_emu_n_i(1'b1), .emua_n_o(), .lint1_n_i(1'b1),
-    .lint2_n_i(1'b1), .hcs_n_i(1'b0), .host_req_i(1'b0),
-    .host_we_i(1'b0), .host_reg_i(HOST_REG_HSTCTL), .host_be_i(2'b00),
-    .host_wdata_i(16'h0000), .host_rdata_o(), .host_ack_o(),
+    .lint2_n_i(1'b1), .hcs_n_i(1'b0), .host_req_i(host_req),
+    .host_we_i(host_we), .host_reg_i(host_reg), .host_be_i(host_be),
+    .host_wdata_i(host_wdata), .host_rdata_o(), .host_ack_o(host_ack),
     .host_busy_o(), .hint_n_o(), .host_mem_req_o(), .host_mem_we_o(),
     .host_mem_addr_o(), .host_mem_wdata_o(), .host_mem_rdata_i(16'h0000),
-    .host_mem_ack_i(1'b0), .dpyint_set_i(1'b0), .refresh_req_o(),
+    .host_mem_ack_i(1'b0), .dpyint_set_i(dpyint_set), .refresh_req_o(),
     .host_mem_is_io_o(), .host_mem_io_rdata_o(),
     .refresh_row_o(), .refresh_cbr_o(), .video_hsync_o(),
     .video_vsync_o(), .video_hblank_o(), .video_vblank_o(),
@@ -237,6 +267,11 @@ module tb_array_checkpoint;
   int unsigned expected_count;
   int unsigned snapshot_count;
   int unsigned expected_snapshot_count;
+  int unsigned interrupt_count;
+  int unsigned resume_count;
+  logic        inject_enable;
+  logic        inject_nmi;
+  logic [DATA_WIDTH-1:0] array_opcode_pc;
   logic protocol_error;
   logic saw_graphics_wait;
   logic held_req_q;
@@ -261,6 +296,8 @@ module tb_array_checkpoint;
       held_size_q       <= '0;
       held_wdata_q      <= '0;
       held_srt_q        <= 1'b0;
+      interrupt_count   <= 0;
+      resume_count      <= 0;
     end else begin
       if (graphics_state(state_w) && mem_req && mem_ack) begin
         if (actual_count < MAX_REQUESTS) begin
@@ -292,6 +329,62 @@ module tb_array_checkpoint;
         held_srt_q   <= mem_srt;
       end
       if (mem_ack) held_req_q <= 1'b0;
+
+      if ((state_w == CORE_INT_PUSH_PC) && mem_ack) begin
+        if (mem_addr !== (SP_INIT - WORD_BIT_SIZE)
+            || mem_size !== MEM_SIZE_32
+            || mem_wdata !== array_opcode_pc) begin
+          $display("TEST_RESULT: FAIL: interrupt PC push addr=%08h/%08h size=%0d data=%08h/%08h",
+                   mem_addr, SP_INIT - WORD_BIT_SIZE, mem_size,
+                   mem_wdata, array_opcode_pc);
+          failures++;
+        end
+      end
+      if ((state_w == CORE_INT_PUSH_ST) && mem_ack) begin
+        if (mem_addr !== (SP_INIT - WORD_BIT_SIZE_2)
+            || mem_size !== MEM_SIZE_32
+            || mem_wdata !== ARRAY_PBX_ST) begin
+          $display("TEST_RESULT: FAIL: interrupt ST push addr=%08h/%08h size=%0d data=%08h/%08h",
+                   mem_addr, SP_INIT - WORD_BIT_SIZE_2, mem_size, mem_wdata,
+                   ARRAY_PBX_ST);
+          failures++;
+        end
+        interrupt_count <= interrupt_count + 1;
+      end
+      if (state_w == CORE_ARRAY_RESUME1)
+        resume_count <= resume_count + 1;
+    end
+  end
+
+  // Assert the selected request early in every checkpoint serialization
+  // chain. DI is sticky in INTPEND until the handler clears it. A direct-host
+  // high-byte HSTCTL write sets NMI with NMIM=0; entry auto-clears it.
+  always @(negedge clk) begin
+    if (rst) begin
+      dpyint_set = 1'b0;
+      host_req   = 1'b0;
+      host_we    = 1'b0;
+      host_reg   = HOST_REG_HSTCTL;
+      host_be    = 2'b00;
+      host_wdata = 16'h0000;
+    end else begin
+      dpyint_set = 1'b0;
+      if (host_req && host_ack) begin
+        host_req = 1'b0;
+        host_we  = 1'b0;
+        host_be  = 2'b00;
+      end
+      if (inject_enable && (state_w == CORE_ARRAY_CKPT_B0)) begin
+        if (inject_nmi) begin
+          host_req   = 1'b1;
+          host_we    = 1'b1;
+          host_reg   = HOST_REG_HSTCTL;
+          host_be    = 2'b10;
+          host_wdata = 16'(1 << HSTCTL_NMI_BIT);
+        end else begin
+          dpyint_set = 1'b1;
+        end
+      end
     end
   end
 
@@ -328,6 +421,7 @@ module tb_array_checkpoint;
     end
     expected_count = 0;
     expected_snapshot_count = 0;
+    inject_enable = 1'b0;
   endtask
 
   task automatic append_request(
@@ -389,6 +483,11 @@ module tb_array_checkpoint;
     wx1 = dst_x + dx - 1;
 
     p = 0;
+    p = place_movi_il(p, 4'd2, SP_INIT);
+    p = place_word(p, 16'h4C4F);
+    p = place_movi_il(p, 4'd0, {16'h0000, DI_MASK});
+    p = place_store_abs(p, 4'd0, A_INTENB);
+    p = place_word(p, 16'h0D60);
     p = place_word(p, setf_enc(5'd16));
     p = place_movi_il(p, 4'd0, DATA_WIDTH'(psize));
     p = place_store_abs(p, 4'd0, A_PSIZE);
@@ -421,8 +520,21 @@ module tb_array_checkpoint;
     p = place_movi_il_b(p, 4'd12, 32'hA012_A012);
     p = place_movi_il_b(p, 4'd13, B13_SEED);
     p = place_movi_il_b(p, 4'd14, 32'hA014_A014);
+    array_opcode_pc = DATA_WIDTH'(p * INSTR_WORD_BITS);
     p = place_word(p, opcode);
     p = place_word(p, 16'hC0FF);
+
+    // Shared handler: clear any maskable source, leave all B registers
+    // untouched, publish a marker in A10, and restore PC/ST through RETI.
+    p = ISR_WORD;
+    p = place_movi_il(p, 4'd3, 32'd0);
+    p = place_store_abs(p, 4'd3, A_INTPEND);
+    p = place_movi_il(p, 4'd10, 32'h0000_BEEF);
+    p = place_word(p, 16'h0940);
+    u_mem.mem[DI_VEC_WORD]     = ISR_PC[15:0];
+    u_mem.mem[DI_VEC_WORD + 1] = ISR_PC[31:16];
+    u_mem.mem[NMI_VEC_WORD]     = ISR_PC[15:0];
+    u_mem.mem[NMI_VEC_WORD + 1] = ISR_PC[31:16];
   endtask
 
   task automatic launch_and_wait(input string label);
@@ -478,6 +590,7 @@ module tb_array_checkpoint;
       input logic w3,
       input logic rmw,
       input logic srt,
+      input logic use_nmi,
       input string label
   );
     localparam int unsigned DX = 5;
@@ -573,6 +686,8 @@ module tb_array_checkpoint;
     build_program(kind, psize, hrev_in, vrev_in, w3, rmw, srt,
                   SPTCH, DPTCH, DX, DY, source_raw, dest_raw,
                   coord_x, dst_y);
+    inject_nmi = use_nmi;
+    inject_enable = 1'b1;
 
     for (int unsigned row = 0; row < DY; row++) begin
       for (int unsigned col = 0; col < DX; col++) begin
@@ -647,6 +762,7 @@ module tb_array_checkpoint;
     end
 
     launch_and_wait(label);
+    inject_enable = 1'b0;
 
     if (actual_count != expected_count) begin
       $display("TEST_RESULT: FAIL: %s request count expected=%0d actual=%0d",
@@ -663,6 +779,12 @@ module tb_array_checkpoint;
     if (snapshot_count != expected_snapshot_count) begin
       $display("TEST_RESULT: FAIL: %s checkpoint count expected=%0d actual=%0d",
                label, expected_snapshot_count, snapshot_count);
+      failures++;
+    end
+    if (interrupt_count != expected_snapshot_count
+        || resume_count != expected_snapshot_count) begin
+      $display("TEST_RESULT: FAIL: %s interrupt/resume count expected=%0d entry=%0d resume=%0d",
+               label, expected_snapshot_count, interrupt_count, resume_count);
       failures++;
     end
 
@@ -787,6 +909,15 @@ module tb_array_checkpoint;
                u_core.u_regfile.b_regs[2], u_core.u_regfile.b_regs[7]);
       failures++;
     end
+    if (u_core.u_regfile.a_regs[10] !== 32'h0000_BEEF
+        || u_core.u_regfile.sp_q !== SP_INIT
+        || u_core.u_status_reg.st_q
+           !== (ARRAY_ST | (w3 ? (DATA_WIDTH'(1) << ST_V_BIT) : 32'd0))) begin
+      $display("TEST_RESULT: FAIL: %s handler/RETI A10=%08h SP=%08h ST=%08h",
+               label, u_core.u_regfile.a_regs[10], u_core.u_regfile.sp_q,
+               u_core.u_status_reg.st_q);
+      failures++;
+    end
     if (protocol_error || !saw_graphics_wait || (illegal_w !== 1'b0)) begin
       $display("TEST_RESULT: FAIL: %s protocol=%0b wait=%0b illegal=%0b",
                label, protocol_error, saw_graphics_wait, illegal_w);
@@ -797,20 +928,21 @@ module tb_array_checkpoint;
   initial begin : main
     failures = 0;
 
-    run_case(KIND_FILL_L, 8, 0, 0, 0, 0, 0, "FILL L direct");
-    run_case(KIND_FILL_XY, 4, 1, 1, 1, 1, 1,
+    run_case(KIND_FILL_L, 8, 0, 0, 0, 0, 0, 0, "FILL L direct DI");
+    run_case(KIND_FILL_XY, 4, 1, 1, 1, 1, 1, 1,
              "FILL XY W3 PPOP/PMASK SRT");
-    run_case(KIND_LL, 16, 0, 0, 0, 0, 0, "PIXBLT L,L direct");
-    run_case(KIND_LXY, 8, 1, 0, 1, 0, 0, "PIXBLT L,XY W3 PBH");
-    run_case(KIND_XYL, 4, 0, 1, 0, 1, 0, "PIXBLT XY,L PBV RMW");
-    run_case(KIND_XYXY, 8, 1, 1, 1, 1, 1,
+    run_case(KIND_LL, 16, 0, 0, 0, 0, 0, 0, "PIXBLT L,L direct DI");
+    run_case(KIND_LXY, 8, 1, 0, 1, 0, 0, 1, "PIXBLT L,XY W3 PBH NMI");
+    run_case(KIND_XYL, 4, 0, 1, 0, 1, 0, 0, "PIXBLT XY,L PBV RMW DI");
+    run_case(KIND_XYXY, 8, 1, 1, 1, 1, 1, 1,
              "PIXBLT XY,XY W3 PBH/PBV RMW SRT");
-    run_case(KIND_BL, 2, 1, 1, 0, 0, 0, "PIXBLT B,L PB isolation");
-    run_case(KIND_BXY, 16, 1, 1, 1, 1, 0,
+    run_case(KIND_BL, 2, 1, 1, 0, 0, 0, 0,
+             "PIXBLT B,L PB isolation DI");
+    run_case(KIND_BXY, 16, 1, 1, 1, 1, 0, 1,
              "PIXBLT B,XY W3 PB isolation RMW");
 
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (FILL/PIXBLT coherent word-row checkpoints)");
+      $display("TEST_RESULT: PASS (FILL/PIXBLT checkpoint interrupt/PBX/RETI resume)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

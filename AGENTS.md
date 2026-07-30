@@ -154,7 +154,14 @@ effective geometry, and result state; the final quiet writeback state is the
 only safe array-interrupt checkpoint. `tb_array_checkpoint` covers all eight
 forms and reconstructs the exact remaining request suffix from every image
 under direction, W=3, PPOP/PMASK, SRT, partial-word RMW, and stalls. Task 0167
-PBX entry/RETI resume is next. The optional instruction
+now takes DI or NMIM=0 NMI only on that complete B14 image, stacks the
+single-word opcode address plus PBX-marked ST, and resumes after RETI by
+reloading private engine state from B0-B14 in four memory-quiescent cycles.
+PBX stays live across repeated later interruptions and clears only when the
+resumed array completes. The same eight-form reference model interrupts every
+legal checkpoint under waits and proves exact traffic/framebuffer/context;
+`tb_int_reti` and `tb_line` prove ordinary and LINE entries keep PBX clear.
+The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
 outside this functional GPU gate.

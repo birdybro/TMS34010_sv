@@ -39,6 +39,8 @@ module tb_int_reti;
   instr_word_t                   instr_w;
   logic                          illegal_w;
   logic                          dpyint_set;
+  logic                          saw_st_push;
+  logic [DATA_WIDTH-1:0]         pushed_st;
 
   tms34010_core u_core (
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
@@ -96,6 +98,16 @@ module tb_int_reti;
   localparam int unsigned VEC_WORD_LO = 1002;
   localparam int unsigned VEC_WORD_HI = 1003;
 
+  always @(posedge clk) begin
+    if (rst) begin
+      saw_st_push <= 1'b0;
+      pushed_st   <= '0;
+    end else if ((state_w == CORE_INT_PUSH_ST) && mem_ack) begin
+      saw_st_push <= 1'b1;
+      pushed_st   <= mem_wdata;
+    end
+  end
+
   initial begin : main
     int unsigned p, i;
     failures = 0;
@@ -143,6 +155,12 @@ module tb_int_reti;
     // ST.IE restored to 1 by RETI; A6's MOVI leaves flags 0 → ST = 0x00200010.
     check_reg("RETI-loop: ST.IE re-enabled (ST = 0x00200010)",
               u_core.u_status_reg.st_q, 32'h0020_0010);
+    if (!saw_st_push || pushed_st !== 32'h0020_0010
+        || pushed_st[ST_PBX_BIT] !== 1'b0) begin
+      $display("TEST_RESULT: FAIL: ordinary interrupt stacked ST/PBX expected=00200010/0 actual=%08h/%0b seen=%0b",
+               pushed_st, pushed_st[ST_PBX_BIT], saw_st_push);
+      failures++;
+    end
     // INTPEND cleared by the ISR → no re-entry.
     if (u_core.u_io_regs.io_reg[IO_IDX_INTPEND] !== 16'h0000) begin
       $display("TEST_RESULT: FAIL: INTPEND not cleared: %04h",

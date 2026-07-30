@@ -347,7 +347,16 @@ recognition point. `tb_array_checkpoint` checks all eight forms and proves
 that every captured B0/B2/B10-B14 image reconstructs the exact remaining
 request suffix under direction, W=3, processing, SRT, and stalls.
 
-Tasks 0167–0171 close the remaining functional and pin-integration items, Tasks
+Task 0167 closed PBX-based array interrupt/resume. Every legal checkpoint now
+accepts maskable or NMIM=0 nonmaskable entry with the rewound opcode PC and a
+PBX-marked stacked ST. RETI refetches the opcode and reconstructs private
+engine state exclusively from the handler-preserved architectural image;
+later checkpoints remain interruptible and final completion clears PBX.
+`tb_array_checkpoint` interrupts every checkpoint in all eight forms and
+retains its exact uninterrupted request/framebuffer/context oracle under
+stalls. Ordinary and LINE entries are explicit PBX-negative controls.
+
+Tasks 0168–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

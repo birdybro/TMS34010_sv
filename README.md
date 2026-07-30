@@ -155,8 +155,16 @@ the next source/destination pixels, traversal cursor, effective dimensions,
 and saved result/geometry context through B0/B2/B10-B14; its final cycle is
 the sole safe interrupt-recognition point. Exact request traces and every
 captured restart suffix are reference-checked under direction, W=3,
-PPOP/PMASK, SRT, partial-word RMW, and memory stalls. Task 0167 PBX interrupt
-entry and RETI resume is next.
+PPOP/PMASK, SRT, partial-word RMW, and memory stalls.
+Task 0167 connects those boundaries to maskable and NMIM=0 nonmaskable entry.
+The core stacks the rewound array opcode PC and an ST copy with PBX set,
+installs the ordinary clean handler ST, then lets RETI restore PBX and refetch
+the opcode. Four quiet B-file read states reconstruct all private FILL/PIXBLT
+state from the documented handler-preserved context; successful completion
+clears PBX. Every legal checkpoint in all eight forms is interrupted under
+three-cycle memory stalls, including repeated entries, with exact
+no-duplicate/no-skip traffic and ordinary/LINE PBX-negative controls. Task
+0168 LINE pixel-boundary resume is next.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;

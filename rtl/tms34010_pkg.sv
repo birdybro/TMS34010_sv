@@ -171,7 +171,11 @@ package tms34010_pkg;
     CORE_ARRAY_CKPT_B11   = 6'd50, // array checkpoint: effective {height,width}
     CORE_ARRAY_CKPT_B12   = 6'd51, // array checkpoint: source/FILL result context
     CORE_ARRAY_CKPT_B13   = 6'd52, // array checkpoint: destination result context
-    CORE_ARRAY_CKPT_B14   = 6'd53  // array checkpoint: effective raw destination XY
+    CORE_ARRAY_CKPT_B14   = 6'd53, // array checkpoint: effective raw destination XY
+    CORE_ARRAY_RESUME1    = 6'd54, // PBX resume: read pitches/effective dimensions
+    CORE_ARRAY_RESUME2    = 6'd55, // PBX resume: read result/raw-destination context
+    CORE_ARRAY_RESUME3    = 6'd56, // PBX resume: read window/original dimensions
+    CORE_ARRAY_RESUME4    = 6'd57  // PBX resume: read expansion/fill colors
   } core_state_t;
 
   // ---------------------------------------------------------------------------

@@ -630,8 +630,24 @@ the saved completion-result context, and B14 preserves the effective raw
 destination geometry. FILL deliberately leaves its non-source B0 and unused
 B13 unchanged. Only the B14 state asserts the internal `array_checkpoint`
 condition, so an interrupt consumer cannot observe a torn image or split a
-held request/partial-word read-modify-write. Task 0167 consumes this
-condition for PBX entry and reconstructs the private array engine after RETI.
+held request/partial-word read-modify-write.
+
+Task 0167 consumes that final condition in the shared interrupt controller.
+If DI, another enabled maskable source, or NMI is pending, entry latches the
+winning vector and stacks the array opcode address (`PC - 16`) rather than the
+ordinary next-instruction PC. The stacked ST copy sets PBX; the live handler
+still receives `ST_RESET_VALUE`, and NMIM=0 NMI uses the same two-word stack
+contract. Ordinary fetch-boundary and LINE entries do not set PBX.
+
+RETI restores the stacked PC/ST and therefore refetches the one-word array
+opcode with PBX live. `CORE_ARRAY_RESUME1` through
+`CORE_ARRAY_RESUME4` read B1/B3/B11, B12-B14, B5-B7, and B8/B9 while the
+execute-state read already supplied B0/B2/B10. Those values rebuild pitches,
+effective dimensions, cursor/row bases, direction convention, saved
+completion results, effective W=3 geometry, colors, and destination-read
+substep. The resumed loop can take another interrupt at any later checkpoint;
+final FILL/PIXBLT writeback clears PBX atomically, including the reconstructed
+W=3 V result. No resume state issues a memory request.
 
 ## Host interface (physical wrapper integrated)
 

@@ -13,6 +13,9 @@
 // b=0 → d=-3 stays ≤0 → INC2 each step. Pixels at (0x20,1),(0x20,2),(0x20,3),
 // (0x20,4) → words 145,146,147,148 each low byte = 0xAA (= 0x00AA).
 // After: COUNT=0, DADDR=(0x20,5)=0x00050020, d still -3 (0xFFFFFFFD).
+// A display interrupt is asserted after the first completed LINE pixel. The
+// entry may be deferred until completion (Task 0167) or accepted at a future
+// LINE checkpoint (Task 0168), but its stacked ST must never claim PBX.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -32,12 +35,15 @@ module tb_line;
   logic [ADDR_WIDTH-1:0]         pc_w;
   instr_word_t                   instr_w;
   logic                          illegal_w;
+  logic                          dpyint_set;
+  logic                          saw_line_st_push;
+  logic [DATA_WIDTH-1:0]         line_pushed_st;
 
   tms34010_core u_core (
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_size(mem_size),
     .mem_wdata(mem_wdata), .mem_srt(), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
-    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(), .lint1_n_i(1'b1), .lint2_n_i(1'b1), .hcs_n_i(1'b0), .host_req_i(1'b0), .host_we_i(1'b0), .host_reg_i(HOST_REG_HSTCTL), .host_be_i(2'b00), .host_wdata_i(16'h0000), .host_rdata_o(), .host_ack_o(), .host_busy_o(), .hint_n_o(), .host_mem_req_o(), .host_mem_we_o(), .host_mem_addr_o(), .host_mem_wdata_o(), .host_mem_rdata_i(16'h0000), .host_mem_ack_i(1'b0), .dpyint_set_i(1'b0), .refresh_req_o(), .refresh_row_o(), .refresh_cbr_o(), .video_hsync_o(), .video_vsync_o(), .video_hblank_o(), .video_vblank_o(), .video_blank_o(), .video_hsync_oe_o(), .video_vsync_oe_o(), .screen_refresh_req_o(), .screen_refresh_ack_i(1'b0), .screen_refresh_srfaddr_o(), .screen_refresh_dpytap_o()
+    .state_o(state_w), .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w), .run_emu_n_i(1'b1), .emua_n_o(), .lint1_n_i(1'b1), .lint2_n_i(1'b1), .hcs_n_i(1'b0), .host_req_i(1'b0), .host_we_i(1'b0), .host_reg_i(HOST_REG_HSTCTL), .host_be_i(2'b00), .host_wdata_i(16'h0000), .host_rdata_o(), .host_ack_o(), .host_busy_o(), .hint_n_o(), .host_mem_req_o(), .host_mem_we_o(), .host_mem_addr_o(), .host_mem_wdata_o(), .host_mem_rdata_i(16'h0000), .host_mem_ack_i(1'b0), .dpyint_set_i(dpyint_set), .refresh_req_o(), .refresh_row_o(), .refresh_cbr_o(), .video_hsync_o(), .video_vsync_o(), .video_hblank_o(), .video_vblank_o(), .video_blank_o(), .video_hsync_oe_o(), .video_vsync_oe_o(), .screen_refresh_req_o(), .screen_refresh_ack_i(1'b0), .screen_refresh_srfaddr_o(), .screen_refresh_dpytap_o()
   );
   sim_memory_model #(.DEPTH_WORDS(256)) u_mem (
     .clk(clk), .rst(rst),
@@ -93,14 +99,37 @@ module tb_line;
 
   localparam logic [31:0] A_PSIZE  = IO_BASE_ADDR + (IO_IDX_PSIZE  << 4);
   localparam logic [31:0] A_CONVDP = IO_BASE_ADDR + (IO_IDX_CONVDP << 4);
+  localparam logic [31:0] A_INTENB = IO_BASE_ADDR + (IO_IDX_INTENB << 4);
+  localparam logic [31:0] A_INTPEND = IO_BASE_ADDR + (IO_IDX_INTPEND << 4);
+  localparam logic [31:0] SP_INIT = 32'h0000_0E00;
+  localparam logic [31:0] ISR_PC = 32'h0000_0D20;
+  localparam int unsigned ISR_WORD = ISR_PC >> LOCAL_WORD_ADDR_LSB;
+  localparam int unsigned DI_VEC_WORD =
+      (INT_VEC_DI >> LOCAL_WORD_ADDR_LSB) & 8'hFF;
+
+  always @(posedge clk) begin
+    if (rst) begin
+      saw_line_st_push <= 1'b0;
+      line_pushed_st   <= '0;
+    end else if ((state_w == CORE_INT_PUSH_ST) && mem_ack) begin
+      saw_line_st_push <= 1'b1;
+      line_pushed_st   <= mem_wdata;
+    end
+  end
 
   initial begin : main
     int unsigned p, i;
     failures = 0;
+    dpyint_set = 1'b0;
     for (i = 0; i < 256; i++) u_mem.mem[i] = 16'h0300;
     for (i = 120; i < 200; i++) u_mem.mem[i] = 16'h0000;
 
     p = 0;
+    p = place_movi_il  (p, 4'd2, SP_INIT);
+    p = place_word(p, 16'h4C4F);                         // A15/SP <- A2
+    p = place_movi_il  (p, 4'd0, 32'(1 << INT_DI_BIT));
+    p = place_store_abs(p, 4'd0, A_INTENB);
+    p = place_word(p, 16'h0D60);                         // EINT
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));      // FS0=16 for MOVE-to-I/O
     p = place_movi_il  (p, 4'd0, 32'h0000_0008);
     p = place_store_abs(p, 4'd0, A_PSIZE);               // PSIZE = 8
@@ -134,8 +163,22 @@ module tb_line;
     p = place_word(p, 16'hDF1A);                         // LINE 0
     p = place_word(p, 16'hC0FF);
 
+    // Handler and aliased DI vector.
+    p = ISR_WORD;
+    p = place_movi_il(p, 4'd3, 32'd0);
+    p = place_store_abs(p, 4'd3, A_INTPEND);
+    p = place_movi_il(p, 4'd5, 32'h0000_BEEF);
+    p = place_word(p, 16'h0940);
+    u_mem.mem[DI_VEC_WORD] = ISR_PC[15:0];
+    u_mem.mem[DI_VEC_WORD + 1] = ISR_PC[31:16];
+
     repeat (3) @(posedge clk);
     rst = 1'b0;
+    wait ((state_w == CORE_LINE_DRAW) && mem_req && mem_ack);
+    @(negedge clk);
+    dpyint_set = 1'b1;
+    @(negedge clk);
+    dpyint_set = 1'b0;
     repeat (4000) @(posedge clk);
     #1;
 
@@ -156,6 +199,14 @@ module tb_line;
     check_breg("LINE diag: B10 COUNT = 0",        10, 32'h0000_0000);
     check_breg("LINE diag: B2 DADDR = (7,4)",      2, 32'h0004_0007);
     check_breg("LINE diag: B0 d = 2",              0, 32'h0000_0002);
+    if (!saw_line_st_push || line_pushed_st[ST_PBX_BIT] !== 1'b0
+        || u_core.u_regfile.a_regs[5] !== 32'h0000_BEEF
+        || u_core.u_regfile.sp_q !== SP_INIT) begin
+      $display("TEST_RESULT: FAIL: LINE interrupt PBX/handler/SP ST=%08h seen=%0b A5=%08h SP=%08h",
+               line_pushed_st, saw_line_st_push,
+               u_core.u_regfile.a_regs[5], u_core.u_regfile.sp_q);
+      failures++;
+    end
     if (illegal_w !== 1'b0) begin
       $display("TEST_RESULT: FAIL: illegal_opcode_o was set"); failures++;
     end

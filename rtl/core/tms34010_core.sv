@@ -428,6 +428,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] fill_next_addr;
   logic                  fill_empty, fill_row_end, fill_done;
   logic                  fill_checkpoint_due;
+  logic                  array_resume;
   // The destination is not read for the documented fast path: replace
   // processing, transparency disabled, and no protected planes. Field
   // insertion still performs any alignment-required word RMW in the memory
@@ -666,21 +667,57 @@ module tms34010_core
       // start address (possibly XY-converted) is finalized at SETUP. Window
       // clipping engages only for FILL XY with CONTROL.W = 3.
       if (state_q == CORE_EXECUTE && is_fill) begin
-        fill_daddr_raw_q <= rf_rs1_data;       // DADDR (linear, or XY for FILL XY)
-        fill_dptch_q     <= rf_rs2_data;       // DPTCH
-        fill_dx_q        <= rf_rs3_data[15:0]; // DX
-        fill_dy_q        <= rf_rs3_data[DATA_WIDTH-1:16]; // DY
-        fill_x_q         <= 16'd0;
-        fill_y_q         <= 16'd0;
+        if (array_resume) begin
+          // PBX re-entry reads {B0,B2,B10}; FILL ignores B0. B2 is the next
+          // actual pixel and B10 the next effective traversal cursor.
+          fill_addr_q     <= rf_rs2_data;
+          fill_row_base_q <= rf_rs2_data
+                           - ({{16{1'b0}}, rf_rs3_data[15:0]}
+                              << pix_xy_xsh);
+          fill_x_q        <= rf_rs3_data[15:0];
+          fill_y_q        <= rf_rs3_data[DATA_WIDTH-1:16];
+        end else begin
+          fill_daddr_raw_q <= rf_rs1_data;       // DADDR (linear, or XY)
+          fill_dptch_q     <= rf_rs2_data;       // DPTCH
+          fill_dx_q        <= rf_rs3_data[15:0]; // DX
+          fill_dy_q        <= rf_rs3_data[DATA_WIDTH-1:16]; // DY
+          fill_x_q         <= 16'd0;
+          fill_y_q         <= 16'd0;
+        end
         fill_win_en_q    <= fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
-        fill_w2_q        <= fill_is_xy &&
+        fill_w2_q        <= !array_resume && fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
-        fill_w1_q        <= fill_is_xy &&
+        fill_w1_q        <= !array_resume && fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
         fill_dest_read_q <= pixel_dest_read_required;
         fill_preclip_changed_q <= 1'b0;
         fill_w3_empty_q  <= 1'b0;
+      end
+      if (state_q == CORE_ARRAY_RESUME1 && is_fill) begin
+        // {B1,B3,B11}: only DPTCH and the effective dimensions apply.
+        fill_dptch_q <= rf_rs2_data;
+        fill_dx_q    <= rf_rs3_data[15:0];
+        fill_dy_q    <= rf_rs3_data[DATA_WIDTH-1:16];
+      end
+      if (state_q == CORE_ARRAY_RESUME2 && is_fill) begin
+        // {B12,B13,B14}: B12 is the saved final-result base/context and
+        // B14 is the effective raw XY destination used by W=3 checks.
+        fill_result_q    <= rf_rs1_data;
+        fill_daddr_raw_q <= rf_rs3_data;
+      end
+      if (state_q == CORE_ARRAY_RESUME3 && is_fill) begin
+        // {B5,B6,B7}: reload the preserved window and recover whether W=3
+        // changed the original dimensions, which determines final V.
+        fill_wstart_q <= rf_rs1_data;
+        fill_wend_q   <= rf_rs2_data;
+        fill_preclip_changed_q <= fill_win_en_q
+                               && (rf_rs3_data != {fill_dy_q, fill_dx_q});
+      end
+      if (state_q == CORE_ARRAY_RESUME4 && is_fill) begin
+        // {B8,B9}: FILL consumes COLOR1 and resumes at a clean pixel boundary.
+        fill_color_q   <= rf_rs2_data;
+        fill_substep_q <= !fill_dest_read_q;
       end
       // CORE_FILL_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_FILL_SETUP_WIN) begin
@@ -956,6 +993,8 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_row_step, pblt_dst_row_step;
   logic [DATA_WIDTH-1:0] pblt_src_access_addr, pblt_dst_access_addr;
   logic [DATA_WIDTH-1:0] pblt_dst_after_addr;
+  logic [DATA_WIDTH-1:0] pblt_resume_src_x_offset;
+  logic [DATA_WIDTH-1:0] pblt_resume_dst_x_offset;
   logic                  pblt_checkpoint_due;
   assign pblt_src_base = decoded.blt_src_xy ? pblt_src_conv
                                             : pblt_src_addr_q;
@@ -989,6 +1028,11 @@ module tms34010_core
                               ? pblt_dst_addr_q - pblt_psize_ext
                               : pblt_dst_addr_q;
   assign pblt_dst_after_addr = pblt_dst_access_addr + pblt_psize_ext;
+  assign pblt_resume_src_x_offset = decoded.blt_binary
+      ? {{16{1'b0}}, rf_rs3_data[15:0]}
+      : ({{16{1'b0}}, rf_rs3_data[15:0]} << pix_xy_xsh);
+  assign pblt_resume_dst_x_offset =
+      {{16{1'b0}}, rf_rs3_data[15:0]} << pix_xy_xsh;
   // Checkpoints follow completed destination writes at a 16-bit word edge or
   // nonfinal row edge. Reverse traversal crosses a word edge after writing
   // the aligned low-address field; forward traversal crosses when the next
@@ -1034,15 +1078,37 @@ module tms34010_core
       // clipping engages only for an XY destination with CONTROL.W=3; keep the
       // raw XY DADDR (pblt_dst_addr_q is converted to linear at SETUP).
       if (state_q == CORE_EXECUTE && is_pblt) begin
-        pblt_src_addr_q <= rf_rs1_data;          // SADDR
-        pblt_src_row_q  <= rf_rs1_data;
-        pblt_dst_addr_q <= rf_rs2_data;          // DADDR
-        pblt_dst_row_q  <= rf_rs2_data;
-        pblt_dst_xy_raw_q <= rf_rs2_data;        // raw XY DADDR (for window)
-        pblt_dx_q       <= rf_rs3_data[15:0];
-        pblt_dy_q       <= rf_rs3_data[DATA_WIDTH-1:16];
-        pblt_x_q        <= 16'd0;
-        pblt_y_q        <= 16'd0;
+        if (array_resume) begin
+          // PBX re-entry reads {B0,B2,B10}. B0/B2 are the next actual
+          // accesses; rebuild the engine's reverse-X one-past convention and
+          // current row bases from the saved cursor.
+          pblt_src_addr_q <= (!decoded.blt_binary
+                              && io_control[CTRL_PBH_BIT])
+                           ? rf_rs1_data + pblt_src_step : rf_rs1_data;
+          pblt_dst_addr_q <= (!decoded.blt_binary
+                              && io_control[CTRL_PBH_BIT])
+                           ? rf_rs2_data + pblt_psize_ext : rf_rs2_data;
+          pblt_src_row_q <= (!decoded.blt_binary
+                             && io_control[CTRL_PBH_BIT])
+              ? rf_rs1_data + pblt_src_step + pblt_resume_src_x_offset
+              : rf_rs1_data - pblt_resume_src_x_offset;
+          pblt_dst_row_q <= (!decoded.blt_binary
+                             && io_control[CTRL_PBH_BIT])
+              ? rf_rs2_data + pblt_psize_ext + pblt_resume_dst_x_offset
+              : rf_rs2_data - pblt_resume_dst_x_offset;
+          pblt_x_q <= rf_rs3_data[15:0];
+          pblt_y_q <= rf_rs3_data[DATA_WIDTH-1:16];
+        end else begin
+          pblt_src_addr_q <= rf_rs1_data;          // SADDR
+          pblt_src_row_q  <= rf_rs1_data;
+          pblt_dst_addr_q <= rf_rs2_data;          // DADDR
+          pblt_dst_row_q  <= rf_rs2_data;
+          pblt_dst_xy_raw_q <= rf_rs2_data;        // raw XY DADDR (window)
+          pblt_dx_q       <= rf_rs3_data[15:0];
+          pblt_dy_q       <= rf_rs3_data[DATA_WIDTH-1:16];
+          pblt_x_q        <= 16'd0;
+          pblt_y_q        <= 16'd0;
+        end
         pblt_substep_q  <= 2'd0;
         pblt_hrev_q     <= !decoded.blt_binary
                          && io_control[CTRL_PBH_BIT];
@@ -1052,13 +1118,40 @@ module tms34010_core
                            && (decoded.blt_src_xy || decoded.blt_dst_xy);
         pblt_win_en_q   <= decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd3);
-        pblt_w2_q       <= decoded.blt_dst_xy &&
+        pblt_w2_q       <= !array_resume && decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
-        pblt_w1_q       <= decoded.blt_dst_xy &&
+        pblt_w1_q       <= !array_resume && decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
         pblt_dest_read_q <= pixel_dest_read_required;
         pblt_preclip_changed_q <= 1'b0;
         pblt_w3_empty_q <= 1'b0;
+      end
+      if (state_q == CORE_ARRAY_RESUME1 && is_pblt) begin
+        // {B1,B3,B11}: pitches and effective dimensions.
+        pblt_sptch_q <= rf_rs1_data;
+        pblt_dptch_q <= rf_rs2_data;
+        pblt_dx_q    <= rf_rs3_data[15:0];
+        pblt_dy_q    <= rf_rs3_data[DATA_WIDTH-1:16];
+      end
+      if (state_q == CORE_ARRAY_RESUME2 && is_pblt) begin
+        // {B12,B13,B14}: architectural completion results and effective raw
+        // destination geometry.
+        pblt_src_result_q  <= rf_rs1_data;
+        pblt_dst_result_q  <= rf_rs2_data;
+        pblt_dst_xy_raw_q  <= rf_rs3_data;
+      end
+      if (state_q == CORE_ARRAY_RESUME3 && is_pblt) begin
+        // {B5,B6,B7}: preserved window/original dimensions.
+        pblt_wstart_q <= rf_rs1_data;
+        pblt_wend_q   <= rf_rs2_data;
+        pblt_preclip_changed_q <= pblt_win_en_q
+                               && (rf_rs3_data != {pblt_dy_q, pblt_dx_q});
+      end
+      if (state_q == CORE_ARRAY_RESUME4 && is_pblt) begin
+        // {B8,B9}: binary expansion colors (harmlessly latched for full color).
+        pblt_color0_q <= rf_rs1_data;
+        pblt_color1_q <= rf_rs2_data;
+        pblt_substep_q <= 2'd0;
       end
       // CORE_PBLT_SETUP_WIN: latch WSTART(port1=B5)/WEND(port2=B6) for clip.
       if (state_q == CORE_PBLT_SETUP_WIN) begin
@@ -1556,6 +1649,7 @@ module tms34010_core
   // SADDR(B0) on port1, DADDR(B2) on port2, DYDX(B7) on port3; at
   // CORE_PBLT_SETUP — SPTCH(B1) on port1, DPTCH(B3) on port2.
   assign is_pblt    = (decoded.iclass == INSTR_PIXBLT_LL);
+  assign array_resume = (is_fill || is_pblt) && st_value[ST_PBX_BIT];
   // DRAV: at EXECUTE — Rs on port1, Rd on port2, OFFSET(B4) on port3 (for the
   // XY->linear conversion of Rd); in CORE_DRAV — COLOR1(B9) on port1.
   logic is_drav;
@@ -1583,7 +1677,13 @@ module tms34010_core
   // during CORE_MEMORY to scan the register list — rf_rs1_idx then
   // points at the current register being pushed, and rf_rs1_data
   // becomes the 32-bit value driven onto mem_wdata.
-  assign rf_rs1_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WSTART_IDX
+  assign rf_rs1_idx  = ((is_fill || is_pblt) && array_resume)
+                     ? ((state_q == CORE_ARRAY_RESUME1) ? B_SPTCH_IDX
+                      : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(12)
+                      : (state_q == CORE_ARRAY_RESUME3) ? CPW_WSTART_IDX
+                      : (state_q == CORE_ARRAY_RESUME4) ? B_COLOR0_IDX
+                                                       : B_SADDR_IDX)
+                     : is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WSTART_IDX
                                 : (state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WSTART_IDX
                                 : (state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
@@ -1606,7 +1706,13 @@ module tms34010_core
                         || (state_q == CORE_PIXT_SETUP_WIN)
                         || (is_drav && (state_q == CORE_DRAV_SETUP_WIN)))
                      ? REG_FILE_B : decoded.rd_file;
-  assign rf_rs2_idx  = is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
+  assign rf_rs2_idx  = ((is_fill || is_pblt) && array_resume)
+                     ? ((state_q == CORE_ARRAY_RESUME1) ? B_DPTCH_IDX
+                      : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(13)
+                      : (state_q == CORE_ARRAY_RESUME3) ? CPW_WEND_IDX
+                      : (state_q == CORE_ARRAY_RESUME4) ? B_COLOR1_IDX
+                                                       : B_DADDR_IDX)
+                     : is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WEND_IDX
                                 : (state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
                                 : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
@@ -1624,6 +1730,11 @@ module tms34010_core
                      ? decoded.rd_file : REG_FILE_B;
   assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
                      ? (decoded.rd_idx + 4'd1)
+                     : ((is_fill || is_pblt) && array_resume)
+                     ? ((state_q == CORE_ARRAY_RESUME1) ? reg_idx_t'(11)
+                      : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(14)
+                      : (state_q == CORE_ARRAY_RESUME3) ? B_DYDX_IDX
+                                                       : B_COUNT_IDX)
                      : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
                      : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
                      : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_COUNT_IDX   // COUNT (B10)
@@ -2577,6 +2688,10 @@ module tms34010_core
   //   FE = instr_word_q[5]
   //   FS = instr_word_q[4:0]
   logic [DATA_WIDTH-1:0] setf_new_st;
+  logic                  array_pbx_complete;
+  assign array_pbx_complete = st_value[ST_PBX_BIT]
+                           && (((state_q == CORE_FILL_WB) && is_fill)
+                               || ((state_q == CORE_PBLT_WB2) && is_pblt));
   always_comb begin
     setf_new_st = st_value;  // start from current
     if (instr_word_q[9]) begin
@@ -2599,13 +2714,23 @@ module tms34010_core
                         (decoded.iclass == INSTR_POPST) ||
                         (decoded.iclass == INSTR_RETI)  ||
                         (decoded.iclass == INSTR_TRAP)))
-                    || (state_q == CORE_INT_DONE);
+                    || (state_q == CORE_INT_DONE)
+                    || array_pbx_complete;
   always_comb begin
     if (state_q == CORE_INT_DONE) begin
       // 1988 User's Guide §8.5 page 8-6, step 3: every interrupt installs
       // the fresh service-context value (IE=0, FS0=16, FS1=32, FE/flags=0).
       // NMIM controls stacking only; NMIM=1 still receives this live ST.
       st_write_data = ST_RESET_VALUE;
+    end else if (array_pbx_complete) begin
+      // PBX remains live while a resumed operation is again interruptible,
+      // then clears atomically at successful completion. A resumed W=3
+      // operation also publishes its reconstructed V result on this edge;
+      // the full write has priority over the parallel flag-only port.
+      st_write_data = st_value;
+      st_write_data[ST_PBX_BIT] = 1'b0;
+      if ((is_fill && fill_win_en_q) || (is_pblt && pblt_win_en_q))
+        st_write_data[ST_V_BIT] = fill_win_violation;
     end else
     unique case (decoded.iclass)
       INSTR_PUTST: st_write_data = rf_rs1_data;
@@ -2919,30 +3044,57 @@ module tms34010_core
   logic int_take;
   assign int_take = nmi_req || int_req;
 
-  // Latched state for the entry sequence (captured when leaving CORE_FETCH):
+  // Latched state for the entry sequence (captured at a legal boundary):
   //   int_vec_q    — the trap-vector address to fetch.
   //   int_is_nmi_q  — this entry is an NMI (drives the auto-clear).
   //   int_push_q    — context is pushed (always for maskable/illegal;
   //                   NMIM=0 for NMI).
+  //   int_rewind_q — push the current single-word instruction address.
+  //   int_pbx_q    — set PBX in the stacked ST copy (FILL/PIXBLT only).
   // nmi_clear pulses in CORE_INT_DONE when the latched entry was an NMI.
   logic [ADDR_WIDTH-1:0] int_vec_q;
   logic                  int_is_nmi_q;
   logic                  int_push_q;
+  logic                  int_rewind_q;
+  logic                  int_pbx_q;
+  logic [ADDR_WIDTH-1:0] int_stack_pc;
+  logic [DATA_WIDTH-1:0] int_stack_st;
+  assign int_stack_pc = int_rewind_q
+                      ? pc_value - ADDR_WIDTH'(INSTR_WORD_BITS) : pc_value;
+  always_comb begin
+    int_stack_st = st_value;
+    if (int_pbx_q) int_stack_st[ST_PBX_BIT] = 1'b1;
+  end
   always_ff @(posedge clk) begin
     if (rst) begin
       int_vec_q    <= '0;
       int_is_nmi_q <= 1'b0;
       int_push_q   <= 1'b0;
+      int_rewind_q <= 1'b0;
+      int_pbx_q    <= 1'b0;
+    end else if (array_checkpoint && int_take) begin
+      // The checkpoint image and this capture commit on the same edge.
+      // Re-enter the one-word array opcode after RETI and mark only its
+      // stacked ST copy as a PixBlt-executing context.
+      int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
+      int_is_nmi_q <= nmi_req;
+      int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;
+      int_rewind_q <= 1'b1;
+      int_pbx_q    <= 1'b1;
     end else if (state_q == CORE_FETCH && int_take) begin
       int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
       int_is_nmi_q <= nmi_req;
       int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
+      int_rewind_q <= 1'b0;
+      int_pbx_q    <= 1'b0;
     end else if (state_q == CORE_DISPATCH && decoded.illegal_trap) begin
       // 1988 User's Guide §8.7: an illegal opcode is an unmaskable
       // TRAP-30-equivalent event. PC already points past the illegal word.
       int_vec_q    <= INT_VEC_ILLOP;
       int_is_nmi_q <= 1'b0;
       int_push_q   <= 1'b1;
+      int_rewind_q <= 1'b0;
+      int_pbx_q    <= 1'b0;
     end
   end
   assign nmi_clear = (state_q == CORE_INT_DONE) && int_is_nmi_q;
@@ -3210,7 +3362,7 @@ module tms34010_core
         mem_we_int = 1'b1;
         mem_addr  = rf_sp - WORD_BIT_SIZE;
         mem_size  = MEM_SIZE_32;
-        mem_wdata = pc_value;
+        mem_wdata = int_stack_pc;
         if (mem_ack) state_d = CORE_INT_PUSH_ST;
       end
 
@@ -3220,7 +3372,7 @@ module tms34010_core
         mem_we_int = 1'b1;
         mem_addr  = rf_sp - WORD_BIT_SIZE_2;
         mem_size  = MEM_SIZE_32;
-        mem_wdata = st_value;
+        mem_wdata = int_stack_st;
         if (mem_ack) state_d = CORE_INT_VECTOR;
       end
 
@@ -3329,9 +3481,9 @@ module tms34010_core
         else if (is_div)
           state_d = CORE_DIVIDE;
         else if (is_fill)
-          state_d = CORE_FILL_SETUP;   // FILL: latched DADDR/DPTCH/DYDX here
+          state_d = array_resume ? CORE_ARRAY_RESUME1 : CORE_FILL_SETUP;
         else if (is_pblt)
-          state_d = CORE_PBLT_SETUP;   // PIXBLT: latched SADDR/DADDR/DYDX here
+          state_d = array_resume ? CORE_ARRAY_RESUME1 : CORE_PBLT_SETUP;
         else if (is_drav)
           // DRAV: latched Rd/Rs/linear here. A windowed DRAV (W!=0) first reads
           // WSTART/WEND to test Rd's pixel; W=0 goes straight to the draw.
@@ -3572,15 +3724,28 @@ module tms34010_core
 
       // Serialize one coherent, restart-sufficient array context after a
       // completed destination word/row. No memory request is active anywhere
-      // in this chain. Task 0167 will sample interrupts only in the final
-      // state, after B14 and every preceding context word are committed.
+      // in this chain. Interrupts are sampled only in the final state, after
+      // B14 and every preceding context word are committed.
       CORE_ARRAY_CKPT_B0:  state_d = CORE_ARRAY_CKPT_B2;
       CORE_ARRAY_CKPT_B2:  state_d = CORE_ARRAY_CKPT_B10;
       CORE_ARRAY_CKPT_B10: state_d = CORE_ARRAY_CKPT_B11;
       CORE_ARRAY_CKPT_B11: state_d = CORE_ARRAY_CKPT_B12;
       CORE_ARRAY_CKPT_B12: state_d = CORE_ARRAY_CKPT_B13;
       CORE_ARRAY_CKPT_B13: state_d = CORE_ARRAY_CKPT_B14;
-      CORE_ARRAY_CKPT_B14: state_d = is_fill ? CORE_FILL : CORE_PBLT;
+      CORE_ARRAY_CKPT_B14: begin
+        state_d = int_take
+                ? ((nmi_req && nmi_nmim) ? CORE_INT_VECTOR
+                                         : CORE_INT_PUSH_PC)
+                : is_fill ? CORE_FILL : CORE_PBLT;
+      end
+
+      // A PBX-marked RETI refetches the interrupted one-word array opcode.
+      // These quiet reads rebuild all private engine state strictly from the
+      // handler-preserved architectural B image before the next pixel.
+      CORE_ARRAY_RESUME1: state_d = CORE_ARRAY_RESUME2;
+      CORE_ARRAY_RESUME2: state_d = CORE_ARRAY_RESUME3;
+      CORE_ARRAY_RESUME3: state_d = CORE_ARRAY_RESUME4;
+      CORE_ARRAY_RESUME4: state_d = is_fill ? CORE_FILL : CORE_PBLT;
 
       CORE_MEMORY: begin
         // Memory transaction state for instructions that set

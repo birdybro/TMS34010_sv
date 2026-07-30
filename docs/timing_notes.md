@@ -206,8 +206,17 @@
   physical partial-word read/modify/write have retired. The next cycle
   resumes the array loop. A final pixel bypasses the sequence and uses the
   ordinary post-instruction fetch boundary. This is functional checkpoint
-  granularity, not a claim of exact original-silicon cycle parity; Task 0167
-  consumes the final state for PBX interrupt entry.
+  granularity, not a claim of exact original-silicon cycle parity.
+- **PBX array interrupt/resume sequencing** — when an interrupt is pending in
+  the B14 checkpoint state, the next cycle enters the ordinary interrupt
+  stack/vector sequence. Its PC payload is the current PC minus one 16-bit
+  opcode, and its ST payload adds PBX; stack field transfers retain their
+  usual held-request and acknowledge-only advancement. RETI restores both and
+  refetches the opcode. Execute reads B0/B2/B10, followed by four quiet states
+  reading `{B1,B3,B11}`, `{B12,B13,B14}`, `{B5,B6,B7}`, and `{B8,B9}`.
+  The next cycle issues the first remaining graphics request. Later word/row
+  checkpoints remain eligible for repeated entry. Final writeback clears PBX;
+  no resume reconstruction state asserts a memory request.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

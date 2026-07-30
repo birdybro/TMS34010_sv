@@ -7,6 +7,29 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0167 — PBX FILL/PIXBLT interrupt resume)
+- Connected the coherent array checkpoint to existing maskable and
+  nonmaskable interrupt entry. A legal FILL/PIXBLT interruption stacks the
+  current one-word opcode address and an ST copy with PBX set; ordinary entry,
+  illegal traps, and LINE leave PBX clear.
+- Made RETI-driven opcode refetch recognize PBX and reconstruct the complete
+  private FILL/PIXBLT engine from B0-B14 in four memory-quiescent read states.
+  Direction, effective W=3 geometry, completion results, colors, pitches,
+  destination-read processing, and cursor/row bases are restored without
+  relying on stale private state.
+- Kept PBX live across later legal checkpoints so handlers that preserve the
+  documented graphics context can be interrupted repeatedly. Successful
+  resumed completion clears PBX atomically while preserving the specified
+  W=3 V result.
+- Extended `tb_array_checkpoint` so every legal checkpoint in all eight array
+  forms takes either DI or NMIM=0 NMI, runs a real handler, returns through
+  RETI, and matches the uninterrupted request/framebuffer/context oracle
+  under three-cycle field-memory stalls, SRT, RMW, direction, and W=3.
+  Strengthened `tb_int_reti` and `tb_line` with ordinary/LINE PBX-negative
+  stacking checks.
+- Validation: focused array/interrupt/NMI/LINE tests PASS;
+  `scripts/lint.sh` clean; full regression 152/152 PASS.
+
 ### Added (Task 0166 — checkpointable FILL/PIXBLT execution)
 - Added architectural context checkpoints after completed destination
   16-bit-word and nonfinal-row boundaries for FILL L/XY and every PIXBLT
