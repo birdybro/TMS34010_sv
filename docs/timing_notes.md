@@ -1,6 +1,6 @@
 # Timing notes
 
-> Status: **functional latency reconciled through Task 0170 and measured
+> Status: **functional latency reconciled through Task 0171 and measured
 > Cyclone V implementation evidence through Task 0160**. Quartus Prime Lite
 > 17.0.2 closes the complete design at
 > 50/200/50 MHz with +0.747 ns worst setup, +0.128 ns worst hold, zero TNS,
@@ -20,7 +20,7 @@
 | HOLD/EMU/host CDC and pad enables   | Tasks 0151–0153  | constrained; required 2FF chains recognized | preserve the protocol-held payloads and phased OE owner |
 | Core↔VCLK mailboxes and screen transaction | Task 0155 | constrained asynchronous groups/MCPs; chains recognized | retain one-outstanding source-held contracts |
 | External HSYNC/VSYNC → VCLK         | Task 0157        | constrained inputs; both level chains recognized | retain delayed edge recognition |
-| Graphics SRT request classification | Task 0158        | closed through registered fabric ingress | retain captured SRT sideband |
+| Graphics SRT request classification | Tasks 0158/0171 | reclosed through pins for every engine and zero-work/continuation class | retain captured SRT sideband |
 | Board reset / PLL locks             | Task 0159        | assertion cut, three release chains recognized | preserve synchronous destination-domain release |
 | HD/LAD/control/sync/blank IOEs      | Tasks 0159/0170 | 63 fitted pins with bounded min/max paths; BLANK functional polarity corrected | re-run full implementation at Task 0174 |
 | MPYS/MPYU 32×32 multiply            | Task 0071        | closed using 6 DSP blocks total | pipeline only after new measured evidence and full regression |
@@ -164,6 +164,14 @@
   skip an architectural destination read when PPOP=replace, transparency is
   disabled, PMASK is zero, and no existing window path needs it; alignment-
   required partial writes still use the field sequencer's word RMW.
+  Task 0171 enables SRT in every one of the 1,186 generated graphics matrix
+  cases, exercises all five engine families through `tms34010_system`, and
+  adds a pin-supplied asynchronous-clock program whose four ordered
+  transfers are checked at Q3B, Q4A, Q1B, and Q3A. Separate arbiter tests
+  prove the request survives simultaneous HOLD/screen/refresh/host clients,
+  and the partial-RMW HOLD test requires two MTR reads followed by exactly
+  one RTM write. `tb_local_bus` now injects LRDY waits into both kinds and
+  proves RAS/CAS/LAL extend while the W and TR/QE envelopes do not.
 - **Array completion under stalls** — FILL and PIXBLT sample dimensions and
   implied operands before their pixel loops. A zero dimension returns from
   setup without issuing a pixel request. For nonempty arrays, counters and
@@ -465,6 +473,10 @@ both core-clock signals captured before the already landed core-to-8× MCP.
 The expanded cycle kind then crosses as part of the existing stable command
 payload. Task 0160 includes the MTR/RTM pin paths in the same 8× absolute
 output-delay and output-enable analysis as screen transfer (A0048).
+Task 0171's `tb_pin_srt` supplies the complementary functional CDC proof at
+non-identical core/VCLK/8× periods, including coherent cycle kind, aligned
+address, IAQ, completion, and deterministic MTR result. The authoritative
+phase/evidence matrix is `srt_conformance.md`.
 
 ## Cyclone V-specific notes
 

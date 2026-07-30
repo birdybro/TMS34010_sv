@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal/external video timing, and live DPYADR
-> reconciled through Task 0170**. The core issues bit-addressed 1–32-bit
+> reconciled through Task 0171**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -128,6 +128,11 @@ reads/writes carry the captured SRT tag; arbitration maps them to explicit
 VRAM memory-to-register/register-to-memory cycles. Their ordinary address is
 unchanged, IAQ is inactive, TR column status is active, and all nonpixel
 request classes retain their previous mapping.
+Task 0171 re-audits that mapping after every production graphics correction.
+All engine families now have exact controller address/count evidence, and a
+full pin-supplied program proves the MTR/RTM row/column/status phases after
+CDC. `srt_conformance.md` is the authoritative classification and scope
+ledger.
 
 The simulation memory model (`sim/models/sim_memory_model.sv`) retains its
 public core-side interface and backing `mem[]`, but now routes every request
@@ -291,6 +296,9 @@ other processor-controlled path: graphics reads/writes become explicit MTR
 or RTM cycles with normal address mapping, active TR status, and the RTM
 W-at-RAS distinction. Task 0170 reconciles the complete video/display
 boundary and corrects raw address direction plus active-low package BLANK.
+Task 0171 proves that this scheduled screen path, DRAM refresh, host traffic,
+and graphics MTR/RTM remain lossless under shared arbitration and that SRT
+does not alter any nonpixel address-map class.
 
 The TMS34010 itself provides HSYNC, VSYNC, BLANK, and VRAM control but no
 pixel-data output pins; all three named video interval pins are active low at

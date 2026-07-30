@@ -305,8 +305,10 @@ Task 0161 found concrete functional gaps beyond the Task 0160 baseline:
 FILL, PIXBLT, and LINE lacked their architectural mid-instruction
 interrupt/resume contracts, and the now-closed early tasks included
 empty-array/context, direction, and W=1/W=3 geometry defects.
-The existing tests also lack a complete graphics/display conformance matrix,
-pinned MAME differential coverage, and TI-shipped graphics workloads.
+The original audit also found missing complete graphics/display/SRT
+conformance matrices, pinned MAME differential coverage, and TI-shipped
+graphics workloads. Tasks 0169–0171 close the three specification-derived
+matrices; the independent reference/workload gates remain.
 
 Task 0162 closed the empty-array and terminal-context findings. Zero DX or DY
 now exits every FILL/PIXBLT form without graphics traffic or architectural
@@ -389,9 +391,21 @@ for both ORG values, with ORG=0 complementing only at the local-bus pins, and
 the FPGA pad owner now drives the package BLANK output active low. DPYTAP's
 physical column/tap units and the external VRAM/RAMDAC boundary are explicit.
 
-Task 0171 closes the remaining SRT/local-bus integration item, Tasks
-0172–0173 add independent differential and surviving-software evidence, and
-Task 0174 performs the final full-regression and Quartus sign-off. External
+Task 0171 closed the remaining SRT/local-bus integration item.
+`docs/srt_conformance.md` maps every graphics family, zero-cycle condition,
+continuation class, fabric/arbiter/CDC boundary, and package-pin phase to
+primary sources and named evidence. All 1,186 graphics matrix cases now
+enable SRT and assert pixel-only classification; `tb_pixel_srt` executes all
+five engine families through the system controller; and `tb_pin_srt` proves
+the ordered RTM/MTR/MTR/RTM program at the original pins. Dedicated tests
+cover empty/W=1/preclipped work, abort, exact interrupt/resume suffixes,
+partial-RMW HOLD restart, both LRDY-extended transfer diagrams, simultaneous
+clients, and final clock ratios. The audit found no production RTL defect;
+it repaired the concrete test-ledger gap left by the previously cited but
+absent pin-level SRT bench.
+
+Tasks 0172–0173 add independent differential and surviving-software evidence,
+and Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM
 serial-pixel path remain surrounding-system responsibilities rather than
 unfinished processor behavior.

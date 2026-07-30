@@ -4,6 +4,8 @@
 // Focused fixed-priority local-bus arbitration regression. Checks the complete
 // HOLD > screen > DRAM > host > CPU order, held ownership through controller
 // stalls, response routing, and capture of a one-clock DRAM-refresh event.
+// The simultaneous CPU client is an SRT pixel read, proving it survives every
+// higher-priority client without losing or changing its MTR classification.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -286,6 +288,7 @@ module tb_bus_arbiter;
     cpu_we         = 1'b0;
     cpu_addr       = 32'h0000_0300;
     cpu_iaq        = 1'b1;
+    cpu_srt        = 1'b1;
     @(negedge clk);
     dram_req = 1'b0;
     check_bit("HOLD has highest priority", hold_ack, 1'b1);
@@ -328,17 +331,18 @@ module tb_bus_arbiter;
     check_word("host response routing", host_rdata, 16'h1357);
     host_req = 1'b0;
 
-    wait_cycle("CPU last", LOCAL_CYCLE_WORD_READ);
+    wait_cycle("CPU SRT pixel last", LOCAL_CYCLE_PIXEL_MTR);
     if (cycle_addr !== 32'h0000_0300) begin
       $display("TEST_RESULT: FAIL: CPU address expected=00000300 actual=%08h",
                cycle_addr);
       failures++;
     end
-    check_bit("CPU IAQ routing", cycle_iaq, 1'b1);
-    cycle_rdata = 16'h2468;
+    check_bit("CPU SRT IAQ forced inactive", cycle_iaq, 1'b0);
+    cycle_rdata = 16'h0000;
     ack_cycle("CPU", 1'b0, 1'b0, 1'b0, 1'b1);
-    check_word("CPU response routing", cpu_rdata, 16'h2468);
+    check_word("CPU MTR response routing", cpu_rdata, 16'h0000);
     cpu_req = 1'b0;
+    cpu_srt = 1'b0;
 
     // Processor I/O bypasses word sequencing but retains the CPU priority and
     // completion route. Read data is on-chip payload, not external LAD data.

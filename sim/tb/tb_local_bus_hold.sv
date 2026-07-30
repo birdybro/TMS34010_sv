@@ -5,6 +5,8 @@
 // It verifies end-Q1 HOLD sampling, quiescent grant qualification, Q3/Q4
 // early HLDA, the Q2/Q3 staggered high-impedance release, symmetric resume,
 // active-cycle completion, and command suppression while the bus is released.
+// Task 0171 makes the active-cycle case an SRT RTM and proves HOLD cannot
+// truncate the W/TR-at-RAS transfer signature.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -167,7 +169,10 @@ module tb_local_bus_hold;
   endtask
 
   initial begin : main
+    logic saw_rtm_ras;
+
     failures = 0;
+    saw_rtm_ras = 1'b0;
 
     repeat (4) @(posedge clk8x);
     @(negedge clk8x);
@@ -223,9 +228,11 @@ module tb_local_bus_hold;
     release_and_resume();
     hold_grant = 1'b0;
 
-    // Start an ordinary read, then assert HOLD with grant already high.
+    // Start an SRT register-to-memory transfer, then assert HOLD with grant
+    // already high.
     // Local-cycle completion must occur before even the early HLDA pulse.
     wait_phase(LOCAL_PHASE_Q4A);
+    cycle_kind = LOCAL_CYCLE_PIXEL_RTM;
     cycle_req  = 1'b1;
     hold_grant = 1'b1;
     wait_phase(LOCAL_PHASE_Q1A);
@@ -237,8 +244,11 @@ module tb_local_bus_hold;
     while (!cycle_ack) begin
       @(negedge clk8x);
       check(hlda_n, "HLDA asserted before active-cycle completion");
+      if (!ras_n && !tr_qe_n && !we_n)
+        saw_rtm_ras = 1'b1;
     end
-    check(cycle_rdata == 16'hCAFE, "active read did not complete normally");
+    check(saw_rtm_ras,
+          "active SRT RTM did not reach its W/TR-at-RAS transfer point");
     cycle_req = 1'b0;
 
     // Once idle, the next qualified sample starts the early acknowledge.

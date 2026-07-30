@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Fixed (Task 0171 — graphics SRT and local-bus integration reclosure)
+- Added `docs/srt_conformance.md`, mapping every graphics-engine pixel path,
+  zero-cycle condition, continuation case, controller/CDC boundary, and
+  original-pin MTR/RTM phase to primary sources and named regression evidence.
+- Enabled SRT throughout the 1,186-case graphics PPOP/PMASK matrix and
+  asserted that every and only graphics-pixel requests carry the tag.
+  Empty-array and W=1 matrices now enable SRT while proving no request, and
+  the all-engine system program executes PIXT, DRAV, LINE, FILL, and PIXBLT
+  with exact per-engine MTR/RTM address counts.
+- Added `tb_pin_srt`, a full core-to-package-pin program at asynchronous
+  clock ratios. It proves the ordered direct RTM, explicit MTR, and
+  partial-field MTR/RTM sequence plus row/column, IAQ, TR/QE, W, RAS, CAS,
+  LAL, and no-LAD-data phases after arbitration and both CDC directions.
+- Extended simultaneous-client arbitration so an SRT MTR survives
+  HOLD/screen/DRAM/host priority; extended the partial-RMW HOLD case to prove
+  the MTR read repeats before the sole RTM write. Both explicit-transfer
+  kinds now have direct LRDY-extension checks, and active-cycle HOLD is
+  exercised on RTM.
+- Validation: 16 focused graphics/arbiter/local-bus/CDC/pin suites PASS;
+  `scripts/lint.sh` clean; full regression 156/156 PASS.
+
 ### Fixed (Task 0170 — production display/video conformance matrix)
 - Added `docs/display_conformance.md`, mapping every production display
   register/field, timing mode, live-update point, screen transaction, and

@@ -11,7 +11,8 @@
 // Deterministic word-positioned PMASK and transparency variants are crossed
 // into the sweep. Binary cases transfer four LSB-first source bits to
 // distinguish COLOR0/COLOR1 order. Every case uses sub-word pixel placements
-// and three physical-word wait cycles.
+// and three physical-word wait cycles. Task 0171 enables DPYCTL.SRT in every
+// case and proves every pixel request—and no nonpixel request—carries it.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -44,6 +45,8 @@ module tb_graphics_ppop_matrix;
 
   localparam logic [DATA_WIDTH-1:0] A_CONTROL =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_CONTROL) << 4);
+  localparam logic [DATA_WIDTH-1:0] A_DPYCTL =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_DPYCTL) << 4);
   localparam logic [DATA_WIDTH-1:0] A_CONVSP =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_CONVSP) << 4);
   localparam logic [DATA_WIDTH-1:0] A_CONVDP =
@@ -316,7 +319,10 @@ module tb_graphics_ppop_matrix;
 
   int unsigned failures;
   logic protocol_error;
+  logic srt_classification_error;
   logic saw_graphics_wait;
+  logic pixel_request_state;
+  int unsigned pixel_srt_acks;
   logic saw_mask_induced_transparency;
   logic held_req_q;
   logic held_we_q;
@@ -331,10 +337,21 @@ module tb_graphics_ppop_matrix;
                   || (state == CORE_PBLT);
   endfunction
 
+  always_comb begin
+    pixel_request_state =
+        (state_w == CORE_DRAV)
+        || (state_w == CORE_LINE_DRAW)
+        || (state_w == CORE_FILL)
+        || (state_w == CORE_PBLT)
+        || ((state_w == CORE_MEMORY) && u_core.decoded.force_pixel);
+  end
+
   always @(posedge clk) begin
     if (rst) begin
       protocol_error <= 1'b0;
+      srt_classification_error <= 1'b0;
       saw_graphics_wait <= 1'b0;
+      pixel_srt_acks <= 0;
       held_req_q <= 1'b0;
       held_we_q <= 1'b0;
       held_addr_q <= '0;
@@ -342,6 +359,10 @@ module tb_graphics_ppop_matrix;
       held_wdata_q <= '0;
       held_srt_q <= 1'b0;
     end else begin
+      if (mem_req && (mem_srt !== pixel_request_state))
+        srt_classification_error <= 1'b1;
+      if (mem_req && mem_ack && pixel_request_state)
+        pixel_srt_acks <= pixel_srt_acks + 1;
       if (graphics_state(state_w) && mem_req && !mem_ack)
         saw_graphics_wait <= 1'b1;
       if (held_req_q
@@ -421,6 +442,9 @@ module tb_graphics_ppop_matrix;
     p = place_word(p, 16'h0550); // SETF FS0=16
     p = place_movi_il(p, 4'd0, DATA_WIDTH'(psize));
     p = place_store_abs(p, 4'd0, A_PSIZE);
+    p = place_movi_il(
+        p, 4'd0, DATA_WIDTH'(1) << DPYCTL_SRT_BIT);
+    p = place_store_abs(p, 4'd0, A_DPYCTL);
     p = place_movi_il(p, 4'd0, 32'd23); // 256-bit pitch
     p = place_store_abs(p, 4'd0, A_CONVSP);
     p = place_store_abs(p, 4'd0, A_CONVDP);
@@ -568,10 +592,12 @@ module tb_graphics_ppop_matrix;
         || u_core.u_status_reg.st_q[ST_C_BIT]
         || u_core.u_status_reg.st_q[ST_Z_BIT]
         || u_core.u_status_reg.st_q[ST_V_BIT]
-        || illegal_w || protocol_error || !saw_graphics_wait) begin
-      $display("TEST_RESULT: FAIL: matrix side effects kind=%0d psize=%0d ppop=%02h ST=%08h illegal=%0b protocol=%0b wait=%0b",
+        || illegal_w || protocol_error || srt_classification_error
+        || !saw_graphics_wait || (pixel_srt_acks == 0)) begin
+      $display("TEST_RESULT: FAIL: matrix side effects kind=%0d psize=%0d ppop=%02h ST=%08h illegal=%0b protocol=%0b srt_error=%0b srt_acks=%0d wait=%0b",
                kind, psize, ppop, u_core.u_status_reg.st_q, illegal_w,
-               protocol_error, saw_graphics_wait);
+               protocol_error, srt_classification_error, pixel_srt_acks,
+               saw_graphics_wait);
       failures++;
     end
   endtask
@@ -610,6 +636,9 @@ module tb_graphics_ppop_matrix;
     p = place_word(p, 16'h0550); // SETF FS0=16
     p = place_movi_il(p, 4'd0, DATA_WIDTH'(psize));
     p = place_store_abs(p, 4'd0, A_PSIZE);
+    p = place_movi_il(
+        p, 4'd0, DATA_WIDTH'(1) << DPYCTL_SRT_BIT);
+    p = place_store_abs(p, 4'd0, A_DPYCTL);
     p = place_movi_il(p, 4'd0, 32'd23); // 256-bit source pitch
     p = place_store_abs(p, 4'd0, A_CONVSP);
     p = place_movi_il(p, 4'd0, pmask);
@@ -645,12 +674,14 @@ module tb_graphics_ppop_matrix;
     end
     if ((u_core.u_regfile.a_regs[3] !== expected)
         || (u_core.u_status_reg.st_q !== expected_st)
-        || illegal_w || protocol_error || !saw_graphics_wait) begin
-      $display("TEST_RESULT: FAIL: PMASK read XY=%0b psize=%0d addr=%08h raw=%08h PMASK=%04h field=%08h result=%08h/%08h ST=%08h/%08h illegal=%0b protocol=%0b wait=%0b",
+        || illegal_w || protocol_error || srt_classification_error
+        || !saw_graphics_wait || (pixel_srt_acks == 0)) begin
+      $display("TEST_RESULT: FAIL: PMASK read XY=%0b psize=%0d addr=%08h raw=%08h PMASK=%04h field=%08h result=%08h/%08h ST=%08h/%08h illegal=%0b protocol=%0b srt_error=%0b srt_acks=%0d wait=%0b",
                xy_source, psize, source_address, source_value, pmask[15:0],
                source_pmask, u_core.u_regfile.a_regs[3], expected,
                u_core.u_status_reg.st_q, expected_st, illegal_w,
-               protocol_error, saw_graphics_wait);
+               protocol_error, srt_classification_error, pixel_srt_acks,
+               saw_graphics_wait);
       failures++;
     end
   endtask

@@ -3,7 +3,9 @@
 //
 // Integration regression for the field sequencer's CPU RMW lock and the
 // fixed-priority arbiter. Checks indivisibility, preemption between different
-// field words, and the User's Guide §11.3 HOLD restart exception.
+// field words, and the User's Guide §11.3 HOLD restart exception. Task 0171
+// repeats the HOLD case with SRT so the whole partial-pixel MTR/RTM pair
+// restarts rather than leaking an ordinary word cycle.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -30,6 +32,7 @@ module tb_bus_arbiter_rmw;
   logic                              cpu_ack;
   logic                              cpu_rmw_lock;
   logic                              cpu_restart;
+  logic                              cpu_srt;
 
   logic                              hold_req;
   logic                              hold_ack;
@@ -107,7 +110,7 @@ module tb_bus_arbiter_rmw;
     .cpu_io_i          (1'b0),
     .cpu_io_rdata_i    (16'h0000),
     .cpu_iaq_i         (1'b0),
-    .cpu_srt_i         (1'b0),
+    .cpu_srt_i         (cpu_srt),
     .cpu_rmw_lock_i    (cpu_rmw_lock),
     .cpu_rdata_o       (cpu_rdata),
     .cpu_ack_o         (cpu_ack),
@@ -135,9 +138,11 @@ module tb_bus_arbiter_rmw;
       read_count  <= 0;
       write_count <= 0;
     end else if (cycle_req && cycle_ack) begin
-      if (cycle_kind == LOCAL_CYCLE_WORD_READ)
+      if ((cycle_kind == LOCAL_CYCLE_WORD_READ)
+          || (cycle_kind == LOCAL_CYCLE_PIXEL_MTR))
         read_count <= read_count + 1;
-      else if (cycle_kind == LOCAL_CYCLE_WORD_WRITE)
+      else if ((cycle_kind == LOCAL_CYCLE_WORD_WRITE)
+               || (cycle_kind == LOCAL_CYCLE_PIXEL_RTM))
         write_count <= write_count + 1;
     end
   end
@@ -153,7 +158,9 @@ module tb_bus_arbiter_rmw;
       while ((cycle_req !== 1'b1)
              || (cycle_kind !== expected_kind)
              || (((expected_kind == LOCAL_CYCLE_WORD_READ)
-                  || (expected_kind == LOCAL_CYCLE_WORD_WRITE))
+                  || (expected_kind == LOCAL_CYCLE_WORD_WRITE)
+                  || (expected_kind == LOCAL_CYCLE_PIXEL_MTR)
+                  || (expected_kind == LOCAL_CYCLE_PIXEL_RTM))
                  && (cycle_addr !== expected_addr))) begin
         @(negedge clk);
         watchdog++;
@@ -218,6 +225,7 @@ module tb_bus_arbiter_rmw;
     host_wdata     = '0;
     cycle_rdata    = '0;
     cycle_ack      = 1'b0;
+    cpu_srt        = 1'b0;
 
     repeat (3) @(posedge clk);
     @(negedge clk);
@@ -302,7 +310,8 @@ module tb_bus_arbiter_rmw;
     field_addr  = 32'd35;
     field_size  = 6'd5;
     field_wdata = 32'h0000_001B;
-    wait_cycle("pre-HOLD RMW read", LOCAL_CYCLE_WORD_READ, 32'd32);
+    cpu_srt     = 1'b1;
+    wait_cycle("pre-HOLD SRT RMW read", LOCAL_CYCLE_PIXEL_MTR, 32'd32);
     hold_req = 1'b1;
     complete_cycle(16'h0F0F);
     if (cpu_restart !== 1'b1) begin
@@ -323,9 +332,9 @@ module tb_bus_arbiter_rmw;
     end
 
     hold_req = 1'b0;
-    wait_cycle("restarted RMW read", LOCAL_CYCLE_WORD_READ, 32'd32);
+    wait_cycle("restarted SRT RMW read", LOCAL_CYCLE_PIXEL_MTR, 32'd32);
     complete_cycle(16'hF0F0);
-    wait_cycle("post-HOLD RMW write", LOCAL_CYCLE_WORD_WRITE, 32'd32);
+    wait_cycle("post-HOLD SRT RMW write", LOCAL_CYCLE_PIXEL_RTM, 32'd32);
     if (cycle_wdata !== 16'hF0D8) begin
       $display("TEST_RESULT: FAIL: restarted merge expected=f0d8 actual=%04h",
                cycle_wdata);
@@ -333,6 +342,7 @@ module tb_bus_arbiter_rmw;
     end
     complete_cycle('0);
     wait_field_ack("HOLD-restarted RMW");
+    cpu_srt = 1'b0;
 
     if ((read_count - reads_before) != 2) begin
       $display("TEST_RESULT: FAIL: HOLD RMW expected two reads actual=%0d",

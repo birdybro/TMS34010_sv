@@ -406,6 +406,7 @@ module tb_local_bus;
     word_row     = expected_word_row(word_address);
     word_column  = expected_word_column(word_address, 1'b0);
     word_column[14] = 1'b0;
+    lrdy = 1'b0;
     begin_command(
         LOCAL_CYCLE_PIXEL_MTR, word_address, 16'hFFFF, 1'b1,
         14'h0000, 16'h0000, 1'b0, 8'h00);
@@ -433,6 +434,13 @@ module tb_local_bus;
     check(tr_qe_n && !ras_n && !cas_n,
           "MTR transfer indication must release before RAS");
     wait_phase(LOCAL_PHASE_Q4B);
+    check(!cycle_ack && tr_qe_n && !ras_n && !cas_n,
+          "MTR wait must extend strobes but not TR/QE");
+    wait_phase(LOCAL_PHASE_Q1A);
+    check(tr_qe_n && !ras_n && !cas_n,
+          "MTR repeated period must keep TR/QE released");
+    lrdy = 1'b1;
+    wait_phase(LOCAL_PHASE_Q4B);
     check(cycle_ack && (cycle_rdata == 16'h0000),
           "MTR completes without returning LAD data to the CPU");
     finish_command();
@@ -443,6 +451,7 @@ module tb_local_bus;
     word_row     = expected_word_row(word_address);
     word_column  = expected_word_column(word_address, 1'b0);
     word_column[14] = 1'b0;
+    lrdy = 1'b0;
     begin_command(
         LOCAL_CYCLE_PIXEL_RTM, word_address, 16'hA55A, 1'b1,
         14'h0000, 16'h0000, 1'b0, 8'h00);
@@ -465,6 +474,13 @@ module tb_local_bus;
     wait_phase(LOCAL_PHASE_Q3A);
     check(tr_qe_n && !ras_n && !cas_n && we_n,
           "RTM transfer release ordering");
+    wait_phase(LOCAL_PHASE_Q4B);
+    check(!cycle_ack && tr_qe_n && we_n && !ras_n && !cas_n,
+          "RTM wait must extend only RAS/CAS/LAL");
+    wait_phase(LOCAL_PHASE_Q1A);
+    check(tr_qe_n && we_n && !ras_n && !cas_n,
+          "RTM repeated period must not extend W/TR/QE");
+    lrdy = 1'b1;
     wait_phase(LOCAL_PHASE_Q4B);
     check(cycle_ack && ras_n && cas_n && tr_qe_n && we_n,
           "RTM completion");

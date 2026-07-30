@@ -9,7 +9,8 @@
 //   * exact DADDR/DYDX, V-only status, WVP, and unaffected SADDR results;
 //   * all PBH/PBV combinations for L,XY and XY,XY;
 //   * PBH/PBV isolation for FILL XY and PIXBLT B,XY;
-//   * zero graphics-memory traffic and stable requests with three wait cycles.
+//   * zero graphics-memory traffic and stable requests with three wait cycles;
+//   * SRT enabled, proving W=1/empty results create no physical transfer.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -22,6 +23,8 @@ module tb_window_common_rect;
 
   localparam logic [DATA_WIDTH-1:0] A_CONTROL =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_CONTROL) << 4);
+  localparam logic [DATA_WIDTH-1:0] A_DPYCTL =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_DPYCTL) << 4);
   localparam logic [DATA_WIDTH-1:0] A_CONVSP =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_CONVSP) << 4);
   localparam logic [DATA_WIDTH-1:0] A_CONVDP =
@@ -38,6 +41,7 @@ module tb_window_common_rect;
   logic [ADDR_WIDTH-1:0]       mem_addr;
   logic [FIELD_SIZE_WIDTH-1:0] mem_size;
   logic [DATA_WIDTH-1:0]       mem_wdata;
+  logic                        mem_srt;
   logic [DATA_WIDTH-1:0]       mem_rdata;
   logic                        mem_ack;
   core_state_t                 state_w;
@@ -49,7 +53,7 @@ module tb_window_common_rect;
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1),
     .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr),
-    .mem_size(mem_size), .mem_wdata(mem_wdata), .mem_srt(), .mem_iaq(),
+    .mem_size(mem_size), .mem_wdata(mem_wdata), .mem_srt(mem_srt), .mem_iaq(),
     .mem_is_io(), .mem_io_we(), .mem_io_rdata(),
     .mem_rdata(mem_rdata), .mem_ack(mem_ack), .state_o(state_w),
     .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w),
@@ -180,6 +184,7 @@ module tb_window_common_rect;
     end else begin
       if (graphics_state(state_w) && mem_req) begin
         graphics_requests <= graphics_requests + 1;
+        if (!mem_srt) protocol_error <= 1'b1;
       end
       if (mem_req && !mem_ack) begin
         saw_wait <= 1'b1;
@@ -234,6 +239,9 @@ module tb_window_common_rect;
     p = place_word(p, setf_enc(5'd16));
     p = place_movi_il(p, 4'd0, 32'd8);
     p = place_store_abs(p, 4'd0, A_PSIZE);
+    p = place_movi_il(
+        p, 4'd0, DATA_WIDTH'(1) << DPYCTL_SRT_BIT);
+    p = place_store_abs(p, 4'd0, A_DPYCTL);
     p = place_movi_il(p, 4'd0, 32'h0000_001B);
     p = place_store_abs(p, 4'd0, A_CONVSP);
     p = place_movi_il(p, 4'd0, 32'h0000_001B);

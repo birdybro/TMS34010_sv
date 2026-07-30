@@ -12,6 +12,8 @@
 // Every case runs through the synthesizable field sequencer with three
 // additional physical-word wait cycles.  A protocol monitor also proves the
 // core holds every outstanding field request stable through acknowledgement.
+// Task 0171 enables SRT throughout so empty cases also prove that no
+// program-controlled VRAM transfer can be created without a pixel request.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -26,6 +28,8 @@ module tb_graphics_array_edges;
 
   localparam logic [31:0] A_PSIZE =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_PSIZE) << 4);
+  localparam logic [31:0] A_DPYCTL =
+      IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_DPYCTL) << 4);
   localparam logic [31:0] A_CONVSP =
       IO_BASE_ADDR + (DATA_WIDTH'(IO_IDX_CONVSP) << 4);
   localparam logic [31:0] A_CONVDP =
@@ -40,6 +44,7 @@ module tb_graphics_array_edges;
   logic [ADDR_WIDTH-1:0]       mem_addr;
   logic [FIELD_SIZE_WIDTH-1:0] mem_size;
   logic [DATA_WIDTH-1:0]       mem_wdata;
+  logic                        mem_srt;
   logic [DATA_WIDTH-1:0]       mem_rdata;
   logic                        mem_ack;
   core_state_t                 state_w;
@@ -51,7 +56,7 @@ module tb_graphics_array_edges;
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1),
     .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr),
-    .mem_size(mem_size), .mem_wdata(mem_wdata), .mem_srt(),
+    .mem_size(mem_size), .mem_wdata(mem_wdata), .mem_srt(mem_srt),
     .mem_rdata(mem_rdata), .mem_ack(mem_ack), .state_o(state_w),
     .pc_o(pc_w), .instr_word_o(instr_w), .illegal_opcode_o(illegal_w),
     .run_emu_n_i(1'b1), .emua_n_o(), .lint1_n_i(1'b1),
@@ -148,11 +153,13 @@ module tb_graphics_array_edges;
   int unsigned graphics_mem_acks;
   logic        saw_graphics_wait;
   logic        protocol_error;
+  logic        srt_classification_error;
   logic        held_req_q;
   logic        held_we_q;
   logic [ADDR_WIDTH-1:0]       held_addr_q;
   logic [FIELD_SIZE_WIDTH-1:0] held_size_q;
   logic [DATA_WIDTH-1:0]       held_wdata_q;
+  logic                        held_srt_q;
 
   // End-to-end request stability and graphics-traffic accounting.
   always @(posedge clk) begin
@@ -161,13 +168,16 @@ module tb_graphics_array_edges;
       graphics_mem_acks    <= 0;
       saw_graphics_wait    <= 1'b0;
       protocol_error       <= 1'b0;
+      srt_classification_error <= 1'b0;
       held_req_q           <= 1'b0;
       held_we_q            <= 1'b0;
       held_addr_q          <= '0;
       held_size_q          <= '0;
       held_wdata_q         <= '0;
+      held_srt_q           <= 1'b0;
     end else begin
       if (((state_w == CORE_FILL) || (state_w == CORE_PBLT)) && mem_req) begin
+        if (!mem_srt) srt_classification_error <= 1'b1;
         graphics_req_cycles <= graphics_req_cycles + 1;
         if (mem_ack) graphics_mem_acks <= graphics_mem_acks + 1;
         if (!mem_ack) saw_graphics_wait <= 1'b1;
@@ -178,7 +188,8 @@ module tb_graphics_array_edges;
               || (mem_we !== held_we_q)
               || (mem_addr !== held_addr_q)
               || (mem_size !== held_size_q)
-              || (mem_wdata !== held_wdata_q))) begin
+              || (mem_wdata !== held_wdata_q)
+              || (mem_srt !== held_srt_q))) begin
         protocol_error <= 1'b1;
       end
 
@@ -188,6 +199,7 @@ module tb_graphics_array_edges;
         held_addr_q  <= mem_addr;
         held_size_q  <= mem_size;
         held_wdata_q <= mem_wdata;
+        held_srt_q   <= mem_srt;
       end
       if (mem_ack) held_req_q <= 1'b0;
     end
@@ -240,6 +252,11 @@ module tb_graphics_array_edges;
       $display("TEST_RESULT: FAIL: %s changed an outstanding request", label);
       failures++;
     end
+    if (srt_classification_error) begin
+      $display("TEST_RESULT: FAIL: %s issued an untagged SRT pixel request",
+               label);
+      failures++;
+    end
   endtask
 
   task automatic run_empty_case(
@@ -262,6 +279,9 @@ module tb_graphics_array_edges;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));
     p = place_movi_il(p, 4'd0, 32'd8);
     p = place_store_abs(p, 4'd0, A_PSIZE);
+    p = place_movi_il(
+        p, 4'd0, DATA_WIDTH'(1) << DPYCTL_SRT_BIT);
+    p = place_store_abs(p, 4'd0, A_DPYCTL);
     p = place_movi_il(p, 4'd0, 32'h0000_001B);
     p = place_store_abs(p, 4'd0, A_CONVSP);
     p = place_store_abs(p, 4'd0, A_CONVDP);
@@ -339,6 +359,9 @@ module tb_graphics_array_edges;
     p = place_word(p, setf_enc(5'd16, 1'b0, 1'b0));
     p = place_movi_il(p, 4'd0, DATA_WIDTH'(psize));
     p = place_store_abs(p, 4'd0, A_PSIZE);
+    p = place_movi_il(
+        p, 4'd0, DATA_WIDTH'(1) << DPYCTL_SRT_BIT);
+    p = place_store_abs(p, 4'd0, A_DPYCTL);
     p = place_movi_il(p, 4'd0, 32'h0000_001B);
     p = place_store_abs(p, 4'd0, A_CONVSP);
     p = place_store_abs(p, 4'd0, A_CONVDP);

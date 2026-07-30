@@ -15,11 +15,12 @@ translate a software implementation into one large procedural HDL block.
 The original processor and Cyclone V implementation baseline is complete
 through Task 0160. Task 0161's production-revision GPU re-audit found
 remaining programmer-visible graphics work; do not claim GPU completion until
-the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0170
+the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0171
 close the production graphics-instruction semantic, direction, window,
 checkpoint/resume, LINE-interrupt, complete PPOP/PSIZE/register matrix, and
-display/video conformance gates. Treat `docs/graphics_conformance.md` and
-`docs/display_conformance.md` as the authoritative production ledgers. For
+display/video/SRT-local-bus conformance gates. Treat
+`docs/graphics_conformance.md`, `docs/display_conformance.md`, and
+`docs/srt_conformance.md` as the authoritative production ledgers. For
 display addressing, DPYADR is the raw stored representation and always
 decrements by DUDATE after a completed screen transfer; ORG=0 complements it
 only at the local-bus pins, while ORG=1 drives it directly. DPYTAP contributes
@@ -196,6 +197,13 @@ SPVS002C. Its scheduler matrix crosses NIL, field, ORG, SRE, LCSTRT, and
 every defined DUDATE; external-mode coverage crosses DXV/HSD/ENV. The FPGA
 pad owner drives package BLANK active low. Preserve the exact source/owner/
 side-effect/test mapping in `docs/display_conformance.md`.
+Task 0171 recloses SRT after those semantic changes. Every graphics matrix
+case runs with SRT enabled and asserts that every and only pixel requests are
+tagged. `tb_pixel_srt` executes all five engine families through the system
+fabric; `tb_pin_srt` checks the exact ordered transfers and original-pin
+phases after asynchronous CDC. Zero-work, clipping, abort, partial RMW,
+interrupt/resume, HOLD, LRDY, and simultaneous-client behavior are mapped in
+`docs/srt_conformance.md`; preserve that source/owner/evidence ledger.
 The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
@@ -259,6 +267,9 @@ RTL, tests, task log, changelog, and specification first.
 - `docs/instruction_coverage.md` — per-instruction implementation/test status.
 - `docs/status_audit.md` — primary-page N/C/Z/V matrix and undefined-bit
   policy.
+- `docs/srt_conformance.md` — program-controlled graphics MTR/RTM
+  classification, zero-cycle cases, arbitration/CDC, and original-pin phase
+  evidence.
 - `docs/completion_audit.md` — complete ISA reconciliation and ordered
   project-level exit gates.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.

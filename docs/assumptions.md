@@ -759,7 +759,7 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   integration coverage.
 
 ## A0048 — Program-controlled VRAM transfers and processor/video boundary
-- **Date**: 2026-07-29 (Task 0158).
+- **Date**: 2026-07-29 (Task 0158; re-audited Task 0171).
 - **Status**: specification-derived SRT classification and pin cycles, with
   isolated deterministic handling of the undefined processor read value.
 - **Sources**: 1988 TI TMS34010 User's Guide DPYCTL pages 6-20/6-21;
@@ -795,11 +795,15 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   is timing, screen MTR scheduling, and explicit SRT MTR/RTM control.
   Modeling attached VRAM storage/shift/output is board-level integration
   outside A0002's TMS34010-only implementation scope.
-- **Regression evidence**: `tb_pixel_srt` executes an integrated program and
-  locks graphics-only classification, exact addresses/counts, deterministic
-  MTR result, normal nonpixel traffic, and SRT disable. `tb_bus_arbiter` locks
-  direction/precedence/IAQ, and `tb_local_bus` locks both transfer diagrams
-  down to half-quarter control and status phases.
+- **Regression evidence**: Task 0171's `docs/srt_conformance.md` is the
+  complete source/owner/test ledger. `tb_graphics_ppop_matrix` enables SRT in
+  all 1,186 cases and locks exact pixel-only tagging; `tb_pixel_srt` executes
+  PIXT, DRAV, LINE, FILL, and PIXBLT through the integrated controller with
+  exact addresses/counts, deterministic MTR result, normal nonpixel traffic,
+  and SRT disable. `tb_bus_arbiter`/`tb_bus_arbiter_rmw` lock simultaneous
+  priority, HOLD restart, direction, and IAQ; `tb_local_bus` locks both
+  LRDY-extended transfer diagrams; and `tb_pin_srt` proves the ordered
+  program through CDC to every original-pin phase.
 
 ## A0047 — External video synchronization and split pin direction
 - **Date**: 2026-07-29 (Task 0157).

@@ -6293,7 +6293,7 @@ Commit:
 ---
 
 ### Task 0171: Reclose graphics SRT and local-bus integration
-Status: pending
+Status: complete
 Dependencies:
 - Task 0169 (complete graphics request semantics).
 - Task 0170 (complete display/video control semantics).
@@ -6329,6 +6329,34 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/memory_map.md`, and
   `docs/timing_notes.md`.
+Implementation summary:
+- Added `docs/srt_conformance.md`, mapping every graphics-engine pixel path,
+  zero-cycle/abort/continuation class, fabric/arbitration/CDC boundary, and
+  original-pin MTR/RTM phase to the primary guide, RTL owners, and named
+  self-checking evidence.
+- Enabled SRT in all 1,186 generated PPOP/PMASK cases and asserted that every
+  and only graphics-pixel requests carry the tag. Empty arrays and W=1
+  queries now prove absence with SRT enabled; the preclip/checkpoint/LINE
+  suites retain exact no-skip/no-duplicate traces under clipping, direction,
+  processing, partial RMW, stalls, and repeated interrupt/resume.
+- Expanded `tb_pixel_srt` into an all-engine system program. PIXT, DRAV,
+  LINE, FILL, and PIXBLT emit exact per-engine addresses and three MTR/seven
+  RTM cycles, while instruction/immediate/I/O/MOVE and post-SRT traffic
+  retain their ordinary classes.
+- Added `tb_pin_srt`, booting from an original-pin memory target at
+  asynchronous clock ratios. Its direct store, explicit load, and
+  partial-field store produce ordered RTM/MTR/MTR/RTM cycles; every Q3B/Q4A/
+  Q1B/Q3A row/column, IAQ, TR/QE, W, RAS, CAS, LAL, and no-LAD-data phase is
+  checked after the full fabric and CDC path.
+- Extended simultaneous-client arbitration to retain an SRT MTR behind
+  HOLD/screen/refresh/host, and extended partial-RMW HOLD restart to require
+  two MTR reads before exactly one RTM write. Both transfer diagrams now
+  inject LRDY waits; active-cycle HOLD now completes an RTM before HLDA.
+- Focused 16-suite graphics/zero-work/resume/arbiter/local-bus/CDC/pin matrix
+  PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 156/156 benches.
 Commit:
 - pending
 

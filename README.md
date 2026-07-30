@@ -23,7 +23,13 @@ corrects DPYADR to decrement its raw SRFADR for both ORG values, retains the
 ORG=0 complement at the local-bus pins, defines DPYTAP as physical
 column/tap bits, exhaustively crosses sync direction/ENV/interlace/cadence,
 and fixes the package BLANK pin to active-low polarity. The authoritative
-display ledger is `docs/display_conformance.md`. Task 0124
+display ledger is `docs/display_conformance.md`. Task 0171 recloses
+DPYCTL.SRT from every graphics engine through field sequencing,
+fixed-priority arbitration, CDC, LRDY/HOLD behavior, and every original-pin
+MTR/RTM phase. A full-pin program checks the exact ordered
+RTM/MTR/MTR/RTM trace; the all-engine system program checks per-engine cycle
+counts; and all 1,186 graphics matrix cases assert exact SRT tagging. The
+authoritative integration ledger is `docs/srt_conformance.md`. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -243,7 +249,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 155 self-checking SystemVerilog testbenches, including non-integer-clock
+- 156 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   the generated 577-case display scheduler matrix, end-to-end SRT
   graphics-cycle coverage, direct FPGA pad/reset checks, and an exhaustive
@@ -298,6 +304,9 @@ pinned `third_party/TMS34010_Info` submodule.
 - `docs/graphics_conformance.md` — every production graphics instruction and
   defined graphics-register field, its primary source, RTL owner, side
   effects, undefined boundaries, and named regression evidence.
+- `docs/srt_conformance.md` — graphics-only SRT classification, zero-cycle
+  conditions, continuation semantics, arbitration/CDC behavior, original-pin
+  MTR/RTM phases, and processor/external-VRAM scope.
 - `scripts/` — lint, simulation, and Quartus entry points.
 - `tasks.md` / `changelog.md` — task-level design and implementation history.
 - `third_party/TMS34010_Info/` — pinned primary/reference documentation.

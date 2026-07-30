@@ -2,10 +2,10 @@
 // tb_pixel_srt.sv
 //
 // End-to-end DPYCTL.SRT regression. A real program enables program-controlled
-// VRAM transfers, performs PIXT and FILL operations, and then disables SRT.
-// The system controller boundary must expose graphics reads/writes as MTR/RTM
-// cycles while instruction fetches, immediate words, I/O, and ordinary MOVE
-// traffic retain their normal cycle kinds.
+// VRAM transfers, performs PIXT, FILL, DRAV, LINE, and PIXBLT operations, and
+// then disables SRT. The system controller boundary must expose graphics
+// reads/writes as MTR/RTM cycles while instruction fetches, immediate words,
+// I/O, and ordinary MOVE traffic retain their normal cycle kinds.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -20,11 +20,19 @@ module tb_pixel_srt;
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_PSIZE) << 4);
   localparam logic [ADDR_WIDTH-1:0] A_DPYCTL =
       IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_DPYCTL) << 4);
-  localparam logic [ADDR_WIDTH-1:0] PIXT_ADDR = 32'h0000_0800;
-  localparam logic [ADDR_WIDTH-1:0] FILL_ADDR0 = 32'h0000_0900;
-  localparam logic [ADDR_WIDTH-1:0] FILL_ADDR1 = 32'h0000_0910;
-  localparam logic [ADDR_WIDTH-1:0] MOVE_ADDR = 32'h0000_0A00;
-  localparam logic [ADDR_WIDTH-1:0] PARTIAL_ADDR = 32'h0000_0B00;
+  localparam logic [ADDR_WIDTH-1:0] A_CONVDP =
+      IO_BASE_ADDR + (ADDR_WIDTH'(IO_IDX_CONVDP) << 4);
+  // Keep graphics data above the generated program, which intentionally
+  // exercises all five engine families in one boot image.
+  localparam logic [ADDR_WIDTH-1:0] PIXT_ADDR = 32'h0000_1400;
+  localparam logic [ADDR_WIDTH-1:0] FILL_ADDR0 = 32'h0000_1500;
+  localparam logic [ADDR_WIDTH-1:0] FILL_ADDR1 = 32'h0000_1510;
+  localparam logic [ADDR_WIDTH-1:0] MOVE_ADDR = 32'h0000_1600;
+  localparam logic [ADDR_WIDTH-1:0] PARTIAL_ADDR = 32'h0000_1700;
+  localparam logic [ADDR_WIDTH-1:0] DRAV_ADDR = 32'h0000_1800;
+  localparam logic [ADDR_WIDTH-1:0] LINE_ADDR = 32'h0000_1900;
+  localparam logic [ADDR_WIDTH-1:0] PBLT_SRC_ADDR = 32'h0000_1A00;
+  localparam logic [ADDR_WIDTH-1:0] PBLT_DST_ADDR = 32'h0000_1B00;
   localparam logic [15:0] DPYCTL_SRT =
       16'h0001 << DPYCTL_SRT_BIT;
 
@@ -126,6 +134,10 @@ module tb_pixel_srt;
   int unsigned fill1_rtm_count_q;
   int unsigned partial_mtr_count_q;
   int unsigned partial_rtm_count_q;
+  int unsigned drav_rtm_count_q;
+  int unsigned line_rtm_count_q;
+  int unsigned pblt_mtr_count_q;
+  int unsigned pblt_rtm_count_q;
   int unsigned move_write_count_q;
   int unsigned move_read_count_q;
   int unsigned restored_word_write_count_q;
@@ -176,6 +188,10 @@ module tb_pixel_srt;
       fill1_rtm_count_q              <= 0;
       partial_mtr_count_q            <= 0;
       partial_rtm_count_q            <= 0;
+      drav_rtm_count_q               <= 0;
+      line_rtm_count_q               <= 0;
+      pblt_mtr_count_q               <= 0;
+      pblt_rtm_count_q               <= 0;
       move_write_count_q             <= 0;
       move_read_count_q              <= 0;
       restored_word_write_count_q    <= 0;
@@ -203,7 +219,11 @@ module tb_pixel_srt;
               if ((cycle_addr != PIXT_ADDR)
                   && (cycle_addr != FILL_ADDR0)
                   && (cycle_addr != FILL_ADDR1)
-                  && (cycle_addr != PARTIAL_ADDR))
+                  && (cycle_addr != PARTIAL_ADDR)
+                  && (cycle_addr != DRAV_ADDR)
+                  && (cycle_addr != LINE_ADDR)
+                  && (cycle_addr != PBLT_SRC_ADDR)
+                  && (cycle_addr != PBLT_DST_ADDR))
                 pixel_protocol_failures_q <=
                     pixel_protocol_failures_q + 1;
             end
@@ -227,6 +247,18 @@ module tb_pixel_srt;
             if ((cycle_kind == LOCAL_CYCLE_PIXEL_RTM)
                 && (cycle_addr == PARTIAL_ADDR))
               partial_rtm_count_q <= partial_rtm_count_q + 1;
+            if ((cycle_kind == LOCAL_CYCLE_PIXEL_RTM)
+                && (cycle_addr == DRAV_ADDR))
+              drav_rtm_count_q <= drav_rtm_count_q + 1;
+            if ((cycle_kind == LOCAL_CYCLE_PIXEL_RTM)
+                && (cycle_addr == LINE_ADDR))
+              line_rtm_count_q <= line_rtm_count_q + 1;
+            if ((cycle_kind == LOCAL_CYCLE_PIXEL_MTR)
+                && (cycle_addr == PBLT_SRC_ADDR))
+              pblt_mtr_count_q <= pblt_mtr_count_q + 1;
+            if ((cycle_kind == LOCAL_CYCLE_PIXEL_RTM)
+                && (cycle_addr == PBLT_DST_ADDR))
+              pblt_rtm_count_q <= pblt_rtm_count_q + 1;
 
             if ((cycle_kind == LOCAL_CYCLE_WORD_WRITE)
                 && (cycle_addr == MOVE_ADDR))
@@ -336,6 +368,15 @@ module tb_pixel_srt;
          | instr_word_t'(destination);
   endfunction
 
+  function automatic instr_word_t drav_enc(
+    input reg_idx_t source,
+    input reg_idx_t destination
+  );
+    return 16'hF600
+         | (instr_word_t'(source) << 5)
+         | instr_word_t'(destination);
+  endfunction
+
   function automatic int unsigned place_word(
     input int unsigned p,
     input instr_word_t value
@@ -433,6 +474,35 @@ module tb_pixel_srt;
     p = place_movi_il_b(p, 4'd9, 32'h0000_1234);
     p = place_word(p, 16'h0FC0);
 
+    // One direct, full-word transfer from every remaining graphics family.
+    // XY address zero plus the current OFFSET makes the DRAV/LINE addresses
+    // explicit, while the one-pixel PIXBLT requires its source MTR before its
+    // destination RTM.
+    p = place_movi_il(p, 4'd0, 32'h0000_001B);
+    p = place_store_abs(p, 4'd0, A_CONVDP);
+    p = place_movi_il_b(p, 4'd4, DRAV_ADDR);
+    p = place_movi_il_b(p, 4'd9, 32'h0000_A5A5);
+    p = place_movi_il(p, 4'd1, 32'h0000_0000);
+    p = place_movi_il(p, 4'd2, 32'h0000_0000);
+    p = place_word(p, drav_enc(4'd1, 4'd2));
+
+    p = place_movi_il_b(p, 4'd0, 32'h0000_0000);
+    p = place_movi_il_b(p, 4'd2, 32'h0000_0000);
+    p = place_movi_il_b(p, 4'd4, LINE_ADDR);
+    p = place_movi_il_b(p, 4'd7, 32'h0000_0000);
+    p = place_movi_il_b(p, 4'd9, 32'h0000_5A5A);
+    p = place_movi_il_b(p, 4'd10, 32'h0000_0001);
+    p = place_movi_il_b(p, 4'd11, 32'h0000_0000);
+    p = place_movi_il_b(p, 4'd12, 32'h0000_0000);
+    p = place_word(p, 16'hDF1A);
+
+    p = place_movi_il_b(p, 4'd0, PBLT_SRC_ADDR);
+    p = place_movi_il_b(p, 4'd1, 32'h0000_0010);
+    p = place_movi_il_b(p, 4'd2, PBLT_DST_ADDR);
+    p = place_movi_il_b(p, 4'd3, 32'h0000_0010);
+    p = place_movi_il_b(p, 4'd7, 32'h0001_0001);
+    p = place_word(p, 16'h0F00);
+
     // The guide explicitly requires PSIZE=16 to avoid the insertion read.
     // A partial pixel write therefore exercises one MTR followed by one RTM.
     p = place_movi_il(p, 4'd0, 32'h0000_0008);
@@ -448,6 +518,8 @@ module tb_pixel_srt;
 
     p = place_movi_il(p, 4'd0, 32'h0000_0000);
     p = place_store_abs(p, 4'd0, A_DPYCTL);
+    p = place_movi_il(p, 4'd1, 32'h0000_55AA);
+    p = place_movi_il(p, 4'd2, PIXT_ADDR);
     p = place_word(p, pixt_store_enc(4'd1, 4'd2));
     p = place_movi_il(p, 4'd14, 32'h0158_FACE);
 
@@ -467,13 +539,17 @@ module tb_pixel_srt;
       $display("TEST_RESULT: FAIL: SRT program did not complete");
       failures++;
     end
-    check_count("pixel MTR cycles", mtr_count_q, 2);
-    check_count("pixel RTM cycles", rtm_count_q, 4);
-    check_count("PIXT RTM at 0x800", pixt_rtm_count_q, 1);
-    check_count("FILL RTM at 0x900", fill0_rtm_count_q, 1);
-    check_count("FILL RTM at 0x910", fill1_rtm_count_q, 1);
+    check_count("pixel MTR cycles", mtr_count_q, 3);
+    check_count("pixel RTM cycles", rtm_count_q, 7);
+    check_count("PIXT direct RTM", pixt_rtm_count_q, 1);
+    check_count("FILL first RTM", fill0_rtm_count_q, 1);
+    check_count("FILL second RTM", fill1_rtm_count_q, 1);
     check_count("partial PIXT insertion MTR", partial_mtr_count_q, 1);
     check_count("partial PIXT insertion RTM", partial_rtm_count_q, 1);
+    check_count("DRAV RTM", drav_rtm_count_q, 1);
+    check_count("LINE RTM", line_rtm_count_q, 1);
+    check_count("PIXBLT source MTR", pblt_mtr_count_q, 1);
+    check_count("PIXBLT destination RTM", pblt_rtm_count_q, 1);
     check_count("ordinary MOVE write while SRT set", move_write_count_q, 1);
     check_count("ordinary MOVE read while SRT set", move_read_count_q, 1);
     check_count("normal PIXT write after SRT clear",
