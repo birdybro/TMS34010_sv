@@ -6400,7 +6400,7 @@ Docs:
   `docs/completion_audit.md`, and add reference-setup/divergence
   documentation.
 Commit:
-- pending
+- 0b6292f7989c37f7cf34fb83d1810a2bf1b1a9b3
 
 ---
 
