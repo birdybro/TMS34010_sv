@@ -164,7 +164,13 @@ state from the documented handler-preserved context; successful completion
 clears PBX. Every legal checkpoint in all eight forms is interrupted under
 three-cycle memory stalls, including repeated entries, with exact
 no-duplicate/no-skip traffic and ordinary/LINE PBX-negative controls. Task
-0168 LINE pixel-boundary resume is next.
+0168 completes LINE interruption after every nonfinal pixel. Three quiet
+writeback states publish the next d/DADDR/COUNT in B0/B2/B10, after which a
+pending interrupt stacks the rewound opcode PC with PBX clear. RETI therefore
+uses the ordinary LINE setup to continue from the architectural image.
+All signed octants, horizontal/vertical/diagonal lines, repeated DI/NMI,
+W=3, RMW, SRT, exact traffic, and stalls are reference-checked; W=1/W=2
+violations retain their complete-abort path without a restart checkpoint.
 The repository currently contains:
 
 - a multicycle 32-bit core with bit-addressed instruction and data access;

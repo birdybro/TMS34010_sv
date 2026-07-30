@@ -175,7 +175,10 @@ package tms34010_pkg;
     CORE_ARRAY_RESUME1    = 6'd54, // PBX resume: read pitches/effective dimensions
     CORE_ARRAY_RESUME2    = 6'd55, // PBX resume: read result/raw-destination context
     CORE_ARRAY_RESUME3    = 6'd56, // PBX resume: read window/original dimensions
-    CORE_ARRAY_RESUME4    = 6'd57  // PBX resume: read expansion/fill colors
+    CORE_ARRAY_RESUME4    = 6'd57, // PBX resume: read expansion/fill colors
+    CORE_LINE_CKPT_D      = 6'd58, // LINE checkpoint: next error term -> B0
+    CORE_LINE_CKPT_DADDR  = 6'd59, // LINE checkpoint: next destination -> B2
+    CORE_LINE_CKPT_COUNT  = 6'd60  // LINE checkpoint: remaining count -> B10
   } core_state_t;
 
   // ---------------------------------------------------------------------------

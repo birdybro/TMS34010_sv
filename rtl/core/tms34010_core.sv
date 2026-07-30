@@ -2064,11 +2064,19 @@ module tms34010_core
   assign array_ckpt_b13_data = pblt_dst_result_q;
   assign array_ckpt_b14_data = is_fill ? fill_daddr_raw_q
                                        : pblt_dst_xy_raw_q;
-  // LINE writebacks: d -> B0, DADDR -> B2, COUNT -> B10, one per cycle.
+  // LINE final/checkpoint writebacks: d -> B0, DADDR -> B2, COUNT -> B10,
+  // one per cycle. The checkpoint form publishes the next-pixel continuation
+  // image before interrupt sampling; final/abort writeback retains the
+  // original completion path and status behavior.
   logic line_wb_d, line_wb_daddr, line_wb_count, line_wb;
-  assign line_wb_d     = (state_q == CORE_LINE_WB_D);
-  assign line_wb_daddr = (state_q == CORE_LINE_WB_DADDR);
-  assign line_wb_count = (state_q == CORE_LINE_WB_COUNT);
+  logic line_checkpoint;
+  assign line_wb_d     = (state_q == CORE_LINE_WB_D)
+                      || (state_q == CORE_LINE_CKPT_D);
+  assign line_wb_daddr = (state_q == CORE_LINE_WB_DADDR)
+                      || (state_q == CORE_LINE_CKPT_DADDR);
+  assign line_wb_count = (state_q == CORE_LINE_WB_COUNT)
+                      || (state_q == CORE_LINE_CKPT_COUNT);
+  assign line_checkpoint = (state_q == CORE_LINE_CKPT_COUNT);
   assign line_wb       = line_wb_d || line_wb_daddr || line_wb_count;
   assign graphics_wb   = fill_wb || pblt_wb_saddr || pblt_wb_daddr
                        || common_daddr_wb || common_dydx_wb || array_ckpt_wb
@@ -3081,6 +3089,15 @@ module tms34010_core
       int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;
       int_rewind_q <= 1'b1;
       int_pbx_q    <= 1'b1;
+    end else if (line_checkpoint && int_take) begin
+      // LINE's three-word B checkpoint is directly consumable by the normal
+      // setup sequence after RETI refetches the one-word opcode. PBX remains
+      // reserved for FILL/PIXBLT.
+      int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
+      int_is_nmi_q <= nmi_req;
+      int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;
+      int_rewind_q <= 1'b1;
+      int_pbx_q    <= 1'b0;
     end else if (state_q == CORE_FETCH && int_take) begin
       int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
       int_is_nmi_q <= nmi_req;
@@ -3600,16 +3617,27 @@ module tms34010_core
           mem_we_int = 1'b1;           // write the merged pixel
           mem_wdata  = line_merged;
         end
-        // Stop on the last pixel OR a W=1/W=2 window-violation abort.
-        if (mem_ack && line_substep_q && ((line_count_q == 32'd1) || line_abort))
-          state_d = CORE_LINE_WB_D;
-        else
+        if (mem_ack && line_substep_q) begin
+          // Final pixels and W=1/W=2 aborts complete normally. Every other
+          // completed pixel first publishes its continuation state.
+          state_d = ((line_count_q == 32'd1) || line_abort)
+                  ? CORE_LINE_WB_D : CORE_LINE_CKPT_D;
+        end else begin
           state_d = CORE_LINE_DRAW;
+        end
       end
 
       CORE_LINE_WB_D:     state_d = CORE_LINE_WB_DADDR; // write d  -> B0
       CORE_LINE_WB_DADDR: state_d = CORE_LINE_WB_COUNT; // write DADDR -> B2
       CORE_LINE_WB_COUNT: state_d = CORE_FETCH;         // write COUNT -> B10, then fetch
+      CORE_LINE_CKPT_D:     state_d = CORE_LINE_CKPT_DADDR;
+      CORE_LINE_CKPT_DADDR: state_d = CORE_LINE_CKPT_COUNT;
+      CORE_LINE_CKPT_COUNT: begin
+        state_d = int_take
+                ? ((nmi_req && nmi_nmim) ? CORE_INT_VECTOR
+                                         : CORE_INT_PUSH_PC)
+                : CORE_LINE_DRAW;
+      end
 
       CORE_FILL: begin
         // Per pixel, optionally read the destination at sub-step 0, then write

@@ -275,7 +275,7 @@ remains authoritative.
 | 0165 | Implement true W=3 array preclipping | complete |
 | 0166 | Make FILL and PIXBLT execution checkpointable | complete |
 | 0167 | Resume interrupted FILL and PIXBLT through PBX | complete |
-| 0168 | Resume interrupted LINE execution | pending |
+| 0168 | Resume interrupted LINE execution | complete |
 | 0169 | Close the graphics conformance matrix | pending |
 | 0170 | Reconcile the complete display/video controller | pending |
 | 0171 | Reclose graphics SRT and local-bus integration | pending |
@@ -6082,7 +6082,7 @@ Commit:
 ---
 
 ### Task 0168: Resume interrupted LINE execution
-Status: pending
+Status: complete
 Dependencies:
 - Task 0167 (validated mid-instruction interrupt entry/return plumbing).
 Spec sources:
@@ -6116,6 +6116,30 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/instruction_coverage.md`, and
   `docs/timing_notes.md`.
+Completion:
+- Added three memory-quiescent writeback states after each completed nonfinal
+  LINE pixel. They publish the already-advanced Bresenham d, XY DADDR, and
+  remaining COUNT through B0/B2/B10 before interrupt recognition.
+- Extended shared entry capture for LINE: maskable or NMIM=0 NMI stacks the
+  current one-word LINE opcode address and an unchanged ST copy with PBX
+  clear. RETI refetches the opcode and ordinary LINE setup reloads the
+  architectural continuation plus preserved implied context.
+- Kept destination read/write and partial-word RMW sequences indivisible,
+  allowed repeated later checkpoint interruptions, and preserved exact
+  window/status/WVP, PPOP/PMASK, SRT, and held-request behavior.
+- Kept final pixels and W=1/W=2 violating pixels on the complete final
+  writeback path, so an abort cannot create a RETI continuation image.
+- Added `tb_line_interrupt`, covering horizontal, vertical, diagonal,
+  shallow, steep, every signed octant, seven repeated interrupts per line,
+  both DI and NMI, W=3, RMW, SRT, and three inserted word waits. It checks
+  exact B checkpoint images, stacked PC/ST/PBX and addresses, handler/SP/ST,
+  final framebuffer/context, held protocol, and request order.
+- Strengthened `tb_line_abort` with exact checkpoint/setup counts proving W=1
+  and W=2 aborting pixels do not resume.
+- Focused LINE, LINE-window, LINE-abort, and ordinary interrupt tests PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 153/153 benches.
 Commit:
 - pending
 

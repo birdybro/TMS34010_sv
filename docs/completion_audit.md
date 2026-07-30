@@ -356,7 +356,14 @@ later checkpoints remain interruptible and final completion clears PBX.
 retains its exact uninterrupted request/framebuffer/context oracle under
 stalls. Ordinary and LINE entries are explicit PBX-negative controls.
 
-Tasks 0168–0171 close the remaining functional and pin-integration items, Tasks
+Task 0168 closed LINE pixel-boundary continuation. Every nonfinal completed
+pixel publishes B0/B2/B10 before accepting entry; LINE stacks the rewound
+opcode PC with PBX clear, and RETI reuses normal implied-B setup. The
+all-octant reference matrix interrupts every checkpoint with DI/NMI under
+RMW, W=3, SRT, and stalls while retaining exact traffic/context. W=1/W=2
+aborting pixels are verified final completions without restart images.
+
+Tasks 0169–0171 close the remaining functional and pin-integration items, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

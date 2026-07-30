@@ -96,6 +96,20 @@ module tb_line_abort;
   endfunction
 
   int unsigned failures;
+  int unsigned checkpoint_count;
+  int unsigned setup_count;
+
+  always @(posedge clk) begin
+    if (rst) begin
+      checkpoint_count <= 0;
+      setup_count <= 0;
+    end else begin
+      if (state_w == CORE_LINE_CKPT_COUNT)
+        checkpoint_count <= checkpoint_count + 1;
+      if (state_w == CORE_LINE_SETUP1)
+        setup_count <= setup_count + 1;
+    end
+  end
   task automatic check_word(input string label, input int unsigned widx, input logic [15:0] expected);
     if (u_mem.mem[widx] !== expected) begin
       $display("TEST_RESULT: FAIL: %s: mem[%0d] expected=%04h actual=%04h",
@@ -169,6 +183,14 @@ module tb_line_abort;
     if (u_core.u_io_regs.io_reg[IO_IDX_INTPEND][INT_WV_BIT] !== 1'b1) begin
       $display("TEST_RESULT: FAIL: INTPEND.WV not set after abort: %04h",
                u_core.u_io_regs.io_reg[IO_IDX_INTPEND]);
+      failures++;
+    end
+    // Each line publishes its two successfully completed pre-abort pixels.
+    // The violating third pixel takes the final completion path, so it cannot
+    // create a restart image or a RETI-style second setup.
+    if (checkpoint_count != 4 || setup_count != 2) begin
+      $display("TEST_RESULT: FAIL: LINE abort continuation count checkpoint=%0d/4 setup=%0d/2",
+               checkpoint_count, setup_count);
       failures++;
     end
     if (illegal_w !== 1'b0) begin

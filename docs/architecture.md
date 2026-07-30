@@ -649,6 +649,22 @@ substep. The resumed loop can take another interrupt at any later checkpoint;
 final FILL/PIXBLT writeback clears PBX atomically, including the reconstructed
 W=3 V result. No resume state issues a memory request.
 
+Task 0168 applies the same completed-effect rule to LINE without PBX. Once a
+nonfinal pixel write acknowledges, the Bresenham engine already holds the
+next error term, XY DADDR, and COUNT. `CORE_LINE_CKPT_D`,
+`CORE_LINE_CKPT_DADDR`, and `CORE_LINE_CKPT_COUNT` publish those values to
+B0/B2/B10 through the single B write port. Only the final state samples an
+interrupt. Entry stacks `PC - 16` but does not set PBX; RETI restores that
+opcode address, and ordinary `CORE_LINE_SETUP1..3` reloads the continuation
+plus the unchanged DYDX/INC1/INC2/OFFSET/COLOR context. Repeated later pixels
+use the same path.
+
+The last pixel and W=1/W=2 aborting pixels bypass the checkpoint states and
+use final LINE writeback, so an abort is never mistaken for an interrupted
+line. W=3 clipped pixels still complete their destination read/write pair
+before checkpointing. No held request or field-sequencer partial-word RMW can
+be divided by entry.
+
 ## Host interface (physical wrapper integrated)
 
 The TMS34010 exposes HSTCTL, HSTDATA, and HSTADRH/L to a host CPU for control

@@ -1339,6 +1339,27 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Test**: `tb_emu` verifies the RUN pulse, EMU halt acknowledgement,
   memory/PC/register/ST quiescence, legal decode, and resume point.
 
+## A0037 — RESOLVED: LINE continuation image and PBX exclusion
+- **Date**: 2026-07-29 (Task 0168).
+- **Status**: **RESOLVED** against the 1988 TI User's Guide LINE pages,
+  §7.2.3, Chapter 8, and RETI.
+- **Continuation image**: after a completed nonfinal pixel, B0 is the next
+  Bresenham error term, B2 the next XY destination, and B10 the remaining
+  count. DYDX(B7), INC1(B11), INC2(B12), OFFSET(B4), COLOR1(B9), window, and
+  graphics I/O configuration remain handler-preserved implied context.
+- **Entry/resume**: interrupt recognition follows the complete B10 write.
+  The stacked PC is rewound one opcode word, while stacked ST.PBX remains
+  clear. RETI refetches LINE and its ordinary setup reads the continuation
+  image; no private pre-interrupt state participates.
+- **Atomicity**: checkpointing follows the completed write substep, including
+  any field-sequencer partial-word RMW. The final pixel bypasses checkpointing.
+  W=1/W=2 violating pixels likewise take complete-abort writeback and cannot
+  be resumed as interrupted LINE operations.
+- **Regression evidence**: `tb_line_interrupt` interrupts all seven nonfinal
+  pixels of twelve horizontal/vertical/diagonal/all-octant cases with DI or
+  NMI, exact B/stack/traffic/framebuffer/context checks, W=3, RMW, SRT, and
+  stalls. `tb_line_abort` proves the aborting pixels add no checkpoint/setup.
+
 ## A0036 — RESOLVED: PBX array entry and RETI reconstruction
 - **Date**: 2026-07-29 (Task 0167).
 - **Status**: **RESOLVED** against the 1988 TI User's Guide §§7.2.3/8.5,

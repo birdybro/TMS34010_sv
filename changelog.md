@@ -7,6 +7,27 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0168 — interruptible LINE continuation)
+- Added a three-cycle, memory-quiescent LINE checkpoint after every completed
+  nonfinal pixel. It publishes the next Bresenham error, XY destination, and
+  remaining count through B0/B2/B10 before interrupt recognition.
+- Extended shared interrupt entry so LINE stacks its one-word opcode address
+  while leaving PBX clear. RETI refetches LINE and the ordinary implied-B
+  setup reconstructs continuation state without a private resume mode.
+- Kept destination reads/writes and partial-word RMW indivisible. W=3
+  clipping remains pixel-based, while a W=1/W=2 violation proceeds directly
+  to final status/context writeback and never creates a restart checkpoint.
+- Added `tb_line_interrupt`, a twelve-case reference matrix covering
+  horizontal, vertical, diagonal, shallow/steep, every signed octant,
+  repeated DI/NMIM=0 NMI at every checkpoint, W=3, PPOP/PMASK RMW, SRT, and
+  three-cycle stalls. It checks exact B images, stacked PC/ST/PBX, handler
+  execution, SP/status, framebuffer, final context, held requests, and
+  no-duplicate/no-skip traffic.
+- Strengthened `tb_line_abort` to prove both W=1 and W=2 violating pixels use
+  complete-abort writeback rather than a continuation setup.
+- Validation: focused LINE/window/abort/interrupt tests PASS;
+  `scripts/lint.sh` clean; full regression 153/153 PASS.
+
 ### Added (Task 0167 — PBX FILL/PIXBLT interrupt resume)
 - Connected the coherent array checkpoint to existing maskable and
   nonmaskable interrupt entry. A legal FILL/PIXBLT interruption stacks the

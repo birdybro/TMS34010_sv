@@ -217,6 +217,15 @@
   The next cycle issues the first remaining graphics request. Later word/row
   checkpoints remain eligible for repeated entry. Final writeback clears PBX;
   no resume reconstruction state asserts a memory request.
+- **LINE interrupt/resume sequencing** — a completed nonfinal pixel leaves
+  `CORE_LINE_DRAW` only after its final write acknowledge. Three quiet cycles
+  write the already-advanced d, DADDR, and COUNT to B0/B2/B10. The B10 cycle
+  alone samples interrupts; entry stacks `PC-16` and unchanged ST (PBX=0).
+  RETI refetch plus the ordinary three LINE setup reads restore all implied
+  state before the next pixel request. The last pixel and W=1/W=2 abort
+  bypass this sequence for final writeback. Thus no held read/write or
+  physical partial-word RMW can be split, and W=3 clipped pixels remain
+  restartable only after their complete read/write pair.
 - **MOVE *Rs(offset),*Rd+** — opcode and signed-offset fetch are followed by
   two acknowledged FS-bit transactions in one `CORE_MEMORY` stay: source
   read, then destination write. `move_data_q` bridges the transactions; the

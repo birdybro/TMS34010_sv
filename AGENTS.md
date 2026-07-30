@@ -161,6 +161,13 @@ PBX stays live across repeated later interruptions and clears only when the
 resumed array completes. The same eight-form reference model interrupts every
 legal checkpoint under waits and proves exact traffic/framebuffer/context;
 `tb_int_reti` and `tb_line` prove ordinary and LINE entries keep PBX clear.
+Task 0168 makes LINE itself interruptible after each nonfinal completed
+pixel. B0/B2/B10 receive the next Bresenham error, destination, and count in
+three quiet states; entry rewinds the one-word opcode PC without setting PBX,
+so RETI simply reruns normal LINE setup from that image. `tb_line_interrupt`
+interrupts every checkpoint across all octants, W=3, PPOP/PMASK, SRT, and
+stalls with exact request/framebuffer/context checks. W=1/W=2 aborting pixels
+still take final writeback and create no continuation checkpoint.
 The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
