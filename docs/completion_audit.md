@@ -308,7 +308,8 @@ empty-array/context, direction, and W=1/W=3 geometry defects.
 The original audit also found missing complete graphics/display/SRT
 conformance matrices, pinned MAME differential coverage, and TI-shipped
 graphics workloads. Tasks 0169–0171 close the three specification-derived
-matrices; the independent reference/workload gates remain.
+matrices, and Task 0172 closes the independent MAME gate; the TI workload and
+final implementation gates remain.
 
 Task 0162 closed the empty-array and terminal-context findings. Zero DX or DY
 now exits every FILL/PIXBLT form without graphics traffic or architectural
@@ -404,8 +405,21 @@ clients, and final clock ratios. The audit found no production RTL defect;
 it repaired the concrete test-ledger gap left by the previously cited but
 absent pin-level SRT bench.
 
-Tasks 0172–0173 add independent differential and surviving-software evidence,
-and Task 0174 performs the final full-regression and Quartus sign-off. External
+Task 0172 closed the independent graphics differential gate. A minimal
+BSD-3-Clause adapter runs at exact MAME commit
+`70725158b4e9d2e1230c0515faec754f9cee86a2` without importing emulator
+architecture. Its 137 deterministic programs cover every defined PPOP/PSIZE,
+every graphics family/form, PMASK/transparency, all window and PBH/PBV modes,
+pitch, array edges, and continuation endpoints. Complete A/B/SP/ST/PC,
+graphics-I/O, and 512-word framebuffer results are accepted for both engines
+and replayed offline by `tb_mame_graphics_replay`. The live one-command suite
+rebuilds the external target and reports 156 classified case/field groups
+with zero unexplained differences. Exact source-backed classes and minimized
+reproducers are in `docs/mame_graphics_reference.md` and the generated JSON
+ledger.
+
+Task 0173 adds surviving-software evidence, and Task 0174 performs the final
+full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM
 serial-pixel path remain surrounding-system responsibilities rather than
 unfinished processor behavior.

@@ -7,6 +7,30 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Added (Task 0172 — pinned MAME graphics differential verification)
+- Added a BSD-3-Clause minimal MAME driver adapter pinned to exact upstream
+  commit `70725158b4e9d2e1230c0515faec754f9cee86a2`. MAME remains an ignored
+  external cache; no emulator architecture or upstream source is vendored
+  into the RTL repository.
+- Added a deterministic 137-case corpus using identical bootstrap programs,
+  complete register/I/O state, and memory images. It covers every graphics
+  form, every defined PPOP/PSIZE combination, PMASK/transparency, W=0/1/2/3,
+  pitch, PBH/PBV, array edges, and FILL/PIXBLT/LINE continuation endpoints.
+- Added checked-in exact-MAME and accepted-RTL state/framebuffer results plus
+  a generated divergence ledger. The comparator byte-checks live results and
+  rejects every new unclassified field difference; the accepted ledger has
+  156 classified case/field groups and zero unexplained mismatches.
+- Added `tb_mame_graphics_replay` for network-free ordinary regression and
+  `scripts/mame_graphics_diff.sh` for one-command exact-revision build, live
+  MAME execution, RTL replay, and comparison. Missing MAME is an explicit
+  `--setup` opt-in condition.
+- Documented provenance, license isolation, corpus coverage, atomic-reference
+  limits, and minimized intentional divergences in
+  `docs/mame_graphics_reference.md`.
+- Validation: exact pinned live differential PASS (137/137, zero unexplained
+  mismatches); 12 focused suites PASS; `scripts/lint.sh` clean; full
+  regression 157/157 PASS.
+
 ### Fixed (Task 0171 — graphics SRT and local-bus integration reclosure)
 - Added `docs/srt_conformance.md`, mapping every graphics-engine pixel path,
   zero-cycle condition, continuation case, controller/CDC boundary, and

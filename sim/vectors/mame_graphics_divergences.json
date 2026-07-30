@@ -1,0 +1,98 @@
+{
+  "case_count": 137,
+  "classes": [
+    {
+      "class": "array_extent_and_terminal_context",
+      "description": "Pinned MAME interprets empty/terminal 16-bit extents differently; Task 0162 follows the production array definitions.",
+      "field_counts": {
+        "B": 2
+      },
+      "minimized_reproducer": {
+        "case": 132,
+        "name": "array_edge_singleton",
+        "opcode": "0fc0",
+        "tags": [
+          "fill",
+          "array-edge",
+          "singleton"
+        ]
+      },
+      "mismatching_case_field_groups": 2
+    },
+    {
+      "class": "array_terminal_context",
+      "description": "Pinned MAME exposes legacy array scratch context; RTL publishes the production terminal/checkpoint image closed by Tasks 0162/0166.",
+      "field_counts": {
+        "B": 11
+      },
+      "minimized_reproducer": {
+        "case": 106,
+        "name": "fill_linear",
+        "opcode": "0fc0",
+        "tags": [
+          "fill",
+          "linear",
+          "array"
+        ]
+      },
+      "mismatching_case_field_groups": 11
+    },
+    {
+      "class": "atomic_reference_checkpoint_limit",
+      "description": "MAME executes a graphics opcode atomically and cannot expose TI mid-array checkpoint/resume images; final framebuffer remains useful.",
+      "field_counts": {
+        "B": 2
+      },
+      "minimized_reproducer": {
+        "case": 134,
+        "name": "resume_endpoint_fill",
+        "opcode": "0fc0",
+        "tags": [
+          "fill",
+          "interrupt-resume-endpoint"
+        ]
+      },
+      "mismatching_case_field_groups": 2
+    },
+    {
+      "class": "directional_array_context",
+      "description": "Pinned MAME and production RTL differ in PBH/PBV automatic corner selection and terminal context; Task 0163 is TI-spec authoritative.",
+      "field_counts": {
+        "B": 4
+      },
+      "minimized_reproducer": {
+        "case": 125,
+        "name": "direction_0",
+        "opcode": "0f60",
+        "tags": [
+          "pixblt",
+          "direction",
+          "pbh:0",
+          "pbv:0"
+        ]
+      },
+      "mismatching_case_field_groups": 4
+    },
+    {
+      "class": "endpoint_pc_observation",
+      "description": "MAME holds PC on JRUC -1; RTL pc_o is the postfetch address.",
+      "field_counts": {
+        "PC": 137
+      },
+      "minimized_reproducer": {
+        "case": 0,
+        "name": "ppop_00_psize_1",
+        "opcode": "f822",
+        "tags": [
+          "pixt",
+          "psize:1",
+          "ppop:00"
+        ]
+      },
+      "mismatching_case_field_groups": 137
+    }
+  ],
+  "format": 1,
+  "mame_commit": "70725158b4e9d2e1230c0515faec754f9cee86a2",
+  "unexplained_mismatches": 0
+}

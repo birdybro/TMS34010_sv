@@ -1,8 +1,8 @@
 # Architecture
 
 > Status: **implemented, ISA/status-audited, and Cyclone V-signed-off through
-> Task 0160, with production graphics, display, and SRT/local-bus matrices
-> closed through Task 0171**.
+> Task 0160, with production graphics, display, SRT/local-bus, and pinned-MAME
+> differential matrices closed through Task 0172**.
 > The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -807,6 +807,25 @@ through the pin system. `tb_fpga_refresh_ratio` proves service in at most 11
 of the available 32 core clocks at the final 50/200 MHz ratio when external
 HOLD is inactive and LRDY is bounded; deliberately unbounded external
 ownership/waits remain a surrounding-system constraint.
+
+## Differential-verification boundary
+
+Task 0172 adds no emulator logic to the synthesizable hierarchy. The external
+MAME process and the RTL simulator consume one generated text corpus. Each
+case runs a complete bootstrap plus one graphics opcode, then serializes all
+A/B registers, SP, ST, PC, six graphics I/O registers, and a 512-word
+framebuffer region. The adapter is a cache-local MAME driver; its only
+responsibilities are RAM mapping, input loading, terminal scheduling, and
+public-state serialization.
+
+The ordinary RTL regression reads checked-in accepted files directly through
+`tb_mame_graphics_replay`; `scripts/sim.sh` supplies the absolute repository
+root as a plusarg so Questa and Verilator use the same paths. The optional
+live command verifies the exact external Git revision, rebuilds its minimal
+target, reruns both engines, and byte-compares both outputs before applying a
+closed field-level divergence classifier. The TI specification, not MAME,
+resolves array terminal and checkpoint behavior. See
+`mame_graphics_reference.md`.
 
 ## Clock / reset strategy
 

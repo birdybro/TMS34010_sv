@@ -29,7 +29,16 @@ fixed-priority arbitration, CDC, LRDY/HOLD behavior, and every original-pin
 MTR/RTM phase. A full-pin program checks the exact ordered
 RTM/MTR/MTR/RTM trace; the all-engine system program checks per-engine cycle
 counts; and all 1,186 graphics matrix cases assert exact SRT tagging. The
-authoritative integration ledger is `docs/srt_conformance.md`. Task 0124
+authoritative integration ledger is `docs/srt_conformance.md`. Task 0172 adds
+a license-separated adapter for exact MAME commit
+`70725158b4e9d2e1230c0515faec754f9cee86a2` and a deterministic 137-case
+graphics corpus. The same bootstrap programs, complete A/B/ST state,
+graphics I/O configuration, memory images, and framebuffer windows run on
+MAME and RTL. Checked-in MAME and accepted RTL results keep the ordinary
+regression offline, while `scripts/mame_graphics_diff.sh` rebuilds and reruns
+the live reference. Every secondary-reference difference is machine-classified
+with a minimized reproducer; none is unexplained. The setup and divergence
+ledger is `docs/mame_graphics_reference.md`. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -249,7 +258,7 @@ The repository currently contains:
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 156 self-checking SystemVerilog testbenches, including non-integer-clock
+- 157 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
   the generated 577-case display scheduler matrix, end-to-end SRT
   graphics-cycle coverage, direct FPGA pad/reset checks, and an exhaustive
@@ -271,6 +280,9 @@ scripts/lint.sh
 scripts/regress.sh
 scripts/sim.sh tb_smoke
 scripts/sim.sh tb_pixt_win
+scripts/sim.sh tb_mame_graphics_replay
+# Explicit first-time network/build step for the optional live reference:
+scripts/mame_graphics_diff.sh --setup
 QUARTUS_SH=/path/to/quartus-17.0/quartus/bin/quartus_sh \
   scripts/synth_quartus.sh
 ```
@@ -307,6 +319,9 @@ pinned `third_party/TMS34010_Info` submodule.
 - `docs/srt_conformance.md` — graphics-only SRT classification, zero-cycle
   conditions, continuation semantics, arbitration/CDC behavior, original-pin
   MTR/RTM phases, and processor/external-VRAM scope.
+- `docs/mame_graphics_reference.md` — exact MAME provenance/license boundary,
+  deterministic differential corpus, opt-in setup, and the closed
+  secondary-reference divergence ledger.
 - `scripts/` — lint, simulation, and Quartus entry points.
 - `tasks.md` / `changelog.md` — task-level design and implementation history.
 - `third_party/TMS34010_Info/` — pinned primary/reference documentation.

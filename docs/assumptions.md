@@ -1627,6 +1627,32 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `0x00000910`, verifies both pitched rows, checks exact final DADDR
   `0x000009A0`, and snapshots the complete seeded ST unchanged for W=0.
 
+## A0049 — MAME is an exact-revision secondary reference, not an oracle
+
+- **Date**: 2026-07-29 (Task 0172).
+- **Status**: resolved verification boundary.
+- **Source**: 1988 TI TMS34010 User's Guide is primary. MAME commit
+  `70725158b4e9d2e1230c0515faec754f9cee86a2`,
+  `src/devices/cpu/tms34010/`, is secondary and BSD-3-Clause per its headers.
+- **Decision**: generated short programs and images may be compared against
+  the pinned external model, but model behavior cannot override explicit TI
+  text. The external checkout is cached under ignored `work/`; only minimal
+  driver glue, generated inputs, accepted outputs, and metadata are committed.
+- **Known observation/model differences**: the terminal self-loop exposes
+  MAME's current-instruction PC versus the RTL postfetch PC. Pinned MAME also
+  publishes legacy scratch/terminal values for selected FILL/PIXBLT extent
+  and PBH/PBV cases and executes each graphics opcode atomically, so it cannot
+  expose the production checkpoint images required by Tasks 0166–0168. TI
+  array/direction/interrupt pages and the exhaustive task benches resolve
+  those cases in favor of RTL.
+- **Regression evidence**: the 137-case corpus crosses all defined
+  PPOP/PSIZE values, every graphics form, PMASK/transparency, W modes,
+  pitch/direction, array edges, and the three continuation families.
+  `tb_mame_graphics_replay` checks every accepted state/framebuffer offline.
+  `scripts/mame_graphics_diff.sh` reruns the exact pinned reference;
+  `compare_graphics_results.py` rejects output drift and any difference
+  outside the source-backed classes in `mame_graphics_divergences.json`.
+
 ## TODO / spec-uncertain (waiting on detailed read)
 
 Task 0124 consolidated the then-known assumptions that affected observable

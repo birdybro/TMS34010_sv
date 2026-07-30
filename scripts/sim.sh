@@ -92,7 +92,8 @@ if [ "$QUESTA_AVAILABLE" -eq 1 ]; then
   "$VLOG_BIN" -sv -quiet "${SRCS[@]}"
   # vsim's batch exit code is not a reliable test-status signal, so the
   # TEST_RESULT marker below remains authoritative.
-  "$VSIM_BIN" -c -do "run -all; quit -f" "work.$TB" 2>&1 | tee "$LOG"
+  "$VSIM_BIN" -c -do "run -all; quit -f" "work.$TB" \
+    "+TMS34010_REPO_ROOT=$ROOT" 2>&1 | tee "$LOG"
 else
   VLT_WORK="$WORK/verilator_${TB}"
   BUILD_DIR="$VLT_WORK"
@@ -107,7 +108,7 @@ else
     --top-module "$TB" \
     --Mdir "$VLT_WORK" \
     "${SRCS[@]}"
-  "$VLT_WORK/V${TB}" 2>&1 | tee "$LOG"
+  "$VLT_WORK/V${TB}" "+TMS34010_REPO_ROOT=$ROOT" 2>&1 | tee "$LOG"
 fi
 
 if grep -q "TEST_RESULT: PASS" "$LOG" &&

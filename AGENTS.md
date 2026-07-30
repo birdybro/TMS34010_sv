@@ -15,7 +15,7 @@ translate a software implementation into one large procedural HDL block.
 The original processor and Cyclone V implementation baseline is complete
 through Task 0160. Task 0161's production-revision GPU re-audit found
 remaining programmer-visible graphics work; do not claim GPU completion until
-the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0171
+the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0172
 close the production graphics-instruction semantic, direction, window,
 checkpoint/resume, LINE-interrupt, complete PPOP/PSIZE/register matrix, and
 display/video/SRT-local-bus conformance gates. Treat
@@ -204,6 +204,16 @@ fabric; `tb_pin_srt` checks the exact ordered transfers and original-pin
 phases after asynchronous CDC. Zero-work, clipping, abort, partial RMW,
 interrupt/resume, HOLD, LRDY, and simultaneous-client behavior are mapped in
 `docs/srt_conformance.md`; preserve that source/owner/evidence ledger.
+Task 0172 adds the exact-revision MAME secondary-reference gate. Preserve the
+license boundary: MAME remains an ignored external cache at commit
+`70725158b4e9d2e1230c0515faec754f9cee86a2`; never copy its CPU architecture
+into RTL or vendor its checkout. `mame_graphics_vectors.txt` is the sole
+generated input, and the checked-in MAME/RTL result pair plus
+`mame_graphics_divergences.json` must stay reproducible. Run
+`scripts/mame_graphics_diff.sh` when the cache is present and
+`tb_mame_graphics_replay` in every ordinary regression. TI pages remain
+authoritative over the secondary model; a new difference must either correct
+RTL or acquire a source-backed, minimized class—there is no catch-all class.
 The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain
@@ -270,6 +280,8 @@ RTL, tests, task log, changelog, and specification first.
 - `docs/srt_conformance.md` — program-controlled graphics MTR/RTM
   classification, zero-cycle cases, arbitration/CDC, and original-pin phase
   evidence.
+- `docs/mame_graphics_reference.md` — pinned external-reference setup,
+  corpus/result contract, license boundary, and divergence classifications.
 - `docs/completion_audit.md` — complete ISA reconciliation and ordered
   project-level exit gates.
 - `docs/timing_notes.md` — long paths, multicycle operations, and FPGA timing.

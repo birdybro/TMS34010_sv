@@ -279,8 +279,8 @@ remains authoritative.
 | 0168 | Resume interrupted LINE execution | complete |
 | 0169 | Close the graphics conformance matrix | complete |
 | 0170 | Reconcile the complete display/video controller | complete |
-| 0171 | Reclose graphics SRT and local-bus integration | pending |
-| 0172 | Add MAME graphics differential verification | pending |
+| 0171 | Reclose graphics SRT and local-bus integration | complete |
+| 0172 | Add MAME graphics differential verification | complete |
 | 0173 | Run TI graphics software workloads | pending |
 | 0174 | Sign off production-revision GPU completion | pending |
 
@@ -6363,7 +6363,7 @@ Commit:
 ---
 
 ### Task 0172: Add MAME graphics differential verification
-Status: pending
+Status: complete
 Dependencies:
 - Task 0171 (spec-derived graphics/video/pin behavior closed).
 Spec sources:
