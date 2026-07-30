@@ -57,7 +57,8 @@ and host backpressure. Task 0142
 completed direct host-side HSTCTL access, HINT, HCS-selected reset halt, and
 instruction-boundary HLT/NMI behavior. Task 0141 made
 DPYADR live and added held, acknowledged screen-refresh scheduling with exact
-frame reload, line cadence, and DUDATE/ORG completion updates. Task 0140
+frame reload, line cadence, and completion updates. Task 0170 later corrected
+the raw SRFADR direction and isolated ORG to the pin representation. Task 0140
 corrected every internal sync/blank interval endpoint for the specified
 one-VCLK delay after equality. Task 0139 corrected the display-interrupt
 compare point and integrated internal, noninterlaced video timing with the
@@ -276,8 +277,8 @@ remains authoritative.
 | 0166 | Make FILL and PIXBLT execution checkpointable | complete |
 | 0167 | Resume interrupted FILL and PIXBLT through PBX | complete |
 | 0168 | Resume interrupted LINE execution | complete |
-| 0169 | Close the graphics conformance matrix | pending |
-| 0170 | Reconcile the complete display/video controller | pending |
+| 0169 | Close the graphics conformance matrix | complete |
+| 0170 | Reconcile the complete display/video controller | complete |
 | 0171 | Reclose graphics SRT and local-bus integration | pending |
 | 0172 | Add MAME graphics differential verification | pending |
 | 0173 | Run TI graphics software workloads | pending |
@@ -5397,8 +5398,9 @@ Acceptance Criteria:
   documented odd-field `DPYINT=VESYNC` collision when HSBLNK is the half-line
   compare, without suppressing the even-field event.
 - Carry the field phase directly inside VCLK to the display scheduler. Reload
-  DPYSTRT unchanged before an odd field and apply signed DUDATE/2 before an
-  even field; keep ordinary completion updates at full DUDATE.
+  DPYSTRT unchanged before an odd field and subtract raw DUDATE/2 before an
+  even field; keep ordinary completion updates as full raw DUDATE
+  subtractions.
 - Document deterministic mode-change/write precedence and the requirement to
   reposition equality-based counters when programming a smaller total while
   the FPGA VCLK remains running.
@@ -6222,7 +6224,7 @@ Commit:
 ---
 
 ### Task 0170: Reconcile the complete display/video controller
-Status: pending
+Status: complete
 Dependencies:
 - Task 0169 (graphics-instruction conformance closed).
 Spec sources:
@@ -6257,6 +6259,34 @@ Docs:
   `docs/architecture.md`, `docs/assumptions.md`,
   `docs/completion_audit.md`, `docs/memory_map.md`, and
   `docs/timing_notes.md`.
+Implementation summary:
+- Added `docs/display_conformance.md`, mapping every production display
+  register/field, reset/access/live-update rule, timing mode, screen
+  transaction, and processor video pin to Chapters 6/9 or SPVS002C, its RTL
+  owner, side effects, and named self-checking evidence.
+- Added generated `tb_display_matrix`: 576 defined
+  NIL/field/ORG/SRE/LCSTRT/DUDATE cross-product cases plus one deterministic
+  undefined multi-bit DUDATE case. Its 579 completed request transactions
+  prove raw addresses, cadence, captured address/tap/ORG, live completion
+  control, and reset recovery.
+- Corrected raw DPYADR semantics. SRFADR now subtracts DUDATE after every
+  completed screen MTR for both ORG values, and the reload preceding an even
+  interlaced field subtracts DUDATE/2. ORG=0 complements only at the
+  local-bus pins for an effective increment; ORG=1 drives raw SRFADR directly.
+- Resolved DPYTAP as physical column/tap contributions to logical screen
+  address bits 4–23 and extended local-bus coverage for exact placement plus
+  both ORG pin representations.
+- Exhaustively crossed DXV/HSD/NIL/ENV in the external-sync suite and retained
+  exact recognition delays, fallbacks, field classification, blanking, and
+  output enables.
+- Corrected functional blank at the FPGA adapter to drive the original
+  active-low package BLANK pin. Explicitly bounded processor completion at
+  video timing/sync/blank and physical screen MTR; attached VRAM serial
+  shifting and RAMDAC output remain surrounding-system behavior.
+- Focused display/video/CDC/I/O/local-bus/pad suites PASS.
+- `git diff --check` PASS.
+- `scripts/lint.sh` PASS, strict RTL lint clean.
+- `REGRESS_JOBS=4 scripts/regress.sh` PASS, 155/155 benches.
 Commit:
 - pending
 

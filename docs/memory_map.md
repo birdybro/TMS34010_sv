@@ -2,7 +2,7 @@
 
 > Status: **field-to-word translation, interrupt-register semantics, direct
 > HSTCTL access, live REFCNT, internal/external video timing, and live DPYADR
-> implemented through Task 0158**. The core issues bit-addressed 1–32-bit
+> reconciled through Task 0170**. The core issues bit-addressed 1–32-bit
 > accesses, and a synthesizable sequencer expands them into aligned 16-bit
 > word cycles. The on-chip I/O page is decoded and stored in the core.
 > The original-pin phase engine is connected through a coherent core-to-8×
@@ -117,7 +117,8 @@ configuration, command, status, event, and screen-transaction crossings.
 Task 0156 consumes DPYCTL.NIL there: internal interlace starts the odd field
 at HTOTAL/2, advances VCOUNT at the odd VESYNC half-line point, and carries
 field phase to DPYADR. The DPYSTRT reload preceding an even field applies
-signed DUDATE/2; the reload preceding an odd field remains unchanged.
+raw DUDATE/2 subtraction; the reload preceding an odd field remains
+unchanged.
 Task 0157 consumes DPYCTL.DXV/HSD: active-low external sync inputs are
 recognized after the specified 2.5-VCLK delay, total-register fallbacks keep
 the counters progressing when an input is absent, and the corresponding
@@ -186,8 +187,9 @@ Task 0139 connects the horizontal/vertical timing values and DPYINT/DPYCTL
 to the internally generated timing path. HCOUNT/VCOUNT are now live writable
 counters, and its start-of-HBLANK compare sets the existing DIP latch.
 Task 0141 makes DPYADR live: DPYSTRT supplies its frame/line reloads,
-DPYCTL.SRE/DUDATE/ORG controls held screen-refresh scheduling and
-acknowledge-time updates, and DPYTAP is captured with each client request.
+DPYCTL.SRE/DUDATE controls held screen-refresh scheduling and raw
+acknowledge-time decrements, ORG selects direct/complemented local-bus
+representation, and DPYTAP is captured with each client request.
 Task 0142 connects the complementary host-visible HSTCTL view: host writes
 own MSGIN, set INTIN, and clear INTOUT; processor writes own MSGOUT, clear
 INTIN, and set INTOUT. Both sides can write the seven defined HSTCTLH fields,
@@ -211,6 +213,9 @@ core-domain views. Task 0156 consumes NIL for internal field sequencing and
 the field-aware half-DUDATE DPYADR reload.
 Task 0157 consumes DXV/HSD for external sync recognition and direction.
 Task 0158 consumes SRT for graphics-only explicit VRAM register transfers.
+Task 0170 reconciles every display register and timing mode, defines DPYTAP as
+physical column/tap bits, and closes active-low package BLANK polarity. Its
+authoritative register/mode/source/test ledger is `display_conformance.md`.
 
 | Addr (bit) | Index | Name | Group | Notes |
 |------------|-------|------|-------|-------|
@@ -222,7 +227,7 @@ Task 0158 consumes SRT for graphics-only explicit VRAM register transfers.
 | C0000050 | 0x05 | VEBLNK  | video timing | Vertical End Blank |
 | C0000060 | 0x06 | VSBLNK  | video timing | Vertical Start Blank |
 | C0000070 | 0x07 | VTOTAL  | video timing | Vertical Total |
-| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; DUDATE/ORG/SRE drive screen refresh; NIL selects internal/external field sequencing; ENV gates combined blank and new DIP events; DXV/HSD select sync input/output operation; SRT converts graphics pixel reads/writes to explicit VRAM MTR/RTM cycles |
+| C0000080 | 0x08 | DPYCTL  | video timing | Bit 1 reads zero; SRE schedules screen refresh, DUDATE decrements raw SRFADR, and ORG selects direct/complemented screen pins; NIL selects internal/external field sequencing; ENV gates combined blank and new DIP events; DXV/HSD select sync input/output operation; SRT converts graphics pixel reads/writes to explicit VRAM MTR/RTM cycles |
 | C0000090 | 0x09 | DPYSTRT | video timing | LCSTRT/SRSTRT reload live DPYADR at line/frame boundaries |
 | C00000A0 | 0x0A | DPYINT  | video timing | VCOUNT line selected for DIP at start of horizontal blanking |
 | C00000B0 | 0x0B | CONTROL | graphics ctl | Bits 1:0 read zero; RM/RR, transparency, window, direction, PPOP, CD |
@@ -238,10 +243,10 @@ Task 0158 consumes SRT for graphics-only explicit VRAM register transfers.
 | C0000150 | 0x15 | PSIZE   | graphics ctl | Pixel Size (1/2/4/8/16) |
 | C0000160 | 0x16 | PMASK   | graphics ctl | Plane Mask |
 | C0000170–C00001A0 | 0x17–0x1A | — | reserved | Writes ignored; reads return zero |
-| C00001B0 | 0x1B | DPYTAP  | video timing | Bits 13:0 captured per screen-refresh request; reserved bits 15:14 read zero |
+| C00001B0 | 0x1B | DPYTAP  | video timing | Bits 13:0 are physical column/tap contributions captured per screen-refresh request; reserved bits 15:14 read zero |
 | C00001C0 | 0x1C | HCOUNT  | video timing | VCLK-owned writable counter; core reads a coherent bounded-stale snapshot and writes use the A0045 command mailbox |
 | C00001D0 | 0x1D | VCOUNT  | video timing | VCLK-owned writable scan-line counter with the same coherent snapshot/command contract |
-| C00001E0 | 0x1E | DPYADR  | video timing | VCLK-owned LNCNT/SRFADR; coherent core snapshot, command writes, field-aware DPYSTRT/DUDATE/2 reload, and acknowledged screen-refresh updates |
+| C00001E0 | 0x1E | DPYADR  | video timing | VCLK-owned LNCNT/raw SRFADR; coherent core snapshot, command writes, field-aware DPYSTRT minus DUDATE/2 reload, and acknowledged raw DUDATE decrements |
 | C00001F0 | 0x1F | REFCNT  | refresh      | Live writable RINTVL/ROWADR down-counter; RR=00/01 requests every 32/64 clocks |
 
 Indices are named in `rtl/tms34010_pkg.sv` as `IO_IDX_<NAME>`. Implemented bit
@@ -254,9 +259,11 @@ optional-cache-disable field; this uncached implementation has no behavioral
 difference between its values. PMASK bits map to physical positions within
 each 16-bit memory word; software replicates a per-pixel mask when it wants
 uniform protection across every sub-word pixel. Pixel reads zero protected
-bits before processing, and writes preserve them. Remaining video-mode fields
-are reconciled by the display task rather than inferred from graphics
-behavior.
+bits before processing, and writes preserve them. The complete production
+display-register and timing-mode ledger is `display_conformance.md`. DPYADR
+stores raw SRFADR and decrements after completion for both ORG values; ORG=0
+complements it only at the local-bus pins. DPYTAP contributes the physical
+column/tap portion of logical screen-address bits 4–23.
 
 ## Host-interface-visible registers
 
@@ -282,12 +289,14 @@ displacement without changing that completed-transfer contract. Task 0157
 closes the timing-side external synchronization contract. Task 0158 adds the
 other processor-controlled path: graphics reads/writes become explicit MTR
 or RTM cycles with normal address mapping, active TR status, and the RTM
-W-at-RAS distinction.
+W-at-RAS distinction. Task 0170 reconciles the complete video/display
+boundary and corrects raw address direction plus active-low package BLANK.
 
 The TMS34010 itself provides HSYNC, VSYNC, BLANK, and VRAM control but no
-pixel-data output pins. Pixel bits come from the attached VRAM serial port.
-An FPGA board design may model or connect that external memory/video path,
-but it is outside the TMS34010-only processor memory map.
+pixel-data output pins; all three named video interval pins are active low at
+the package. Pixel bits come from the attached VRAM serial port. An FPGA board
+design may model or connect that external memory/video path, but it is outside
+the TMS34010-only processor memory map.
 
 ## Uncertain / partially implemented areas
 

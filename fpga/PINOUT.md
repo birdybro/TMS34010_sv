@@ -13,6 +13,9 @@ appropriate drive/fanout, pull-ups where required, series termination as
 shown necessary by signal-integrity analysis, and a common ground. Header
 power pins are not FPGA I/O and are not listed below.
 
+The top-level port retains the package label `BLANK`, but its electrical
+polarity is active low, matching the original TMS34010 pin.
+
 ## Board-owned inputs
 
 | Top port | Board signal | FPGA pin |

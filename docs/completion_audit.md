@@ -102,7 +102,9 @@ display event remains at equality, before the delayed blank output transition.
 Task 0141 completed live DPYADR and the noninterlaced screen-refresh client.
 DPYSTRT supplies frame/line reloads, SRE plus LNCNT schedule active-line
 requests, and captured SRFADR/DPYTAP remain held until completion acknowledge.
-DUDATE/ORG updates now occur only at completion. Physical VRAM
+DUDATE updates now occur only at completion; Task 0170 later corrected the
+raw direction to unconditional subtraction and isolated ORG to the pin
+representation. Physical VRAM
 memory-to-register service and arbitration remain in the memory-fabric gate.
 
 Task 0142 completed direct HSTCTL semantics and processor halt behavior.
@@ -235,7 +237,7 @@ HCOUNT, its VESYNC half-line compare advances VCOUNT again, and the even field
 returns at the ordinary full-line VTOTAL event. The resulting count sequence
 also implements the §9.7 odd-field DPYINT suppression. Field phase remains
 wholly in VCLK and selects an unchanged DPYSTRT reload before odd fields or
-signed DUDATE/2 before even fields. A cycle-by-cycle timing test plus direct
+raw DUDATE/2 subtraction before even fields. A cycle-by-cycle timing test plus direct
 display-address cases cover both fields and both ORG directions.
 
 Task 0157 closes external synchronization. DPYCTL.DXV/HSD now select the
@@ -376,7 +378,18 @@ transparency ordering, and processing for memory-to-memory PIXT.
 Reserved PPOP 0x16–0x1F and undefined 1/2-bit arithmetic combinations are
 explicit exclusions, not invented behavior.
 
-Tasks 0170–0171 close the remaining functional and pin-integration items, Tasks
+Task 0170 closed the complete production display/video matrix.
+`docs/display_conformance.md` maps every display register/field, timing mode,
+live-update point, screen transaction, and processor video pin to primary
+pages, RTL ownership, side effects, and named evidence. The generated
+`tb_display_matrix` covers 577 NIL/field/ORG/SRE/LCSTRT/DUDATE scheduler
+cases, while the external-sync suite exhausts DXV/HSD/NIL/ENV. This audit
+found and corrected two pin-visible defects: raw DPYADR now subtracts DUDATE
+for both ORG values, with ORG=0 complementing only at the local-bus pins, and
+the FPGA pad owner now drives the package BLANK output active low. DPYTAP's
+physical column/tap units and the external VRAM/RAMDAC boundary are explicit.
+
+Task 0171 closes the remaining SRT/local-bus integration item, Tasks
 0172–0173 add independent differential and surviving-software evidence, and
 Task 0174 performs the final full-regression and Quartus sign-off. External
 VRAM/DRAM, level translation, board-level signal integrity, and the VRAM

@@ -599,6 +599,39 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   `tb_system_fabric`, and `tb_pin_system` lock classification, ownership,
   returned data, pin phases, and exact-once writes.
 
+## A0052 — RESOLVED: production display-address and video-pin contract
+- **Date**: 2026-07-29 (Task 0170).
+- **Status**: **RESOLVED** against Chapters 6 and 9 of the 1988 TI User's
+  Guide and the SPVS002C production pin descriptions. The complete
+  source/owner/side-effect/evidence ledger is `display_conformance.md`.
+- **Raw screen-address rule**: DPYSTRT and DPYADR store raw SRFADR. Every
+  completed automatic screen MTR subtracts DUDATE from that raw field,
+  independent of ORG; an even-field interlace reload similarly subtracts
+  DUDATE/2. ORG=0 complements raw SRFADR at the local-bus pins, producing an
+  effective increasing screen address. ORG=1 drives raw SRFADR directly,
+  producing an effective decrement. This resolves the direction inherited
+  from Tasks 0141/0156.
+- **DPYTAP units**: DPYTAP is a physical column/tap contribution to logical
+  screen-address bits 4–23, not a standalone bit address. The local-bus
+  network ORs its defined low column fields with the DPYADR-derived column
+  bits exactly as Figure 9-14 shows.
+- **Video pin rule**: functional sync and blank intervals remain active high
+  inside the reusable hierarchy. The pad adapter inverts them onto the
+  original active-low HSYNC, VSYNC, and BLANK package pins; input-selected
+  sync pins remain tri-stated. External VRAM serial shifting and RAMDAC pixel
+  generation remain beyond the TMS34010 pin boundary.
+- **Defined/undefined boundaries**: all nine defined zero/one-hot DUDATE
+  values use the raw decrement above. Multi-bit DUDATE remains a deterministic
+  unsigned raw decrement, and undefined `{HSD,DXV}=11` remains internal/output
+  timing. These choices do not replace defined production behavior.
+- **Regression evidence**: `tb_display_matrix` crosses NIL, field, ORG, SRE,
+  LCSTRT, and all defined DUDATE values in 577 scheduler cases.
+  `tb_video_external_sync` exhausts DXV/HSD/NIL/ENV direction and blanking;
+  `tb_local_bus` checks both ORG pin representations and DPYTAP placement;
+  `tb_fpga_io` checks active-low sync and BLANK polarity. The CDC, integrated
+  I/O, system, and pin suites cover live writes, held payloads, and returned
+  completion.
+
 ## A0051 — RESOLVED: COLOR/PMASK correspondence and defined PPOP domain
 - **Date**: 2026-07-29 (Task 0169).
 - **Status**: **RESOLVED** against the production CONTROL and COLOR0/COLOR1
@@ -835,11 +868,13 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   that same half-line point. Earlier/later HSBLNK programming retains the
   ordinary count-compare behavior.
 - **Display start address**: the vertical blank in the odd field precedes the
-  next even field and reloads SRFADR from DPYSTRT plus DUDATE/2 for ORG=0 or
-  minus DUDATE/2 for ORG=1. The blank in the even field precedes the odd
+  next even field and reloads raw SRFADR from DPYSTRT minus DUDATE/2 for both
+  ORG values. The blank in the even field precedes the odd
   field and reloads DPYSTRT unchanged. Acknowledged per-line updates remain
-  full DUDATE. Conforming interlace software programs DUDATE to twice the
-  noninterlaced line step, so the right shift is exact.
+  a full raw DUDATE subtraction. ORG=0 complements this stored representation
+  at the pins, so its effective display address still advances. Conforming
+  interlace software programs DUDATE to twice the noninterlaced line step, so
+  the right shift is exact.
 - **Deterministic mode/write choices**: selecting NIL=1 clears the stored
   odd-field phase on the next VCLK; changing back to NIL=0 therefore begins
   from the even phase. Delivered HCOUNT/VCOUNT loads retain A0034 priority
@@ -855,9 +890,10 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   programs timing, positions both counters, and enables SRE last.
 - **Regression evidence**: `tb_video_interlace` checks every counter/output
   cycle across repeated even/odd fields and the deterministic NIL recovery.
-  `tb_display_addr` covers unchanged, incremented, and decremented
-  half-DUDATE reloads. The existing noninterlaced, CDC, I/O, system, and pin
-  benches retain their prior behavior with explicit DXV/NIL programming.
+  `tb_display_addr` and `tb_display_matrix` cover unchanged and raw-decrement
+  half-DUDATE reloads for both ORG values. The existing noninterlaced, CDC,
+  I/O, system, and pin benches retain their prior behavior with explicit
+  DXV/NIL programming.
 
 ## A0045 — Dedicated VCLK ownership and coherent CDC contract
 - **Date**: 2026-07-28 (Task 0155).
@@ -909,8 +945,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Regression evidence**: `tb_video_cdc` uses a non-integer clock ratio and
   covers atomic/coalesced configuration, coalesced distinct live commands,
   coherent status, one-cycle DIP delivery, stalled bundled screen payload,
-  and returned completion. `tb_io_video`, `tb_io_display`, and
-  `tb_pin_system` exercise the integrated hierarchy.
+  and returned completion. `tb_display_matrix` independently crosses the full
+  scheduler field space; `tb_io_video`, `tb_io_display`, and `tb_pin_system`
+  exercise the integrated hierarchy.
 
 ## A0044 — Reserved I/O fields and register locations
 - **Date**: 2026-07-28 (Task 0154).
@@ -1252,7 +1289,9 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   beginning of vertical blanking; LNCNT reloads before the first active line
   and after each completed screen-refresh cycle. SRE requests the first
   active-line transfer and subsequent transfers every LCSTRT+1 lines. A
-  completed cycle advances/decrements SRFADR by DUDATE according to ORG.
+  completed cycle decrements raw SRFADR by DUDATE for both ORG values; ORG=0
+  complements that raw value at the local-bus pins to produce an effective
+  increment, while ORG=1 drives it directly.
   Screen requests outrank lower-priority memory clients and remain pending
   when an external hold prevents immediate service.
 - **Handshake boundary**: `screen_refresh_req_o` is a held level, not a pulse.
@@ -1273,21 +1312,26 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
 - **Undefined DUDATE choice**: the guide requires zero or one set bit and
   says multiple set bits produce an undefined increment. The RTL
   deterministically treats the complete eight-bit field as an unsigned
-  add/subtract value. Conforming one-hot/zero programs exactly match the
+  raw decrement. Conforming one-hot/zero programs exactly match the
   specified 0/1/2/4/.../128 steps.
 - **Control during a stall**: request address/tap payloads are captured, while
-  the completion update uses the live DUDATE/ORG value. Software should not
+  the completion update uses the live DUDATE value. The captured ORG remains
+  associated with the request's physical address representation. Software
+  should not
   rewrite display control around an outstanding transfer; the physical
-  controller task may tighten this boundary if primary bus timing requires.
+  transaction already retains a coherent payload.
 - **Regression evidence**: `tb_display_addr` covers the direct state machine
-  and all deterministic choices above. `tb_io_display` locks register
-  integration, generated timing events, held payload, and completion updates.
+  and all deterministic choices above. `tb_display_matrix` crosses all nine
+  defined DUDATE values with every NIL/field/ORG/SRE/LCSTRT combination.
+  `tb_io_display` locks register integration, generated timing events, held
+  payload, and completion updates.
 
 ## A0034 — Video timing and synchronization
 - **Date**: 2026-07-28 (Task 0139); **resolved/refined 2026-07-28
-  (Task 0155), refined 2026-07-29 (Tasks 0156–0157)**.
+  (Task 0155), refined 2026-07-29 (Tasks 0156–0157 and 0170)**.
 - **Status**: **RESOLVED** for the dedicated clock/CDC boundary and
-  internal/external noninterlaced/interlaced timing modes.
+  internal/external noninterlaced/interlaced timing modes and package video
+  pin polarity.
 - **Source**: 1988 TMS34010 User's Guide pages 6-18 through 6-25, 6-31,
   6-47, and §9.7 define the register behavior and video events. Project
   conventions A0004/A0006 allowed the Task 0139 functional-first checkpoint;
@@ -1320,10 +1364,11 @@ by definitive behavior, mark it `RESOLVED` with the resolving commit hash.
   loads/wraps, timing windows, ENV, and the corrected interrupt point.
   `tb_video_interlace` covers complete even/odd field sequences.
   `tb_video_external_sync` covers external recognition, fallback, direction,
-  and field selection.
+  field selection, and the exhaustive DXV/HSD/NIL/ENV mode table.
   `tb_video_cdc` covers the dedicated domain and every crossing.
   `tb_io_video` covers the live register snapshots, combined blank, timing
   outputs, and integrated hardware-set/write-zero-clear DIP behavior.
+  `tb_fpga_io` covers active-low HSYNC/VSYNC/BLANK pad mapping.
 
 ## A0033 — REFCNT reserved mode and deterministic write collision
 - **Date**: 2026-07-28 (Task 0138).

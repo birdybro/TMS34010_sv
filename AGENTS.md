@@ -15,11 +15,18 @@ translate a software implementation into one large procedural HDL block.
 The original processor and Cyclone V implementation baseline is complete
 through Task 0160. Task 0161's production-revision GPU re-audit found
 remaining programmer-visible graphics work; do not claim GPU completion until
-the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0169
+the ordered Task 0162–0174 closure plan in `tasks.md` passes. Tasks 0162–0170
 close the production graphics-instruction semantic, direction, window,
-checkpoint/resume, LINE-interrupt, and complete PPOP/PSIZE/register matrix
-gates. Treat `docs/graphics_conformance.md` as the authoritative graphics
-coverage ledger: never add a defined graphics cell without a primary citation,
+checkpoint/resume, LINE-interrupt, complete PPOP/PSIZE/register matrix, and
+display/video conformance gates. Treat `docs/graphics_conformance.md` and
+`docs/display_conformance.md` as the authoritative production ledgers. For
+display addressing, DPYADR is the raw stored representation and always
+decrements by DUDATE after a completed screen transfer; ORG=0 complements it
+only at the local-bus pins, while ORG=1 drives it directly. DPYTAP contributes
+physical screen column/tap bits rather than a standalone bit address. The
+package BLANK pin is active low even though the exact-name FPGA top port is
+`BLANK`. For the graphics coverage ledger, never add a defined graphics cell
+without a primary citation,
 RTL owner, side effects, and named self-checking test, and never assign
 behavior to a reserved/undefined cell. PMASK maps to physical positions in
 each 16-bit memory word: protected memory-source and destination bits read as
@@ -56,7 +63,9 @@ display-interrupt point to HSBLNK, and exported the timing intervals. Task
 0140 corrected the sync/blank endpoints for the specified one-VCLK delay
 after each equality compare. Task 0141 made DPYADR live and added held
 screen-refresh request/acknowledge scheduling with frame reload, line cadence,
-and DUDATE/ORG completion updates. Task 0142 completed the direct synchronous
+and completion updates. Task 0170 later corrected that historical checkpoint:
+raw SRFADR decrements by DUDATE for both ORG values, and ORG selects only the
+pin representation. Task 0142 completed the direct synchronous
 HSTCTL boundary, per-side message/interrupt ownership, active-low HINT,
 HCS-selected reset halt, and instruction-boundary HLT/NMI behavior. Task 0143
 landed the synchronous HSTADR/HSTDATA register and indirect-memory engine,
@@ -109,7 +118,7 @@ transactions to the core domain.
 Task 0156 consumes DPYCTL.NIL for internally generated interlace: even-to-odd
 starts at HTOTAL/2 without resetting HCOUNT, the odd VESYNC half-line compare
 advances VCOUNT, odd-to-even returns at the full-line boundary, and the
-display owner applies signed DUDATE/2 before each even field.
+display owner subtracts raw DUDATE/2 before each even field.
 Task 0157 consumes DPYCTL.DXV/HSD for external synchronization. Individually
 synchronized active-low HSYNC/VSYNC inputs receive the specified recognition
 delay; external edges or total-register fallbacks control the counters;
@@ -179,6 +188,14 @@ so RETI simply reruns normal LINE setup from that image. `tb_line_interrupt`
 interrupts every checkpoint across all octants, W=3, PPOP/PMASK, SRT, and
 stalls with exact request/framebuffer/context checks. W=1/W=2 aborting pixels
 still take final writeback and create no continuation checkpoint.
+Task 0169 closes the production graphics matrix, including every defined
+PPOP/PSIZE/backend cell and physical-word COLOR/PMASK behavior. Task 0170
+reconciles every display register, timing mode, field phase, screen-refresh
+state, CDC boundary, and processor video pin against Chapters 6/9 and
+SPVS002C. Its scheduler matrix crosses NIL, field, ORG, SRE, LCSTRT, and
+every defined DUDATE; external-mode coverage crosses DXV/HSD/ENV. The FPGA
+pad owner drives package BLANK active low. Preserve the exact source/owner/
+side-effect/test mapping in `docs/display_conformance.md`.
 The optional instruction
 cache, exact original-silicon instruction timing, first-silicon mode, external
 VRAM serial output, TMS34020/TMS34082, and board analog validation remain

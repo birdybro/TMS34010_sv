@@ -3,7 +3,7 @@
 //
 // Direct pad-adapter regression. It proves byte-lane host direction, complete
 // local-bus direction, HOLD-style control release, and active-low
-// bidirectional video-sync conversion without involving the functional core.
+// video-pin conversion without involving the functional core.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -33,6 +33,8 @@ module tb_fpga_io;
   logic vsync = 1'b0;
   logic hsync_oe = 1'b0;
   logic vsync_oe = 1'b0;
+  logic blank = 1'b0;
+  logic blank_n;
   logic hsync_external = 1'b1;
   logic vsync_external = 1'b1;
   logic hsync_external_oe = 1'b0;
@@ -84,6 +86,8 @@ module tb_fpga_io;
     .vsync_i       (vsync),
     .hsync_oe_i    (hsync_oe),
     .vsync_oe_i    (vsync_oe),
+    .blank_i       (blank),
+    .blank_n_o     (blank_n),
     .ras_n_io      (ras_n),
     .lal_n_io      (lal_n),
     .cas_n_io      (cas_n),
@@ -181,6 +185,14 @@ module tb_fpga_io;
     #1;
     check(hsync_n === 1'bz && vsync_n === 1'bz,
           "disabled sync outputs must release both pins");
+    blank = 1'b1;
+    #1;
+    check(blank_n === 1'b0,
+          "functional blank interval must assert active-low BLANK pin");
+    blank = 1'b0;
+    #1;
+    check(blank_n === 1'b1,
+          "visible interval must release active-low BLANK pin");
 
     ras_value = 1'b0;
     lal_value = 1'b1;

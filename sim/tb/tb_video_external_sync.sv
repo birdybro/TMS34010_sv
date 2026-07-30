@@ -26,6 +26,7 @@ module tb_video_external_sync;
 
   logic [15:0] htotal;
   logic [15:0] vtotal;
+  logic        display_enable;
   logic        noninterlaced;
   logic        disable_external_video;
   logic        hsync_direction;
@@ -60,7 +61,7 @@ module tb_video_external_sync;
     .vsblnk         (16'd8),
     .vtotal         (vtotal),
     .dpyint         (16'd4),
-    .display_enable (1'b1),
+    .display_enable (display_enable),
     .noninterlaced  (noninterlaced),
     .disable_external_video(disable_external_video),
     .hsync_direction(hsync_direction),
@@ -142,6 +143,7 @@ module tb_video_external_sync;
     htotal                 = 16'h7FFF;
     vtotal                 = 16'h7FFF;
     noninterlaced          = 1'b1;
+    display_enable         = 1'b1;
     disable_external_video = 1'b0;
     hsync_direction        = 1'b0;
     hsync_n_i              = 1'b1;
@@ -251,8 +253,37 @@ module tb_video_external_sync;
     check(hsync_oe, "DXV=1 did not drive HSYNC");
     check(vsync_oe, "DXV=1 did not drive VSYNC");
 
+    // Exhaust the complete DPYCTL video-mode cross product at one visible
+    // coordinate. DXV owns VSYNC direction, DXV/HSD jointly own HSYNC
+    // direction, and ENV alone can force combined blank. The architecturally
+    // undefined DXV=1,HSD=1 combination is deterministic internal/output
+    // timing in this implementation.
+    htotal = 16'h7FFF;
+    vtotal = 16'h7FFF;
+    for (int unsigned dxv = 0; dxv < 2; dxv++) begin
+      for (int unsigned hsd = 0; hsd < 2; hsd++) begin
+        for (int unsigned nil = 0; nil < 2; nil++) begin
+          for (int unsigned env = 0; env < 2; env++) begin
+            disable_external_video = dxv[0];
+            hsync_direction = hsd[0];
+            noninterlaced = nil[0];
+            display_enable = env[0];
+            load_counts(16'd4, 16'd4);
+            check(hsync_oe == (dxv[0] || hsd[0]),
+                  "DXV/HSD direction matrix HSYNC");
+            check(vsync_oe == dxv[0],
+                  "DXV direction matrix VSYNC");
+            check(blank == !env[0],
+                  "ENV/mode matrix visible blank");
+            if (nil[0])
+              check(!odd_field, "NIL mode matrix retained odd field");
+          end
+        end
+      end
+    end
+
     if (failures == 0) begin
-      $display("TEST_RESULT: PASS (external sync: delay, direction, fallbacks, fields)");
+      $display("TEST_RESULT: PASS (external sync: delay, direction/mode matrix, fallbacks, fields)");
     end else begin
       $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     end

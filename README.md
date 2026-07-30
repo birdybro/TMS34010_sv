@@ -17,7 +17,13 @@ graphics-instruction/register matrix and adds a 1,186-case generated oracle:
 destination-aligned COLOR0/COLOR1 dithering, physical-word-aligned PMASK,
 PMASK-before-transparency ordering, and processed PIXT memory-to-memory
 forms. The authoritative matrix is
-`docs/graphics_conformance.md`. Task 0124
+`docs/graphics_conformance.md`. Task 0170 closes the complete production
+display/video matrix and adds a 577-case generated scheduler oracle. It
+corrects DPYADR to decrement its raw SRFADR for both ORG values, retains the
+ORG=0 complement at the local-bus pins, defines DPYTAP as physical
+column/tap bits, exhaustively crosses sync direction/ENV/interlace/cadence,
+and fixes the package BLANK pin to active-low polarity. The authoritative
+display ledger is `docs/display_conformance.md`. Task 0124
 reconciled the official instruction summary and all remaining system
 integration work into `docs/completion_audit.md`; Task 0125 closed the
 logical-status and ANDI/ANDNI semantic findings, and Tasks 0126–0127 landed
@@ -225,22 +231,23 @@ The repository currently contains:
 - integrated dedicated-VCLK internal/external noninterlaced/interlaced video
   timing with live HCOUNT/VCOUNT, synchronized active-low sync inputs,
   DPYCTL.DXV/HSD direction control and output enables, DPYCTL.ENV blanking,
-  field-aware DIP, live DPYADR, signed half-DUDATE field starts, and held
+  field-aware DIP, live raw-decrement DPYADR, half-DUDATE field starts, and held
   screen-refresh scheduling; coherent MCP configuration/command/status,
   event, and completed-screen-transaction crossings; plus integrated
   REFCNT/refresh-request generation;
 - DPYCTL.SRT classification for every graphics engine, with explicit
   program-controlled VRAM MTR/RTM pin cycles and unaffected nonpixel traffic;
 - a Cyclone V top-level adapter with vendor-isolated PLLs, three reset
-  conditioners, active-low video-clock/sync phase mapping, and IOE-ready
+  conditioners, active-low video-clock/sync/blank phase mapping, and IOE-ready
   bidirectional host/local/video pads;
 - a Quartus Prime Lite 17 project with a complete SDC, deterministic
   implementation/report validator, 63 fitted 3.3-V LVTTL pins, and archived
   reproducible sign-off evidence;
-- 152 self-checking SystemVerilog testbenches, including non-integer-clock
+- 155 self-checking SystemVerilog testbenches, including non-integer-clock
   video CDC, cycle-by-cycle internal interlace and external-sync coverage,
-  end-to-end SRT graphics-cycle coverage, direct FPGA pad/reset checks, and
-  an exhaustive 65,536-opcode static status-policy sweep.
+  the generated 577-case display scheduler matrix, end-to-end SRT
+  graphics-cycle coverage, direct FPGA pad/reset checks, and an exhaustive
+  65,536-opcode static status-policy sweep.
 
 The Task 0160 processor/FPGA baseline and its reproducible Cyclone V
 implementation flow remain complete, but production-revision functional GPU

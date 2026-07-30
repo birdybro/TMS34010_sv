@@ -4,7 +4,8 @@
 // Top-level-only pad adapter for the split tms34010_pin_system boundary.
 // Cyclone V implements tri-state only in the IOE, so every Z assignment is
 // isolated here. Functional video sync intervals are active high internally
-// and are inverted onto the original active-low bidirectional pins.
+// and are inverted onto the original active-low bidirectional pins. Functional
+// blank is likewise inverted onto the original active-low BLANK output.
 //
 // Spec sources:
 //   1988 TI TMS34010 User's Guide §2.4 and §9.9;
@@ -32,6 +33,8 @@ module tms34010_fpga_io (
   input  logic        vsync_i,
   input  logic        hsync_oe_i,
   input  logic        vsync_oe_i,
+  input  logic        blank_i,
+  output logic        blank_n_o,
 
   inout  wire         ras_n_io,
   inout  wire         lal_n_io,
@@ -67,6 +70,7 @@ module tms34010_fpga_io (
   assign vsync_n_i_o  = vsync_n_io;
   assign hsync_n_io   = hsync_oe_i ? !hsync_i : 1'bz;
   assign vsync_n_io   = vsync_oe_i ? !vsync_i : 1'bz;
+  assign blank_n_o    = !blank_i;
 
   assign ras_n_io     = ras_oe_i    ? ras_n_i   : 1'bz;
   assign lal_n_io     = lal_oe_i    ? lal_n_i   : 1'bz;

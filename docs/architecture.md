@@ -1,7 +1,8 @@
 # Architecture
 
 > Status: **implemented, ISA/status-audited, and Cyclone V-signed-off through
-> Task 0160, with the production graphics matrix closed through Task 0169**.
+> Task 0160, with production graphics and display matrices closed through
+> Task 0170**.
 > The core executes the instruction and graphics
 > operations tracked in `instruction_coverage.md`; reset-vector fetch, I/O
 > registers, interrupt entry, and the abstract RUN/EMU handshake are
@@ -154,15 +155,15 @@ and observes the resulting processor/host-indirect physical I/O cycles.
 | `rtl/cdc/tms34010_cdc_mailbox.sv`       | 9     | **landed (Task 0155)** | one-entry packed MCP word crossing with source-ready/accept and destination-valid pulse |
 | `rtl/cdc/tms34010_screen_cdc.sv`        | 9     | **landed (Task 0155)** | VCLK-to-core held screen transaction; bundled payload stable until returned physical completion |
 | `rtl/io/tms34010_io_regs.sv`            | 6     | **integrated through Task 0158** | memory-mapped I/O/host/interrupt/refresh storage plus explicit VCLK/external-sync boundaries, the DPYCTL.SRT tap, and coherent live-register read views |
-| `rtl/video/tms34010_video_subsystem.sv` | 9     | **integrated through Task 0157** | VCLK-domain internal/external noninterlaced/interlaced timing and display composition with atomic config, coalesced live commands, coherent status, DIP event, and screen transaction CDC |
-| `rtl/video/tms34010_video.sv`           | 9     | **integrated through Task 0157** | internal/external timing: writable counters, synchronized active-low sync inputs, exact recognition/fallback/interval endpoints, field sequencing, ENV gating, DPYINT, and split output enables |
-| `rtl/video/tms34010_display_addr.sv`    | 9     | **integrated through Task 0156** | VCLK-owned live DPYADR, frame/line reloads, signed interlaced DUDATE/2 start, LCSTRT+1 scheduling, and acknowledged SRFADR/DPYTAP/ORG transfer |
+| `rtl/video/tms34010_video_subsystem.sv` | 9     | **reconciled through Task 0170** | VCLK-domain internal/external noninterlaced/interlaced timing and display composition with atomic config, coalesced live commands, coherent status, DIP event, and screen transaction CDC |
+| `rtl/video/tms34010_video.sv`           | 9     | **reconciled through Task 0170** | internal/external timing: writable counters, synchronized active-low sync inputs, exact recognition/fallback/interval endpoints, field sequencing, ENV gating, DPYINT, and split output enables |
+| `rtl/video/tms34010_display_addr.sv`    | 9     | **reconciled through Task 0170** | VCLK-owned live raw DPYADR, frame/line reloads, interlaced raw DUDATE/2 subtraction, LCSTRT+1 scheduling, and acknowledged SRFADR/DPYTAP/ORG transfer |
 | `rtl/video/tms34010_refresh.sv`         | 9     | **integrated (Task 0138)** | exact writable REFCNT bits 2-15 continuous down-counter; CONTROL.RR subtracts 2/1 for 32/64-clock requests, borrow decrements ROWADR, and request/row feed the core refresh-client boundary |
 | `rtl/fpga/tms34010_cyclone_v_top.sv`    | 10    | **signed off (Task 0160)** | DE10-Nano clock/reset/pad composition with independent board VCLK and physical video-clock phase mapping |
 | `rtl/fpga/tms34010_cyclone_v_pll.sv`    | 10    | **signed off (Task 0160)** | isolated Intel `altera_pll` synthesis path for 50 MHz core and 200 MHz bus timing clocks; explicit portable elaboration bypass |
 | `rtl/fpga/tms34010_cyclone_v_video_pll.sv` | 10 | **signed off (Task 0160)** | independent phase-zero 50 MHz internal VCLK and 180-degree VIDEO_VCLK output, with no fabric clock inversion |
 | `rtl/fpga/tms34010_reset_sync.sv`       | 10    | **signed off (Task 0160)** | two-stage active-high per-domain reset conditioners recognized in the implementation CDC report |
-| `rtl/fpga/tms34010_fpga_io.sv`          | 10    | **signed off (Task 0160)** | sole IOE-boundary tri-state owner for HD/LAD/local controls and active-low bidirectional video sync |
+| `rtl/fpga/tms34010_fpga_io.sv`          | 10    | **reconciled through Task 0170** | sole IOE-boundary tri-state owner for HD/LAD/local controls, active-low bidirectional video sync, and active-low BLANK |
 | `rtl/fpga/bram_1r1w.sv`                 | 1     | not started | Cyclone V BRAM wrapper, 1R1W, sync read |
 | `rtl/fpga/bram_rom.sv`                  | 1     | not started | sync-read ROM wrapper |
 
@@ -222,8 +223,10 @@ the one-VCLK delay in §§9.5/9.6.
 Task 0141 made DPYADR a live register and landed the next display-memory
 client boundary. Frame/line events reload its fields from DPYSTRT, SRE
 schedules the first and LCSTRT-spaced active-line requests, and a held
-SRFADR/DPYTAP payload advances by DUDATE/ORG only after the future controller
-acknowledges completion.
+SRFADR/DPYTAP payload updates only after the future controller acknowledges
+completion. Task 0170 later corrected the raw representation: SRFADR always
+decrements by DUDATE, while ORG=0 complements it at the local-bus pins to
+produce an effective increment.
 
 Task 0142 completed the synchronous direct-host HSTCTL boundary. Host and
 processor writes now obey their complementary low-byte ownership, HINT
@@ -357,8 +360,9 @@ so VSYNC ends at the shifted phase and `DPYINT=VESYNC` does not duplicate the
 even-field event when HSBLNK is the half-line point. The odd field returns to
 the even field at the ordinary full-line VTOTAL boundary. That field phase
 feeds the display-address owner directly in VCLK: the DPYSTRT reload preceding
-an even field applies signed DUDATE/2, while the reload preceding an odd field
-is unchanged and completed scan-line transfers still use full DUDATE.
+an even field subtracts raw DUDATE/2, while the reload preceding an odd field
+is unchanged and completed scan-line transfers still subtract full raw
+DUDATE.
 
 Task 0157 completes external synchronization. DPYCTL.DXV selects the internal
 generator or active-low external sync recognition, and HSD retains internally
@@ -749,12 +753,14 @@ controls are visible at the core and pin-system boundaries.
 `tms34010_display_addr` consumes the start-HBLANK event and owns live DPYADR.
 SRFADR reloads at the beginning of vertical blanking, LNCNT reloads before
 the first active line, and SRE schedules a held screen-refresh request every
-LCSTRT+1 active lines. In interlace, the reload preceding the even field adds
-or subtracts DUDATE/2; the one preceding the odd field uses DPYSTRT unchanged.
+LCSTRT+1 active lines. In interlace, the reload preceding the even field
+subtracts raw DUDATE/2; the one preceding the odd field uses DPYSTRT
+unchanged.
 The request captures SRFADR/DPYTAP (with DPYTAP reserved bits forced zero) and
 remains stable until the memory controller acknowledges a completed VRAM
-memory-to-register cycle. Only that acknowledge applies full DUDATE/ORG and
-reloads LNCNT.
+memory-to-register cycle. Only that acknowledge subtracts the live full
+DUDATE from raw SRFADR and reloads LNCNT. ORG is held with the request solely
+to select direct or complemented screen-address pins.
 
 `tms34010_video_subsystem` clocks both blocks from independent `vclk_i`.
 Configuration arrives atomically; counter/address writes are coalesced
@@ -768,6 +774,15 @@ active-edge representation, common synchronous-reset contract, and behavior
 when VCLK is stopped; A0047 records the external-sync timing and direction
 contract. A0048 records the separate core-clock SRT transfer and
 attached-VRAM boundary.
+
+Task 0170 closes the complete production display ledger in
+`display_conformance.md`. The generated scheduler model crosses NIL, stored
+field, ORG, SRE, every LCSTRT, and all nine defined DUDATE values; the
+external-sync suite exhausts DXV/HSD/NIL/ENV direction and blanking. Local-bus
+evidence proves direct and complemented SRFADR plus DPYTAP column placement.
+The FPGA pad adapter maps functional active-high blank to the original
+active-low package BLANK pin. Attached VRAM serial shifting and RAMDAC output
+remain outside the processor boundary.
 
 Timing generation, synchronization, scheduled screen MTR, and
 program-controlled graphics MTR/RTM are functionally and physically

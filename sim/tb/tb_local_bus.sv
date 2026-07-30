@@ -381,6 +381,24 @@ module tb_local_bus;
           "screen completion");
     finish_command();
 
+    // ORG=1 exposes the stored SRFADR directly. Together with the ORG=0
+    // case above, this distinguishes pin representation from the raw
+    // DPYADR counter update performed by the display scheduler.
+    screen_address = 14'h12A5;
+    screen_row = expected_screen_row(screen_address);
+    screen_column = expected_screen_column(screen_address, 16'h2D63);
+    begin_command(
+        LOCAL_CYCLE_SCREEN_REFRESH, 32'h0000_0000, 16'h0000, 1'b0,
+        14'h12A5, 16'h2D63, 1'b1, 8'h00);
+    wait_phase(LOCAL_PHASE_Q2A);
+    check(lad_o == screen_row, "ORG=1 direct screen row");
+    wait_phase(LOCAL_PHASE_Q4A);
+    check(lad_o == screen_column, "ORG=1 direct screen column/tap");
+    wait_phase(LOCAL_PHASE_Q4B);
+    wait_phase(LOCAL_PHASE_Q4B);
+    check(cycle_ack, "ORG=1 screen completion");
+    finish_command();
+
     // Program-controlled memory-to-register transfers retain the ordinary
     // pixel address, force IAQ inactive and TR status active at column time,
     // and use the same two-period VRAM transfer envelope as screen refresh.

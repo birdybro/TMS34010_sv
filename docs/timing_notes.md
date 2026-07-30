@@ -1,7 +1,8 @@
 # Timing notes
 
-> Status: **functional latency and measured Cyclone V implementation evidence
-> through Task 0160**. Quartus Prime Lite 17.0.2 closes the complete design at
+> Status: **functional latency reconciled through Task 0170 and measured
+> Cyclone V implementation evidence through Task 0160**. Quartus Prime Lite
+> 17.0.2 closes the complete design at
 > 50/200/50 MHz with +0.747 ns worst setup, +0.128 ns worst hold, zero TNS,
 > and no ignored constraints.
 
@@ -21,7 +22,7 @@
 | External HSYNC/VSYNC → VCLK         | Task 0157        | constrained inputs; both level chains recognized | retain delayed edge recognition |
 | Graphics SRT request classification | Task 0158        | closed through registered fabric ingress | retain captured SRT sideband |
 | Board reset / PLL locks             | Task 0159        | assertion cut, three release chains recognized | preserve synchronous destination-domain release |
-| HD/LAD/control/sync IOEs            | Task 0159        | 63 fitted pins with bounded min/max paths | re-run full implementation after any pad change |
+| HD/LAD/control/sync/blank IOEs      | Tasks 0159/0170 | 63 fitted pins with bounded min/max paths; BLANK functional polarity corrected | re-run full implementation at Task 0174 |
 | MPYS/MPYU 32×32 multiply            | Task 0071        | closed using 6 DSP blocks total | pipeline only after new measured evidence and full regression |
 
 ## Multi-cycle operations
@@ -140,14 +141,16 @@
   Task 0155 captures the VCLK payload behind a request toggle, holds a
   core-clock request through the arbiter/controller wait, and returns one
   completion toggle. That VCLK acknowledge clears the request, reloads LNCNT,
-  and updates SRFADR by the live DUDATE/ORG value. A delivered DPYADR load wins
+  and subtracts the live DUDATE from raw SRFADR. A delivered DPYADR load wins
   a same-edge automatic update. Task 0145's arbiter contract does not acknowledge
   selection alone; acknowledge denotes completed memory-to-register service.
   Task 0148 carries that held request through the MCP bridge and returns the
   acknowledge only after the 8× screen-transfer cycle completes.
   Task 0156 keeps the field phase in VCLK: a DPYSTRT reload preceding the odd
-  field is unchanged, while one preceding the even field applies signed
-  DUDATE/2. Per-line completion still applies full DUDATE.
+  field is unchanged, while one preceding the even field subtracts raw
+  DUDATE/2. Per-line completion still subtracts full raw DUDATE. ORG=0
+  complements the stored value only at the local-bus pins; ORG=1 drives it
+  directly.
 - **Program-controlled VRAM transfers** — while DPYCTL.SRT is set, the core
   asserts `mem_srt` only for pixel requests in PIXT, DRAV, LINE, FILL, and
   PIXBLT states. The registered fabric ingress captures that tag with the
@@ -426,7 +429,8 @@ strobe widths.
 
 ## Dedicated video clock boundary
 
-Tasks 0155–0157 close the functional video-timing VCLK boundary:
+Tasks 0155–0157 establish the functional video-timing VCLK boundary, and
+Task 0170 closes its production conformance matrix:
 
 - HCOUNT/VCOUNT, even/odd field phase, timing compares/outputs, DPYADR, and
   the screen scheduler are wholly in `vclk_i`;
@@ -441,7 +445,11 @@ Tasks 0155–0157 close the functional video-timing VCLK boundary:
   arbitrary core-memory waits;
 - raw active-low HSYNC/VSYNC levels pass through individual attributed 2FF
   synchronizers and edge history in VCLK; DXV/HSD direction resolves to
-  explicit output enables at the pin-system boundary.
+  explicit output enables at the pin-system boundary;
+- the generated display matrix crosses NIL/field/ORG/SRE/LCSTRT/all defined
+  DUDATE values, and the external-sync model crosses DXV/HSD/NIL/ENV;
+- functional active-high blank is inverted with sync at the FPGA pad owner,
+  driving the original package BLANK pin active low.
 
 The core and VCLK clocks are asynchronous. The SDC defines both clocks, uses
 asynchronous clock groups, preserves/reports every required toggle 2FF, cuts

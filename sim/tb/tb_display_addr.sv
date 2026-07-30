@@ -4,8 +4,9 @@
 // Direct regression for live DPYADR and the held screen-refresh request.
 // Covers noninterlaced frame reload, vertical-blank suppression,
 // first-active-line scheduling, LCSTRT+1 cadence, request/payload stability,
-// acknowledge-time DUDATE/ORG updates, SRE re-enable, processor load
-// precedence, interlaced DPYSTRT +/- DUDATE/2 reloads, and reset.
+// acknowledge-time raw-DUDATE updates and captured ORG, SRE re-enable,
+// processor load
+// precedence, interlaced raw DPYSTRT - DUDATE/2 reloads, and reset.
 // -----------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -195,26 +196,27 @@ module tb_display_addr;
     check_value("stalled DPYTAP stable", refresh_dpytap, 16'h2BCD);
     check_bit("stalled ORG stable", refresh_org, 1'b0);
 
-    // Completion, not request, advances SRFADR and reloads LNCNT.
+    // Completion, not request, updates raw SRFADR and reloads LNCNT.
     pulse_ack();
     check_bit("ack clears request", refresh_req, 1'b0);
-    check_value("ack increments SRFADR by DUDATE",
-                dpyadr, {14'h0127, 2'd1});
+    check_value("ack decrements raw SRFADR by DUDATE",
+                dpyadr, {14'h011F, 2'd1});
 
     // LCSTRT=1 means two displayed scan lines between refresh cycles.
     pulse_hblank(16'd3);
     check_bit("first intervening line no request", refresh_req, 1'b0);
-    check_value("LNCNT decremented", dpyadr, {14'h0127, 2'd0});
+    check_value("LNCNT decremented", dpyadr, {14'h011F, 2'd0});
     pulse_hblank(16'd4);
     check_bit("second line requests", refresh_req, 1'b1);
-    check_addr("second request address", refresh_srfaddr, 14'h0127);
+    check_addr("second request address", refresh_srfaddr, 14'h011F);
 
-    // ORG reverses the completion update direction.
+    // ORG changes only the physical output representation. The raw DPYADR
+    // field still decrements, while the pending request retains its ORG.
     dpyctl = SRE_ORG_DUDATE4;
     check_bit("pending request retains captured ORG", refresh_org, 1'b0);
     pulse_ack();
-    check_value("ORG decrement on completion",
-                dpyadr, {14'h0123, 2'd1});
+    check_value("ORG-independent raw decrement on completion",
+                dpyadr, {14'h011B, 2'd1});
 
     // Disabling SRE prevents new requests and holds LNCNT. Re-enabling forces
     // the next eligible HBLANK regardless of the processor-loaded count.
@@ -245,7 +247,7 @@ module tb_display_addr;
 
     // In interlaced timing the vertical blank in the even field precedes the
     // odd field and reloads DPYSTRT unchanged. The blank in the odd field
-    // precedes the next even field and applies signed DUDATE/2 so that field
+    // precedes the next even field and subtracts raw DUDATE/2 so that field
     // starts on the alternate display-memory line.
     dpystart = {14'h0100, 2'd1};
     dpyctl   = INTERLACED_DUDATE4;
@@ -258,13 +260,13 @@ module tb_display_addr;
     odd_field = 1'b1;
     load_dpyadr({14'h0300, 2'd2});
     pulse_hblank(vsblnk);
-    check_value("interlace reload preceding even field adds DUDATE/2",
-                dpyadr, {14'h0102, 2'd2});
+    check_value("interlace reload preceding even field subtracts raw DUDATE/2",
+                dpyadr, {14'h00FE, 2'd2});
 
     dpyctl = INTERLACED_ORG_DUDATE4;
     load_dpyadr({14'h0300, 2'd1});
     pulse_hblank(vsblnk);
-    check_value("interlace ORG reload subtracts DUDATE/2",
+    check_value("interlace ORG reload uses same raw subtraction",
                 dpyadr, {14'h00FE, 2'd1});
 
     // Synchronous reset clears live state and any held request.

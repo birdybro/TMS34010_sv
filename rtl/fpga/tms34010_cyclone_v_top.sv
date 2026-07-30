@@ -11,6 +11,8 @@
 // corresponds to the original falling-VCLK state-update edge documented by
 // A0045. The board adapter deliberately selects the TMS34010's output-clock
 // system mode; the reusable pin system still accepts any independent vclk_i.
+// It also converts the reusable active-high blank interval to the original
+// package's active-low BLANK pin.
 //
 // External level shifting and attached DRAM/VRAM/host circuitry are board
 // responsibilities. The QSF/SDC assigns these ports in Task 0160.
@@ -78,6 +80,7 @@ module tms34010_cyclone_v_top (
   logic        vsync_n_i;
   logic        hsync;
   logic        vsync;
+  logic        blank;
   logic        hsync_oe;
   logic        vsync_oe;
   logic        ras_n;
@@ -161,7 +164,7 @@ module tms34010_cyclone_v_top (
     .video_vsync_o      (vsync),
     .video_hblank_o     (),
     .video_vblank_o     (),
-    .video_blank_o      (BLANK),
+    .video_blank_o      (blank),
     .video_hsync_oe_o   (hsync_oe),
     .video_vsync_oe_o   (vsync_oe),
     .lrdy_i             (LRDY),
@@ -211,6 +214,8 @@ module tms34010_cyclone_v_top (
     .vsync_i       (vsync),
     .hsync_oe_i    (hsync_oe),
     .vsync_oe_i    (vsync_oe),
+    .blank_i       (blank),
+    .blank_n_o     (BLANK),
     .ras_n_io      (RAS_N),
     .lal_n_io      (LAL_N),
     .cas_n_io      (CAS_N),

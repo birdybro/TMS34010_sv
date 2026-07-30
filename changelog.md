@@ -7,6 +7,31 @@ Dates are ISO 8601. Each completed task should add at least one entry.
 
 ## 2026-07-29
 
+### Fixed (Task 0170 — production display/video conformance matrix)
+- Added `docs/display_conformance.md`, mapping every production display
+  register/field, timing mode, live-update point, screen transaction, and
+  processor video pin to its primary source, RTL owner, side effects, and
+  named regression evidence.
+- Added `tb_display_matrix`, a generated 577-case scheduler oracle crossing
+  NIL, stored field, ORG, SRE, every LCSTRT cadence, and all nine defined
+  DUDATE values, plus the deterministic undefined multi-bit case. It checks
+  579 held request/completion transactions, raw addresses, tap masks, live
+  completion control, and reset recovery.
+- Corrected DPYADR's stored-address representation. Raw SRFADR now subtracts
+  DUDATE after every completed screen MTR and subtracts DUDATE/2 for an even
+  interlaced-field reload regardless of ORG. ORG=0 still complements raw
+  SRFADR at the local-bus pins, producing the specified effective increment;
+  ORG=1 remains direct/decrementing.
+- Extended local-bus coverage for both ORG representations and exact DPYTAP
+  column/tap placement. Extended external-video coverage with the exhaustive
+  DXV/HSD/NIL/ENV direction, blanking, and field-recovery cross-product.
+- Corrected the FPGA package boundary so functional active-high blank is
+  inverted onto the original active-low BLANK pin, with direct pad-polarity
+  coverage. External VRAM serial shifting and RAMDAC pixel generation remain
+  explicit surrounding-system responsibilities.
+- Validation: affected display/video/pin suites PASS; `scripts/lint.sh`
+  clean; full regression 155/155 PASS.
+
 ### Fixed (Task 0169 — production graphics conformance matrix)
 - Added `docs/graphics_conformance.md`, mapping every production graphics
   instruction form and defined B-file/I/O graphics field to its primary
@@ -313,11 +338,12 @@ Dates are ISO 8601. Each completed task should add at least one entry.
   ends the shifted VSYNC interval and suppresses the matching odd-field
   display interrupt when HSBLNK is programmed to HTOTAL/2.
 - Propagated field phase wholly within VCLK to the display-address owner.
-  DPYSTRT reloads unchanged before the odd field and applies signed
-  DUDATE/2 before the even field; acknowledged line updates retain full
-  DUDATE/ORG behavior.
+  DPYSTRT reloads unchanged before the odd field and subtracts raw
+  DUDATE/2 before the even field; acknowledged line updates subtract full
+  raw DUDATE. Task 0170 later corrected the inherited ORG-dependent
+  implementation to this raw representation.
 - Added `tb_video_interlace` with a cycle-by-cycle field model and extended
-  `tb_display_addr` with both signed half-DUDATE directions. Updated existing
+  `tb_display_addr` with both ORG representations. Updated existing
   internal/noninterlaced integration programs to set DXV/NIL explicitly and
   to reposition equality-based counters during timing reprogramming.
 - Validation: focused video/display/CDC/I/O/fabric/pin benches PASS;

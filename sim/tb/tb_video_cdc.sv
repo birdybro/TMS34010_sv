@@ -385,8 +385,8 @@ module tb_video_cdc;
           "screen completion did not return to VCLK");
     @(posedge video_clk);
     @(negedge video_clk);
-    check(dut.dpyadr_video[15:2] == 14'h1201,
-          "completed screen request did not advance SRFADR");
+    check(dut.dpyadr_video[15:2] == 14'h11FF,
+          "completed screen request did not decrement raw SRFADR");
     check(dut.dpyadr_video[1:0] == 2'b11,
           "completed screen request did not reload LNCNT");
 

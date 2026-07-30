@@ -333,28 +333,28 @@ module tb_io_display;
 
     pulse_ack();
     wait (!screen_req);
-    wait_video_dpyadr({14'h0121, 2'd0});
-    wait_dpyadr({14'h0121, 2'd0});
+    wait_video_dpyadr({14'h011F, 2'd0});
+    wait_dpyadr({14'h011F, 2'd0});
     check_bit("integrated ack clears request", screen_req, 1'b0);
-    check_value("integrated ack advances live DPYADR",
-                dpyadr, {14'h0121, 2'd0});
+    check_value("integrated ack updates live raw DPYADR",
+                dpyadr, {14'h011F, 2'd0});
     addr = A_DPYADR;
     #1;
-    check_value("processor reads advanced DPYADR",
-                rdata, {14'h0121, 2'd0});
+    check_value("processor reads updated raw DPYADR",
+                rdata, {14'h011F, 2'd0});
 
     // LCSTRT=0 schedules the next active line immediately and captures the
     // newly programmed tap value.
     position_hblank(16'd2);
     wait (screen_req);
     check_bit("next-line request", screen_req, 1'b1);
-    check_addr("next-line SRFADR", screen_srfaddr, 14'h0121);
+    check_addr("next-line SRFADR", screen_srfaddr, 14'h011F);
     check_value("next-line DPYTAP", screen_dpytap, 16'h0AFE);
     pulse_ack();
     wait (!screen_req);
-    wait_video_dpyadr({14'h0122, 2'd0});
-    wait_dpyadr({14'h0122, 2'd0});
-    check_value("second completion update", dpyadr, {14'h0122, 2'd0});
+    wait_video_dpyadr({14'h011E, 2'd0});
+    wait_dpyadr({14'h011E, 2'd0});
+    check_value("second completion update", dpyadr, {14'h011E, 2'd0});
 
     if (failures == 0)
       $display("TEST_RESULT: PASS (I/O display: live DPYADR, held screen request, completion update)");

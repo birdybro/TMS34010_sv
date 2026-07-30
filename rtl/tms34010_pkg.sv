@@ -407,7 +407,7 @@ package tms34010_pkg;
   parameter int unsigned DPYCTL_HSD_BIT    = 0;  // external HSYNC direction
   parameter int unsigned DPYCTL_DUDATE_LO = 2;  // one-hot display update
   parameter int unsigned DPYCTL_DUDATE_HI = 9;
-  parameter int unsigned DPYCTL_ORG_BIT    = 10; // 0=increment, 1=decrement
+  parameter int unsigned DPYCTL_ORG_BIT    = 10; // 0=invert pins, 1=direct pins
   parameter int unsigned DPYCTL_SRT_BIT    = 11; // programmed pixel transfers
   parameter int unsigned DPYCTL_SRE_BIT    = 12; // automatic screen refresh
   parameter int unsigned DPYCTL_DXV_BIT    = 13; // 1=internal video timing

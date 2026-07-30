@@ -13,12 +13,16 @@
 // At the beginning of vertical blanking, SRFADR reloads from DPYSTRT.SRSTRT.
 // At the final horizontal blank before active display, LNCNT reloads from
 // DPYSTRT.LCSTRT and the first enabled screen refresh is requested. Subsequent
-// refreshes occur every LCSTRT+1 eligible scan lines. On completion, SRFADR
-// increments or decrements by DPYCTL.DUDATE and LNCNT reloads.
+// refreshes occur every LCSTRT+1 eligible scan lines. On completion, the raw
+// SRFADR counter always decrements by DPYCTL.DUDATE and LNCNT reloads. ORG
+// selects whether this raw value is inverted at the local-bus pins: with
+// ORG=0, decrementing the stored one's-complement value produces an effective
+// increasing screen address; with ORG=1, the direct address decreases.
 //
 // In interlaced mode, the vertical blanking interval in the odd field
-// precedes the next even field. That reload uses DPYSTRT plus or minus
-// DUDATE/2 so the even field starts on the alternate display-memory line.
+// precedes the next even field. That reload subtracts DUDATE/2 from the raw
+// DPYSTRT value so the effective address starts on the alternate
+// display-memory line.
 // The blanking interval in the even field precedes the odd field and reloads
 // DPYSTRT without the half-line displacement.
 //
@@ -80,12 +84,12 @@ module tms34010_display_addr
   assign dudate = dpyctl[DPYCTL_DUDATE_HI:DPYCTL_DUDATE_LO];
   assign dudate_step = {6'h00, dudate};
   assign half_dudate_step = {1'b0, dudate_step[13:1]};
-  assign next_srfaddr = dpyctl[DPYCTL_ORG_BIT]
-      ? dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO] - dudate_step
-      : dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO] + dudate_step;
-  assign interlaced_even_srfaddr = dpyctl[DPYCTL_ORG_BIT]
-      ? dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO] - half_dudate_step
-      : dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO] + half_dudate_step;
+  // User's Guide Figure 9-14 is explicit that the stored DPYADR field is
+  // decremented for both ORG values. ORG changes only the pin representation.
+  assign next_srfaddr =
+      dpyadr[DPY_SRFADR_HI:DPY_SRFADR_LO] - dudate_step;
+  assign interlaced_even_srfaddr =
+      dpystart[DPY_SRFADR_HI:DPY_SRFADR_LO] - half_dudate_step;
   assign frame_srfaddr =
       (!dpyctl[DPYCTL_NIL_BIT] && odd_field)
       ? interlaced_even_srfaddr
