@@ -5701,7 +5701,7 @@ Docs:
 - Update `README.md`, `AGENTS.md`, `tasks.md`, `changelog.md`,
   `docs/assumptions.md`, and `docs/completion_audit.md`.
 Commit:
-- pending
+- `5020b4ac979af5b7c9ed2416394833e8b0cf4d0d`
 
 ---
 
