@@ -101,7 +101,7 @@ module tb_array_checkpoint;
   logic [15:0]                 host_wdata;
   logic                        host_ack;
 
-  tms34010_core u_core (
+  tms34010_core #(.CLKS_PER_STATE(1), .CYCLE_ACCURATE(1'b0)) u_core (
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1),
     .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr),

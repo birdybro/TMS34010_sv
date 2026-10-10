@@ -35,7 +35,7 @@ module tb_illegal_opcode;
   instr_word_t                   probe_instr;
   decoded_instr_t                probe_decoded;
 
-  tms34010_core u_core (
+  tms34010_core #(.CLKS_PER_STATE(1), .CYCLE_ACCURATE(1'b0)) u_core (
     .clk             (clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
     .rst             (rst), .vclk_rst_i(rst),
     .mem_req         (mem_req),
@@ -194,7 +194,6 @@ module tb_illegal_opcode;
     push_st_acks       = 0;
     vector_acks        = 0;
     expected_resume_pc = '0;
-    saw_decode         = 1'b0;
     saw_illegal        = 1'b0;
     probe_instr        = '0;
 

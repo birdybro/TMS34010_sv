@@ -46,6 +46,8 @@ module tb_field_sequencer;
     .field_addr_i    (field_addr),
     .field_size_i    (field_size),
     .field_wdata_i   (field_wdata),
+    .field_keep_i    ('0),
+    .field_rmw_i     (1'b0),
     .field_rdata_o   (field_rdata),
     .field_ack_o     (field_ack),
     .word_req_o      (word_req),

@@ -49,7 +49,7 @@ module tb_btst;
   instr_word_t                   instr_w;
   logic                          illegal_w;
 
-  tms34010_core u_core (
+  tms34010_core #(.CLKS_PER_STATE(1), .CYCLE_ACCURATE(1'b0)) u_core (
     .clk             (clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
     .rst             (rst), .vclk_rst_i(rst),
     .mem_req         (mem_req),
@@ -81,7 +81,9 @@ module tb_btst;
   // Encoding helpers.
   //
   //   BTST K, Rd  : top6 = 6'b000111 ⇒ base = 0x1C00.
-  //                 Encoding = 0x1C00 | (K<<5) | (R<<4) | Rd
+  //                 Encoding = 0x1C00 | (~K<<5) | (R<<4) | Rd
+  //                 (page 12-46: the bit number is 1's complemented
+  //                 before it is inserted into the K field)
   //   BTST Rs, Rd : top7 = 7'b0100_101 ⇒ base = 0x4A00.
   //                 Encoding = 0x4A00 | (Rs<<5) | (R<<4) | Rd
   // ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ module tb_btst;
                                              input reg_file_t  rf,
                                              input reg_idx_t   rd);
     btst_k_enc = 16'h1C00
-               | (instr_word_t'(k)  << 5)
+               | ({11'd0, ~k} << 5)
                | (instr_word_t'(rf) << 4)
                | (instr_word_t'(rd));
   endfunction
@@ -161,18 +163,18 @@ module tb_btst;
     //   BTST 1, A2     = 0x1C00 | (1<<5) | 2 = 0x1C22
     //   BTST 31, A0    = 0x1C00 | (31<<5) | 0 = 0x1FE0
     //   BTST A3, A4    = 0x4A00 | (3<<5) | 4 = 0x4A64
-    if (btst_k_enc(5'd0, REG_FILE_A, 4'd0) !== 16'h1C00) begin
-      $display("TEST_RESULT: FAIL: btst_k_enc(0,A0) = %04h, expected 1C00",
+    if (btst_k_enc(5'd0, REG_FILE_A, 4'd0) !== 16'h1FE0) begin
+      $display("TEST_RESULT: FAIL: btst_k_enc(0,A0) = %04h, expected 1FE0",
                btst_k_enc(5'd0, REG_FILE_A, 4'd0));
       failures++;
     end
-    if (btst_k_enc(5'd1, REG_FILE_A, 4'd2) !== 16'h1C22) begin
-      $display("TEST_RESULT: FAIL: btst_k_enc(1,A2) = %04h, expected 1C22",
+    if (btst_k_enc(5'd1, REG_FILE_A, 4'd2) !== 16'h1FC2) begin
+      $display("TEST_RESULT: FAIL: btst_k_enc(1,A2) = %04h, expected 1FC2",
                btst_k_enc(5'd1, REG_FILE_A, 4'd2));
       failures++;
     end
-    if (btst_k_enc(5'd31, REG_FILE_A, 4'd0) !== 16'h1FE0) begin
-      $display("TEST_RESULT: FAIL: btst_k_enc(31,A0) = %04h, expected 1FE0",
+    if (btst_k_enc(5'd31, REG_FILE_A, 4'd0) !== 16'h1C00) begin
+      $display("TEST_RESULT: FAIL: btst_k_enc(31,A0) = %04h, expected 1C00",
                btst_k_enc(5'd31, REG_FILE_A, 4'd0));
       failures++;
     end

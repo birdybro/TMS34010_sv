@@ -5,7 +5,8 @@
 // Task 0027): LO (lower than), LS (lower or same), HI (higher than),
 // HS (higher or same). All four are well-defined across the field:
 //
-//   LO  (cc=0001): C = 1                  (Rd < Rs unsigned, after CMP/SUB)
+//   LO  (cc=1000): C = 1                  (Rd < Rs unsigned, after CMP/SUB;
+//                  Table 12-8, page 12-31: 0001 is P, not LO)
 //   LS  (cc=0010): C | Z = 1               (Rd <= Rs unsigned)
 //   HI  (cc=0011): !C & !Z = 1              (Rd > Rs unsigned)
 //   HS  (cc=1001): C = 0                   (Rd >= Rs unsigned; alias "NC")
@@ -43,7 +44,7 @@ module tb_jrcc_unsigned;
   instr_word_t                   instr_w;
   logic                          illegal_w;
 
-  tms34010_core u_core (
+  tms34010_core #(.CLKS_PER_STATE(1), .CYCLE_ACCURATE(1'b0)) u_core (
     .clk             (clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1),
     .rst             (rst), .vclk_rst_i(rst),
     .mem_req         (mem_req),
@@ -168,8 +169,8 @@ module tb_jrcc_unsigned;
     p = place_movi_il(p, REG_FILE_A, 4'd7, 32'h0000_C357);
     p = place_movi_il(p, REG_FILE_A, 4'd8, 32'h0000_C357);
 
-    place_scenario(p, 4'd1, 4'd2, 32'd3,  32'd10, CC_LO, 4'd3, 32'h0000_BEEF);
-    place_scenario(p, 4'd1, 4'd2, 32'd10, 32'd3,  CC_LO, 4'd4, 32'h0000_F00D);
+    place_scenario(p, 4'd1, 4'd2, 32'd3,  32'd10, CC_C, 4'd3, 32'h0000_BEEF);
+    place_scenario(p, 4'd1, 4'd2, 32'd10, 32'd3,  CC_C, 4'd4, 32'h0000_F00D);
     place_scenario(p, 4'd1, 4'd2, 32'd10, 32'd3,  CC_HI, 4'd5, 32'h0000_5555);
     place_scenario(p, 4'd1, 4'd2, 32'd5,  32'd5,  CC_LS, 4'd6, 32'h0000_2222);
     place_scenario(p, 4'd1, 4'd2, 32'd10, 32'd10, CC_HS, 4'd7, 32'h0000_4444);
