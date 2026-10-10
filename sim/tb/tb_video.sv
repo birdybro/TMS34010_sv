@@ -32,7 +32,7 @@ module tb_video;
   logic [15:0] hcount_wdata, vcount_wdata;
 
   tms34010_video u_video (
-    .clk(clk), .rst(rst),
+    .clk(clk), .rst(rst), .ce(1'b1),
     .hesync(HESYNC), .heblnk(HEBLNK), .hsblnk(HSBLNK), .htotal(HTOTAL),
     .vesync(VESYNC), .veblnk(VEBLNK), .vsblnk(VSBLNK), .vtotal(VTOTAL),
     .dpyint(DPYINT), .display_enable(display_enable),

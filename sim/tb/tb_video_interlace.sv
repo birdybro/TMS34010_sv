@@ -45,7 +45,7 @@ module tb_video_interlace;
 
   tms34010_video u_dut (
     .clk            (clk),
-    .rst            (rst),
+    .rst            (rst), .ce(1'b1),
     .hesync         (HESYNC),
     .heblnk         (HEBLNK),
     .hsblnk         (HSBLNK),
