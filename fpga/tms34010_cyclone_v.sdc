@@ -43,60 +43,9 @@ set_clock_groups -asynchronous \
     -group $bus_clk \
     -group $video_clks
 
-# The opcode word changes only on an acknowledged fetch. CORE_DECODE and
-# CORE_DECODE_WAIT hold it stable for two complete periods before the explicit
-# packed decoded register samples it. From CORE_DISPATCH, at least EXECUTE and
-# WRITEBACK separate that registered record from an architectural regfile
-# update. Later result registers (multiply/divide/memory) retain ordinary
-# single-cycle analysis.
-set core_opcode_sources [get_registers {*|u_core|instr_word_q*}]
-set core_decode_dests [get_registers {*|u_core|decoded*}]
-set core_regfile_dests [get_registers {*|u_regfile|*}]
-set_multicycle_path -setup -end 2 \
-    -from $core_opcode_sources -to $core_decode_dests
-set_multicycle_path -hold -end 1 \
-    -from $core_opcode_sources -to $core_decode_dests
-set_multicycle_path -setup -end 2 \
-    -from $core_decode_dests -to $core_regfile_dests
-set_multicycle_path -hold -end 1 \
-    -from $core_decode_dests -to $core_regfile_dests
-
-# Graphics setup/draw states temporarily repurpose the asynchronous register
-# file read selectors to collect implied B-file operands. Those state bits
-# cannot qualify a register-file write: DRAV writes only the already-latched
-# XY advance in CORE_WRITEBACK, while LINE writes only its dedicated line
-# registers in CORE_LINE_WB_*. Cut only these impossible state-to-storage data
-# paths; their real state-to-capture and state-to-write-enable paths retain
-# ordinary single-cycle analysis.
-set graphics_read_only_states [get_registers \
-    {*|u_core|state_q.CORE_FILL_SETUP* \
-     *|u_core|state_q.CORE_PBLT_SETUP* \
-     *|u_core|state_q.CORE_DRAV* \
-     *|u_core|state_q.CORE_LINE_SETUP* \
-     *|u_core|state_q.CORE_PIXT_SETUP_WIN*}]
-set_false_path -from $graphics_read_only_states -to $core_regfile_dests
-
-# CORE_MEMORY lasts through a registered fabric transaction. Its state bit
-# selects many mutually exclusive data-mux arms, but no state transition can
-# itself qualify register-file sampling at the next edge: MMFM,
-# auto-increment, and pointer writes all require a later memory acknowledge.
-# The integrated classification stage plus request/acknowledge mailbox makes
-# two core periods the conservative minimum; actual payload sources retain
-# their ordinary timing.
-set core_memory_state [get_registers {*|u_core|state_q.CORE_MEMORY*}]
-set_multicycle_path -setup -end 2 \
-    -from $core_memory_state -to $core_regfile_dests
-set_multicycle_path -hold -end 1 \
-    -from $core_memory_state -to $core_regfile_dests
-
-# The multiple-register transfer mask advances only on an acknowledged word.
-# Its next priority-encoded register selection cannot be consumed until a
-# subsequent fabric transaction completes.
-set core_mm_mask_sources [get_registers {*|u_core|mm_mask_q*}]
-set_multicycle_path -setup -end 2 \
-    -from $core_mm_mask_sources -to $core_regfile_dests
-set_multicycle_path -hold -end 1 \
-    -from $core_mm_mask_sources -to $core_regfile_dests
+# The CPU's own exceptions (multicycle and false paths inside tms34010_core) live in
+# tms34010_core.sdc next to this file, so game cores can read the same file.
+source [file join [file dirname [info script]] tms34010_core.sdc]
 
 # ---------------------------------------------------------------------------
 # Asynchronous reset, interrupt, host, and external-sync inputs

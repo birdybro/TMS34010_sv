@@ -32,6 +32,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_alu.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_decode.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_divider.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_icache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_int_ctrl.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_pc.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_regfile.sv
@@ -49,6 +50,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/memory/tms34010_bus_arbite
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/memory/tms34010_field_sequencer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/memory/tms34010_local_bus.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/memory/tms34010_memory_fabric.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/memory/tms34010_bus_timer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/tms34010_pin_system.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/tms34010_system.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/video/tms34010_display_addr.sv

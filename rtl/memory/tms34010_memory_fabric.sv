@@ -30,6 +30,12 @@
 
 module tms34010_memory_fabric
   import tms34010_pkg::*;
+#(
+  // 1: cycle-accurate memory controller (docs/cycle_accuracy.md): two-state
+  // bus cycles and posted CPU writes. 0: upstream behaviour.
+  parameter bit          CYCLE_ACCURATE = 1'b1,
+  parameter int unsigned CLKS_PER_STATE = 8
+)
 (
   input  logic                              clk,
   input  logic                              rst,
@@ -39,6 +45,13 @@ module tms34010_memory_fabric
   input  logic [ADDR_WIDTH-1:0]             cpu_field_addr_i,
   input  logic [FIELD_SIZE_WIDTH-1:0]       cpu_field_size_i,
   input  logic [DATA_WIDTH-1:0]             cpu_field_wdata_i,
+  input  logic [DATA_WIDTH-1:0]             cpu_field_keep_i,
+  input  logic                              cpu_field_rmw_i,
+  // CYCLE_ACCURATE: the request's data and keep mask arrive one clock after
+  // it is taken (cpu_field_late_wdata_i/keep_i, valid in that clock).
+  input  logic                              cpu_field_late_i,
+  input  logic [DATA_WIDTH-1:0]             cpu_field_late_wdata_i,
+  input  logic [DATA_WIDTH-1:0]             cpu_field_late_keep_i,
   input  logic                              cpu_field_iaq_i,
   input  logic                              cpu_field_srt_i,
   input  logic                              cpu_field_is_io_i,
@@ -46,6 +59,7 @@ module tms34010_memory_fabric
   input  local_word_t                       cpu_field_io_rdata_i,
   output logic [DATA_WIDTH-1:0]             cpu_field_rdata_o,
   output logic                              cpu_field_ack_o,
+  output logic                              cpu_field_busy_o,   // a CPU request (or posted write) is in progress
 
   input  logic                              host_req_i,
   input  logic                              host_we_i,
@@ -83,6 +97,12 @@ module tms34010_memory_fabric
   input  logic                              cycle_ack_i
 );
 
+  logic                          cpu_request_done;
+  logic                          arb_cycle_req;
+  logic                          arb_cpu_cycle;
+  logic [7:0]                    cpu_age_q;
+  logic                          timed_ack;
+  local_word_t                   timed_rdata;
   logic                          cpu_word_req;
   logic                          cpu_word_we;
   logic [ADDR_WIDTH-1:0]         cpu_word_addr;
@@ -104,14 +124,75 @@ module tms34010_memory_fabric
   logic [ADDR_WIDTH-1:0]         cpu_request_addr_q;
   logic [FIELD_SIZE_WIDTH-1:0]   cpu_request_size_q;
   logic [DATA_WIDTH-1:0]         cpu_request_wdata_q;
+  logic [DATA_WIDTH-1:0]         cpu_request_keep_q;
+  logic                          cpu_request_rmw_q;
   logic                          cpu_request_iaq_q;
   logic                          cpu_request_srt_q;
   local_word_t                   cpu_request_io_rdata_q;
+  logic                          cpu_late_q;     // late data due this clock
+  logic [DATA_WIDTH-1:0]         req_wdata, req_keep;
 
   // Register the architectural request before classifying it as external
   // field traffic or an on-chip I/O cycle. Besides holding the complete
   // transaction, this stage breaks any combinational acknowledge-to-address-
   // decode path through the core's monolithic control block.
+  // Posted CPU writes (1988 UG 13.1.1, hidden states): the memory controller
+  // takes the field and the CPU carries on; a later CPU request waits here
+  // until the controller has finished. The core sees the acknowledge in the
+  // clock the field is taken.
+  logic cpu_request_posted_q;
+  logic cpu_field_capture;
+  logic cpu_field_posts;
+
+  // With CYCLE_ACCURATE the next request is taken in the clock a posted
+  // write completes, so back-to-back writes keep the bus busy without a gap
+  // (the core has already moved on from a posted write).
+  assign cpu_field_capture = cpu_field_req_i
+      && (!cpu_request_active_q
+          || (CYCLE_ACCURATE && cpu_request_posted_q && cpu_request_done));
+  // I/O register writes are posted like memory writes (1988 UG 6.2: once
+  // the memory controller accepts the request, the next instruction can
+  // begin; one request can be queued).
+  // cpu_field_io_we_i is the core's write intent for any address (mem_we
+  // excludes I/O), so the accept doesn't wait on the address decode.
+  assign cpu_field_posts   = CYCLE_ACCURATE && cpu_field_io_we_i;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      cpu_request_posted_q <= 1'b0;
+    end else begin
+      if (cpu_field_capture)
+        cpu_request_posted_q <= cpu_field_posts;
+    end
+  end
+
+  // Clocks since the start of the state in which the core raised the
+  // current field request (bus timer, docs/cycle_accuracy.md).
+  generate
+    if (CYCLE_ACCURATE && (CLKS_PER_STATE > 1)) begin : g_age
+      localparam int unsigned PW = $clog2(CLKS_PER_STATE);
+      // Justification (a): position within the machine state.
+      logic [PW-1:0] phase_q;
+      always_ff @(posedge clk) begin
+        if (rst || (phase_q == PW'(CLKS_PER_STATE - 1)))
+          phase_q <= '0;
+        else
+          phase_q <= phase_q + 1'b1;
+      end
+      // Justification (a): age of the accepted CPU request.
+      always_ff @(posedge clk) begin
+        if (rst)
+          cpu_age_q <= '0;
+        else if (cpu_field_capture)
+          cpu_age_q <= 8'(phase_q) + 8'd1;
+        else if (cpu_age_q != 8'hFF)
+          cpu_age_q <= cpu_age_q + 8'd1;
+      end
+    end else begin : g_no_age
+      assign cpu_age_q = '0;
+    end
+  endgenerate
+
   always_ff @(posedge clk) begin
     if (rst) begin
       cpu_request_active_q   <= 1'b0;
@@ -120,13 +201,18 @@ module tms34010_memory_fabric
       cpu_request_addr_q     <= '0;
       cpu_request_size_q     <= '0;
       cpu_request_wdata_q    <= '0;
+      cpu_request_keep_q     <= '0;
+      cpu_request_rmw_q      <= 1'b0;
       cpu_request_iaq_q      <= 1'b0;
       cpu_request_srt_q      <= 1'b0;
-      cpu_request_io_rdata_q <= '0;
-    end else if (cpu_request_active_q) begin
-      if (cpu_field_ack_o)
+    end else if (cpu_request_active_q && !cpu_field_capture) begin
+      if (cpu_request_done)
         cpu_request_active_q <= 1'b0;
-    end else if (cpu_field_req_i) begin
+      if (cpu_late_q) begin
+        cpu_request_wdata_q  <= cpu_field_late_wdata_i;
+        cpu_request_keep_q   <= cpu_field_late_keep_i;
+      end
+    end else if (cpu_field_capture) begin
       cpu_request_active_q   <= 1'b1;
       cpu_request_is_io_q    <= cpu_field_is_io_i;
       cpu_request_io_we_q    <= cpu_field_is_io_i
@@ -135,9 +221,75 @@ module tms34010_memory_fabric
       cpu_request_addr_q     <= cpu_field_addr_i;
       cpu_request_size_q     <= cpu_field_size_i;
       cpu_request_wdata_q    <= cpu_field_wdata_i;
+      cpu_request_keep_q     <= cpu_field_keep_i;
+      cpu_request_rmw_q      <= cpu_field_rmw_i;
       cpu_request_iaq_q      <= cpu_field_iaq_i;
       cpu_request_srt_q      <= cpu_field_srt_i;
-      cpu_request_io_rdata_q <= cpu_field_io_rdata_i;
+    end
+  end
+
+  assign cpu_field_busy_o = cpu_request_active_q;
+
+  // Late write data (CYCLE_ACCURATE): the core raises some writes before their
+  // data and keep mask are ready and gives them the clock after the request is
+  // taken. That is the first clock anything reads the request's data: the
+  // field sequencer, idle since a new request is only taken once the previous
+  // one has finished, takes the field in it, and an I/O cycle is presented
+  // from it. Both take the late inputs then; the request registers take them
+  // at the end of it.
+  always_ff @(posedge clk) begin
+    if (rst) cpu_late_q <= 1'b0;
+    else     cpu_late_q <= CYCLE_ACCURATE && cpu_field_capture && cpu_field_late_i;
+  end
+  assign req_wdata = cpu_late_q ? cpu_field_late_wdata_i : cpu_request_wdata_q;
+  assign req_keep  = cpu_late_q ? cpu_field_late_keep_i  : cpu_request_keep_q;
+`ifdef VERILATOR
+  // Simulation guard: in the clock late data arrives, the request it belongs
+  // to is the active one and nothing has used its data yet - an external field
+  // is taken by the sequencer in this clock (idle until now), an I/O request
+  // has not finished. Checked only after a reset has been seen (a bench may
+  // run clocks before it asserts reset, with state not yet set).
+  logic g_armed_q = 1'b0;
+  always_ff @(posedge clk)
+    if (rst) g_armed_q <= 1'b1;
+  always_ff @(posedge clk)
+    if (g_armed_q && !rst && cpu_late_q
+        && (!cpu_request_active_q || !cpu_request_io_we_q
+            || (!cpu_request_is_io_q
+                && u_field_sequencer.state_q != u_field_sequencer.FIELD_IDLE)
+            || cpu_request_done)) begin
+      $display("LATE DATA TOO LATE t=%0t active %0d we %0d io %0d seq %0d done %0d", $time,
+               cpu_request_active_q, cpu_request_io_we_q, cpu_request_is_io_q,
+               u_field_sequencer.state_q, cpu_request_done);
+      $fatal(1);
+    end
+  // ...and from the next clock the request registers hold the late data.
+  logic                  g_late_d_q = 1'b0;
+  logic [DATA_WIDTH-1:0] g_wdata_q, g_keep_q;
+  always_ff @(posedge clk) begin
+    g_late_d_q <= g_armed_q && !rst && cpu_late_q && cpu_request_active_q && !cpu_request_done;
+    g_wdata_q  <= cpu_field_late_wdata_i;
+    g_keep_q   <= cpu_field_late_keep_i;
+    if (g_late_d_q && (cpu_request_wdata_q != g_wdata_q || cpu_request_keep_q != g_keep_q)) begin
+      $display("LATE REQ REG MISMATCH t=%0t", $time);
+      $fatal(1);
+    end
+  end
+`endif
+
+  // With CYCLE_ACCURATE the I/O read data is sampled a clock after the
+  // request is taken (the core holds a read request until it is
+  // acknowledged, and the cycle lasts at least two states), keeping the
+  // register-file -> ALU -> I/O register path out of the capture clock.
+  logic io_sample_q;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      io_sample_q            <= 1'b0;
+      cpu_request_io_rdata_q <= '0;
+    end else begin
+      io_sample_q <= cpu_field_capture;
+      if (CYCLE_ACCURATE ? io_sample_q : cpu_field_capture)
+        cpu_request_io_rdata_q <= cpu_field_io_rdata_i;
     end
   end
 
@@ -148,7 +300,9 @@ module tms34010_memory_fabric
     .field_we_i      (cpu_request_io_we_q),
     .field_addr_i    (cpu_request_addr_q),
     .field_size_i    (cpu_request_size_q),
-    .field_wdata_i   (cpu_request_wdata_q),
+    .field_wdata_i   (req_wdata),
+    .field_keep_i    (req_keep),
+    .field_rmw_i     (cpu_request_rmw_q),
     .field_rdata_o   (sequenced_field_rdata),
     .field_ack_o     (sequenced_field_ack),
     .word_req_o      (cpu_word_req),
@@ -172,7 +326,7 @@ module tms34010_memory_fabric
       selected_cpu_req      = cpu_request_active_q;
       selected_cpu_we       = cpu_request_io_we_q;
       selected_cpu_addr     = cpu_request_addr_q;
-      selected_cpu_wdata    = cpu_request_wdata_q[LOCAL_WORD_WIDTH-1:0];
+      selected_cpu_wdata    = req_wdata[LOCAL_WORD_WIDTH-1:0];
       selected_cpu_rmw_lock = 1'b0;
     end
   end
@@ -180,8 +334,10 @@ module tms34010_memory_fabric
   assign cpu_field_rdata_o = cpu_request_is_io_q
       ? {{(DATA_WIDTH-LOCAL_WORD_WIDTH){1'b0}}, cpu_request_io_rdata_q}
       : sequenced_field_rdata;
-  assign cpu_field_ack_o = cpu_request_active_q
+  assign cpu_request_done = cpu_request_active_q
       && (cpu_request_is_io_q ? cpu_word_ack : sequenced_field_ack);
+  assign cpu_field_ack_o = (cpu_field_capture && cpu_field_posts)
+      || (cpu_request_done && !cpu_request_posted_q);
 
   tms34010_bus_arbiter u_arbiter (
     .clk               (clk),
@@ -217,7 +373,8 @@ module tms34010_memory_fabric
     .cpu_rdata_o       (cpu_word_rdata),
     .cpu_ack_o         (cpu_word_ack),
     .cpu_restart_o     (cpu_word_restart),
-    .cycle_req_o       (cycle_req_o),
+    .cpu_cycle_o       (arb_cpu_cycle),
+    .cycle_req_o       (arb_cycle_req),
     .cycle_kind_o      (cycle_kind_o),
     .cycle_addr_o      (cycle_addr_o),
     .cycle_wdata_o     (cycle_wdata_o),
@@ -227,8 +384,24 @@ module tms34010_memory_fabric
     .cycle_dpytap_o    (cycle_dpytap_o),
     .cycle_screen_org_o(cycle_screen_org_o),
     .cycle_dram_row_o  (cycle_dram_row_o),
-    .cycle_rdata_i     (cycle_rdata_i),
-    .cycle_ack_i       (cycle_ack_i)
+    .cycle_rdata_i     (timed_rdata),
+    .cycle_ack_i       (timed_ack)
+  );
+
+  tms34010_bus_timer #(
+    .ENABLE         (CYCLE_ACCURATE),
+    .CLKS_PER_STATE (CLKS_PER_STATE)
+  ) u_bus_timer (
+    .clk         (clk),
+    .rst         (rst),
+    .req_i       (arb_cycle_req),
+    .cpu_cycle_i (arb_cpu_cycle),
+    .cpu_age_i   (cpu_age_q),
+    .ack_o       (timed_ack),
+    .rdata_o     (timed_rdata),
+    .ext_req_o   (cycle_req_o),
+    .ext_ack_i   (cycle_ack_i),
+    .ext_rdata_i (cycle_rdata_i)
   );
 
 endmodule : tms34010_memory_fabric

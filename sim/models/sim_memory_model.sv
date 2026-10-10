@@ -71,6 +71,8 @@ module sim_memory_model
     .field_addr_i    (mem_addr),
     .field_size_i    (mem_size),
     .field_wdata_i   (mem_wdata),
+    .field_keep_i    ('0),
+    .field_rmw_i     (1'b0),
     .field_rdata_o   (mem_rdata),
     .field_ack_o     (mem_ack),
     .word_req_o      (word_req),

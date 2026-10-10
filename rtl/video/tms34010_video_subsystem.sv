@@ -32,6 +32,14 @@
 
 module tms34010_video_subsystem
   import tms34010_pkg::*;
+#(
+  // 0: the video logic runs on video_clk_i (VCLK), its own clock.
+  // 1: the video logic runs on core_clk_i, and video_clk_i is read as a clock
+  //    enable on core_clk_i: a one-clock pulse at each VCLK edge. Every video
+  //    register, including the video side of each crossing, advances only on
+  //    that pulse, so counts and delays in VCLK periods are as with mode 0.
+  parameter bit VCLK_CEN = 1'b0
+)
 (
   input  logic        core_clk_i,
   input  logic        core_rst_i,
@@ -80,6 +88,11 @@ module tms34010_video_subsystem
   output logic [15:0] screen_dpytap_o,
   output logic        screen_org_o
 );
+  // The clock and enable of the video-side logic (see VCLK_CEN).
+  logic video_clk, video_ce;
+  assign video_clk = VCLK_CEN ? core_clk_i  : video_clk_i;
+  assign video_ce  = VCLK_CEN ? video_clk_i : 1'b1;
+
 
   typedef struct packed {
     logic [15:0] hesync;
@@ -213,20 +226,22 @@ module tms34010_video_subsystem
   ) u_config_mailbox (
     .src_clk_i   (core_clk_i),
     .src_rst_i   (core_rst_i),
+    .src_ce_i    (1'b1),
     .src_valid_i (config_dirty_q),
     .src_data_i  (config_source),
     .src_ready_o (),
     .src_accept_o(config_accept),
-    .dst_clk_i   (video_clk_i),
+    .dst_clk_i   (video_clk),
     .dst_rst_i   (video_rst_i),
+    .dst_ce_i    (video_ce),
     .dst_data_o  (config_received),
     .dst_valid_o (config_valid_video)
   );
 
-  always_ff @(posedge video_clk_i) begin
+  always_ff @(posedge video_clk) begin
     if (video_rst_i) begin
       config_video_q <= '0;
-    end else if (config_valid_video) begin
+    end else if (video_ce && config_valid_video) begin
       config_video_q <= config_received;
     end
   end
@@ -236,19 +251,22 @@ module tms34010_video_subsystem
   ) u_command_mailbox (
     .src_clk_i   (core_clk_i),
     .src_rst_i   (core_rst_i),
+    .src_ce_i    (1'b1),
     .src_valid_i (|command_pending_q),
     .src_data_i  (command_source),
     .src_ready_o (),
     .src_accept_o(command_accept),
-    .dst_clk_i   (video_clk_i),
+    .dst_clk_i   (video_clk),
     .dst_rst_i   (video_rst_i),
+    .dst_ce_i    (video_ce),
     .dst_data_o  (command_received),
     .dst_valid_o (command_valid_video)
   );
 
   tms34010_video u_video (
-    .clk           (video_clk_i),
+    .clk           (video_clk),
     .rst           (video_rst_i),
+    .ce            (video_ce),
     .hesync        (config_video_q.hesync),
     .heblnk        (config_video_q.heblnk),
     .hsblnk        (config_video_q.hsblnk),
@@ -285,8 +303,9 @@ module tms34010_video_subsystem
   );
 
   tms34010_display_addr u_display_addr (
-    .clk             (video_clk_i),
+    .clk             (video_clk),
     .rst             (video_rst_i),
+    .ce              (video_ce),
     .hblank_start    (hblank_start_video),
     .vcount          (vcount_video),
     .odd_field       (odd_field_video),
@@ -312,14 +331,16 @@ module tms34010_video_subsystem
   tms34010_cdc_mailbox #(
     .WIDTH($bits(video_status_t))
   ) u_status_mailbox (
-    .src_clk_i   (video_clk_i),
+    .src_clk_i   (video_clk),
     .src_rst_i   (video_rst_i),
+    .src_ce_i    (video_ce),
     .src_valid_i (1'b1),
     .src_data_i  (status_source),
     .src_ready_o (),
     .src_accept_o(),
     .dst_clk_i   (core_clk_i),
     .dst_rst_i   (core_rst_i),
+    .dst_ce_i    (1'b1),
     .dst_data_o  (status_received),
     .dst_valid_o ()
   );
@@ -331,10 +352,10 @@ module tms34010_video_subsystem
   // A frame event is much slower than the round-trip handshake. The pending
   // bit nevertheless holds an event until the mailbox accepts it, so a
   // one-VCLK pulse cannot disappear between core-clock edges.
-  always_ff @(posedge video_clk_i) begin
+  always_ff @(posedge video_clk) begin
     if (video_rst_i) begin
       dip_pending_q <= 1'b0;
-    end else begin
+    end else if (video_ce) begin
       if (dip_accept)
         dip_pending_q <= 1'b0;
       if (dpyint_video)
@@ -345,20 +366,23 @@ module tms34010_video_subsystem
   tms34010_cdc_mailbox #(
     .WIDTH(1)
   ) u_dip_mailbox (
-    .src_clk_i   (video_clk_i),
+    .src_clk_i   (video_clk),
     .src_rst_i   (video_rst_i),
+    .src_ce_i    (video_ce),
     .src_valid_i (dip_pending_q),
     .src_data_i  (1'b1),
     .src_ready_o (),
     .src_accept_o(dip_accept),
     .dst_clk_i   (core_clk_i),
     .dst_rst_i   (core_rst_i),
+    .dst_ce_i    (1'b1),
     .dst_data_o  (),
     .dst_valid_o (dpyint_pulse_o)
   );
 
   tms34010_screen_cdc u_screen_cdc (
-    .video_clk_i     (video_clk_i),
+    .video_clk_i     (video_clk),
+    .video_ce_i      (video_ce),
     .video_rst_i     (video_rst_i),
     .video_req_i     (screen_req_video),
     .video_srfaddr_i (screen_srfaddr_video),

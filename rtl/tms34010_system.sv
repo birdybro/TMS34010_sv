@@ -16,6 +16,20 @@
 
 module tms34010_system
   import tms34010_pkg::*;
+#(
+  // Core clocks per local clock (machine state). 1 = every core clock is a
+  // local clock.
+  parameter int unsigned CLKS_PER_STATE = 8,
+  // 1 (default): cycle-accurate timing (docs/cycle_accuracy.md); needs
+  // CLKS_PER_STATE >= 8, i.e. the core clock is the board's INCLK. 0: the
+  // original TMS34010_sv behaviour, kept as the test reference.
+  parameter bit          CYCLE_ACCURATE = 1'b1,
+  // 1: vclk_i is not a clock but a clock enable on clk (a one-clock pulse at
+  // each VCLK edge), and the video logic runs on clk; one clock in the design.
+  // 0: vclk_i is the video clock, as before. vclk_rst_i resets the video logic
+  // in either mode (synchronous to clk when 1).
+  parameter bit          VCLK_CEN       = 1'b0
+)
 (
   input  logic                              clk,
   input  logic                              vclk_i,
@@ -77,8 +91,14 @@ module tms34010_system
   logic [ADDR_WIDTH-1:0]             cpu_field_addr;
   logic [FIELD_SIZE_WIDTH-1:0]       cpu_field_size;
   logic [DATA_WIDTH-1:0]             cpu_field_wdata;
+  logic [DATA_WIDTH-1:0]             cpu_field_keep;
+  logic                              cpu_field_rmw;
+  logic                              cpu_field_late;
+  logic [DATA_WIDTH-1:0]             cpu_field_late_wdata;
+  logic [DATA_WIDTH-1:0]             cpu_field_late_keep;
   logic [DATA_WIDTH-1:0]             cpu_field_rdata;
   logic                              cpu_field_ack;
+  logic                              cpu_field_busy;
   logic                              cpu_field_iaq;
   logic                              cpu_field_srt;
   logic                              cpu_field_is_io;
@@ -104,7 +124,11 @@ module tms34010_system
   logic [15:0]                       screen_dpytap;
   logic                              screen_org;
 
-  tms34010_core u_core (
+  tms34010_core #(
+    .CLKS_PER_STATE (CLKS_PER_STATE),
+    .CYCLE_ACCURATE (CYCLE_ACCURATE),
+    .VCLK_CEN       (VCLK_CEN)
+  ) u_core (
     .clk                     (clk),
     .vclk_i                  (vclk_i),
     .rst                     (rst),
@@ -116,6 +140,11 @@ module tms34010_system
     .mem_addr                (cpu_field_addr),
     .mem_size                (cpu_field_size),
     .mem_wdata               (cpu_field_wdata),
+    .mem_keep                (cpu_field_keep),
+    .mem_rmw                 (cpu_field_rmw),
+    .mem_late                (cpu_field_late),
+    .mem_late_wdata          (cpu_field_late_wdata),
+    .mem_late_keep           (cpu_field_late_keep),
     .mem_iaq                 (cpu_field_iaq),
     .mem_srt                 (cpu_field_srt),
     .mem_is_io               (cpu_field_is_io),
@@ -123,6 +152,7 @@ module tms34010_system
     .mem_io_rdata            (cpu_field_io_rdata),
     .mem_rdata               (cpu_field_rdata),
     .mem_ack                 (cpu_field_ack),
+    .mem_busy                (cpu_field_busy),
     .run_emu_n_i             (run_emu_n_i),
     .emua_n_o                (emua_n_o),
     .hcs_n_i                 (hcs_n_i),
@@ -167,7 +197,10 @@ module tms34010_system
     .illegal_opcode_o        (illegal_opcode_o)
   );
 
-  tms34010_memory_fabric u_memory_fabric (
+  tms34010_memory_fabric #(
+    .CYCLE_ACCURATE (CYCLE_ACCURATE),
+    .CLKS_PER_STATE (CLKS_PER_STATE)
+  ) u_memory_fabric (
     .clk                (clk),
     .rst                (rst),
     .cpu_field_req_i    (cpu_field_req),
@@ -175,6 +208,11 @@ module tms34010_system
     .cpu_field_addr_i   (cpu_field_addr),
     .cpu_field_size_i   (cpu_field_size),
     .cpu_field_wdata_i  (cpu_field_wdata),
+    .cpu_field_keep_i   (cpu_field_keep),
+    .cpu_field_rmw_i    (cpu_field_rmw),
+    .cpu_field_late_i   (cpu_field_late),
+    .cpu_field_late_wdata_i(cpu_field_late_wdata),
+    .cpu_field_late_keep_i(cpu_field_late_keep),
     .cpu_field_iaq_i    (cpu_field_iaq),
     .cpu_field_srt_i    (cpu_field_srt),
     .cpu_field_is_io_i  (cpu_field_is_io),
@@ -182,6 +220,7 @@ module tms34010_system
     .cpu_field_io_rdata_i(cpu_field_io_rdata),
     .cpu_field_rdata_o  (cpu_field_rdata),
     .cpu_field_ack_o    (cpu_field_ack),
+    .cpu_field_busy_o   (cpu_field_busy),
     .host_req_i         (host_mem_req),
     .host_we_i          (host_mem_we),
     .host_addr_i        (host_mem_addr),

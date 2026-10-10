@@ -20,7 +20,14 @@
 
 `default_nettype none
 
-module tms34010_cyclone_v_top (
+module tms34010_cyclone_v_top
+#(
+  // Core clocks per local clock (machine state); 1 = every core clock.
+  parameter int unsigned CLKS_PER_STATE = 1,
+  // 1: cycle-accurate timing (docs/cycle_accuracy.md). 0: upstream behaviour.
+  parameter bit          CYCLE_ACCURATE = 1'b0
+)
+(
   input  logic        FPGA_CLK1_50,
   input  logic        FPGA_CLK2_50,
   input  logic        RESET_N,
@@ -134,7 +141,10 @@ module tms34010_cyclone_v_top (
     .rst_o         (video_rst)
   );
 
-  tms34010_pin_system u_pin_system (
+  tms34010_pin_system #(
+    .CLKS_PER_STATE (CLKS_PER_STATE),
+    .CYCLE_ACCURATE (CYCLE_ACCURATE)
+  ) u_pin_system (
     .core_clk_i         (core_clk),
     .bus_clk8x_i        (bus_clk8x),
     .vclk_i             (video_clk),

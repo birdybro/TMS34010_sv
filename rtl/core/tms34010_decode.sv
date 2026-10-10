@@ -2163,7 +2163,7 @@ module tms34010_decode
     if (instr[15:12] == JRCC_TOP4 &&
         instr[7:0] != 8'h00 && instr[7:0] != 8'h80 &&
         (instr[11:8] == CC_UC ||
-         instr[11:8] == CC_LO ||
+         instr[11:8] == CC_P  ||
          instr[11:8] == CC_LS ||
          instr[11:8] == CC_HI ||
          instr[11:8] == CC_LT ||
@@ -2207,7 +2207,7 @@ module tms34010_decode
     if (instr[15:12] == JRCC_TOP4 &&
         instr[7:0] == 8'h00 &&
         (instr[11:8] == CC_UC ||
-         instr[11:8] == CC_LO ||
+         instr[11:8] == CC_P  ||
          instr[11:8] == CC_LS ||
          instr[11:8] == CC_HI ||
          instr[11:8] == CC_LT ||
@@ -2422,7 +2422,7 @@ module tms34010_decode
     if (instr[15:12] == JRCC_TOP4 &&
         instr[7:0] == 8'h80 &&
         (instr[11:8] == CC_UC ||
-         instr[11:8] == CC_LO ||
+         instr[11:8] == CC_P  ||
          instr[11:8] == CC_LS ||
          instr[11:8] == CC_HI ||
          instr[11:8] == CC_LT ||
@@ -2491,7 +2491,7 @@ module tms34010_decode
       decoded.iclass       = INSTR_BTST_K;
       decoded.rd_file      = reg_file_from_instr;
       decoded.rd_idx       = reg_idx_from_instr;
-      decoded.k5           = instr[9:5];   // bit index for the test
+      decoded.k5           = ~instr[9:5];  // bit index, stored 1's complemented
       decoded.alu_op       = ALU_OP_AND;
       decoded.wb_reg_en    = 1'b0;          // Rd is NOT written
       decoded.wb_flags_en  = 1'b1;

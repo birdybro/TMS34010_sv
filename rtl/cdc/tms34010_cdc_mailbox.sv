@@ -23,6 +23,7 @@ module tms34010_cdc_mailbox #(
 )(
   input  logic                 src_clk_i,
   input  logic                 src_rst_i,
+  input  logic                 src_ce_i,     // source-side clock enable (1 = every clock)
   input  logic                 src_valid_i,
   input  logic [WIDTH-1:0]     src_data_i,
   output logic                 src_ready_o,
@@ -30,6 +31,7 @@ module tms34010_cdc_mailbox #(
 
   input  logic                 dst_clk_i,
   input  logic                 dst_rst_i,
+  input  logic                 dst_ce_i,     // destination-side clock enable (1 = every clock)
   output logic [WIDTH-1:0]     dst_data_o,
   output logic                 dst_valid_o
 );
@@ -40,22 +42,24 @@ module tms34010_cdc_mailbox #(
   logic             dst_request_toggle_sync;
   logic             dst_ack_toggle_q;
 
-  tms34010_sync_bit u_request_sync (
+  tms34010_sync_bit_ce u_request_sync (
     .clk     (dst_clk_i),
     .rst     (dst_rst_i),
+    .ce      (dst_ce_i),
     .async_i (src_request_toggle_q),
     .sync_o  (dst_request_toggle_sync)
   );
 
-  tms34010_sync_bit u_ack_sync (
+  tms34010_sync_bit_ce u_ack_sync (
     .clk     (src_clk_i),
     .rst     (src_rst_i),
+    .ce      (src_ce_i),
     .async_i (dst_ack_toggle_q),
     .sync_o  (src_ack_toggle_sync)
   );
 
   assign src_ready_o  = (src_request_toggle_q == src_ack_toggle_sync);
-  assign src_accept_o = src_valid_i && src_ready_o;
+  assign src_accept_o = src_ce_i && src_valid_i && src_ready_o;
 
   always_ff @(posedge src_clk_i) begin
     if (src_rst_i) begin
@@ -72,7 +76,7 @@ module tms34010_cdc_mailbox #(
       dst_data_o      <= '0;
       dst_valid_o     <= 1'b0;
       dst_ack_toggle_q <= 1'b0;
-    end else begin
+    end else if (dst_ce_i) begin
       dst_valid_o <= 1'b0;
       if (dst_request_toggle_sync != dst_ack_toggle_q) begin
         dst_data_o       <= src_payload_q;

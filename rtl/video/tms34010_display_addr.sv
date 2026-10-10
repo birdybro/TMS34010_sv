@@ -39,6 +39,7 @@ module tms34010_display_addr
 (
   input  logic        clk,
   input  logic        rst,
+  input  logic        ce,           // clock enable: the state advances only when 1
 
   input  logic        hblank_start,
   input  logic [15:0] vcount,
@@ -116,7 +117,7 @@ module tms34010_display_addr
       refresh_org         <= 1'b0;
       sre_prev_q          <= 1'b0;
       first_after_enable_q <= 1'b0;
-    end else begin
+    end else if (ce) begin
       sre_prev_q <= dpyctl[DPYCTL_SRE_BIT];
 
       if (!dpyctl[DPYCTL_SRE_BIT]) begin

@@ -40,6 +40,11 @@ module tms34010_field_sequencer
   input  logic [ADDR_WIDTH-1:0]             field_addr_i,
   input  logic [FIELD_SIZE_WIDTH-1:0]       field_size_i,
   input  logic [DATA_WIDTH-1:0]             field_wdata_i,
+  // Write only: field bits to keep (right-justified like the data). A word
+  // with kept bits is read, merged and written, as a partial word is: the
+  // memory controller's plane masking and transparency (13.3.2.5).
+  input  logic [DATA_WIDTH-1:0]             field_keep_i,
+  input  logic                              field_rmw_i,     // every word read-modify-write
   output logic [DATA_WIDTH-1:0]             field_rdata_o,
   output logic                              field_ack_o,
 
@@ -73,6 +78,8 @@ module tms34010_field_sequencer
   logic [ADDR_WIDTH-1:0]       field_addr_q;
   logic [FIELD_SIZE_WIDTH-1:0] field_size_q;
   logic [DATA_WIDTH-1:0]       field_wdata_q;
+  logic [DATA_WIDTH-1:0]       field_keep_q;
+  logic                        field_rmw_q;
 
   // Justification (a): selects the current physical word across a multiword
   // transaction. Two bits cover the specified maximum of three words.
@@ -152,7 +159,8 @@ module tms34010_field_sequencer
       unshifted_mask = (FIELD_ONE << field_size_q) - FIELD_ONE;
     end
 
-    field_mask = unshifted_mask
+    field_mask = (unshifted_mask
+                  & ~{{(FIELD_WINDOW_WIDTH-DATA_WIDTH){1'b0}}, field_keep_q})
                << field_addr_q[LOCAL_WORD_ADDR_LSB-1:0];
     field_data_window =
         {{(FIELD_WINDOW_WIDTH-DATA_WIDTH){1'b0}}, field_wdata_q}
@@ -180,10 +188,14 @@ module tms34010_field_sequencer
       field_addr_q  <= '0;
       field_size_q  <= '0;
       field_wdata_q <= '0;
+      field_keep_q  <= '0;
+      field_rmw_q   <= 1'b0;
     end else if ((state_q == FIELD_IDLE) && field_req_i) begin
       field_addr_q  <= field_addr_i;
       field_size_q  <= field_size_i;
       field_wdata_q <= field_wdata_i;
+      field_keep_q  <= field_we_i ? field_keep_i : '0;
+      field_rmw_q   <= field_we_i && field_rmw_i;
     end
   end
 
@@ -281,7 +293,7 @@ module tms34010_field_sequencer
       end
 
       FIELD_WRITE_SELECT: begin
-        if (current_word_mask == {LOCAL_WORD_WIDTH{1'b1}})
+        if ((current_word_mask == {LOCAL_WORD_WIDTH{1'b1}}) && !field_rmw_q)
           state_d = FIELD_WRITE_WORD;
         else
           state_d = FIELD_WRITE_READ;
@@ -295,7 +307,7 @@ module tms34010_field_sequencer
 
       FIELD_WRITE_WORD: begin
         if (word_restart_i
-            && (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})) begin
+            && ((current_word_mask != {LOCAL_WORD_WIDTH{1'b1}}) || field_rmw_q)) begin
           // HOLD may interrupt the otherwise-indivisible pair only between
           // cycles. Suppress the not-yet-issued write and reacquire old data.
           state_d = FIELD_WRITE_READ;
@@ -303,7 +315,7 @@ module tms34010_field_sequencer
           word_req_o   = 1'b1;
           word_we_o    = 1'b1;
           word_wdata_o = merged_word_data;
-          if (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})
+          if ((current_word_mask != {LOCAL_WORD_WIDTH{1'b1}}) || field_rmw_q)
             word_rmw_lock_o = 1'b1;
           if (word_ack_i) begin
             if (word_index_q == last_word_index)

@@ -52,6 +52,7 @@ module tms34010_video
 (
   input  logic        clk,        // VCLK (video / pixel clock)
   input  logic        rst,
+  input  logic        ce,         // clock enable: the state advances only when 1
 
   // Horizontal timing registers.
   input  logic [15:0] hesync,     // end of horizontal sync
@@ -134,16 +135,18 @@ module tms34010_video
   // pin transition. Comparing it with one saved level recognizes the falling
   // edge on the third update edge: the guide's 2.5-VCLK delay measured from
   // the intervening rising-edge sample to the original falling-edge clear.
-  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_hsync_input_sync (
+  tms34010_sync_bit_ce #(.RESET_VALUE(1'b1)) u_hsync_input_sync (
     .clk     (clk),
     .rst     (rst),
+    .ce      (ce),
     .async_i (hsync_n_i),
     .sync_o  (hsync_n_sync)
   );
 
-  tms34010_sync_bit #(.RESET_VALUE(1'b1)) u_vsync_input_sync (
+  tms34010_sync_bit_ce #(.RESET_VALUE(1'b1)) u_vsync_input_sync (
     .clk     (clk),
     .rst     (rst),
+    .ce      (ce),
     .async_i (vsync_n_i),
     .sync_o  (vsync_n_sync)
   );
@@ -154,7 +157,7 @@ module tms34010_video
     if (rst) begin
       hsync_n_prev_q <= 1'b1;
       vsync_n_prev_q <= 1'b1;
-    end else begin
+    end else if (ce) begin
       hsync_n_prev_q <= hsync_n_sync;
       vsync_n_prev_q <= vsync_n_sync;
     end
@@ -165,7 +168,7 @@ module tms34010_video
       hcount    <= 16'd0;
       vcount    <= 16'd0;
       odd_field <= 1'b0;
-    end else begin
+    end else if (ce) begin
       // Returning to noninterlaced timing deterministically selects the even
       // phase. Interlaced operation always restarts its two-field sequence
       // from that phase.
