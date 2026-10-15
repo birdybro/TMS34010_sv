@@ -20,7 +20,16 @@
 //          writes never update it (5.4.4).
 //   5.4.5  HSTCTL.CF=1 flushes: all P flags clear (the reset state) and
 //          fetches bypass the cache for as long as CF stays set.
-//   5.4.6  CONTROL.CD=1 bypasses the cache and protects its contents.
+//   5.4.6  CONTROL.CD=1 bypasses the cache and protects its contents: each
+//          word is fetched alone. With CF=1 and CD=0 the whole four-word
+//          subsegment is read and all but the requested word discarded.
+//          (5.4.5's last paragraph says this of CD; 5.4.6 and 5.4.7, a disabled
+//          cache costs one word fetch per word, give it to CF.)
+//
+// CF and CD can change while a fetch is in the memory fabric (CF is written by
+// the host; CD and CF writes are posted). A fetch keeps the path it started
+// on: a single-word fetch that went around the cache is answered around it,
+// and a fill that saw CF=1 at any time sets no P flag.
 //
 // The fill reads the subsegment as two 32-bit fields (four word cycles).
 // The data store is a 64 x 32 synchronous RAM (one Cyclone V M10K); a hit
@@ -105,8 +114,10 @@ module tms34010_icache
       logic [31:0] fill_lo_q;          // fill: words 0-1 of the subsegment
       logic [31:0] ram_q;
       logic [31:0] ram [0:63];
+      logic        pass_q;             // a single-word fetch around the cache is in flight
+      logic        keep_q;             // this fill may set its P flag (no CF seen)
 
-      logic        bypass;
+      logic        pass;
       logic        lookup;
       logic [3:0]  ssa_match;
       logic        seg_hit;
@@ -119,8 +130,10 @@ module tms34010_icache
       logic [5:0]  ram_waddr;
       logic [5:0]  ram_raddr;
 
-      assign bypass = cd_i || cf_i || !c_ifetch;
-      assign lookup = (state_q == IC_IDLE) && c_req && !bypass;
+      // Single word around the cache: data accesses, CD=1, or a fetch that
+      // started that way. CF=1 alone still reads the subsegment (5.4.6).
+      assign pass   = cd_i || !c_ifetch || pass_q;
+      assign lookup = (state_q == IC_IDLE) && c_req && !pass;
       assign sub    = c_pc[8:6];
 
       always_comb begin
@@ -163,6 +176,13 @@ module tms34010_icache
       end
 
       always_ff @(posedge clk) begin
+        if (rst || m_ack)
+          pass_q <= 1'b0;
+        else if ((state_q == IC_IDLE) && c_req && pass)
+          pass_q <= 1'b1;
+      end
+
+      always_ff @(posedge clk) begin
         if (rst) begin
           state_q <= IC_IDLE;
           for (int s = 0; s < 4; s++) begin
@@ -171,14 +191,20 @@ module tms34010_icache
           end
           seg_q   <= 2'd0;
           half_q  <= 1'b0;
+          keep_q  <= 1'b0;
         end else if (cf_i) begin
           // Flush (5.4.5): back to the reset contents. A fill already in the
-          // memory fabric completes but sets no P flag.
+          // memory fabric completes but sets no P flag. A new fetch reads its
+          // subsegment and keeps none of it (5.4.6).
           for (int s = 0; s < 4; s++) begin
             p_q[s]   <= 8'h00;
             lru_q[s] <= 2'(s);
           end
-          if ((state_q == IC_FILL) && m_ack) begin
+          keep_q <= 1'b0;
+          if (lookup) begin
+            half_q  <= 1'b0;
+            state_q <= IC_FILL;
+          end else if ((state_q == IC_FILL) && m_ack) begin
             if (!half_q) begin
               fill_lo_q <= m_rdata;
               half_q    <= 1'b1;
@@ -201,6 +227,7 @@ module tms34010_icache
                   p_q[use_seg]   <= 8'h00;
                 end
                 half_q  <= 1'b0;
+                keep_q  <= 1'b1;
                 state_q <= IC_FILL;
               end
             end
@@ -210,8 +237,8 @@ module tms34010_icache
                 fill_lo_q <= m_rdata;
                 half_q    <= 1'b1;
               end else begin
-                p_q[seg_q][sub] <= 1'b1;
-                state_q         <= IC_DONE;
+                if (keep_q) p_q[seg_q][sub] <= 1'b1;
+                state_q <= IC_DONE;
               end
             end
             IC_DONE: state_q <= IC_IDLE;
@@ -229,7 +256,7 @@ module tms34010_icache
 
       always_comb begin
         // Default: pass the CPU request straight through.
-        m_req   = c_req && bypass && (state_q == IC_IDLE);
+        m_req   = c_req && pass && (state_q == IC_IDLE);
         m_we    = c_we;
         m_addr  = c_addr;
         m_size  = c_size;
@@ -238,7 +265,7 @@ module tms34010_icache
         m_srt   = c_srt;
         m_is_io = c_is_io;
         m_io_we = c_io_we;
-        c_ack   = m_ack && bypass && (state_q == IC_IDLE);
+        c_ack   = m_ack && pass && (state_q == IC_IDLE);
         c_rdata = m_rdata;
         c_from_mem = c_ack && c_ifetch;
 

@@ -28,6 +28,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/cdc/tms34010_emu_bridge.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/cdc/tms34010_local_bus_bridge.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/cdc/tms34010_screen_cdc.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/cdc/tms34010_sync_bit.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/cdc/tms34010_sync_bit_ce.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_alu.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/core/tms34010_decode.sv

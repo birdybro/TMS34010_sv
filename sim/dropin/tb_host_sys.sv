@@ -23,6 +23,9 @@ module tb_host_sys;
   parameter bit          CYCLE_ACCURATE = 1'b1;
   parameter int unsigned CLKS_PER_STATE = 8;
   localparam int unsigned CPS = CYCLE_ACCURATE ? CLKS_PER_STATE : 1;
+  // sampling unit for the CF pulse and CD stages (the original-timing mode runs
+  // one clock per state but its memory takes ACK_DELAY clocks)
+  localparam int unsigned SU = CYCLE_ACCURATE ? CLKS_PER_STATE : 10;
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -33,6 +36,9 @@ module tb_host_sys;
   logic [ADDR_WIDTH-1:0] cycle_addr, pc;
   local_word_t           cycle_wdata, cycle_io_rdata, cycle_rdata;
   core_state_t           core_state;
+  logic                  illegal;
+  logic                  illegal_seen = 1'b0;
+  always @(posedge clk) if (!rst && illegal) illegal_seen <= 1'b1;
 
   logic          host_req = 1'b0, host_we = 1'b0;
   host_reg_sel_t host_reg = HOST_REG_HSTADRL;
@@ -58,7 +64,7 @@ module tb_host_sys;
     .cycle_wdata_o(cycle_wdata), .cycle_io_rdata_o(cycle_io_rdata), .cycle_iaq_o(cycle_iaq),
     .cycle_srfaddr_o(), .cycle_dpytap_o(), .cycle_screen_org_o(), .cycle_dram_row_o(),
     .cycle_rdata_i(cycle_rdata), .cycle_ack_i(cycle_ack),
-    .state_o(core_state), .pc_o(pc), .instr_word_o(), .illegal_opcode_o()
+    .state_o(core_state), .pc_o(pc), .instr_word_o(), .illegal_opcode_o(illegal)
   );
 
   // ---- local memory: ACK_DELAY clocks per cycle (as tb_accuracy) ----------
@@ -100,6 +106,13 @@ module tb_host_sys;
     end
   end
 
+  // instruction-fetch reads on the bus while cf_watch is set (5.4.6 check)
+  logic        cf_watch = 1'b0;
+  logic [31:0] cf_rd [$];
+  always @(posedge clk)
+    if (!rst && cf_watch && cycle_req && cycle_ack && cycle_iaq && cycle_kind == LOCAL_CYCLE_WORD_READ)
+      cf_rd.push_back(cycle_addr);
+
   longint unsigned now;
   always @(posedge clk) now <= rst ? 0 : now + 1;
 
@@ -134,6 +147,29 @@ module tb_host_sys;
   task automatic wait_idle();
     while (host_busy) @(negedge clk);
   endtask
+
+  // every subsegment the cache holds as present must equal memory (accurate
+  // mode; the original-timing mode has no cache)
+  if (CYCLE_ACCURATE) begin : g_cc
+      task automatic check_cache(string where, inout int stale);
+        for (int sg = 0; sg < 4; sg++)
+          for (int sb = 0; sb < 8; sb++)
+            if (u_system.u_core.u_icache.g_cache.p_q[sg][sb])
+              for (int wd = 0; wd < 4; wd++) begin
+                logic [31:0] wa, cw;
+                wa = {u_system.u_core.u_icache.g_cache.ssa_q[sg], 3'(sb), 2'(wd), 4'h0};
+                cw = u_system.u_core.u_icache.g_cache.ram[{2'(sg), 3'(sb), wd[1]}];
+                if ((wd[0] ? cw[31:16] : cw[15:0]) !== rd(wa)) begin
+                  if (!stale) $display("STALE %s: cache segment %0d subsegment %0d word %0d (%08h) holds %04h, memory %04h",
+                                       where, sg, sb, wd, wa, wd[0] ? cw[31:16] : cw[15:0], rd(wa));
+                  stale++;
+                end
+              end
+      endtask
+  end else begin : g_cc
+      task automatic check_cache(string where, inout int stale);
+      endtask
+  end
 
   localparam local_word_t INCW = 16'h0800, INCR = 16'h1000, HLT = 16'h8000, NMI = 16'h0100;
 
@@ -315,6 +351,24 @@ module tb_host_sys;
                odd ? "old code still running from the cache" : "new code already running");
       hw(HOST_REG_HSTCTL, 16'h4000);              // CF=1: flush, and fetch around the cache while set
       repeat (CPS * 20) @(negedge clk);
+      // 5.4.6: with CF=1 (CD=0) each fetch reads the whole four-word subsegment
+      // and keeps only the requested word: instruction reads come as aligned
+      // runs of four.
+      cf_rd.delete();
+      cf_watch = 1'b1;
+      repeat (CPS * 200) @(negedge clk);
+      cf_watch = 1'b0;
+      while (cf_rd.size() && cf_rd[0][5:4] != 2'd0) void'(cf_rd.pop_front());   // whole runs only
+      begin
+        int runs = 0, broken = 0;
+        for (int i = 0; i + 3 < cf_rd.size(); i += 4) begin
+          runs++;
+          for (int j = 1; j < 4; j++)
+            if (cf_rd[i+j] != cf_rd[i] + 32'(16 * j)) broken++;
+        end
+        $display("MEAS cf_set instruction_reads=%0d whole_subsegments=%0d broken=%0d", cf_rd.size(), runs, broken);
+        if (CYCLE_ACCURATE && (runs < 8 || broken)) fail($sformatf("with CF=1 fetches did not read whole subsegments (%0d runs, %0d broken)", runs, broken));
+      end
       hw(HOST_REG_HSTCTL, 16'h0000);
       repeat (CPS * 20) @(negedge clk);
       odd = 0;
@@ -326,6 +380,38 @@ module tb_host_sys;
         c1 = c2;
       end
       if (odd) fail($sformatf("after CF the loop still counts by 1 (%0d odd steps)", odd));
+    end
+
+    // 9b. CF pulses at many phases while the loop runs. CF can change at any time
+    //     (the host writes it), also while an instruction fetch is in the memory
+    //     fabric. Whatever the phase, the loop must carry on with the code in
+    //     memory: a fetch started around the cache must not end up in it, and a
+    //     fetch started while CF=1 (5.4.6: the whole subsegment is read and
+    //     discarded) must leave no P flag behind.
+    begin
+      local_word_t c1, c2;
+      int bad = 0, stale = 0;
+      for (k = 0; k < 256; k++) begin
+        repeat (3 + k * 13 % 97) @(negedge clk);
+        hw(HOST_REG_HSTCTL, 16'h4000);
+        repeat (k * 7 % (CPS * 9)) @(negedge clk);
+        hw(HOST_REG_HSTCTL, 16'h0000);
+        repeat (SU * 30) @(negedge clk);
+        c1 = rd(32'h0020_0000);
+        for (int i = 0; i < 8; i++) begin
+          repeat (SU * 40) @(negedge clk);
+          c2 = rd(32'h0020_0000);
+          if (c2 == c1 || ((c2 - c1) % 2)) bad++;
+          c1 = c2;
+        end
+        g_cc.check_cache($sformatf("pulse %0d", k), stale);
+        if (bad || illegal_seen || stale) begin
+          fail($sformatf("CF pulse %0d: %0d cached words differ from memory; loop afterwards: %0d bad steps, illegal opcode %0d",
+                         k, stale, bad, illegal_seen));
+          break;
+        end
+      end
+      $display("MEAS cf_pulses trials=%0d failed_at=%0d", 256, (bad || illegal_seen || stale) ? k : -1);
     end
 
     // 10. LBL=1 (Atari and Inder hosts set it): with LBL=1 the read is started by
@@ -361,7 +447,36 @@ module tb_host_sys;
       hw(HOST_REG_HSTCTL, HLT);                  // its RETI has nothing to return to
     end
 
-    if (failures == 0) $display("TEST_RESULT: PASS (host load/readback, HLT release, 64 halts, 64 indirect accesses, NMI, INTIN, INTOUT, CF, LBL=1, NMIM=1)");
+
+    // 12. CD set and cleared by the program around a delay that changes every
+    //     pass (5.4.6). CONTROL writes are posted, so a fetch is in flight when
+    //     each one lands; the cache must still only ever hold what is in memory.
+    begin
+      logic [31:0] cdt;
+      local_word_t c1, c2;
+      int stale = 0, stuck = 0;
+      cdt = {rd(32'h0060_0010), rd(32'h0060_0000)};
+      hw(HOST_REG_HSTCTL, HLT | INCW);
+      set_addr(32'hFFFF_FEE0);
+      hw(HOST_REG_HSTDATA, cdt[15:0]);
+      hw(HOST_REG_HSTDATA, cdt[31:16]);
+      hw(HOST_REG_HSTCTL, NMI);                  // NMIM=0: the NMI starts CDT
+      repeat (SU * 100) @(negedge clk);
+      c1 = rd(32'h0020_0100);
+      for (k = 0; k < 128; k++) begin
+        repeat (SU * 150) @(negedge clk);
+        g_cc.check_cache($sformatf("CD pass sample %0d", k), stale);
+        c2 = rd(32'h0020_0100);
+        if (c2 == c1) stuck++;
+        c1 = c2;
+        if (stale) break;
+      end
+      $display("MEAS cd_toggle passes=%0d samples=%0d stale=%0d stuck=%0d", c1, k, stale, stuck);
+      if (stale || stuck || illegal_seen)
+        fail($sformatf("CD toggling: %0d cached words differ from memory, %0d samples without progress", stale, stuck));
+    end
+
+    if (failures == 0) $display("TEST_RESULT: PASS (host load/readback, HLT release, 64 halts, 64 indirect accesses, NMI, INTIN, INTOUT, CF, 256 CF pulses, LBL=1, NMIM=1, CD toggling)");
     else $display("TEST_RESULT: FAIL: %0d check(s) failed", failures);
     $finish;
   end

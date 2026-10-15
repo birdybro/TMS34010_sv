@@ -240,3 +240,12 @@ entry), LINE pixels drawn, and the G-to-G memory-to-memory move (+2 states in ev
   The guide requires pixel-aligned pixel addresses, so this is out-of-spec input; `CYCLE_ACCURATE=0` steps one
   pixel at a time and finishes. A fix would keep the step at least 1 pixel and needs checking against upstream
   on misaligned cases.
+- C18: cache flush and disable (5.4.5, 5.4.6). With CF=1 and CD=0 each instruction fetch reads the whole
+  four-word subsegment and keeps none of it (5.4.6: "all four words in the subsegment ... are fetched, although
+  all but the requested word are immediately discarded"); with CD=1 each word is fetched alone. 5.4.5's last
+  paragraph says the four-word fetch of CD; 5.4.6 and 5.4.7 (a disabled cache costs one word fetch per
+  instruction word) give it to CF, and the model follows them. The 1986 edition has neither sentence ("CD=1 has
+  the same effect as CF=1"). A fetch keeps the path it started on when CF or CD changes while it is in the
+  memory fabric (CF is written by the host at any time), and a fill that saw CF=1 at any point sets no P flag.
+  `sim/dropin/tb_host_sys.sv` checks the four-word reads, 256 CF pulses at different phases and a program that
+  sets and clears CD, with the cache compared against memory after each.
