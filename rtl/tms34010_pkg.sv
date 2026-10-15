@@ -481,6 +481,7 @@ package tms34010_pkg;
   parameter int unsigned CTRL_PBV_BIT  = 9;   // PixBlt vertical direction
   parameter int unsigned CTRL_PPOP_LO  = 10;  // pixel-processing operation select
   parameter int unsigned CTRL_PPOP_HI  = 14;
+  parameter int unsigned CTRL_CD_BIT   = 15;  // instruction cache disable (5.4.6)
   parameter logic [15:0] CONTROL_WRITABLE_MASK = 16'hFFFC;
 
   // ---------------------------------------------------------------------------
@@ -728,7 +729,7 @@ package tms34010_pkg;
   // guess of EQ=0100 and NE=0111 was WRONG — those codes are actually
   // LT and GT, respectively. Corrected in Task 0030; see A0023.
   parameter logic [3:0] CC_UC = 4'b0000;  // unconditional
-  parameter logic [3:0] CC_LO = 4'b0001;  // lower-than       (unsigned; C = 1; alias "B")
+  parameter logic [3:0] CC_P  = 4'b0001;  // positive         (N = 0 and Z = 0)
   parameter logic [3:0] CC_LS = 4'b0010;  // lower-or-same    (unsigned; C | Z = 1)
   parameter logic [3:0] CC_HI = 4'b0011;  // higher-than      (unsigned; ~C & ~Z = 1)
   parameter logic [3:0] CC_LT = 4'b0100;  // less-than        (signed;   N ^ V = 1)

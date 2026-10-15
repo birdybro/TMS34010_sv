@@ -18,13 +18,18 @@
 // that pulse, `refresh_row` is the newly decremented ROWADR value that the
 // future memory controller must drive for the refresh cycle.
 //
-// Clock domain: core/local clock only. Reset is synchronous active-high per
-// project convention A0003.
+// Clock domain: core clock. REFCNT counts local clocks (machine states); when
+// the core clock is CLKS_PER_STATE times the local clock, a prescaler limits
+// counting to one core clock in CLKS_PER_STATE. CLKS_PER_STATE=1 treats every
+// core clock as a local clock. Reset is synchronous active-high per project
+// convention A0003.
 // -----------------------------------------------------------------------------
 
 `default_nettype none
 
-module tms34010_refresh (
+module tms34010_refresh #(
+  parameter int unsigned CLKS_PER_STATE = 1
+) (
   input  logic        clk,
   input  logic        rst,
   input  logic [1:0]  rr,
@@ -36,6 +41,7 @@ module tms34010_refresh (
   output logic        refresh_req
 );
 
+  logic        local_tick;
   logic        count_enable;
   logic [13:0] count_step;
   logic        interval_underflow;
@@ -70,13 +76,30 @@ module tms34010_refresh (
     endcase
   end
 
+  generate
+    if (CLKS_PER_STATE > 1) begin : g_prescale
+      localparam int unsigned PW = $clog2(CLKS_PER_STATE);
+      // Justification (a): local-clock phase within the core clock.
+      logic [PW-1:0] phase_q;
+      always_ff @(posedge clk) begin
+        if (rst || phase_q == PW'(CLKS_PER_STATE - 1))
+          phase_q <= '0;
+        else
+          phase_q <= phase_q + 1'b1;
+      end
+      assign local_tick = (phase_q == PW'(CLKS_PER_STATE - 1));
+    end else begin : g_every_clock
+      assign local_tick = 1'b1;
+    end
+  endgenerate
+
   // Borrow out of the six-bit RINTVL field is the refresh-request event.
   assign interval_underflow =
-      count_enable && ({8'd0, refcnt_q[7:2]} < count_step);
+      local_tick && count_enable && ({8'd0, refcnt_q[7:2]} < count_step);
 
   always_comb begin
     refcnt_d = refcnt_q;
-    if (count_enable)
+    if (local_tick && count_enable)
       refcnt_d[15:2] = refcnt_q[15:2] - count_step;
   end
 

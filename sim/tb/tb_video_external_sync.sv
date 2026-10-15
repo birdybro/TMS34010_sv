@@ -51,7 +51,7 @@ module tb_video_external_sync;
 
   tms34010_video u_dut (
     .clk            (clk),
-    .rst            (rst),
+    .rst            (rst), .ce(1'b1),
     .hesync         (16'd1),
     .heblnk         (16'd2),
     .hsblnk         (16'd6),

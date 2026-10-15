@@ -81,7 +81,7 @@ module tb_fpga_refresh_ratio;
     .refresh_req  (refresh_req)
   );
 
-  tms34010_memory_fabric u_fabric (
+  tms34010_memory_fabric #(.CYCLE_ACCURATE(1'b0), .CLKS_PER_STATE(1)) u_fabric (
     .clk                  (core_clk),
     .rst                  (rst),
     .cpu_field_req_i      (1'b0),
@@ -89,6 +89,11 @@ module tb_fpga_refresh_ratio;
     .cpu_field_addr_i     ('0),
     .cpu_field_size_i     ('0),
     .cpu_field_wdata_i    ('0),
+    .cpu_field_keep_i   ('0),
+    .cpu_field_rmw_i    (1'b0),
+    .cpu_field_late_i   (1'b0),
+    .cpu_field_late_wdata_i('0),
+    .cpu_field_late_keep_i('0),
     .cpu_field_iaq_i      (1'b0),
     .cpu_field_srt_i      (1'b0),
     .cpu_field_is_io_i    (1'b0),

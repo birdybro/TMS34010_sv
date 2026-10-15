@@ -30,6 +30,17 @@
 `default_nettype none
 module tms34010_core
   import tms34010_pkg::*;
+#(
+  // Core clocks per local clock (machine state). 1 = every core clock is a
+  // local clock.
+  parameter int unsigned CLKS_PER_STATE = 8,
+  // 1 (default): cycle-accurate timing (docs/cycle_accuracy.md); needs
+  // CLKS_PER_STATE >= 8, i.e. the core clock is the board's INCLK. 0: the
+  // original TMS34010_sv behaviour, kept as the test reference.
+  parameter bit          CYCLE_ACCURATE = 1'b1,
+  // vclk_i is a clock enable on clk instead of a clock (tms34010_system)
+  parameter bit          VCLK_CEN       = 1'b0
+)
 (
   input  logic                                clk,
   input  logic                                vclk_i,
@@ -44,6 +55,16 @@ module tms34010_core
   output logic [ADDR_WIDTH-1:0]               mem_addr,
   output logic [FIELD_SIZE_WIDTH-1:0]         mem_size,
   output logic [DATA_WIDTH-1:0]               mem_wdata,
+  // Bits of a write's field the memory controller keeps (plane mask,
+  // transparency), and whether it reads and merges every word of the write
+  // (plane masking or transparency enabled); 0 with CYCLE_ACCURATE=0.
+  output logic [DATA_WIDTH-1:0]               mem_keep,
+  output logic                                mem_rmw,
+  // CYCLE_ACCURATE: this write's data and keep mask follow one clock after
+  // the memory takes the request (mem_late_wdata/keep, valid that clock).
+  output logic                                mem_late,
+  output logic [DATA_WIDTH-1:0]               mem_late_wdata,
+  output logic [DATA_WIDTH-1:0]               mem_late_keep,
   output logic                                mem_iaq,
   output logic                                mem_srt,
   output logic                                mem_is_io,
@@ -51,6 +72,9 @@ module tms34010_core
   output local_word_t                         mem_io_rdata,
   input  logic [DATA_WIDTH-1:0]               mem_rdata,
   input  logic                                mem_ack,
+  // The memory controller is still busy with a CPU request (a posted write
+  // in progress). Used only with CYCLE_ACCURATE.
+  input  logic                                mem_busy,
 
   // Emulation boundary. RUN/EMU is high for RUN and low for EMU; EMUA is
   // active low. The physical HLDA/EMUA phase multiplexing belongs in the
@@ -165,6 +189,72 @@ module tms34010_core
     endcase
   endfunction
 
+  // The same operations on every pixel of a field of up to 16 bits at once
+  // (the word FILL engine, CYCLE_ACCURATE). Boolean operations are bitwise;
+  // the arithmetic ones work on each PSIZE-bit pixel.
+  function automatic logic [15:0] ppop_word(
+      input logic [15:0] src,
+      input logic [15:0] dest,
+      input logic [4:0]  ppop,
+      input logic [FIELD_SIZE_WIDTH-1:0] psize);
+    logic [DATA_WIDTH-1:0] r;
+    ppop_word = 16'(ppop_apply({16'd0, src}, {16'd0, dest}, ppop, 32'h0000_FFFF));
+    if ((ppop >= 5'h10) && (ppop <= 5'h15)) begin
+      unique case (psize)
+        6'd16: ppop_word = 16'(ppop_apply({16'd0, src}, {16'd0, dest}, ppop,
+                                          32'h0000_FFFF));
+        6'd8: for (int i = 0; i < 2; i++) begin
+          r = ppop_apply({24'd0, src[i*8 +: 8]}, {24'd0, dest[i*8 +: 8]}, ppop, 32'hFF);
+          ppop_word[i*8 +: 8] = r[7:0];
+        end
+        6'd4: for (int i = 0; i < 4; i++) begin
+          r = ppop_apply({28'd0, src[i*4 +: 4]}, {28'd0, dest[i*4 +: 4]}, ppop, 32'hF);
+          ppop_word[i*4 +: 4] = r[3:0];
+        end
+        6'd2: for (int i = 0; i < 8; i++) begin
+          r = ppop_apply({30'd0, src[i*2 +: 2]}, {30'd0, dest[i*2 +: 2]}, ppop, 32'h3);
+          ppop_word[i*2 +: 2] = r[1:0];
+        end
+        default: for (int i = 0; i < 16; i++) begin
+          r = ppop_apply({31'd0, src[i]}, {31'd0, dest[i]}, ppop, 32'h1);
+          ppop_word[i] = r[0];
+        end
+      endcase
+    end
+  endfunction
+
+  // One PSIZE-bit lane of all ones for every 1 bit of a binary source (the
+  // PIXBLT expand forms): bit i selects pixel i of the destination field.
+  function automatic logic [15:0] expand_bits(
+      input logic [15:0] bits,
+      input logic [FIELD_SIZE_WIDTH-1:0] psize);
+    expand_bits = '0;
+    unique case (psize)
+      6'd16: expand_bits = {16{bits[0]}};
+      6'd8: for (int i = 0; i < 2; i++) expand_bits[i*8 +: 8] = {8{bits[i]}};
+      6'd4: for (int i = 0; i < 4; i++) expand_bits[i*4 +: 4] = {4{bits[i]}};
+      6'd2: for (int i = 0; i < 8; i++) expand_bits[i*2 +: 2] = {2{bits[i]}};
+      default: expand_bits = bits;
+    endcase
+  endfunction
+
+  // The pixels of a 16-bit word field that are 0 (transparent).
+  function automatic logic [15:0] zero_pixels(
+      input logic [15:0] value,
+      input logic [FIELD_SIZE_WIDTH-1:0] psize);
+    zero_pixels = '0;
+    unique case (psize)
+      6'd16: zero_pixels = (value == 16'd0) ? 16'hFFFF : 16'h0000;
+      6'd8: for (int i = 0; i < 2; i++)
+        zero_pixels[i*8 +: 8] = (value[i*8 +: 8] == 8'd0) ? 8'hFF : 8'h00;
+      6'd4: for (int i = 0; i < 4; i++)
+        zero_pixels[i*4 +: 4] = (value[i*4 +: 4] == 4'd0) ? 4'hF : 4'h0;
+      6'd2: for (int i = 0; i < 8; i++)
+        zero_pixels[i*2 +: 2] = (value[i*2 +: 2] == 2'd0) ? 2'h3 : 2'h0;
+      default: zero_pixels = ~value;
+    endcase
+  endfunction
+
   // The graphics engines are mutually exclusive at instruction granularity.
   // Route their operands through one PPOP datapath instead of synthesizing a
   // complete Boolean/arithmetic processor for every engine.
@@ -229,6 +319,31 @@ module tms34010_core
   core_state_t state_q;
   core_state_t state_d;
 
+  // FSM side of the memory interface. tms34010_icache (5.4) sits between
+  // these and the mem_* ports; with CYCLE_ACCURATE=0 it is a wire.
+  logic                          fsm_mem_req;
+  logic                          fsm_mem_we;
+  logic [ADDR_WIDTH-1:0]         fsm_mem_addr;
+  logic [FIELD_SIZE_WIDTH-1:0]   fsm_mem_size;
+  logic [DATA_WIDTH-1:0]         fsm_mem_wdata;
+  logic [DATA_WIDTH-1:0]         fsm_mem_keep;
+  logic                          fsm_mem_rmw;
+  logic                          fsm_mem_iaq;
+  logic                          fsm_mem_srt;
+  logic                          fsm_mem_is_io;
+  logic                          fsm_mem_io_we;
+  local_word_t                   fsm_mem_io_rdata;
+  logic [DATA_WIDTH-1:0]         fsm_mem_rdata;
+  logic                          fsm_mem_ack;
+  logic                          fsm_mem_ifetch;
+  logic                          io_post_d1_q, io_post_d2_q, io_post_d3_q; // posted I/O write commit
+  logic                          io_rd_late_q;      // CYCLE_ACCURATE: I/O read view a clock late
+  logic                          io_req, io_we;               // I/O register access strobe
+  logic                          fsm_mem_from_mem;  // word came from memory, not the cache
+  logic                          pace_hold;         // CYCLE_ACCURATE: next fetch not yet due
+  logic                          pace_write_hold;   // CYCLE_ACCURATE: write not yet due
+  logic                          pace_fill_hold;    // CYCLE_ACCURATE: FILL access not yet due
+
   always_ff @(posedge clk) begin
     if (rst) begin
       state_q <= CORE_RESET;
@@ -253,7 +368,7 @@ module tms34010_core
   always_ff @(posedge clk) begin
     if (rst) begin
       instr_word_q <= '0;
-    end else if (state_q == CORE_FETCH && mem_ack) begin
+    end else if (state_q == CORE_FETCH && fsm_mem_ack) begin
       instr_word_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
     end
   end
@@ -388,7 +503,7 @@ module tms34010_core
       popped_pc_q <= '0;
       move_data_q <= '0;
       pix_dest_q  <= '0;
-    end else if (state_q == CORE_MEMORY && mem_ack) begin
+    end else if (state_q == CORE_MEMORY && fsm_mem_ack) begin
       // MOVE *Rs,*Rd: step 0 reads the source field; latch it so step 1
       // can write it to the destination.
       if (((decoded.iclass == INSTR_MOVE_FIELD_M2M)
@@ -450,7 +565,7 @@ module tms34010_core
                     mem_op_step <= (pixt_rmw && mem_op_step == 2'd0) ? 2'd1 : 2'd0;
         default:    mem_op_step <= 2'd0;
       endcase
-    end else if (state_q == CORE_INT_VECTOR && mem_ack) begin
+    end else if (state_q == CORE_INT_VECTOR && fsm_mem_ack) begin
       // Interrupt entry: latch the fetched trap vector (ISR entry address) so
       // CORE_INT_DONE can load it into the PC.
       popped_pc_q <= mem_rdata_eff;
@@ -488,10 +603,52 @@ module tms34010_core
   logic                  pixel_dest_read_required;
   assign fill_psize_ext = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
   assign fill_empty     = (fill_dx_q == 16'd0) || (fill_dy_q == 16'd0);
-  assign fill_row_end   = !fill_empty && (fill_x_q == fill_dx_q - 16'd1);
+  // With CYCLE_ACCURATE the FILL works a word at a time (13.3.2.2): each
+  // step writes the pixels from the current address to the next word
+  // boundary or the end of the row. Otherwise one pixel per step.
+  logic [15:0]           fill_step_px;
+  logic [FIELD_SIZE_WIDTH-1:0] fill_step_bits;
+  logic [15:0]           fill_word_px;
+  // Pixels from the address to the next word boundary, registered the same
+  // way as fill_rem_q (off the W=3 clip -> start address path): a step's
+  // write acknowledge loads it from the next address, otherwise it follows
+  // fill_addr_q a clock late.
+  logic [15:0]           fill_word_px_q;
+  logic [3:0]            fill_next_nib;
+  assign fill_next_nib  = (fill_row_end && !fill_done)
+                        ? (fill_row_base_q[3:0] + fill_dptch_q[3:0])
+                        : fill_next_addr[3:0];
+  always_ff @(posedge clk)
+    if (state_q == CORE_FILL && fsm_mem_ack && fill_substep_q)
+      fill_word_px_q <= {11'd0, 5'd16 - {1'b0, fill_next_nib}} >> pix_xy_xsh;
+    else
+      fill_word_px_q <= {11'd0, 5'd16 - {1'b0, fill_addr_q[3:0]}} >> pix_xy_xsh;
+  assign fill_word_px   = fill_word_px_q;
+  // Pixels left in the row, registered (off the W=3 clip -> DX path). A step's
+  // write acknowledge updates it with fill_x_q, so it is current in the next
+  // clock; otherwise it follows DX - X a clock late. The one late case is
+  // W=3 preclipping (DX written in CORE_FILL_SETUP_WIN, CORE_FILL next):
+  // the first access is held for the setup states then, so the stale value
+  // never reaches a request.
+  logic [15:0]           fill_rem_q;
+  always_ff @(posedge clk)
+    if (state_q == CORE_FILL && fsm_mem_ack && fill_substep_q)
+      fill_rem_q <= fill_row_end ? fill_dx_q : fill_rem_q - fill_step_px;
+    else
+      fill_rem_q <= fill_dx_q - fill_x_q;
+  // The step size itself is registered too (off the register-to-datapath
+  // path): it is used no sooner than two clocks after its inputs change
+  // (each step is followed by the checkpoint states; the first waits for the
+  // setup states).
+  logic [15:0]           fill_step_px_q;
+  always_ff @(posedge clk)
+    fill_step_px_q <= (fill_rem_q < fill_word_px) ? fill_rem_q : fill_word_px;
+  assign fill_step_px   = !CYCLE_ACCURATE ? 16'd1 : fill_step_px_q;
+  assign fill_step_bits = FIELD_SIZE_WIDTH'(fill_step_px << pix_xy_xsh);
+  assign fill_row_end   = !fill_empty && (fill_x_q + fill_step_px == fill_dx_q);
   assign fill_done      = fill_row_end
                        && (fill_y_q == fill_dy_q - 16'd1);
-  assign fill_next_addr = fill_addr_q + fill_psize_ext;
+  assign fill_next_addr = fill_addr_q + DATA_WIDTH'(fill_step_bits);
   // The architectural interrupt points are destination word/row boundaries.
   // A checkpoint is never inserted after the final pixel; the following
   // fetch boundary handles that as an ordinary completed instruction.
@@ -502,6 +659,14 @@ module tms34010_core
       (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO] != 5'd0)
       || io_control[CTRL_T_BIT]
       || (io_pmask != 16'h0000);
+  // With CYCLE_ACCURATE, plane masking and transparency are applied by the
+  // memory controller inside the write, a read-modify-write of each word
+  // (13.3.2.5, Table 13-7); the CPU reads the destination only for a pixel
+  // processing operation. PIXT, DRAV and LINE; FILL and PIXBLT still read it.
+  logic                  pixel_cpu_dest_read;
+  assign pixel_cpu_dest_read = CYCLE_ACCURATE
+      ? (io_control[CTRL_PPOP_HI:CTRL_PPOP_LO] != 5'd0)
+      : pixel_dest_read_required;
 
   // FILL XY: convert the XY DADDR (latched raw at EXECUTE) to a linear start
   // address at SETUP, where OFFSET (B4) is on read port 3. Same shift form as
@@ -515,6 +680,19 @@ module tms34010_core
        | ({16'b0, fill_daddr_raw_q[15:0]} << pix_xy_xsh))
       + rf_rs3_data;   // OFFSET (B4) at SETUP
   assign fill_start = fill_is_xy ? fill_xy_linear : fill_daddr_raw_q;
+  // W=3 moves the start to the clipped corner, whose address the chip forms
+  // with the same conversion; that corner lies in the window, so X >= 0
+  // there (4.3: "the clipping window ... is restricted to positive X and Y").
+  // The clipped start is this array's start plus the clip offsets, which
+  // needs the start as a sum: with X sign-extended and added, the same value
+  // as the OR form for any X the conversion can take (0 <= X*PSIZE < pitch),
+  // and the clipped corner's address when the array starts left of X = 0.
+  logic [DATA_WIDTH-1:0] fill_xy_sum, fill_sum_start, fill_sum_q;
+  assign fill_xy_sum =
+      (({{16{fill_daddr_raw_q[DATA_WIDTH-1]}}, fill_daddr_raw_q[DATA_WIDTH-1:16]} << fill_xy_yshift)
+       + ({{16{fill_daddr_raw_q[15]}}, fill_daddr_raw_q[15:0]} << pix_xy_xsh))
+      + rf_rs3_data;   // OFFSET (B4) at SETUP
+  assign fill_sum_start = fill_is_xy ? fill_xy_sum : fill_daddr_raw_q;
 
   // FILL pixel processing (Task 0093). Modes that consume the old pixel use
   // step 0 to read it into fill_dest_q, then step 1 writes PPOP(COLOR1,dest)
@@ -537,14 +715,26 @@ module tms34010_core
   assign fill_px = fill_daddr_raw_q[15:0]            + fill_x_q;
   assign fill_py = fill_daddr_raw_q[DATA_WIDTH-1:16] + fill_y_q;
   assign fill_in_window =
-        (fill_px >= fill_wstart_q[15:0]) && (fill_px <= fill_wend_q[15:0])
-     && (fill_py >= fill_wstart_q[DATA_WIDTH-1:16]) && (fill_py <= fill_wend_q[DATA_WIDTH-1:16]);
+        ($signed(fill_px) >= $signed(fill_wstart_q[15:0])) && ($signed(fill_px) <= $signed(fill_wend_q[15:0]))
+     && ($signed(fill_py) >= $signed(fill_wstart_q[DATA_WIDTH-1:16])) && ($signed(fill_py) <= $signed(fill_wend_q[DATA_WIDTH-1:16]));
   assign fill_clip_out = fill_win_en_q && !fill_in_window;
   // W=2 (miss detection): the whole array is drawn only if it lies entirely
   // within the window. Containment is a single rectangle test on the array's
   // corners, evaluated combinationally at CORE_FILL_SETUP_WIN from the live
   // WSTART(port1)/WEND(port2) reads (X=[15:0], Y=[31:16]).
   logic                  fill_array_inside;
+  // The window corners the clip is computed from: the live WSTART/WEND reads,
+  // or with CYCLE_ACCURATE the registered ones, a clock later (the FSM stays
+  // a second clock in CORE_FILL_SETUP_WIN; the setup states hold the first
+  // access anyway). This keeps the register file out of the clip -> DX /
+  // start-address path.
+  logic [DATA_WIDTH-1:0] fill_win_s, fill_win_e;
+  logic                  fill_win_eval_q;
+  assign fill_win_s = CYCLE_ACCURATE ? fill_wstart_q : rf_rs1_data;
+  assign fill_win_e = CYCLE_ACCURATE ? fill_wend_q   : rf_rs2_data;
+  always_ff @(posedge clk)
+    fill_win_eval_q <= !rst && CYCLE_ACCURATE && (state_q == CORE_FILL_SETUP_WIN)
+                       && !fill_win_eval_q;
   logic [15:0]           fill_arr_x0, fill_arr_y0, fill_arr_x1, fill_arr_y1;
   assign fill_arr_x0 = fill_daddr_raw_q[15:0];
   assign fill_arr_y0 = fill_daddr_raw_q[DATA_WIDTH-1:16];
@@ -554,8 +744,8 @@ module tms34010_core
                                   : fill_arr_y0 + fill_dy_q - 16'd1;
   assign fill_array_inside = !fill_empty
      &&
-        (fill_arr_x0 >= rf_rs1_data[15:0]) && (fill_arr_x1 <= rf_rs2_data[15:0])
-     && (fill_arr_y0 >= rf_rs1_data[DATA_WIDTH-1:16]) && (fill_arr_y1 <= rf_rs2_data[DATA_WIDTH-1:16]);
+        ($signed(fill_arr_x0) >= $signed(fill_win_s[15:0])) && ($signed(fill_arr_x1) <= $signed(fill_win_e[15:0]))
+     && ($signed(fill_arr_y0) >= $signed(fill_win_s[DATA_WIDTH-1:16])) && ($signed(fill_arr_y1) <= $signed(fill_win_e[DATA_WIDTH-1:16]));
   // W=3 preclipping is calculated from the live window read in
   // CORE_FILL_SETUP_WIN, before the first pixel request. The working start
   // becomes the top-left intersection and the working dimensions shrink to
@@ -569,21 +759,20 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] fill_clip_left_bits, fill_clip_top_bits;
   logic [DATA_WIDTH-1:0] fill_clip_start, fill_original_result;
   assign fill_clip_hit = !fill_empty
-      && (rf_rs1_data[15:0] <= rf_rs2_data[15:0])
-      && (rf_rs1_data[DATA_WIDTH-1:16]
-          <= rf_rs2_data[DATA_WIDTH-1:16])
+      && ($signed(fill_win_s[15:0]) <= $signed(fill_win_e[15:0]))
+      && ($signed(fill_win_s[DATA_WIDTH-1:16]) <= $signed(fill_win_e[DATA_WIDTH-1:16]))
       && !(
-        (fill_arr_x1 < rf_rs1_data[15:0]) || (fill_arr_x0 > rf_rs2_data[15:0])
-     || (fill_arr_y1 < rf_rs1_data[DATA_WIDTH-1:16])
-     || (fill_arr_y0 > rf_rs2_data[DATA_WIDTH-1:16]));
-  assign fill_clip_x0 = (fill_arr_x0 > rf_rs1_data[15:0])
-                      ? fill_arr_x0 : rf_rs1_data[15:0];
-  assign fill_clip_y0 = (fill_arr_y0 > rf_rs1_data[DATA_WIDTH-1:16])
-                      ? fill_arr_y0 : rf_rs1_data[DATA_WIDTH-1:16];
-  assign fill_clip_x1 = (fill_arr_x1 < rf_rs2_data[15:0])
-                      ? fill_arr_x1 : rf_rs2_data[15:0];
-  assign fill_clip_y1 = (fill_arr_y1 < rf_rs2_data[DATA_WIDTH-1:16])
-                      ? fill_arr_y1 : rf_rs2_data[DATA_WIDTH-1:16];
+        ($signed(fill_arr_x1) < $signed(fill_win_s[15:0])) || ($signed(fill_arr_x0) > $signed(fill_win_e[15:0]))
+     || ($signed(fill_arr_y1) < $signed(fill_win_s[DATA_WIDTH-1:16]))
+     || ($signed(fill_arr_y0) > $signed(fill_win_e[DATA_WIDTH-1:16])));
+  assign fill_clip_x0 = ($signed(fill_arr_x0) > $signed(fill_win_s[15:0]))
+                      ? fill_arr_x0 : fill_win_s[15:0];
+  assign fill_clip_y0 = ($signed(fill_arr_y0) > $signed(fill_win_s[DATA_WIDTH-1:16]))
+                      ? fill_arr_y0 : fill_win_s[DATA_WIDTH-1:16];
+  assign fill_clip_x1 = ($signed(fill_arr_x1) < $signed(fill_win_e[15:0]))
+                      ? fill_arr_x1 : fill_win_e[15:0];
+  assign fill_clip_y1 = ($signed(fill_arr_y1) < $signed(fill_win_e[DATA_WIDTH-1:16]))
+                      ? fill_arr_y1 : fill_win_e[DATA_WIDTH-1:16];
   assign fill_clip_dx = fill_clip_hit
                       ? fill_clip_x1 - fill_clip_x0 + 16'd1 : 16'd0;
   assign fill_clip_dy = fill_clip_hit
@@ -595,7 +784,7 @@ module tms34010_core
   assign fill_clip_left_bits = {{16{1'b0}}, fill_clip_left} << pix_xy_xsh;
   assign fill_clip_top_bits =
       {{16{1'b0}}, fill_clip_top} << (5'd31 - io_convdp[4:0]);
-  assign fill_clip_start = fill_addr_q
+  assign fill_clip_start = fill_sum_q
                          + fill_clip_left_bits + fill_clip_top_bits;
   assign fill_original_result = fill_addr_q
       + ({{16{1'b0}}, fill_dy_q - 16'd1} << (5'd31 - io_convdp[4:0]))
@@ -609,19 +798,18 @@ module tms34010_core
   logic [15:0] fill_common_x1, fill_common_y1;
   logic [DATA_WIDTH-1:0] fill_common_daddr, fill_common_dydx;
   assign fill_array_hit = !fill_empty
-      && (fill_wstart_q[15:0] <= fill_wend_q[15:0])
-      && (fill_wstart_q[DATA_WIDTH-1:16]
-          <= fill_wend_q[DATA_WIDTH-1:16])
+      && ($signed(fill_wstart_q[15:0]) <= $signed(fill_wend_q[15:0]))
+      && ($signed(fill_wstart_q[DATA_WIDTH-1:16]) <= $signed(fill_wend_q[DATA_WIDTH-1:16]))
       && !(
-        (fill_arr_x1 < fill_wstart_q[15:0]) || (fill_arr_x0 > fill_wend_q[15:0])
-     || (fill_arr_y1 < fill_wstart_q[DATA_WIDTH-1:16]) || (fill_arr_y0 > fill_wend_q[DATA_WIDTH-1:16]));
-  assign fill_common_x0 = (fill_arr_x0 > fill_wstart_q[15:0])
+        ($signed(fill_arr_x1) < $signed(fill_wstart_q[15:0])) || ($signed(fill_arr_x0) > $signed(fill_wend_q[15:0]))
+     || ($signed(fill_arr_y1) < $signed(fill_wstart_q[DATA_WIDTH-1:16])) || ($signed(fill_arr_y0) > $signed(fill_wend_q[DATA_WIDTH-1:16])));
+  assign fill_common_x0 = ($signed(fill_arr_x0) > $signed(fill_wstart_q[15:0]))
                         ? fill_arr_x0 : fill_wstart_q[15:0];
-  assign fill_common_y0 = (fill_arr_y0 > fill_wstart_q[DATA_WIDTH-1:16])
+  assign fill_common_y0 = ($signed(fill_arr_y0) > $signed(fill_wstart_q[DATA_WIDTH-1:16]))
                         ? fill_arr_y0 : fill_wstart_q[DATA_WIDTH-1:16];
-  assign fill_common_x1 = (fill_arr_x1 < fill_wend_q[15:0])
+  assign fill_common_x1 = ($signed(fill_arr_x1) < $signed(fill_wend_q[15:0]))
                         ? fill_arr_x1 : fill_wend_q[15:0];
-  assign fill_common_y1 = (fill_arr_y1 < fill_wend_q[DATA_WIDTH-1:16])
+  assign fill_common_y1 = ($signed(fill_arr_y1) < $signed(fill_wend_q[DATA_WIDTH-1:16]))
                         ? fill_arr_y1 : fill_wend_q[DATA_WIDTH-1:16];
   assign fill_common_daddr = {fill_common_y0, fill_common_x0};
   assign fill_common_dydx = {
@@ -681,6 +869,24 @@ module tms34010_core
                  || (line_win_wb && line_aborted_q)   // LINE W=1/W=2 abort
                  || (pixt_win_wb && (((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) && pixt_inside_q)
                                   || ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2) && !pixt_inside_q)));
+  // Word FILL datapath (CYCLE_ACCURATE): COLOR1, the destination read and
+  // the plane mask at the step's position in its word; transparent pixels and
+  // plane-masked bits are kept by the memory controller (13.3.2.5).
+  logic [15:0] fill_step_mask, fill_word_color, fill_word_dest, fill_word_pmask;
+  logic [15:0] fill_word_result, fill_word_keep;
+  assign fill_step_mask   = 16'((32'd1 << fill_step_bits) - 32'd1);
+  assign fill_word_color  = 16'(fill_color_q >> fill_addr_q[3:0]) & fill_step_mask;
+  assign fill_word_dest   = fill_dest_q[15:0] & fill_step_mask;
+  assign fill_word_pmask  = 16'({16'd0, pixel_plane_mask_q} >> fill_addr_q[3:0]) & fill_step_mask;
+  assign fill_word_result = ppop_word(fill_word_color, fill_word_dest & ~fill_word_pmask,
+                                      pixel_ppop_code_q, io_psize[FIELD_SIZE_WIDTH-1:0])
+                          & fill_step_mask;
+  assign fill_word_keep   = (fill_word_pmask
+                             | (pixel_transp_en_q
+                                ? zero_pixels(fill_word_result & ~fill_word_pmask,
+                                              io_psize[FIELD_SIZE_WIDTH-1:0])
+                                : 16'd0))
+                          & fill_step_mask;
   assign fill_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
   assign fill_pmask_field = aligned_pmask(pixel_plane_mask_q, fill_addr_q,
                                           fill_pixel_mask);
@@ -693,6 +899,7 @@ module tms34010_core
       fill_dx_q        <= '0;
       fill_dy_q        <= '0;
       fill_addr_q      <= '0;
+      fill_sum_q       <= '0;
       fill_row_base_q  <= '0;
       fill_result_q    <= '0;
       fill_x_q         <= '0;
@@ -735,7 +942,7 @@ module tms34010_core
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
         fill_w1_q        <= !array_resume && fill_is_xy &&
                             (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
-        fill_dest_read_q <= pixel_dest_read_required;
+        fill_dest_read_q <= pixel_cpu_dest_read;
         fill_preclip_changed_q <= 1'b0;
         fill_w3_empty_q  <= 1'b0;
       end
@@ -768,7 +975,7 @@ module tms34010_core
       if (state_q == CORE_FILL_SETUP_WIN) begin
         fill_wstart_q <= rf_rs1_data;
         fill_wend_q   <= rf_rs2_data;
-        if (fill_win_en_q) begin
+        if (fill_win_en_q && (!CYCLE_ACCURATE || fill_win_eval_q)) begin
           fill_preclip_changed_q <= !fill_array_inside;
           fill_w3_empty_q        <= !fill_clip_hit;
           if (fill_clip_hit) begin
@@ -786,13 +993,14 @@ module tms34010_core
       if (state_q == CORE_FILL_SETUP) begin
         fill_color_q    <= rf_rs1_data;        // COLOR1
         fill_addr_q     <= fill_start;
+        fill_sum_q      <= fill_sum_start;
         fill_row_base_q <= fill_start;
         fill_result_q   <= fill_start;
         fill_substep_q  <= !fill_dest_read_q;
       end
       // CORE_FILL: direct replace writes start/stay at sub-step 1; all other
       // modes read at sub-step 0 before writing at sub-step 1.
-      if (state_q == CORE_FILL && mem_ack) begin
+      if (state_q == CORE_FILL && fsm_mem_ack) begin
         if (!fill_substep_q) begin
           // Read ack: latch the destination pixel for processing.
           fill_dest_q <= mem_rdata_eff;
@@ -800,7 +1008,7 @@ module tms34010_core
         end else begin
           fill_substep_q <= !fill_dest_read_q;
           // Write ack: advance to the next pixel (or to the final DADDR).
-          fill_addr_q <= fill_addr_q + fill_psize_ext;
+          fill_addr_q <= fill_next_addr;
           if (fill_row_end && !fill_done) begin
             // Row complete (not the last): jump to the next row's base.
             fill_y_q        <= fill_y_q + 16'd1;
@@ -808,7 +1016,7 @@ module tms34010_core
             fill_addr_q     <= fill_row_base_q + fill_dptch_q;
             fill_x_q        <= 16'd0;
           end else if (!fill_done) begin
-            fill_x_q <= fill_x_q + 16'd1;
+            fill_x_q <= fill_x_q + fill_step_px;
           end
           // On fill_done the write ack leaves fill_addr_q at the pixel
           // following the last (the final DADDR); the FSM moves to CORE_FILL_WB.
@@ -846,7 +1054,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_src_pmask_field, pblt_pmask_field;
   logic                  pblt_empty, pblt_row_end, pblt_done;
   // PIXBLT B (color expand): COLOR0/COLOR1 latched at SETUP2; the source read is
-  // 1 bit (mem_size 1, src step 1) and expands to COLOR1 / COLOR0.
+  // 1 bit (fsm_mem_size 1, src step 1) and expands to COLOR1 / COLOR0.
   logic [DATA_WIDTH-1:0] pblt_color0_q, pblt_color1_q;
   logic [DATA_WIDTH-1:0] pblt_src_eff, pblt_src_step;
   assign pblt_psize_ext   = DATA_WIDTH'(io_psize[FIELD_SIZE_WIDTH-1:0]);
@@ -856,8 +1064,239 @@ module tms34010_core
   assign pblt_pmask_field = aligned_pmask(
       pixel_plane_mask_q, pblt_dst_access_addr, pblt_pixel_mask);
   assign pblt_empty       = (pblt_dx_q == 16'd0) || (pblt_dy_q == 16'd0);
+  // With CYCLE_ACCURATE the full-color PIXBLTs work a destination word at a
+  // time (13.4.2.2): each step moves the pixels up to the next destination
+  // word boundary (in the PBH direction) or the end of the row. The source
+  // words are read once each into a two-word buffer (13.4.2.4: the first
+  // destination word needs one or two of them). Binary PIXBLTs and
+  // CYCLE_ACCURATE=0 move a pixel per step.
+  logic                  pbw_on;    // full-color word mode (source buffer)
+  logic                  pbx_on;    // binary (expand) word mode
+  logic                  pbw_word;  // either
+  logic [15:0]           pbw_room_px, pbw_step_px;
+  logic [FIELD_SIZE_WIDTH-1:0] pbw_step_bits;
+  logic [DATA_WIDTH-1:0] pbw_dst_start, pbw_src_start;
+  assign pbw_on        = CYCLE_ACCURATE && !decoded.blt_binary;
+  assign pbx_on        = CYCLE_ACCURATE && decoded.blt_binary;
+  assign pbw_word      = CYCLE_ACCURATE;
+  // Pixels from the destination address to the next word boundary in the
+  // PBH direction, registered as fill_word_px_q.
+  function automatic logic [15:0] pbw_room(input logic [3:0] nib, input logic hrev,
+                                           input logic [4:0] xsh);
+    pbw_room = {11'd0, (hrev ? ((nib == 4'd0) ? 5'd16 : {1'b0, nib})
+                             : (5'd16 - {1'b0, nib}))} >> xsh;
+  endfunction
+  logic [15:0]           pbw_room_q;
+  logic [3:0]            pbw_next_nib;
+  assign pbw_next_nib  = pblt_row_end
+                       ? (pblt_dst_row_q[3:0] + pblt_dst_row_step[3:0])
+                       : (pblt_hrev_q ? pblt_dst_addr_q[3:0] - 4'(pbw_step_bits)
+                                      : pblt_dst_addr_q[3:0] + 4'(pbw_step_bits));
+  always_ff @(posedge clk)
+    if (state_q == CORE_PBLT && fsm_mem_ack && pblt_substep_q == 2'd2)
+      pbw_room_q <= pbw_room(pbw_next_nib, pblt_hrev_q, pix_xy_xsh);
+    else
+      pbw_room_q <= pbw_room(pblt_dst_addr_q[3:0], pblt_hrev_q, pix_xy_xsh);
+  assign pbw_room_px   = pbw_room_q;
+  logic [15:0]           pblt_rem_q;      // pixels left in the row (as fill_rem_q;
+                                          // W=3: CORE_PBLT_WIN_APPLY writes DX)
+  always_ff @(posedge clk)
+    if (state_q == CORE_PBLT && fsm_mem_ack && pblt_substep_q == 2'd2)
+      pblt_rem_q <= pblt_row_end ? pblt_dx_q : pblt_rem_q - pbw_step_px;
+    else
+      pblt_rem_q <= pblt_dx_q - pblt_x_q;
+  // Expand forms (13.5.2.3): the source is read in segments of up to 32
+  // bits; a step also ends with its segment.
+  logic [31:0]           pbx_bits_q;
+  logic [5:0]            pbx_seg_q, pbx_pos_q;
+  logic                  pbx_valid_q;
+  logic [15:0]           pbx_seg_left, pbw_lim_px;
+  assign pbx_seg_left  = {10'd0, pbx_seg_q - pbx_pos_q};
+  assign pbw_lim_px    = (pblt_rem_q < pbw_room_px) ? pblt_rem_q : pbw_room_px;
+  // Registered like fill_step_px_q: a full-color step is followed by the
+  // checkpoint states, an expand step that ends mid-word by a segment read,
+  // and the first step waits for the setup states.
+  logic [15:0]           pbw_step_px_q;
+  always_ff @(posedge clk)
+    pbw_step_px_q <= (pbx_on && pbx_valid_q && (pbx_seg_left < pbw_lim_px)) ? pbx_seg_left
+                   : pbw_lim_px;
+  assign pbw_step_px   = !pbw_word ? 16'd1 : pbw_step_px_q;
+  assign pbw_step_bits = FIELD_SIZE_WIDTH'(pbw_step_px << pix_xy_xsh);
+  // Source bits a step uses: PSIZE per pixel, 1 for the expand forms.
+  logic [FIELD_SIZE_WIDTH-1:0] pbw_src_bits;
+  assign pbw_src_bits  = pbx_on ? FIELD_SIZE_WIDTH'(pbw_step_px) : pbw_step_bits;
+  assign pbw_dst_start = pblt_hrev_q ? pblt_dst_addr_q - DATA_WIDTH'(pbw_step_bits)
+                                     : pblt_dst_addr_q;
+  assign pbw_src_start = pblt_hrev_q ? pblt_src_addr_q - DATA_WIDTH'(pbw_src_bits)
+                                     : pblt_src_addr_q;
   assign pblt_row_end     = !pblt_empty
-                          && (pblt_x_q == pblt_dx_q - 16'd1);
+                          && (pblt_x_q + pbw_step_px == pblt_dx_q);
+
+  // Source word buffer: the last two source words read, pbw_win_q (word
+  // address) and pbw_win_q + 1. The source is read in sequence, one word per
+  // destination word, and one more for a row's first destination word when
+  // it needs two (13.4.2.4, D < S); Table 13-9 times every row that way.
+  logic [ADDR_WIDTH-5:0] pbw_win_q, pbw_next_q, pbw_need_lo, pbw_need_hi, pbw_miss;
+  logic [15:0]           pbw_lo_q, pbw_hi_q;
+  logic [1:0]            pbw_reads_q;
+  logic                  pbw_first_q, pbw_spans2, pbw_src_ready;
+  logic [DATA_WIDTH-1:0] pbw_src_end;
+  logic [5:0]            pbw_src_off;
+  logic [15:0]           pbw_step_mask, pbw_src_chunk, pbw_src_pm, pbw_dst_pm;
+  logic [15:0]           pbw_result, pbw_keep;
+  assign pbw_src_end   = pbw_src_start + DATA_WIDTH'(pbw_step_bits) - 32'd1;
+  assign pbw_need_lo   = pbw_src_start[ADDR_WIDTH-1:4];
+  assign pbw_need_hi   = pbw_src_end[ADDR_WIDTH-1:4];
+  // Whether the step's source bits cross a word boundary, from the 4 low
+  // address bits instead of the two word addresses (timing: the word compare
+  // after a 32-bit add was the worst path). The start is the source address
+  // less the step's source bits when going backwards; the end is the start
+  // plus the step's bits less one. Two addresses a few bits apart lie in the
+  // same word exactly when their offsets from the word holding the source
+  // address do, so this equals need_lo != need_hi for any address.
+  logic signed [7:0] pbw_s_off, pbw_e_off;
+  assign pbw_s_off  = $signed({4'd0, pblt_src_addr_q[3:0]})
+                    - (pblt_hrev_q ? $signed({2'd0, pbw_src_bits}) : 8'sd0);
+  assign pbw_e_off  = pbw_s_off + $signed({2'd0, pbw_step_bits}) - 8'sd1;
+  assign pbw_spans2 = (pbw_s_off[7:4] != pbw_e_off[7:4]);
+`ifdef VERILATOR
+  // The simulation guards below check only after a reset has been seen (a
+  // bench may run clocks before it asserts reset, with state not yet set).
+  logic g_armed_q = 1'b0;
+  always_ff @(posedge clk)
+    if (rst) g_armed_q <= 1'b1;
+  // Simulation guard: the same answer as the word addresses, every clock.
+  always_ff @(posedge clk)
+    if (g_armed_q && !rst && pbw_spans2 != (pbw_need_lo != pbw_need_hi)) begin
+      $display("SPANS2 MISMATCH t=%0t addr %h bits %0d/%0d hrev %0d", $time,
+               pblt_src_addr_q, pbw_src_bits, pbw_step_bits, pblt_hrev_q);
+      $fatal(1);
+    end
+`endif
+  assign pbw_src_ready = (pbw_reads_q == ((pbw_first_q && pbw_spans2) ? 2'd2 : 2'd1));
+  // The word to read next: a row starts at its first word in the direction
+  // of travel, then goes on in sequence.
+  assign pbw_miss      = (pbw_first_q && pbw_reads_q == 2'd0)
+                       ? (pblt_hrev_q ? pbw_need_hi : pbw_need_lo)
+                       : pbw_next_q;
+  assign pbw_src_off   = 6'({pbw_need_lo - pbw_win_q, 4'd0}) + {2'd0, pbw_src_start[3:0]};
+  assign pbw_step_mask = 16'((32'd1 << pbw_step_bits) - 32'd1);
+  assign pbw_src_chunk = 16'({pbw_hi_q, pbw_lo_q} >> pbw_src_off) & pbw_step_mask;
+  // Plane mask at the source and destination positions (PMASK repeats every
+  // word), as upstream applies it per pixel.
+  assign pbw_src_pm    = 16'({pixel_plane_mask_q, pixel_plane_mask_q} >> pbw_src_start[3:0])
+                       & pbw_step_mask;
+  assign pbw_dst_pm    = 16'({16'd0, pixel_plane_mask_q} >> pbw_dst_start[3:0]) & pbw_step_mask;
+  // Expand: COLOR1 where the source bit is 1, COLOR0 where it is 0, each at
+  // the destination position (upstream's aligned_color), plane-masked with
+  // the destination mask.
+  logic [15:0] pbx_lanes, pbx_src;
+  assign pbx_lanes = expand_bits(16'(pbx_bits_q >> pbx_pos_q), io_psize[FIELD_SIZE_WIDTH-1:0]);
+  assign pbx_src   = ((16'(pblt_color1_q >> pbw_dst_start[3:0]) & pbx_lanes)
+                    | (16'(pblt_color0_q >> pbw_dst_start[3:0]) & ~pbx_lanes))
+                   & pbw_step_mask & ~pbw_dst_pm;
+  assign pbw_result    = ppop_word(pbx_on ? pbx_src : (pbw_src_chunk & ~pbw_src_pm),
+                                   pblt_dst_pix_q[15:0] & ~pbw_dst_pm,
+                                   pixel_ppop_code_q, io_psize[FIELD_SIZE_WIDTH-1:0])
+                       & pbw_step_mask;
+  // With CYCLE_ACCURATE the write of a word step is raised on the first clock
+  // of sub-step 2, as the guide's state timing has it, but its data and keep
+  // mask come from registers: the first clock of the sub-step registers the
+  // result and the masks, and the memory fabric takes the data and keep mask
+  // one clock after it takes the request (mem_late), before the field
+  // sequencer has started any word of the write. So the bus timer sees the
+  // request at the same clock as with live data (no clocks taken out of the
+  // memory's share of the cycle). Everything the result depends on (the
+  // destination word read in sub-step 1, the buffered source words, the step,
+  // PSIZE, CONTROL, PMASK) holds through sub-step 2, so the registers are
+  // loaded in every clock of it and hold, in the clock after the write is
+  // taken, what they held in that clock. Justification: timing only
+  // (docs/dropin_measure.md).
+  logic [15:0] pbw_result_q, pbw_dpm_q, pbw_smask_q;
+  logic        pbw_late_q;      // the late write taken last clock was a word write
+  logic        late_taken_q;    // a late write (mem_late) was taken last clock
+  always_ff @(posedge clk) begin
+    pbw_late_q   <= pbw_wr_step;
+    late_taken_q <= !rst && mem_late && fsm_mem_req && fsm_mem_ack;
+  end
+  logic        pbw_wr_step;     // this clock is a word step's write sub-step
+  assign pbw_wr_step = CYCLE_ACCURATE && pbw_word && (state_q == CORE_PBLT)
+                    && (pblt_substep_q == 2'd2);
+  // CONTROL.T and PSIZE are registered with the result too, so the late keep
+  // mask uses the values of the clock the write was taken (a host write to
+  // CONTROL or PSIZE can land in the clock after).
+  logic                        pbw_transp_q;
+  logic [FIELD_SIZE_WIDTH-1:0] pbw_psize_q;
+  always_ff @(posedge clk) begin
+    if (pbw_wr_step) begin
+      pbw_result_q <= pbw_result;
+      pbw_dpm_q    <= pbw_dst_pm;
+      pbw_smask_q  <= pbw_step_mask;
+      pbw_transp_q <= pixel_transp_en_q;
+      pbw_psize_q  <= io_psize[FIELD_SIZE_WIDTH-1:0];
+    end
+  end
+  assign pbw_keep      = (pbw_dpm_q
+                          | (pbw_transp_q
+                             ? zero_pixels(pbw_result_q & ~pbw_dpm_q, pbw_psize_q)
+                             : 16'd0))
+                       & pbw_smask_q;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pbx_bits_q  <= '0;
+      pbx_seg_q   <= '0;
+      pbx_pos_q   <= '0;
+      pbx_valid_q <= 1'b0;
+    end else if ((state_q == CORE_EXECUTE && is_pblt)
+                 || (state_q == CORE_PBLT && fsm_mem_ack && pblt_substep_q == 2'd2
+                     && pblt_row_end)) begin
+      pbx_valid_q <= 1'b0;
+    end else if (pbx_on && state_q == CORE_PBLT && pblt_substep_q == 2'd0
+                 && fsm_mem_req && fsm_mem_ack) begin
+      pbx_bits_q  <= mem_rdata_eff;
+      pbx_seg_q   <= 6'(fsm_mem_size);
+      pbx_pos_q   <= '0;
+      pbx_valid_q <= 1'b1;
+    end else if (pbx_on && state_q == CORE_PBLT && fsm_mem_ack && pblt_substep_q == 2'd2) begin
+      pbx_pos_q   <= pbx_pos_q + 6'(pbw_step_px);
+      if (pbx_pos_q + 6'(pbw_step_px) == pbx_seg_q) pbx_valid_q <= 1'b0;
+    end
+  end
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pbw_win_q   <= '0;
+      pbw_next_q  <= '0;
+      pbw_lo_q    <= '0;
+      pbw_hi_q    <= '0;
+      pbw_reads_q <= '0;
+      pbw_first_q <= 1'b0;
+    end else if ((state_q == CORE_EXECUTE && is_pblt)
+                 || (state_q == CORE_PBLT && fsm_mem_ack && pblt_substep_q == 2'd2
+                     && pblt_row_end)) begin
+      // A new PIXBLT, a resumed one, or a new row.
+      pbw_reads_q <= '0;
+      pbw_first_q <= 1'b1;
+    end else if (state_q == CORE_PBLT && fsm_mem_ack && pblt_substep_q == 2'd2) begin
+      pbw_reads_q <= '0;
+      pbw_first_q <= 1'b0;
+    end else if (pbw_on && state_q == CORE_PBLT && pblt_substep_q == 2'd0
+                 && fsm_mem_req && fsm_mem_ack) begin
+      pbw_reads_q <= pbw_reads_q + 2'd1;
+      if (pblt_hrev_q) begin
+        pbw_win_q  <= pbw_miss;
+        pbw_hi_q   <= pbw_lo_q;
+        pbw_lo_q   <= mem_rdata_eff[15:0];
+        pbw_next_q <= pbw_miss - 1'b1;
+      end else begin
+        pbw_win_q  <= pbw_miss - 1'b1;
+        pbw_lo_q   <= pbw_hi_q;
+        pbw_hi_q   <= mem_rdata_eff[15:0];
+        pbw_next_q <= pbw_miss + 1'b1;
+      end
+    end
+  end
   assign pblt_done        = pblt_row_end
                           && (pblt_y_q == pblt_dy_q - 16'd1);
   // Effective source pixel: a binary source bit selects COLOR1/COLOR0.
@@ -889,8 +1328,8 @@ module tms34010_core
   assign pblt_px = pblt_dst_xy_raw_q[15:0]            + pblt_col_index;
   assign pblt_py = pblt_dst_xy_raw_q[DATA_WIDTH-1:16] + pblt_row_index;
   assign pblt_in_window =
-        (pblt_px >= pblt_wstart_q[15:0]) && (pblt_px <= pblt_wend_q[15:0])
-     && (pblt_py >= pblt_wstart_q[DATA_WIDTH-1:16]) && (pblt_py <= pblt_wend_q[DATA_WIDTH-1:16]);
+        ($signed(pblt_px) >= $signed(pblt_wstart_q[15:0])) && ($signed(pblt_px) <= $signed(pblt_wend_q[15:0]))
+     && ($signed(pblt_py) >= $signed(pblt_wstart_q[DATA_WIDTH-1:16])) && ($signed(pblt_py) <= $signed(pblt_wend_q[DATA_WIDTH-1:16]));
   assign pblt_clip_out = pblt_win_en_q && !pblt_in_window;
   // W=2 (miss detection): array containment test on the destination corners,
   // evaluated from WSTART/WEND after CORE_PBLT_SETUP_WIN registers both
@@ -905,10 +1344,10 @@ module tms34010_core
                                   : pblt_arr_y0 + pblt_dy_q - 16'd1;
   assign pblt_array_inside = !pblt_empty
      &&
-        (pblt_arr_x0 >= pblt_wstart_q[15:0])
-     && (pblt_arr_x1 <= pblt_wend_q[15:0])
-     && (pblt_arr_y0 >= pblt_wstart_q[DATA_WIDTH-1:16])
-     && (pblt_arr_y1 <= pblt_wend_q[DATA_WIDTH-1:16]);
+        ($signed(pblt_arr_x0) >= $signed(pblt_wstart_q[15:0]))
+     && ($signed(pblt_arr_x1) <= $signed(pblt_wend_q[15:0]))
+     && ($signed(pblt_arr_y0) >= $signed(pblt_wstart_q[DATA_WIDTH-1:16]))
+     && ($signed(pblt_arr_y1) <= $signed(pblt_wend_q[DATA_WIDTH-1:16]));
   // W=3 effective geometry is evaluated in CORE_PBLT_WIN_EVAL from the
   // registered window. Source and destination receive identical pixel
   // offsets, then the effective rectangle receives normal PBH/PBV corner
@@ -925,6 +1364,7 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_clip_src_left_bits, pblt_clip_dst_left_bits;
   logic [DATA_WIDTH-1:0] pblt_clip_src_top_bits, pblt_clip_dst_top_bits;
   logic [DATA_WIDTH-1:0] pblt_clip_src_default, pblt_clip_dst_default;
+  logic [DATA_WIDTH-1:0] pblt_src_sum_q, pblt_dst_sum_q;  // the start as a sum (pblt_src_sum)
   logic [DATA_WIDTH-1:0] pblt_clip_src_h_adjust, pblt_clip_dst_h_adjust;
   logic [DATA_WIDTH-1:0] pblt_clip_src_v_adjust, pblt_clip_dst_v_adjust;
   logic [DATA_WIDTH-1:0] pblt_clip_src_default_q, pblt_clip_dst_default_q;
@@ -933,21 +1373,20 @@ module tms34010_core
   logic [DATA_WIDTH-1:0] pblt_clip_src_corner, pblt_clip_dst_corner;
   logic [DATA_WIDTH-1:0] pblt_original_src_result, pblt_original_dst_result;
   assign pblt_clip_hit = !pblt_empty
-      && (pblt_wstart_q[15:0] <= pblt_wend_q[15:0])
-      && (pblt_wstart_q[DATA_WIDTH-1:16]
-          <= pblt_wend_q[DATA_WIDTH-1:16])
+      && ($signed(pblt_wstart_q[15:0]) <= $signed(pblt_wend_q[15:0]))
+      && ($signed(pblt_wstart_q[DATA_WIDTH-1:16]) <= $signed(pblt_wend_q[DATA_WIDTH-1:16]))
       && !(
-        (pblt_arr_x1 < pblt_wstart_q[15:0])
-     || (pblt_arr_x0 > pblt_wend_q[15:0])
-     || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16])
-     || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
-  assign pblt_clip_x0 = (pblt_arr_x0 > pblt_wstart_q[15:0])
+        ($signed(pblt_arr_x1) < $signed(pblt_wstart_q[15:0]))
+     || ($signed(pblt_arr_x0) > $signed(pblt_wend_q[15:0]))
+     || ($signed(pblt_arr_y1) < $signed(pblt_wstart_q[DATA_WIDTH-1:16]))
+     || ($signed(pblt_arr_y0) > $signed(pblt_wend_q[DATA_WIDTH-1:16])));
+  assign pblt_clip_x0 = ($signed(pblt_arr_x0) > $signed(pblt_wstart_q[15:0]))
                       ? pblt_arr_x0 : pblt_wstart_q[15:0];
-  assign pblt_clip_y0 = (pblt_arr_y0 > pblt_wstart_q[DATA_WIDTH-1:16])
+  assign pblt_clip_y0 = ($signed(pblt_arr_y0) > $signed(pblt_wstart_q[DATA_WIDTH-1:16]))
                       ? pblt_arr_y0 : pblt_wstart_q[DATA_WIDTH-1:16];
-  assign pblt_clip_x1 = (pblt_arr_x1 < pblt_wend_q[15:0])
+  assign pblt_clip_x1 = ($signed(pblt_arr_x1) < $signed(pblt_wend_q[15:0]))
                       ? pblt_arr_x1 : pblt_wend_q[15:0];
-  assign pblt_clip_y1 = (pblt_arr_y1 < pblt_wend_q[DATA_WIDTH-1:16])
+  assign pblt_clip_y1 = ($signed(pblt_arr_y1) < $signed(pblt_wend_q[DATA_WIDTH-1:16]))
                       ? pblt_arr_y1 : pblt_wend_q[DATA_WIDTH-1:16];
   assign pblt_clip_dx = pblt_clip_hit
                       ? pblt_clip_x1 - pblt_clip_x0 + 16'd1 : 16'd0;
@@ -966,10 +1405,10 @@ module tms34010_core
       {{16{1'b0}}, pblt_clip_top_q} << (5'd31 - io_convsp[4:0]);
   assign pblt_clip_dst_top_bits =
       {{16{1'b0}}, pblt_clip_top_q} << (5'd31 - io_convdp[4:0]);
-  assign pblt_clip_src_default = pblt_src_result_q
+  assign pblt_clip_src_default = pblt_src_sum_q
                                 + pblt_clip_src_left_bits
                                 + pblt_clip_src_top_bits;
-  assign pblt_clip_dst_default = pblt_dst_result_q
+  assign pblt_clip_dst_default = pblt_dst_sum_q
                                 + pblt_clip_dst_left_bits
                                 + pblt_clip_dst_top_bits;
   assign pblt_clip_src_h_adjust =
@@ -1002,19 +1441,18 @@ module tms34010_core
   logic [15:0] pblt_common_x1, pblt_common_y1;
   logic [DATA_WIDTH-1:0] pblt_common_daddr, pblt_common_dydx;
   assign pblt_array_hit = !pblt_empty
-      && (pblt_wstart_q[15:0] <= pblt_wend_q[15:0])
-      && (pblt_wstart_q[DATA_WIDTH-1:16]
-          <= pblt_wend_q[DATA_WIDTH-1:16])
+      && ($signed(pblt_wstart_q[15:0]) <= $signed(pblt_wend_q[15:0]))
+      && ($signed(pblt_wstart_q[DATA_WIDTH-1:16]) <= $signed(pblt_wend_q[DATA_WIDTH-1:16]))
       && !(
-        (pblt_arr_x1 < pblt_wstart_q[15:0]) || (pblt_arr_x0 > pblt_wend_q[15:0])
-     || (pblt_arr_y1 < pblt_wstart_q[DATA_WIDTH-1:16]) || (pblt_arr_y0 > pblt_wend_q[DATA_WIDTH-1:16]));
-  assign pblt_common_x0 = (pblt_arr_x0 > pblt_wstart_q[15:0])
+        ($signed(pblt_arr_x1) < $signed(pblt_wstart_q[15:0])) || ($signed(pblt_arr_x0) > $signed(pblt_wend_q[15:0]))
+     || ($signed(pblt_arr_y1) < $signed(pblt_wstart_q[DATA_WIDTH-1:16])) || ($signed(pblt_arr_y0) > $signed(pblt_wend_q[DATA_WIDTH-1:16])));
+  assign pblt_common_x0 = ($signed(pblt_arr_x0) > $signed(pblt_wstart_q[15:0]))
                         ? pblt_arr_x0 : pblt_wstart_q[15:0];
-  assign pblt_common_y0 = (pblt_arr_y0 > pblt_wstart_q[DATA_WIDTH-1:16])
+  assign pblt_common_y0 = ($signed(pblt_arr_y0) > $signed(pblt_wstart_q[DATA_WIDTH-1:16]))
                         ? pblt_arr_y0 : pblt_wstart_q[DATA_WIDTH-1:16];
-  assign pblt_common_x1 = (pblt_arr_x1 < pblt_wend_q[15:0])
+  assign pblt_common_x1 = ($signed(pblt_arr_x1) < $signed(pblt_wend_q[15:0]))
                         ? pblt_arr_x1 : pblt_wend_q[15:0];
-  assign pblt_common_y1 = (pblt_arr_y1 < pblt_wend_q[DATA_WIDTH-1:16])
+  assign pblt_common_y1 = ($signed(pblt_arr_y1) < $signed(pblt_wend_q[DATA_WIDTH-1:16]))
                         ? pblt_arr_y1 : pblt_wend_q[DATA_WIDTH-1:16];
   assign pblt_common_daddr = {
       pblt_vrev_q ? pblt_common_y1 : pblt_common_y0,
@@ -1035,6 +1473,17 @@ module tms34010_core
   assign pblt_dst_conv =
       (({{16{pblt_dst_addr_q[DATA_WIDTH-1]}}, pblt_dst_addr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convdp[4:0]))
        | ({16'b0, pblt_dst_addr_q[15:0]} << pix_xy_xsh)) + rf_rs3_data;
+  // The same conversions as sums (X sign-extended and added), for the W=3
+  // clipped start: see fill_xy_sum.
+  logic [DATA_WIDTH-1:0] pblt_src_sum, pblt_dst_sum;
+  assign pblt_src_sum = decoded.blt_src_xy
+      ? (({{16{pblt_src_addr_q[DATA_WIDTH-1]}}, pblt_src_addr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convsp[4:0]))
+         + ({{16{pblt_src_addr_q[15]}}, pblt_src_addr_q[15:0]} << pix_xy_xsh)) + rf_rs3_data
+      : pblt_src_addr_q;
+  assign pblt_dst_sum = decoded.blt_dst_xy
+      ? (({{16{pblt_dst_addr_q[DATA_WIDTH-1]}}, pblt_dst_addr_q[DATA_WIDTH-1:16]} << (5'd31 - io_convdp[4:0]))
+         + ({{16{pblt_dst_addr_q[15]}}, pblt_dst_addr_q[15:0]} << pix_xy_xsh)) + rf_rs3_data
+      : pblt_dst_addr_q;
 
   // Full-color direction and corner adjustment (Task 0163).  Binary-source
   // PIXBLTs explicitly ignore PBH/PBV.  L,L consumes software-adjusted
@@ -1092,10 +1541,17 @@ module tms34010_core
   // nonfinal row edge. Reverse traversal crosses a word edge after writing
   // the aligned low-address field; forward traversal crosses when the next
   // address is aligned.
+  // Word mode: the interrupt points are the destination word boundaries and
+  // row ends (13.4.4); an expand step can end mid-word with its source
+  // segment, and is not one.
+  logic pbw_word_edge;
+  assign pbw_word_edge = pblt_hrev_q ? (pbw_dst_start[3:0] == 4'd0)
+                                     : ((pbw_dst_start[3:0] + 4'(pbw_step_bits)) == 4'd0);
   assign pblt_checkpoint_due = !pblt_done
       && (pblt_row_end
-          || (pblt_hrev_q ? (pblt_dst_access_addr[3:0] == 4'd0)
-                           : (pblt_dst_after_addr[3:0] == 4'd0)));
+          || (pbw_word ? pbw_word_edge
+                       : (pblt_hrev_q ? (pblt_dst_access_addr[3:0] == 4'd0)
+                                      : (pblt_dst_after_addr[3:0] == 4'd0))));
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -1108,6 +1564,8 @@ module tms34010_core
       pblt_src_row_q  <= '0;
       pblt_dst_row_q  <= '0;
       pblt_src_result_q <= '0;
+      pblt_src_sum_q    <= '0;
+      pblt_dst_sum_q    <= '0;
       pblt_dst_result_q <= '0;
       pblt_x_q        <= '0;
       pblt_y_q        <= '0;
@@ -1182,7 +1640,7 @@ module tms34010_core
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd2);
         pblt_w1_q       <= !array_resume && decoded.blt_dst_xy &&
                            (io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1);
-        pblt_dest_read_q <= pixel_dest_read_required;
+        pblt_dest_read_q <= CYCLE_ACCURATE ? pixel_cpu_dest_read : pixel_dest_read_required;
         pblt_preclip_changed_q <= 1'b0;
         pblt_w3_empty_q <= 1'b0;
       end
@@ -1292,6 +1750,8 @@ module tms34010_core
         // on the internal directional traversal address.
         pblt_src_result_q <= pblt_src_base;
         pblt_dst_result_q <= pblt_dst_base;
+        pblt_src_sum_q    <= pblt_src_sum;
+        pblt_dst_sum_q    <= pblt_dst_sum;
       end
       // CORE_PBLT_SETUP2 (binary form): latch COLOR0(port1) / COLOR1(port2).
       if (state_q == CORE_PBLT_SETUP2) begin
@@ -1299,7 +1759,15 @@ module tms34010_core
         pblt_color1_q <= rf_rs2_data;
       end
       // CORE_PBLT: per pixel, read src (0) / read dst (1) / write (2).
-      if (state_q == CORE_PBLT && mem_ack) begin
+      if (pbw_on && state_q == CORE_PBLT && pblt_substep_q == 2'd0) begin
+        // Word mode: read source words until the step's are buffered.
+        if (pbw_src_ready)
+          pblt_substep_q <= pblt_dest_read_q ? 2'd1 : 2'd2;
+      end else if (pbx_on && state_q == CORE_PBLT && pblt_substep_q == 2'd0) begin
+        // Expand word mode: read a source segment when none is loaded.
+        if (pbx_valid_q)
+          pblt_substep_q <= pblt_dest_read_q ? 2'd1 : 2'd2;
+      end else if (state_q == CORE_PBLT && fsm_mem_ack) begin
         if (pblt_substep_q == 2'd0) begin
           pblt_src_pix_q <= mem_rdata_eff;
           pblt_substep_q <= pblt_dest_read_q ? 2'd1 : 2'd2;
@@ -1328,12 +1796,12 @@ module tms34010_core
             end
           end else if (!pblt_done) begin
             pblt_src_addr_q <= pblt_hrev_q
-                             ? pblt_src_addr_q - pblt_src_step
-                             : pblt_src_addr_q + pblt_src_step;
+                             ? pblt_src_addr_q - (pbw_word ? DATA_WIDTH'(pbw_src_bits) : pblt_src_step)
+                             : pblt_src_addr_q + (pbw_word ? DATA_WIDTH'(pbw_src_bits) : pblt_src_step);
             pblt_dst_addr_q <= pblt_hrev_q
-                             ? pblt_dst_addr_q - pblt_psize_ext
-                             : pblt_dst_addr_q + pblt_psize_ext;
-            pblt_x_q        <= pblt_x_q + 16'd1;
+                             ? pblt_dst_addr_q - (pbw_word ? DATA_WIDTH'(pbw_step_bits) : pblt_psize_ext)
+                             : pblt_dst_addr_q + (pbw_word ? DATA_WIDTH'(pbw_step_bits) : pblt_psize_ext);
+            pblt_x_q        <= pblt_x_q + pbw_step_px;
           end
         end
       end
@@ -1364,9 +1832,9 @@ module tms34010_core
   logic                  drav_inside_q;     // Rd's pixel lies inside the window
   logic                  drav_in_window;    // combinational test at SETUP_WIN
   assign drav_in_window =
-        (drav_rd_q[15:0] >= rf_rs1_data[15:0]) && (drav_rd_q[15:0] <= rf_rs2_data[15:0])
-     && (drav_rd_q[DATA_WIDTH-1:16] >= rf_rs1_data[DATA_WIDTH-1:16])
-     && (drav_rd_q[DATA_WIDTH-1:16] <= rf_rs2_data[DATA_WIDTH-1:16]);
+        ($signed(drav_rd_q[15:0]) >= $signed(rf_rs1_data[15:0])) && ($signed(drav_rd_q[15:0]) <= $signed(rf_rs2_data[15:0]))
+     && ($signed(drav_rd_q[DATA_WIDTH-1:16]) >= $signed(rf_rs1_data[DATA_WIDTH-1:16]))
+     && ($signed(drav_rd_q[DATA_WIDTH-1:16]) <= $signed(rf_rs2_data[DATA_WIDTH-1:16]));
   logic [DATA_WIDTH-1:0] drav_pixel_mask, drav_pmask_field;
   logic [DATA_WIDTH-1:0] drav_advance;
   assign drav_pixel_mask  = (32'd1 << io_psize[FIELD_SIZE_WIDTH-1:0]) - 32'd1;
@@ -1395,8 +1863,8 @@ module tms34010_core
         drav_rd_q      <= rf_rs2_data;        // Rd (XY dest)
         drav_rs_q      <= rf_rs1_data;        // Rs (XY increment)
         drav_linear_q  <= pix_xy_dst_linear;  // convert(Rd) + OFFSET (port3)
-        drav_substep_q <= !pixel_dest_read_required;
-        drav_dest_read_q <= pixel_dest_read_required;
+        drav_substep_q <= !pixel_cpu_dest_read;
+        drav_dest_read_q <= pixel_cpu_dest_read;
         drav_w_q       <= io_control[CTRL_W_HI:CTRL_W_LO];
       end
       // CORE_DRAV_SETUP_WIN is also the unconditional COLOR1 capture cycle:
@@ -1405,7 +1873,7 @@ module tms34010_core
         drav_inside_q <= drav_in_window;
         drav_color_q  <= rf_rs3_data;
       end
-      if (state_q == CORE_DRAV && mem_ack) begin
+      if (state_q == CORE_DRAV && fsm_mem_ack) begin
         if (!drav_substep_q) begin
           drav_dest_q    <= mem_rdata_eff;  // read ack
           drav_substep_q <= 1'b1;
@@ -1456,17 +1924,23 @@ module tms34010_core
   assign line_w_mode    = io_control[CTRL_W_HI:CTRL_W_LO];
   assign line_win_en    = (line_w_mode != 2'd0);
   assign line_in_window =
-        (line_daddr_q[15:0] >= line_wstart_q[15:0]) && (line_daddr_q[15:0] <= line_wend_q[15:0])
-     && (line_daddr_q[DATA_WIDTH-1:16] >= line_wstart_q[DATA_WIDTH-1:16])
-     && (line_daddr_q[DATA_WIDTH-1:16] <= line_wend_q[DATA_WIDTH-1:16]);
-  // Draw decision: W=1 (hit) draws the pixels OUTSIDE the window and aborts on
-  // an inside pixel; W=2 (miss) and W=3 (clip) draw INSIDE pixels (W=2 aborts
-  // on an outside pixel, W=3 just inhibits it). V at the end is NOT last-inside
-  // for every windowed mode; WVP is set on a W=1/W=2 abort.
-  assign line_draw_pixel = (line_w_mode == 2'd1) ? !line_in_window : line_in_window;
+        ($signed(line_daddr_q[15:0]) >= $signed(line_wstart_q[15:0])) && ($signed(line_daddr_q[15:0]) <= $signed(line_wend_q[15:0]))
+     && ($signed(line_daddr_q[DATA_WIDTH-1:16]) >= $signed(line_wstart_q[DATA_WIDTH-1:16]))
+     && ($signed(line_daddr_q[DATA_WIDTH-1:16]) <= $signed(line_wend_q[DATA_WIDTH-1:16]));
+  // Draw decision: W=1 (hit) draws no pixels and aborts on an inside pixel
+  // ("calculates points but no pixels are actually drawn", SPVU001A 12-101,
+  // 7.10.1); W=2 (miss) and W=3 (clip) draw INSIDE pixels (W=2 aborts on an
+  // outside pixel, W=3 just inhibits it). V at the end is NOT last-inside for
+  // every windowed mode; WVP is set on a W=1/W=2 abort.
+  assign line_draw_pixel = (line_w_mode == 2'd1) ? 1'b0 : line_in_window;
   assign line_clip_out   = line_win_en && !line_draw_pixel;
   assign line_abort      = (line_w_mode == 2'd1 &&  line_in_window)
                          || (line_w_mode == 2'd2 && !line_in_window);
+  // With CYCLE_ACCURATE a pixel the window leaves undrawn makes no access:
+  // the chip only calculates it (Table 12-10, q). Upstream reads and writes
+  // back every pixel of a windowed line.
+  logic        line_skip;
+  assign line_skip = CYCLE_ACCURATE && line_win_en && !line_draw_pixel;
   // Bresenham decision: branch (diagonal, +INC1) when d>0 (Z=0) or d>=0 (Z=1).
   logic        line_branch;
   logic [DATA_WIDTH-1:0] line_2b, line_2a, line_d_next, line_daddr_next, line_count_next;
@@ -1522,10 +1996,19 @@ module tms34010_core
       if (state_q == CORE_LINE_SETUP3) begin
         line_daddr_q   <= rf_rs1_data;               // DADDR (B2)
         line_color_q   <= rf_rs2_data;               // COLOR1 (B9)
-        line_substep_q <= !(pixel_dest_read_required || line_win_en);
-        line_dest_read_q <= pixel_dest_read_required || line_win_en;
+        line_substep_q <= !(pixel_cpu_dest_read || (line_win_en && !CYCLE_ACCURATE));
+        line_dest_read_q <= pixel_cpu_dest_read || (line_win_en && !CYCLE_ACCURATE);
       end
-      if (state_q == CORE_LINE_DRAW && mem_ack) begin
+      if (state_q == CORE_LINE_DRAW && line_skip) begin
+        // A pixel the window leaves undrawn: no access, same bookkeeping as
+        // a drawn pixel's write acknowledge.
+        line_substep_q     <= !line_dest_read_q;
+        line_last_inside_q <= line_in_window;
+        if (line_abort) line_aborted_q <= 1'b1;
+        line_d_q     <= line_d_next;
+        line_daddr_q <= line_daddr_next;
+        line_count_q <= line_count_next;
+      end else if (state_q == CORE_LINE_DRAW && fsm_mem_ack) begin
         if (!line_substep_q) begin
           line_dest_q <= mem_rdata_eff;              // read ack
           line_substep_q <= 1'b1;
@@ -1553,7 +2036,7 @@ module tms34010_core
   // in scan direction, the +/-32 address step, and read-vs-write:
   //
   //   mm_mask_q (16-bit) shadows the original mask; the just-handled bit
-  //   is cleared after each mem_ack.
+  //   is cleared after each fsm_mem_ack.
   //   mm_rp_q (32-bit) is the working stack pointer / current transaction
   //   address.
   //   mm_mask_idx is the priority-encoded current mask bit and mm_iter_idx
@@ -1604,6 +2087,16 @@ module tms34010_core
   // After we clear the bit at mm_iter_idx, will the mask be empty? Gates
   // the FSM transition (last transaction → WRITEBACK) and, for MMTM,
   // suppresses the final Rp-decrement.
+  // Next value of mm_mask_q (the register below loads it), also used by the
+  // registered read-port addresses.
+  logic [15:0] mm_mask_d;
+  always_comb begin
+    mm_mask_d = mm_mask_q;
+    if (state_q == CORE_EXECUTE && state_d == CORE_MEMORY && is_mm)
+      mm_mask_d = imm_lo_q;
+    else if (state_q == CORE_MEMORY && is_mm && fsm_mem_ack)
+      mm_mask_d[mm_mask_idx] = 1'b0;
+  end
   assign mm_mask_will_be_empty =
       ((mm_mask_q & ~(16'd1 << mm_mask_idx)) == 16'd0);
 
@@ -1618,11 +2111,11 @@ module tms34010_core
       // working Rp. MMTM predecrements (first push at Rp-32); MMFM
       // starts at Rp (first read at Rp).
       mm_rp_q   <= is_mmtm ? (rf_rs2_data - WORD_BIT_SIZE) : rf_rs2_data;
-      mm_mask_q <= imm_lo_q;
+      mm_mask_q <= mm_mask_d;
     end else if (state_q == CORE_MEMORY
               && is_mm
-              && mem_ack) begin
-      mm_mask_q[mm_mask_idx] <= 1'b0;
+              && fsm_mem_ack) begin
+      mm_mask_q <= mm_mask_d;
       if (is_mmfm) begin
         // Post-increment after every read, including the last.
         mm_rp_q <= mm_rp_q + WORD_BIT_SIZE;
@@ -1651,16 +2144,16 @@ module tms34010_core
       imm_ext_lo_q <= '0;
       imm_ext_hi_q <= '0;
     end else begin
-      if (state_q == CORE_FETCH_IMM_LO && mem_ack) begin
+      if (state_q == CORE_FETCH_IMM_LO && fsm_mem_ack) begin
         imm_lo_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
-      if (state_q == CORE_FETCH_IMM_HI && mem_ack) begin
+      if (state_q == CORE_FETCH_IMM_HI && fsm_mem_ack) begin
         imm_hi_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
-      if (state_q == CORE_FETCH_IMM_EXT_LO && mem_ack) begin
+      if (state_q == CORE_FETCH_IMM_EXT_LO && fsm_mem_ack) begin
         imm_ext_lo_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
-      if (state_q == CORE_FETCH_IMM_EXT_HI && mem_ack) begin
+      if (state_q == CORE_FETCH_IMM_EXT_HI && fsm_mem_ack) begin
         imm_ext_hi_q <= mem_rdata_eff[INSTR_WORD_WIDTH-1:0];
       end
     end
@@ -1766,82 +2259,139 @@ module tms34010_core
                                || (state_q == CORE_LINE_SETUP3)
                                || (state_q == CORE_LINE_SETUP_WIN));
 
-  assign rf_rs1_file = line_rd_b ? REG_FILE_B
-                     : (state_q == CORE_PIXT_SETUP_WIN) ? REG_FILE_B
-                     : (is_drav && ((state_q == CORE_DRAV) || (state_q == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
-                     : (is_fill || is_pblt) ? REG_FILE_B
-                     : (decoded.iclass == INSTR_MOVE_RR) ? decoded.rs_file
-                     : decoded.rd_file;
-  // Read-port 1 index is normally decoded.rs_idx. MMTM repurposes it
-  // during CORE_MEMORY to scan the register list — rf_rs1_idx then
-  // points at the current register being pushed, and rf_rs1_data
-  // becomes the 32-bit value driven onto mem_wdata.
-  assign rf_rs1_idx  = ((is_fill || is_pblt) && array_resume)
-                     ? ((state_q == CORE_ARRAY_RESUME1) ? B_SPTCH_IDX
-                      : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(12)
-                      : (state_q == CORE_ARRAY_RESUME3) ? CPW_WSTART_IDX
-                      : (state_q == CORE_ARRAY_RESUME4) ? B_COLOR0_IDX
-                                                       : B_SADDR_IDX)
-                     : is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WSTART_IDX
-                                : (state_q == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WSTART_IDX
-                                : (state_q == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
-                                : (state_q == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
-                     : (state_q == CORE_MEMORY && is_mmtm) ? mm_iter_idx
-                     : (is_drav && (state_q == CORE_DRAV_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART
-                     : (is_drav && (state_q == CORE_DRAV)) ? B_COLOR1_IDX  // COLOR1 for the draw
-                     : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_SADDR_IDX   // d (B0)
-                     : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC1_IDX    // INC1 (B11)
-                     : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_DADDR_IDX   // DADDR (B2)
-                     : (is_line && (state_q == CORE_LINE_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART (B5)
-                     : (state_q == CORE_PIXT_SETUP_WIN) ? CPW_WSTART_IDX           // PIXT WSTART
-                     : decoded.rs_idx;
-  // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
-  // for CPW) to read the window-start register WSTART = B5; read port 3
-  // reads the window-end register WEND = B6. Both are fixed B-file
-  // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
-  // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
-  assign rf_rs2_file = (line_rd_b || is_fill || is_pblt || (decoded.iclass == INSTR_CPW)
-                        || (state_q == CORE_PIXT_SETUP_WIN)
-                        || (is_drav && (state_q == CORE_DRAV_SETUP_WIN)))
-                     ? REG_FILE_B : decoded.rd_file;
-  assign rf_rs2_idx  = ((is_fill || is_pblt) && array_resume)
-                     ? ((state_q == CORE_ARRAY_RESUME1) ? B_DPTCH_IDX
-                      : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(13)
-                      : (state_q == CORE_ARRAY_RESUME3) ? CPW_WEND_IDX
-                      : (state_q == CORE_ARRAY_RESUME4) ? B_COLOR1_IDX
-                                                       : B_DADDR_IDX)
-                     : is_fill ? ((state_q == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP_WIN) ? CPW_WEND_IDX
-                                : (state_q == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
-                                : (state_q == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
-                     : (is_drav && (state_q == CORE_DRAV_SETUP_WIN)) ? CPW_WEND_IDX  // WEND
-                     : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_DYDX_IDX    // DYDX (B7)
-                     : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_INC2_IDX    // INC2 (B12)
-                     : (is_line && (state_q == CORE_LINE_SETUP3)) ? B_COLOR1_IDX  // COLOR1 (B9)
-                     : (is_line && (state_q == CORE_LINE_SETUP_WIN)) ? CPW_WEND_IDX // WEND (B6)
-                     : (state_q == CORE_PIXT_SETUP_WIN) ? CPW_WEND_IDX             // PIXT WEND
-                     : (decoded.iclass == INSTR_CPW) ? CPW_WSTART_IDX : decoded.rd_idx;
-  // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
-  // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
-  // read DYDX (B7) at EXECUTE. Otherwise unused.
-  assign rf_rs3_file = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
-                     ? decoded.rd_file : REG_FILE_B;
-  assign rf_rs3_idx  = ((decoded.iclass == INSTR_DIVU) || (decoded.iclass == INSTR_DIVS))
-                     ? (decoded.rd_idx + 4'd1)
-                     : (is_drav && (state_q == CORE_DRAV_SETUP_WIN))
-                     ? B_COLOR1_IDX
-                     : ((is_fill || is_pblt) && array_resume)
-                     ? ((state_q == CORE_ARRAY_RESUME1) ? reg_idx_t'(11)
-                      : (state_q == CORE_ARRAY_RESUME2) ? reg_idx_t'(14)
-                      : (state_q == CORE_ARRAY_RESUME3) ? B_DYDX_IDX
-                                                       : B_COUNT_IDX)
-                     : is_fill ? ((state_q == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
-                     : is_pblt ? ((state_q == CORE_PBLT_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
-                     : (is_line && (state_q == CORE_LINE_SETUP1)) ? B_COUNT_IDX   // COUNT (B10)
-                     : (is_line && (state_q == CORE_LINE_SETUP2)) ? B_OFFSET_IDX  // OFFSET (B4)
-                     : ((decoded.iclass == INSTR_CVXYL) || decoded.xy_addr || is_drav) ? B_OFFSET_IDX
-                     : CPW_WEND_IDX;
+  // Register-file read-port addresses. They are a function of the state, the
+  // decoded instruction, the MMTM/MMFM mask and ST.PBX only, so they are
+  // registered from the next values of those (state_d, the decode capture,
+  // mm_mask_d, the ST write) and equal the same function of the current
+  // values on every clock; the read ports then start at a register instead of
+  // at the decode/state logic. The function body is the earlier port logic
+  // unchanged. Justification: timing only (docs/dropin_measure.md).
+  typedef struct packed {
+    reg_file_t f1; reg_idx_t i1;
+    reg_file_t f2; reg_idx_t i2;
+    reg_file_t f3; reg_idx_t i3;
+  } rf_addr_t;
+  function automatic rf_addr_t rf_addr_fn(input core_state_t st, input decoded_instr_t dc,
+                                          input logic [15:0] mmask, input logic pbx);
+    rf_addr_t r;
+    logic f_fill, f_pblt, f_ar, f_drav, f_line, f_lrb, f_mmtm, f_mmfm;
+    logic [3:0] f_mmidx, f_mmiter;
+    f_fill = (dc.iclass == INSTR_FILL_L) || (dc.iclass == INSTR_FILL_XY);
+    f_pblt = (dc.iclass == INSTR_PIXBLT_LL);
+    f_ar   = (f_fill || f_pblt) && pbx;
+    f_drav = (dc.iclass == INSTR_DRAV);
+    f_line = (dc.iclass == INSTR_LINE);
+    f_lrb  = f_line && ((st == CORE_LINE_SETUP1) || (st == CORE_LINE_SETUP2)
+                     || (st == CORE_LINE_SETUP3) || (st == CORE_LINE_SETUP_WIN));
+    f_mmtm = (dc.iclass == INSTR_MMTM);
+    f_mmfm = (dc.iclass == INSTR_MMFM);
+    f_mmidx = 4'd0;
+    for (int i = 0; i < 16; i++) if (mmask[i]) f_mmidx = i[3:0];
+    f_mmiter = f_mmfm ? f_mmidx : (4'd15 - f_mmidx);
+    r.f1 = f_lrb ? REG_FILE_B
+                       : (st == CORE_PIXT_SETUP_WIN) ? REG_FILE_B
+                       : (f_drav && ((st == CORE_DRAV) || (st == CORE_DRAV_SETUP_WIN))) ? REG_FILE_B
+                       : (f_fill || f_pblt) ? REG_FILE_B
+                       : (dc.iclass == INSTR_MOVE_RR) ? dc.rs_file
+                       : dc.rd_file;
+    // Read-port 1 index is normally dc.rs_idx. MMTM repurposes it
+    // during CORE_MEMORY to scan the register list — rf_rs1_idx then
+    // points at the current register being pushed, and rf_rs1_data
+    // becomes the 32-bit value driven onto fsm_mem_wdata.
+    r.i1 = ((f_fill || f_pblt) && f_ar)
+                       ? ((st == CORE_ARRAY_RESUME1) ? B_SPTCH_IDX
+                        : (st == CORE_ARRAY_RESUME2) ? reg_idx_t'(12)
+                        : (st == CORE_ARRAY_RESUME3) ? CPW_WSTART_IDX
+                        : (st == CORE_ARRAY_RESUME4) ? B_COLOR0_IDX
+                                                         : B_SADDR_IDX)
+                       : f_fill ? ((st == CORE_FILL_SETUP_WIN) ? CPW_WSTART_IDX
+                                  : (st == CORE_FILL_SETUP) ? B_COLOR1_IDX : B_DADDR_IDX)
+                       : f_pblt ? ((st == CORE_PBLT_SETUP_WIN) ? CPW_WSTART_IDX
+                                  : (st == CORE_PBLT_SETUP2) ? B_COLOR0_IDX
+                                  : (st == CORE_PBLT_SETUP)  ? B_SPTCH_IDX : B_SADDR_IDX)
+                       : (st == CORE_MEMORY && f_mmtm) ? f_mmiter
+                       : (f_drav && (st == CORE_DRAV_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART
+                       : (f_drav && (st == CORE_DRAV)) ? B_COLOR1_IDX  // COLOR1 for the draw
+                       : (f_line && (st == CORE_LINE_SETUP1)) ? B_SADDR_IDX   // d (B0)
+                       : (f_line && (st == CORE_LINE_SETUP2)) ? B_INC1_IDX    // INC1 (B11)
+                       : (f_line && (st == CORE_LINE_SETUP3)) ? B_DADDR_IDX   // DADDR (B2)
+                       : (f_line && (st == CORE_LINE_SETUP_WIN)) ? CPW_WSTART_IDX // WSTART (B5)
+                       : (st == CORE_PIXT_SETUP_WIN) ? CPW_WSTART_IDX           // PIXT WSTART
+                       : dc.rs_idx;
+    // Read port 2 normally reads Rd. CPW repurposes it (Rd is not a source
+    // for CPW) to read the window-start register WSTART = B5; read port 3
+    // reads the window-end register WEND = B6. Both are fixed B-file
+    // registers per SPVU001A page 12-57. FILL: B3 (DPTCH) / B7 (DYDX).
+    // PIXBLT: DADDR(B2) at EXECUTE, DPTCH(B3) at SETUP.
+    r.f2 = (f_lrb || f_fill || f_pblt || (dc.iclass == INSTR_CPW)
+                          || (st == CORE_PIXT_SETUP_WIN)
+                          || (f_drav && (st == CORE_DRAV_SETUP_WIN)))
+                       ? REG_FILE_B : dc.rd_file;
+    r.i2 = ((f_fill || f_pblt) && f_ar)
+                       ? ((st == CORE_ARRAY_RESUME1) ? B_DPTCH_IDX
+                        : (st == CORE_ARRAY_RESUME2) ? reg_idx_t'(13)
+                        : (st == CORE_ARRAY_RESUME3) ? CPW_WEND_IDX
+                        : (st == CORE_ARRAY_RESUME4) ? B_COLOR1_IDX
+                                                         : B_DADDR_IDX)
+                       : f_fill ? ((st == CORE_FILL_SETUP_WIN) ? CPW_WEND_IDX : B_DPTCH_IDX)
+                       : f_pblt ? ((st == CORE_PBLT_SETUP_WIN) ? CPW_WEND_IDX
+                                  : (st == CORE_PBLT_SETUP2) ? B_COLOR1_IDX
+                                  : (st == CORE_PBLT_SETUP)  ? B_DPTCH_IDX : B_DADDR_IDX)
+                       : (f_drav && (st == CORE_DRAV_SETUP_WIN)) ? CPW_WEND_IDX  // WEND
+                       : (f_line && (st == CORE_LINE_SETUP1)) ? B_DYDX_IDX    // DYDX (B7)
+                       : (f_line && (st == CORE_LINE_SETUP2)) ? B_INC2_IDX    // INC2 (B12)
+                       : (f_line && (st == CORE_LINE_SETUP3)) ? B_COLOR1_IDX  // COLOR1 (B9)
+                       : (f_line && (st == CORE_LINE_SETUP_WIN)) ? CPW_WEND_IDX // WEND (B6)
+                       : (st == CORE_PIXT_SETUP_WIN) ? CPW_WEND_IDX             // PIXT WEND
+                       : (dc.iclass == INSTR_CPW) ? CPW_WSTART_IDX : dc.rd_idx;
+    // Read port 3: CPW reads WEND (B6); DIVU/DIVS (even Rd) read the low half
+    // of the 64-bit dividend, Rd+1; CVXYL/XY-PIXT read OFFSET (B4); FILL/PIXBLT
+    // read DYDX (B7) at EXECUTE. Otherwise unused.
+    r.f3 = ((dc.iclass == INSTR_DIVU) || (dc.iclass == INSTR_DIVS))
+                       ? dc.rd_file : REG_FILE_B;
+    r.i3 = ((dc.iclass == INSTR_DIVU) || (dc.iclass == INSTR_DIVS))
+                       ? (dc.rd_idx + 4'd1)
+                       : (f_drav && (st == CORE_DRAV_SETUP_WIN))
+                       ? B_COLOR1_IDX
+                       : ((f_fill || f_pblt) && f_ar)
+                       ? ((st == CORE_ARRAY_RESUME1) ? reg_idx_t'(11)
+                        : (st == CORE_ARRAY_RESUME2) ? reg_idx_t'(14)
+                        : (st == CORE_ARRAY_RESUME3) ? B_DYDX_IDX
+                                                         : B_COUNT_IDX)
+                       : f_fill ? ((st == CORE_FILL_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
+                       : f_pblt ? ((st == CORE_PBLT_SETUP) ? B_OFFSET_IDX : B_DYDX_IDX)
+                       : (f_line && (st == CORE_LINE_SETUP1)) ? B_COUNT_IDX   // COUNT (B10)
+                       : (f_line && (st == CORE_LINE_SETUP2)) ? B_OFFSET_IDX  // OFFSET (B4)
+                       : ((dc.iclass == INSTR_CVXYL) || dc.xy_addr || f_drav) ? B_OFFSET_IDX
+                       : CPW_WEND_IDX;
+    return r;
+  endfunction
+
+  rf_addr_t       rf_addr_q;
+  decoded_instr_t decoded_next;
+  logic           st_pbx_next;
+  assign decoded_next = (state_q == CORE_DECODE_WAIT) ? decoded_comb : decoded;
+  assign st_pbx_next  = st_write_en ? st_write_data[ST_PBX_BIT] : st_value[ST_PBX_BIT];
+  always_ff @(posedge clk) begin
+    if (rst) rf_addr_q <= rf_addr_fn(CORE_RESET, '0, 16'd0, ST_RESET_VALUE[ST_PBX_BIT]);
+    else     rf_addr_q <= rf_addr_fn(state_d, decoded_next, mm_mask_d, st_pbx_next);
+  end
+  assign rf_rs1_file = rf_addr_q.f1;
+  assign rf_rs1_idx  = rf_addr_q.i1;
+  assign rf_rs2_file = rf_addr_q.f2;
+  assign rf_rs2_idx  = rf_addr_q.i2;
+  assign rf_rs3_file = rf_addr_q.f3;
+  assign rf_rs3_idx  = rf_addr_q.i3;
+`ifdef VERILATOR
+  // Simulation guard: the registered addresses must equal the function of
+  // the current state on every clock.
+  always_ff @(posedge clk)
+    if (g_armed_q && !rst && rf_addr_q != rf_addr_fn(state_q, decoded, mm_mask_q, st_value[ST_PBX_BIT])) begin
+      $display("RFADDR MISMATCH t=%0t state=%0d q=%h now=%h", $time, state_q, rf_addr_q,
+               rf_addr_fn(state_q, decoded, mm_mask_q, st_value[ST_PBX_BIT]));
+      $fatal(1);
+    end
+`endif
 
   // DSJ-family runtime gate. For DSJEQ/DSJNE, the decrement (and any
   // subsequent jump) happens only if the Z bit pre-condition holds:
@@ -1873,13 +2423,13 @@ module tms34010_core
   // dsj_precondition further gates the write: if Z doesn't match the
   // pre-condition the spec mandates Rd is left unchanged.
   // MMFM writes a popped register on every CORE_MEMORY ack (mem_rdata_eff is
-  // valid in the same cycle mem_ack asserts). This is a second user of
+  // valid in the same cycle fsm_mem_ack asserts). This is a second user of
   // the single regfile write port, active in CORE_MEMORY rather than
   // CORE_WRITEBACK; the final-Rp write still happens at WRITEBACK below.
   // Rp is never in the list (spec: "unpredictable results"), so the two
   // writes never target the same index.
   logic mmfm_pop_wr;
-  assign mmfm_pop_wr = (state_q == CORE_MEMORY) && is_mmfm && mem_ack;
+  assign mmfm_pop_wr = (state_q == CORE_MEMORY) && is_mmfm && fsm_mem_ack;
 
   // ---- Indirect MOVE addressing + auto inc/dec (Task 0059/0060) -----------
   // Pointer register: Rd for stores (rf_rs2), Rs for loads (rf_rs1). The
@@ -1900,7 +2450,7 @@ module tms34010_core
   assign mv_incdec   = mv_postinc || mv_predec;
   assign mv_ptr      = is_mv_store ? rf_rs2_data : rf_rs1_data;
   assign mv_load_ptr_wr = (state_q == CORE_MEMORY) && is_mv_load
-                       && mv_incdec && mem_ack;
+                       && mv_incdec && fsm_mem_ack;
 
   // ---- MOVE field-size machinery (Task 0077) ------------------------------
   // The F bit (instr_word_q[9]) selects the FS0/FE0 (0) or FS1/FE1 (1) pair
@@ -1971,11 +2521,15 @@ module tms34010_core
   // the unsigned add. Arith ops are only defined for pixels of 4/8/16 bits
   // (SPVU001A); they are computed for all sizes (1/2-bit results are
   // spec-Undefined, so any value is acceptable).
+  // With CYCLE_ACCURATE a windowed XY store decides at CORE_PIXT_SETUP_WIN
+  // and, when it draws, is a plain store: the chip reads nothing for the
+  // window and writes nothing when the pixel is not drawn (12-194).
   assign pixt_rmw         = decoded.force_pixel && is_mv_store
-                          && (pixel_dest_read_required || pixt_xy_win);
+                          && (pixel_cpu_dest_read
+                              || (pixt_xy_win && !CYCLE_ACCURATE));
   assign pixt_m2m         = decoded.force_pixel
                           && (decoded.iclass == INSTR_MOVE_FIELD_M2M);
-  assign pixt_m2m_rmw     = pixt_m2m && pixel_dest_read_required;
+  assign pixt_m2m_rmw     = pixt_m2m && pixel_cpu_dest_read;
   assign pixt_dest_address = pixt_m2m ? m2m_dst_addr_q : mv_addr_q;
   assign pixt_source_pmask_field =
       aligned_pmask(pixel_plane_mask_q, m2m_src_addr_q, mv_fmask);
@@ -2028,6 +2582,56 @@ module tms34010_core
       ? pixel_ppop_raw_dest
       : ((pixel_ppop_result & ~pixel_ppop_pmask)
          | (pixel_ppop_raw_dest & pixel_ppop_pmask));
+  // The same merge done by the memory controller: the pixel bits it keeps.
+  // Outside them the merged value is the result, so the CPU need not have
+  // read the destination.
+  // Table 13-7 times the write as a read-modify-write whenever plane
+  // masking or transparency is enabled, whatever the pixel values.
+  logic [DATA_WIDTH-1:0] pixel_keep;
+  logic                  pixel_rmw;
+  assign pixel_keep = (pixel_ppop_transp || pixel_ppop_inhibit)
+                    ? pixel_ppop_fmask
+                    : (pixel_ppop_pmask & pixel_ppop_fmask);
+  assign pixel_rmw  = pixel_transp_en_q || (pixel_plane_mask_q != 16'h0000);
+
+  // With CYCLE_ACCURATE a single-pixel write (PIXT store, DRAV, LINE) is
+  // raised on the first clock of its write step, as before, but its data and
+  // keep mask come from registers: the first clock registers the pixel
+  // operation's result and the operands of the merge, and the memory fabric
+  // takes the merged data and keep mask one clock after it takes the request
+  // (mem_late), before the field sequencer starts the write. Their inputs hold
+  // through the write step (the destination was read in the step before; the
+  // source, address and pixel configuration are registers), so the registers
+  // are loaded in every clock of the step. Justification: timing only
+  // (docs/dropin_measure.md).
+  logic                  pix_wr_step;      // FSM: this clock is a pixel write step
+  logic                  pix_wr_plain_sel; // FSM: the write data is pix_wr_plain
+  logic [DATA_WIDTH-1:0] pix_wr_plain;     // FSM: data of a direct PIXT store
+  logic                  pix_plain_sel_q;
+  logic [DATA_WIDTH-1:0] pix_plain_q;
+  logic [DATA_WIDTH-1:0] pix_res_q, pix_dest_raw_q, pix_pmask_q, pix_fmask_q;
+  logic                  pix_inhibit_q, pix_transp_en_q, pix_wr_transp;
+  logic [DATA_WIDTH-1:0] pixel_wr_data, pixel_wr_keep;
+  always_ff @(posedge clk) begin
+    if (pix_wr_step) begin
+      pix_res_q      <= pixel_ppop_result;
+      pix_dest_raw_q <= pixel_ppop_raw_dest;
+      pix_pmask_q    <= pixel_ppop_pmask;
+      pix_fmask_q    <= pixel_ppop_fmask;
+      pix_inhibit_q  <= pixel_ppop_inhibit;
+      pix_transp_en_q <= pixel_transp_en_q;   // CONTROL.T of the take clock
+      pix_plain_sel_q <= pix_wr_plain_sel;
+      pix_plain_q    <= pix_wr_plain;
+    end
+  end
+  assign pix_wr_transp = pix_transp_en_q
+      && ((pix_res_q & ~pix_pmask_q & pix_fmask_q) == '0);
+  assign pixel_wr_data = !CYCLE_ACCURATE ? pixel_ppop_merged
+                       : (pix_wr_transp || pix_inhibit_q) ? pix_dest_raw_q
+                       : ((pix_res_q & ~pix_pmask_q) | (pix_dest_raw_q & pix_pmask_q));
+  assign pixel_wr_keep = !CYCLE_ACCURATE ? pixel_keep
+                       : (pix_wr_transp || pix_inhibit_q) ? pix_fmask_q
+                       : (pix_pmask_q & pix_fmask_q);
 
   always_ff @(posedge clk) begin
     if (rst) begin
@@ -2058,15 +2662,15 @@ module tms34010_core
                      && ((decoded.force_pixel && is_mv_store) || pixt_xy_m2m)
                      && (io_control[CTRL_W_HI:CTRL_W_LO] != 2'd0);
   assign pixt_in_window =
-        (pixt_point_q[15:0] >= pixt_wstart_q[15:0])
-     && (pixt_point_q[15:0] <= pixt_wend_q[15:0])
-     && (pixt_point_q[DATA_WIDTH-1:16] >= pixt_wstart_q[DATA_WIDTH-1:16])
-     && (pixt_point_q[DATA_WIDTH-1:16] <= pixt_wend_q[DATA_WIDTH-1:16]);
+        ($signed(pixt_point_q[15:0]) >= $signed(pixt_wstart_q[15:0]))
+     && ($signed(pixt_point_q[15:0]) <= $signed(pixt_wend_q[15:0]))
+     && ($signed(pixt_point_q[DATA_WIDTH-1:16]) >= $signed(pixt_wstart_q[DATA_WIDTH-1:16]))
+     && ($signed(pixt_point_q[DATA_WIDTH-1:16]) <= $signed(pixt_wend_q[DATA_WIDTH-1:16]));
   assign pixt_in_window_live =
-        (pixt_point_q[15:0] >= rf_rs1_data[15:0])
-     && (pixt_point_q[15:0] <= rf_rs2_data[15:0])
-     && (pixt_point_q[DATA_WIDTH-1:16] >= rf_rs1_data[DATA_WIDTH-1:16])
-     && (pixt_point_q[DATA_WIDTH-1:16] <= rf_rs2_data[DATA_WIDTH-1:16]);
+        ($signed(pixt_point_q[15:0]) >= $signed(rf_rs1_data[15:0]))
+     && ($signed(pixt_point_q[15:0]) <= $signed(rf_rs2_data[15:0]))
+     && ($signed(pixt_point_q[DATA_WIDTH-1:16]) >= $signed(rf_rs1_data[DATA_WIDTH-1:16]))
+     && ($signed(pixt_point_q[DATA_WIDTH-1:16]) <= $signed(rf_rs2_data[DATA_WIDTH-1:16]));
   // W=1 never draws; W=2/W=3 draw inside.
   assign pixt_clip_out = pixt_xy_win &&
                          ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1) || !pixt_in_window);
@@ -2086,7 +2690,7 @@ module tms34010_core
       end
       // Refresh the store form's result at its RMW write step. The M2M form
       // either proceeds or skips directly from SETUP_WIN using the live test.
-      if ((state_q == CORE_MEMORY) && pixt_rmw && (mem_op_step == 2'd1) && mem_ack)
+      if ((state_q == CORE_MEMORY) && pixt_rmw && (mem_op_step == 2'd1) && fsm_mem_ack)
         pixt_inside_q <= pixt_in_window;
     end
   end
@@ -2205,7 +2809,7 @@ module tms34010_core
   // Update the source pointer Rs at the step-0 read ack (inc/dec M2M only).
   assign m2m_src_wr   = (state_q == CORE_MEMORY) && is_mv_m2m && mv_incdec
                      && !is_m2m_dst_only_pi
-                     && (mem_op_step == 2'd0) && mem_ack;
+                     && (mem_op_step == 2'd0) && fsm_mem_ack;
 
   // FILL writes the final DADDR back to B2 in CORE_FILL_WB; PIXBLT writes the
   // final SADDR (B0) in CORE_PBLT_WB and the final DADDR (B2) in CORE_PBLT_WB2.
@@ -2461,9 +3065,26 @@ module tms34010_core
       mpy_rs_field = rf_rs1_data & mpy_fmask;                        // zero-extend / positive
     end
   end
+  // The operands are registered at the end of CORE_DISPATCH, which an MPY
+  // always leaves for CORE_EXECUTE (it has no immediate). Nothing writes the
+  // register file or ST in CORE_DISPATCH (every writer is qualified to
+  // WRITEBACK, MEMORY, INT_DONE or a graphics write-back state), so these
+  // equal what the read ports give in CORE_EXECUTE, and the multiplier starts
+  // at a register rather than at the read-port index logic.
+  // Justification: timing only (docs/dropin_measure.md); no behaviour change.
+  logic [DATA_WIDTH-1:0] mpy_rd_op_q, mpy_rs_op_q;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      mpy_rd_op_q <= '0;
+      mpy_rs_op_q <= '0;
+    end else if (state_q == CORE_DISPATCH) begin
+      mpy_rd_op_q <= rf_rs2_data;
+      mpy_rs_op_q <= mpy_rs_field;
+    end
+  end
   // 64-bit-context products: operands sign/zero-extend to 64 then multiply.
-  assign mpy_sprod   = $signed(rf_rs2_data) * $signed(mpy_rs_field);
-  assign mpy_uprod   = rf_rs2_data * mpy_rs_field;
+  assign mpy_sprod   = $signed(mpy_rd_op_q) * $signed(mpy_rs_op_q);
+  assign mpy_uprod   = mpy_rd_op_q * mpy_rs_op_q;
   assign mpy_product = mpy_signed ? unsigned'(mpy_sprod) : mpy_uprod;
 
   // ---- DIVU divide datapath (SPVU001A 12-69) -----------------------------
@@ -2965,7 +3586,7 @@ module tms34010_core
   always_comb begin
     unique case (decoded.branch_cc)
       CC_UC:   branch_taken = 1'b1;
-      CC_LO:   branch_taken = st_c;                   // unsigned <
+      CC_P:    branch_taken = !st_n & !st_z;          // positive
       CC_LS:   branch_taken = st_c | st_z;             // unsigned <=
       CC_HI:   branch_taken = !st_c & !st_z;           // unsigned >
       CC_LT:   branch_taken = st_n ^ st_v;             // signed   <
@@ -3099,7 +3720,7 @@ module tms34010_core
         end
         default: ; // no branch
       endcase
-    end else if (state_q == CORE_RESET && !rst && mem_ack) begin
+    end else if (state_q == CORE_RESET && !rst && fsm_mem_ack) begin
       // Load the level-0 vector on the same acknowledged transaction that
       // retires CORE_RESET. The first CORE_FETCH therefore observes the
       // architectural reset-service-routine address.
@@ -3143,7 +3764,8 @@ module tms34010_core
   // cycle is harmless. Faithful external-cycle gating (RAS-only) and an
   // on-chip ack belong with a later memory-fabric module. I/O registers are
   // 16-bit; the core accesses them with 16-bit fields (set FS=16).
-  logic                  io_is_io;
+  logic                  io_is_io, io_is_io_regs, io_is_io_live;
+  logic [ADDR_WIDTH-1:0] io_rd_addr;
   logic [15:0]           io_rdata16;
   logic [15:0]           io_rdata_next16;
   logic [15:0]           io_psize;     // PSIZE register (pixel size, for PIXT/CVXYL)
@@ -3160,7 +3782,11 @@ module tms34010_core
   logic                  wvp_set;      // pulse to set INTPEND.WV on a window violation
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
   logic                  mem_we_int;   // the FSM's write intent (pre-I/O gating)
-  tms34010_io_regs u_io_regs (
+  tms34010_io_regs #(
+    .CLKS_PER_STATE (CLKS_PER_STATE),
+    .CYCLE_ACCURATE (CYCLE_ACCURATE),
+    .VCLK_CEN       (VCLK_CEN)
+  ) u_io_regs (
     .clk      (clk),
     .vclk_i   (vclk_i),
     .rst      (rst),
@@ -3186,9 +3812,9 @@ module tms34010_core
     .host_mem_io_rdata_o(host_mem_io_rdata_o),
     .host_mem_rdata_i(host_mem_rdata_i),
     .host_mem_ack_i(host_mem_ack_i),
-    .req      (mem_req && mem_ack),
-    .we       (mem_we_int),    // the access's write intent
-    .addr     (mem_addr),
+    .req      (io_req),
+    .we       (io_we),         // the access's write intent
+    .addr     (io_rd_addr),
     .req_addr_i(io_access_addr_q),
     .wdata    (io_write_data_q),
     .req_next_i(io_write_next_q),
@@ -3196,7 +3822,7 @@ module tms34010_core
     .wdata_next_i(io_write_data_next_q),
     .rdata    (io_rdata16),
     .rdata_next(io_rdata_next16),
-    .is_io    (io_is_io),
+    .is_io    (io_is_io_regs),
     .psize_o  (io_psize),
     .convdp_o (io_convdp),
     .convsp_o (io_convsp),
@@ -3258,6 +3884,15 @@ module tms34010_core
   // maskable request is asserted.
   logic int_take;
   assign int_take = nmi_req || int_req;
+  // An opcode fetch, once issued, must complete: the memory fabric has latched
+  // it, and its acknowledge would otherwise retire the next state's request.
+  logic fetch_open_q;
+  always_ff @(posedge clk) begin
+    if (rst) fetch_open_q <= 1'b0;
+    else     fetch_open_q <= (state_q == CORE_FETCH) && fsm_mem_req && !fsm_mem_ack;
+  end
+  logic fetch_int_take;
+  assign fetch_int_take = int_take && !fetch_open_q;
 
   // Latched state for the entry sequence (captured at a legal boundary):
   //   int_vec_q    — the trap-vector address to fetch.
@@ -3305,7 +3940,7 @@ module tms34010_core
       int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;
       int_rewind_q <= 1'b1;
       int_pbx_q    <= 1'b0;
-    end else if (state_q == CORE_FETCH && int_take) begin
+    end else if (state_q == CORE_FETCH && fetch_int_take) begin
       int_vec_q    <= nmi_req ? INT_VEC_NMI : int_vector;
       int_is_nmi_q <= nmi_req;
       int_push_q   <= nmi_req ? !nmi_nmim : 1'b1;   // NMIM=1 ⇒ no push
@@ -3328,22 +3963,31 @@ module tms34010_core
   // memory fabric issue the special RAS/LAL-only I/O cycle. u_io_regs receives
   // a one-clock completion-qualified request, so held memory waits cannot
   // repeat a processor write or live-register load.
-  assign mem_we = mem_we_int && !io_is_io;
+  assign fsm_mem_we = mem_we_int && !io_is_io;
   // DPYCTL.SRT converts only graphics pixel accesses. Instruction fetches,
   // stack/data moves, host traffic, and on-chip I/O retain their ordinary
   // cycle types. The registered memory-fabric ingress captures this sideband
   // with the complete architectural request before arbitration.
-  assign mem_srt = mem_req && io_pixel_srt && !io_is_io
+  assign fsm_mem_srt = fsm_mem_req && io_pixel_srt && !io_is_io
                 && ((state_q == CORE_DRAV)
                     || (state_q == CORE_LINE_DRAW)
                     || (state_q == CORE_FILL)
                     || (state_q == CORE_PBLT)
                     || ((state_q == CORE_MEMORY) && decoded.force_pixel));
-  assign mem_is_io    = io_is_io;
-  assign mem_io_we    = mem_we_int;
-  assign mem_io_rdata = io_rdata16;
+  assign fsm_mem_is_io    = io_is_io;
+  assign fsm_mem_io_we    = mem_we_int;
+  assign fsm_mem_io_rdata = io_rdata16;
+  // With CYCLE_ACCURATE the I/O registers are read through the registered
+  // request address (the data is needed two states later at the earliest),
+  // which keeps the decode -> register file -> address path out of the I/O
+  // read mux; the I/O decode for the request itself stays on the live
+  // address (the same compare as tms34010_io_regs).
+  assign io_rd_addr     = CYCLE_ACCURATE ? io_access_addr_q : fsm_mem_addr;
+  assign io_is_io_live  = (fsm_mem_addr[ADDR_WIDTH-1:ADDR_WIDTH-2] == 2'b11)
+                       && (fsm_mem_addr[ADDR_WIDTH-3:IO_REG_IDX_W+4] == '0);
+  assign io_is_io       = CYCLE_ACCURATE ? io_is_io_live : io_is_io_regs;
 
-  // Effective read data. The external memory path holds mem_rdata through
+  // Effective read data. The external memory path holds fsm_mem_rdata through
   // WRITEBACK, but the asynchronous I/O read follows the live address. The
   // integrated fabric cannot acknowledge before its registered ingress has
   // accepted a request, so snapshot I/O classification, read data, completion
@@ -3359,6 +4003,8 @@ module tms34010_core
   logic [15:0] io_write_data_next_q;
   logic [FIELD_SIZE_WIDTH-1:0] io_request_size_q;
   logic [DATA_WIDTH-1:0] io_request_wdata_q;
+  logic [DATA_WIDTH-1:0] io_request_keep_q;   // bits the write keeps (mem_keep)
+  logic [DATA_WIDTH-1:0] io_request_kept;     // the write data with them kept
   logic [DATA_WIDTH-1:0] io_rdata_words_q;
   logic [5:0]  io_field_width;
   logic [DATA_WIDTH-1:0] io_field_mask;
@@ -3381,9 +4027,15 @@ module tms34010_core
                   : (32'h0000_0001 << io_field_width) - 32'h0000_0001;
     io_field_rdata =
         (io_rdata_words >> io_access_addr_q[3:0]) & io_field_mask;
+    // A write's keep mask (plane mask, transparency; only set with
+    // CYCLE_ACCURATE, where the memory controller applies them) keeps those
+    // bits of the register, as the field sequencer does for memory.
+    io_request_kept =
+        (io_request_wdata_q & ~io_request_keep_q)
+      | ((io_rdata_words >> io_access_addr_q[3:0]) & io_request_keep_q);
     io_field_wdata =
         (io_rdata_words & ~(io_field_mask << io_access_addr_q[3:0]))
-      | ((io_request_wdata_q & io_field_mask)
+      | ((io_request_kept & io_field_mask)
           << io_access_addr_q[3:0]);
   end
   always_ff @(posedge clk) begin
@@ -3397,27 +4049,47 @@ module tms34010_core
       io_write_data_next_q <= '0;
       io_request_size_q <= '0;
       io_request_wdata_q <= '0;
+      io_request_keep_q  <= '0;
       io_rdata_words_q <= '0;
+      io_rd_late_q     <= 1'b0;
     end else begin
       // The integrated memory fabric registers every request before it can
       // acknowledge it. First hold the raw processor request and two-word
-      // I/O read view at the core boundary.
-      if (mem_req) begin
+      // I/O read view at the core boundary. With CYCLE_ACCURATE a posted
+      // write is accepted at once and committed three clocks later (io_req
+      // below), so this stage holds for the clock in between.
+      if (fsm_mem_req)
         io_is_io_q       <= io_is_io;
-        io_access_addr_q <= mem_addr;
-        io_request_size_q <= mem_size;
-        io_request_wdata_q <= mem_wdata;
+      io_rd_late_q <= CYCLE_ACCURATE && fsm_mem_req && !io_post_d1_q && !io_post_d2_q;
+      if (io_rd_late_q)
         io_rdata_words_q <= {io_rdata_next16, io_rdata16};
-        io_next_addr_q   <= {mem_addr[ADDR_WIDTH-1:4], 4'b0000}
+      if (fsm_mem_req && !io_post_d1_q && !io_post_d2_q) begin
+        io_access_addr_q <= fsm_mem_addr;
+        io_request_size_q <= fsm_mem_size;
+        io_request_wdata_q <= fsm_mem_wdata;
+        io_request_keep_q  <= fsm_mem_keep;
+        if (!CYCLE_ACCURATE)
+          io_rdata_words_q <= {io_rdata_next16, io_rdata16};
+        io_next_addr_q   <= {fsm_mem_addr[ADDR_WIDTH-1:4], 4'b0000}
                           + ADDR_WIDTH'(16);
+      end
+      // A late write's data (mem_late) arrives the clock after it is taken,
+      // while io_post_d1_q holds this snapshot's other fields.
+      if (late_taken_q) begin
+        io_request_wdata_q <= mem_late_wdata;
+        io_request_keep_q  <= mem_late_keep;
       end
       // Then align/merge only registered operands. The physical I/O cycle
       // cannot acknowledge before the fabric's registered ingress and local
       // bus phases, so this stage is complete before the completion pulse.
       // Separating it removes a decode/register-file/address-mux path from
       // the I/O write payload flops.
-      if (io_is_io_q) begin
+      if (io_is_io_q)
         io_rdata_q       <= io_field_rdata;
+      // A posted I/O write's payload keeps following its held snapshot until
+      // it commits, whatever the next request is (the I/O registers ignore
+      // the commit of a write that wasn't to I/O space).
+      if (io_is_io_q || io_post_d1_q || io_post_d2_q) begin
         io_write_data_q  <= io_field_wdata[15:0];
         io_write_next_q  <=
             ({2'b0, io_access_addr_q[3:0]} + io_request_size_q)
@@ -3426,8 +4098,29 @@ module tms34010_core
       end
     end
   end
+  // I/O register access strobe. Upstream: the acknowledged access. With
+  // CYCLE_ACCURATE a write is posted (1988 UG 6.2) and acknowledged in the
+  // clock it is accepted, before the snapshot above is ready, so an
+  // accepted write commits three clocks later from the snapshot (the read
+  // view it merges into is taken a clock after the request).
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      io_post_d1_q <= 1'b0;
+      io_post_d2_q <= 1'b0;
+      io_post_d3_q <= 1'b0;
+    end else begin
+      io_post_d1_q <= CYCLE_ACCURATE && fsm_mem_req && fsm_mem_ack && mem_we_int;
+      io_post_d2_q <= io_post_d1_q;
+      io_post_d3_q <= io_post_d2_q;
+    end
+  end
+  assign io_req = CYCLE_ACCURATE
+                ? ((fsm_mem_req && fsm_mem_ack && !mem_we_int) || io_post_d3_q)
+                : (fsm_mem_req && fsm_mem_ack);
+  assign io_we  = CYCLE_ACCURATE ? io_post_d3_q : mem_we_int;
+
   assign mem_rdata_eff =
-      io_is_io_q ? io_rdata_q : mem_rdata;
+      io_is_io_q ? io_rdata_q : fsm_mem_rdata;
 
   tms34010_alu u_alu (
     .op    (alu_op),
@@ -3579,12 +4272,17 @@ module tms34010_core
   always_comb begin
     // Defaults.
     state_d       = state_q;
-    mem_req       = 1'b0;
+    fsm_mem_req       = 1'b0;
+    pix_wr_step       = 1'b0;
+    pix_wr_plain_sel  = 1'b0;
+    pix_wr_plain      = '0;
     mem_we_int        = 1'b0;
-    mem_addr      = '0;
-    mem_size      = '0;
-    mem_wdata     = '0;
-    mem_iaq       = 1'b0;
+    fsm_mem_addr      = '0;
+    fsm_mem_size      = '0;
+    fsm_mem_wdata     = '0;
+    fsm_mem_keep      = '0;
+    fsm_mem_rmw       = 1'b0;
+    fsm_mem_iaq       = 1'b0;
     pc_advance_en = 1'b0;
 
     unique case (state_q)
@@ -3597,16 +4295,21 @@ module tms34010_core
           if (io_hlt) begin
             state_d = CORE_RESET_HALT;
           end else begin
-            mem_req    = 1'b1;
+            fsm_mem_req    = 1'b1;
             mem_we_int = 1'b0;
-            mem_addr   = RESET_VECTOR_ADDR;
-            mem_size   = MEM_SIZE_32;
-            if (mem_ack) state_d = CORE_FETCH;
+            fsm_mem_addr   = RESET_VECTOR_ADDR;
+            fsm_mem_size   = MEM_SIZE_32;
+            if (fsm_mem_ack) state_d = CORE_FETCH;
           end
         end
       end
 
       CORE_FETCH: begin
+        // CYCLE_ACCURATE: the previous instruction has not used up its
+        // machine states yet (docs/cycle_accuracy.md). Nothing starts.
+        if (pace_hold) begin
+          state_d = CORE_FETCH;
+        end else
         // Recognise a pending interrupt at the instruction boundary. NMI
         // (non-maskable) takes priority over a maskable request (ST.IE=1 and an
         // enabled INTPEND bit). When taken, do NOT fetch — pc_value stays at the
@@ -3614,17 +4317,17 @@ module tms34010_core
         // straight to the vector; everything else pushes PC+ST first.
         // A newly asserted NMI is serviced before a simultaneous halt, which
         // lets HLT stop the core at the NMI service routine's first boundary.
-        if (int_take) begin
+        if (fetch_int_take) begin
           state_d = (nmi_req && nmi_nmim) ? CORE_INT_VECTOR : CORE_INT_PUSH_PC;
-        end else if (io_hlt) begin
+        end else if (io_hlt && !fetch_open_q) begin
           state_d = CORE_HOST_HALT;
         end else begin
-          mem_req  = 1'b1;
+          fsm_mem_req  = 1'b1;
           mem_we_int   = 1'b0;
-          mem_addr = pc_value;
-          mem_size = INSTR_WORD_BITS;
-          mem_iaq  = 1'b1;
-          if (mem_ack) begin
+          fsm_mem_addr = pc_value;
+          fsm_mem_size = INSTR_WORD_BITS;
+          fsm_mem_iaq  = 1'b1;
+          if (fsm_mem_ack) begin
             state_d       = CORE_DECODE;
             pc_advance_en = 1'b1;       // advance PC by INSTR_WORD_BITS
           end
@@ -3635,32 +4338,32 @@ module tms34010_core
         // Push the resume PC to mem[SP-32] (32-bit). SP is not updated until
         // CORE_INT_DONE; the second push uses SP-64. Order matches RETI's pop
         // (ST at the lower address, PC at the higher) and the TRAP push.
-        mem_req   = 1'b1;
+        fsm_mem_req   = 1'b1;
         mem_we_int = 1'b1;
-        mem_addr  = rf_sp - WORD_BIT_SIZE;
-        mem_size  = MEM_SIZE_32;
-        mem_wdata = int_stack_pc;
-        if (mem_ack) state_d = CORE_INT_PUSH_ST;
+        fsm_mem_addr  = rf_sp - WORD_BIT_SIZE;
+        fsm_mem_size  = MEM_SIZE_32;
+        fsm_mem_wdata = int_stack_pc;
+        if (fsm_mem_ack) state_d = CORE_INT_PUSH_ST;
       end
 
       CORE_INT_PUSH_ST: begin
         // Push ST to mem[SP-64] (32-bit).
-        mem_req   = 1'b1;
+        fsm_mem_req   = 1'b1;
         mem_we_int = 1'b1;
-        mem_addr  = rf_sp - WORD_BIT_SIZE_2;
-        mem_size  = MEM_SIZE_32;
-        mem_wdata = int_stack_st;
-        if (mem_ack) state_d = CORE_INT_VECTOR;
+        fsm_mem_addr  = rf_sp - WORD_BIT_SIZE_2;
+        fsm_mem_size  = MEM_SIZE_32;
+        fsm_mem_wdata = int_stack_st;
+        if (fsm_mem_ack) state_d = CORE_INT_VECTOR;
       end
 
       CORE_INT_VECTOR: begin
         // Read the 32-bit trap vector (the ISR entry address) at the latched
         // vector address; latch it into popped_pc_q for the PC load below.
-        mem_req   = 1'b1;
+        fsm_mem_req   = 1'b1;
         mem_we_int = 1'b0;
-        mem_addr  = int_vec_q;
-        mem_size  = MEM_SIZE_32;
-        if (mem_ack) state_d = CORE_INT_DONE;
+        fsm_mem_addr  = int_vec_q;
+        fsm_mem_size  = MEM_SIZE_32;
+        if (fsm_mem_ack) state_d = CORE_INT_DONE;
       end
 
       CORE_INT_DONE: begin
@@ -3700,11 +4403,11 @@ module tms34010_core
       CORE_FETCH_IMM_LO: begin
         // Fetch the 16-bit low-immediate word from PC. Same protocol as
         // CORE_FETCH; PC advances by INSTR_WORD_BITS on ack.
-        mem_req  = 1'b1;
+        fsm_mem_req  = 1'b1;
         mem_we_int   = 1'b0;
-        mem_addr = pc_value;
-        mem_size = INSTR_WORD_BITS;
-        if (mem_ack) begin
+        fsm_mem_addr = pc_value;
+        fsm_mem_size = INSTR_WORD_BITS;
+        if (fsm_mem_ack) begin
           pc_advance_en = 1'b1;
           state_d = (decoded.needs_imm32 || decoded.needs_imm64)
                   ? CORE_FETCH_IMM_HI : CORE_EXECUTE;
@@ -3712,33 +4415,33 @@ module tms34010_core
       end
 
       CORE_FETCH_IMM_HI: begin
-        mem_req  = 1'b1;
+        fsm_mem_req  = 1'b1;
         mem_we_int   = 1'b0;
-        mem_addr = pc_value;
-        mem_size = INSTR_WORD_BITS;
-        if (mem_ack) begin
+        fsm_mem_addr = pc_value;
+        fsm_mem_size = INSTR_WORD_BITS;
+        if (fsm_mem_ack) begin
           pc_advance_en = 1'b1;
           state_d = decoded.needs_imm64 ? CORE_FETCH_IMM_EXT_LO : CORE_EXECUTE;
         end
       end
 
       CORE_FETCH_IMM_EXT_LO: begin
-        mem_req  = 1'b1;
+        fsm_mem_req  = 1'b1;
         mem_we_int = 1'b0;
-        mem_addr = pc_value;
-        mem_size = INSTR_WORD_BITS;
-        if (mem_ack) begin
+        fsm_mem_addr = pc_value;
+        fsm_mem_size = INSTR_WORD_BITS;
+        if (fsm_mem_ack) begin
           pc_advance_en = 1'b1;
           state_d = CORE_FETCH_IMM_EXT_HI;
         end
       end
 
       CORE_FETCH_IMM_EXT_HI: begin
-        mem_req  = 1'b1;
+        fsm_mem_req  = 1'b1;
         mem_we_int = 1'b0;
-        mem_addr = pc_value;
-        mem_size = INSTR_WORD_BITS;
-        if (mem_ack) begin
+        fsm_mem_addr = pc_value;
+        fsm_mem_size = INSTR_WORD_BITS;
+        if (fsm_mem_ack) begin
           pc_advance_en = 1'b1;
           state_d = CORE_EXECUTE;
         end
@@ -3794,7 +4497,8 @@ module tms34010_core
         // Latch WSTART(B5)/WEND(B6). W=3 preclips the working rectangle now,
         // before any pixel request; a fully excluded rectangle goes to the
         // status-only WB cycle. W=2 checks containment. W=1 never draws.
-        state_d = fill_w1_q                          ? CORE_FILL_WIN_HIT
+        state_d = (CYCLE_ACCURATE && !fill_win_eval_q) ? CORE_FILL_SETUP_WIN
+                : fill_w1_q                          ? CORE_FILL_WIN_HIT
                 : (fill_w2_q && !fill_array_inside)  ? CORE_FILL_WIN_MISS
                 : (fill_win_en_q && !fill_clip_hit)  ? CORE_FILL_WB
                                                      : CORE_FILL;
@@ -3833,8 +4537,9 @@ module tms34010_core
         // inhibits the write there. Suppressed XY-to-XY transfers skip
         // directly to writeback; an admitted transfer may use either the
         // direct source-read/write path or the processing destination-read
-        // path selected by pixt_m2m_rmw.
-        state_d = (pixt_xy_m2m
+        // path selected by pixt_m2m_rmw. With CYCLE_ACCURATE a suppressed
+        // store skips its access too.
+        state_d = ((pixt_xy_m2m || CYCLE_ACCURATE)
                    && ((io_control[CTRL_W_HI:CTRL_W_LO] == 2'd1)
                        || !pixt_in_window_live))
                 ? CORE_WRITEBACK : CORE_MEMORY;
@@ -3844,16 +4549,21 @@ module tms34010_core
         // Draw at Rd's linear address: optionally read the destination at
         // sub-step 0, then write merged/direct COLOR1 at sub-step 1. On the
         // write ack proceed to CORE_WRITEBACK, which advances Rd by Rs.
-        mem_req  = 1'b1;
-        mem_addr = drav_linear_q;
-        mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
+        fsm_mem_req  = 1'b1;
+        fsm_mem_addr = drav_linear_q;
+        fsm_mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
         if (!drav_substep_q) begin
           mem_we_int = 1'b0;            // read the destination pixel
         end else begin
           mem_we_int = 1'b1;           // write the merged pixel
-          mem_wdata  = pixel_ppop_merged;
+          pix_wr_step    = fsm_mem_req;
+          fsm_mem_wdata  = pixel_wr_data;
+          if (CYCLE_ACCURATE) begin
+            fsm_mem_keep = pixel_wr_keep;
+            fsm_mem_rmw  = pixel_rmw;
+          end
         end
-        if (mem_ack && drav_substep_q)
+        if (fsm_mem_ack && drav_substep_q)
           state_d = CORE_WRITEBACK;
         else
           state_d = CORE_DRAV;
@@ -3872,16 +4582,21 @@ module tms34010_core
         // Per pixel, optionally read dest at sub-step 0, then write merged or
         // direct COLOR1 at sub-step 1. On the write ack of the last pixel
         // (COUNT about to reach 0) go to writeback; else draw the next pixel.
-        mem_req  = 1'b1;
-        mem_addr = line_linear;
-        mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
+        fsm_mem_req  = !line_skip;
+        fsm_mem_addr = line_linear;
+        fsm_mem_size = io_psize[FIELD_SIZE_WIDTH-1:0];
         if (!line_substep_q) begin
           mem_we_int = 1'b0;            // read the destination pixel
         end else begin
           mem_we_int = 1'b1;           // write the merged pixel
-          mem_wdata  = pixel_ppop_merged;
+          pix_wr_step    = fsm_mem_req;
+          fsm_mem_wdata  = pixel_wr_data;
+          if (CYCLE_ACCURATE) begin
+            fsm_mem_keep = pixel_wr_keep;
+            fsm_mem_rmw  = pixel_rmw;
+          end
         end
-        if (mem_ack && line_substep_q) begin
+        if ((fsm_mem_ack && line_substep_q) || line_skip) begin
           // Final pixels and W=1/W=2 aborts complete normally. Every other
           // completed pixel first publishes its continuation state.
           state_d = ((line_count_q == 32'd1) || line_abort)
@@ -3907,16 +4622,21 @@ module tms34010_core
         // Per pixel, optionally read the destination at sub-step 0, then write
         // the merged/direct value at sub-step 1. The field sequencer handles sub-word /
         // straddling pixels. Stay until the array's last write completes.
-        mem_req   = 1'b1;
-        mem_addr  = fill_addr_q;
-        mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
+        fsm_mem_req   = 1'b1;
+        fsm_mem_addr  = fill_addr_q;
+        fsm_mem_size  = CYCLE_ACCURATE ? fill_step_bits : io_psize[FIELD_SIZE_WIDTH-1:0];
         if (!fill_substep_q) begin
-          mem_we_int = 1'b0;            // read the destination pixel
+          mem_we_int = 1'b0;            // read the destination pixel(s)
         end else begin
-          mem_we_int = 1'b1;            // write the processed pixel
-          mem_wdata  = pixel_ppop_merged;
+          mem_we_int = 1'b1;            // write the processed pixel(s)
+          fsm_mem_wdata  = pixel_ppop_merged;
+          if (CYCLE_ACCURATE) begin
+            fsm_mem_wdata = {16'd0, fill_word_result};
+            fsm_mem_keep  = {16'd0, fill_word_keep};
+            fsm_mem_rmw   = pixel_rmw;
+          end
         end
-        if (mem_ack && fill_substep_q) begin
+        if (fsm_mem_ack && fill_substep_q) begin
           state_d = fill_done            ? CORE_FILL_WB
                   : fill_checkpoint_due  ? CORE_ARRAY_CKPT_B0
                                          : CORE_FILL;
@@ -3990,25 +4710,47 @@ module tms34010_core
         // Per pixel: read source (sub-step 0), optionally read destination
         // (1), then write the processed/direct pixel (2).
         // The binary source is read 1 bit at a time; otherwise PSIZE bits.
-        mem_req   = 1'b1;
-        mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
+        fsm_mem_req   = 1'b1;
+        fsm_mem_size  = io_psize[FIELD_SIZE_WIDTH-1:0];
         unique case (pblt_substep_q)
           2'd0: begin
             mem_we_int = 1'b0;             // read source pixel (1 bit if binary)
-            mem_addr   = pblt_src_access_addr;
-            if (decoded.blt_binary) mem_size = FIELD_SIZE_WIDTH'(1);
+            fsm_mem_addr   = pblt_src_access_addr;
+            if (decoded.blt_binary) fsm_mem_size = FIELD_SIZE_WIDTH'(1);
+            if (pbw_on) begin              // word mode: the next source word
+              fsm_mem_req  = !pbw_src_ready;
+              fsm_mem_addr = {pbw_miss, 4'd0};
+              fsm_mem_size = FIELD_SIZE_WIDTH'(16);
+            end
+            if (pbx_on) begin              // expand: a segment of up to 32 bits
+              fsm_mem_req  = !pbx_valid_q;
+              fsm_mem_addr = pblt_src_addr_q;
+              fsm_mem_size = (pblt_rem_q < 16'd32) ? FIELD_SIZE_WIDTH'(pblt_rem_q)
+                                                   : FIELD_SIZE_WIDTH'(32);
+            end
           end
           2'd1: begin
             mem_we_int = 1'b0;             // read destination pixel
-            mem_addr   = pblt_dst_access_addr;
+            fsm_mem_addr   = pblt_dst_access_addr;
+            if (pbw_word) begin
+              fsm_mem_addr = pbw_dst_start;
+              fsm_mem_size = pbw_step_bits;
+            end
           end
           default: begin
             mem_we_int = 1'b1;             // write the processed pixel
-            mem_addr   = pblt_dst_access_addr;
-            mem_wdata  = pixel_ppop_merged;
+            fsm_mem_addr   = pblt_dst_access_addr;
+            fsm_mem_wdata  = pixel_ppop_merged;
+            if (pbw_word) begin
+              fsm_mem_addr  = pbw_dst_start;
+              fsm_mem_size  = pbw_step_bits;
+              fsm_mem_wdata = {16'd0, pbw_result_q};
+              fsm_mem_keep  = {16'd0, pbw_keep};
+              fsm_mem_rmw   = pixel_rmw;
+            end
           end
         endcase
-        if (mem_ack && pblt_substep_q == 2'd2) begin
+        if (fsm_mem_ack && pblt_substep_q == 2'd2) begin
           state_d = pblt_done            ? CORE_PBLT_WB
                   : pblt_checkpoint_due  ? CORE_ARRAY_CKPT_B0
                                          : CORE_PBLT;
@@ -4054,26 +4796,26 @@ module tms34010_core
 
       CORE_MEMORY: begin
         // Memory transaction state for instructions that set
-        // decoded.needs_memory_op. The IF signals (mem_req, mem_we_int,
-        // mem_addr, mem_size, mem_wdata) are driven per iclass.
+        // decoded.needs_memory_op. The IF signals (fsm_mem_req, mem_we_int,
+        // fsm_mem_addr, fsm_mem_size, fsm_mem_wdata) are driven per iclass.
         unique case (decoded.iclass)
           INSTR_PUSHST: begin
             // Write ST to mem[new SP] as a 32-bit transfer.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b1;
-            mem_addr  = alu_result;        // = SP - 32
-            mem_size  = MEM_SIZE_32;
-            mem_wdata = st_value;          // ST
+            fsm_mem_addr  = alu_result;        // = SP - 32
+            fsm_mem_size  = MEM_SIZE_32;
+            fsm_mem_wdata = st_value;          // ST
           end
           INSTR_POPST: begin
             // Read 32-bit ST from mem[OLD SP]. The increment-by-32
             // happens via the ALU; we don't want alu_result here,
             // we want the pre-increment SP value. POPST has
             // rd_idx=15 (SP) on rs2 — so rs2 gives OLD SP.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = rf_rs2_data;       // = current SP
-            mem_size  = MEM_SIZE_32;
+            fsm_mem_addr  = rf_rs2_data;       // = current SP
+            fsm_mem_size  = MEM_SIZE_32;
           end
           INSTR_CALL_RS,
           INSTR_CALLA,
@@ -4087,29 +4829,29 @@ module tms34010_core
             // All three increments have already happened by the time
             // we enter CORE_MEMORY (via the FETCH / FETCH_IMM_LO /
             // FETCH_IMM_HI advances).
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b1;
-            mem_addr  = alu_result;        // = SP - 32
-            mem_size  = MEM_SIZE_32;
-            mem_wdata = pc_value;          // PC' (return address)
+            fsm_mem_addr  = alu_result;        // = SP - 32
+            fsm_mem_size  = MEM_SIZE_32;
+            fsm_mem_wdata = pc_value;          // PC' (return address)
           end
           INSTR_RETS: begin
-            // Pop PC from mem[OLD SP]. mem_addr = current SP value
+            // Pop PC from mem[OLD SP]. fsm_mem_addr = current SP value
             // (rf_rs2_data) — NOT alu_result, which is SP + 32 + 16*N.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = rf_rs2_data;       // = current SP
-            mem_size  = MEM_SIZE_32;
+            fsm_mem_addr  = rf_rs2_data;       // = current SP
+            fsm_mem_size  = MEM_SIZE_32;
           end
           INSTR_RETI: begin
             // Two-step pop: step 0 reads ST from mem[SP]; step 1 reads
             // PC from mem[SP+32]. Both 32-bit reads. The latched
             // popped_st_q / popped_pc_q values flow to the WRITEBACK
             // ST-write and PC-load paths below.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_size  = MEM_SIZE_32;
-            mem_addr  = (mem_op_step == 2'd0)
+            fsm_mem_size  = MEM_SIZE_32;
+            fsm_mem_addr  = (mem_op_step == 2'd0)
                       ? rf_rs2_data                  // = SP
                       : (rf_rs2_data + WORD_BIT_SIZE);      // = SP + 32
           end
@@ -4125,28 +4867,28 @@ module tms34010_core
             // For TRAP 0 (`trap_skip_push`): collapse to a single step
             // that is the vector fetch — no pushes (per spec note 1
             // page 12-253). SP stays unchanged (alu_b=0 above).
-            mem_req   = 1'b1;
-            mem_size  = MEM_SIZE_32;
+            fsm_mem_req   = 1'b1;
+            fsm_mem_size  = MEM_SIZE_32;
             if (trap_skip_push) begin
               mem_we_int    = 1'b0;
-              mem_addr  = TRAP_VECTOR_BASE;        // N=0 ⇒ vector @ 0xFFFFFFE0
+              fsm_mem_addr  = TRAP_VECTOR_BASE;        // N=0 ⇒ vector @ 0xFFFFFFE0
             end else begin
               unique case (mem_op_step)
                 2'd0: begin
                   mem_we_int    = 1'b1;
-                  mem_addr  = rf_rs2_data - WORD_BIT_SIZE;
-                  mem_wdata = pc_value;             // PC'
+                  fsm_mem_addr  = rf_rs2_data - WORD_BIT_SIZE;
+                  fsm_mem_wdata = pc_value;             // PC'
                 end
                 2'd1: begin
                   mem_we_int    = 1'b1;
-                  mem_addr  = rf_rs2_data - WORD_BIT_SIZE_2;
-                  mem_wdata = st_value;             // ST as it stood
+                  fsm_mem_addr  = rf_rs2_data - WORD_BIT_SIZE_2;
+                  fsm_mem_wdata = st_value;             // ST as it stood
                 end
                 default: begin                       // step 2
                   mem_we_int    = 1'b0;
                   // Trap-vector address = TRAP_VECTOR_BASE - N*32.
                   // N is decoded.k5 (5 bits); N*32 = N << 5.
-                  mem_addr  = TRAP_VECTOR_BASE
+                  fsm_mem_addr  = TRAP_VECTOR_BASE
                             - ({{(ADDR_WIDTH-5){1'b0}}, decoded.k5} << 5);
                 end
               endcase
@@ -4157,11 +4899,11 @@ module tms34010_core
             // mem[mm_rp_q]. Each iteration of CORE_MEMORY is one 32-bit
             // write; mm_mask_q and mm_rp_q advance on the ack. We stay
             // in CORE_MEMORY until the mask is empty.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b1;
-            mem_addr  = mm_rp_q;
-            mem_size  = MEM_SIZE_32;
-            mem_wdata = rf_rs1_data;       // = value of register R(mm_iter_idx)
+            fsm_mem_addr  = mm_rp_q;
+            fsm_mem_size  = MEM_SIZE_32;
+            fsm_mem_wdata = rf_rs1_data;       // = value of register R(mm_iter_idx)
           end
           INSTR_MMFM: begin
             // Pop: read 32 bits from mem[mm_rp_q] into the register
@@ -4169,10 +4911,10 @@ module tms34010_core
             // write happens via the mmfm_pop_wr path; here we just drive
             // the read. mm_mask_q clears the bit and mm_rp_q advances
             // (+32) on the ack. Stay in CORE_MEMORY until mask empty.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = mm_rp_q;
-            mem_size  = MEM_SIZE_32;
+            fsm_mem_addr  = mm_rp_q;
+            fsm_mem_size  = MEM_SIZE_32;
           end
           INSTR_MOVE_FIELD_STORE: begin
             // MOVE Rs,*Rd[+|-]: write the low FS bits of Rs (rf_rs1_data) to
@@ -4182,14 +4924,21 @@ module tms34010_core
             // A processing/window PIXT store reads the destination at step 0
             // and writes the merged value at step 1. A regular MOVE or direct
             // replace PIXT store is a single write.
-            mem_req   = 1'b1;
-            mem_addr  = mv_addr_q;         // = Rd or Rd-FS (predec)
-            mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_req   = 1'b1;
+            fsm_mem_addr  = mv_addr_q;         // = Rd or Rd-FS (predec)
+            fsm_mem_size  = mv_fs;             // field size (1..32)
             if (pixt_rmw && mem_op_step == 2'd0) begin
               mem_we_int = 1'b0;           // step 0: read the destination pixel
             end else begin
               mem_we_int = 1'b1;           // write (single, or step 1 of RMW)
-              mem_wdata  = pixt_rmw ? pixel_ppop_merged : mv_store_data_q;
+              pix_wr_step    = decoded.force_pixel;
+              pix_wr_plain_sel = !pixt_rmw;
+              pix_wr_plain   = mv_store_data_q;
+              fsm_mem_wdata  = pixt_rmw ? pixel_wr_data : mv_store_data_q;
+              if (CYCLE_ACCURATE && decoded.force_pixel) begin
+                fsm_mem_keep = pixel_wr_keep;
+                fsm_mem_rmw  = pixel_rmw;
+              end
             end
           end
           INSTR_MOVE_FIELD_LOAD: begin
@@ -4198,48 +4947,48 @@ module tms34010_core
             // field-extended data (mv_load_data) goes to Rd at WRITEBACK;
             // for inc/dec the updated pointer Rs±FS is written via the
             // mv_load_ptr_wr path on this ack.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = mv_addr_q;         // = Rs or Rs-FS (predec)
-            mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_addr  = mv_addr_q;         // = Rs or Rs-FS (predec)
+            fsm_mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_OFF_STORE: begin
             // MOVE Rs,*Rd(off): write the low FS bits of Rs (rf_rs1_data) to
             // mem[Rd + off]. imm32 = sign-extended 16-bit offset; Rd =
             // rf_rs2_data. Field-size aware (Task 0078); no pointer step.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b1;
-            mem_addr  = rf_rs2_data + imm32;
-            mem_size  = mv_fs;             // field size (1..32)
-            mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
+            fsm_mem_addr  = rf_rs2_data + imm32;
+            fsm_mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
           end
           INSTR_MOVE_OFF_LOAD: begin
             // MOVE *Rs(off),Rd: read an FS-bit field at mem[Rs + off];
             // field-extended result -> Rd at WRITEBACK. Rs = rf_rs1_data
             // (pointer); imm32 = sext(off16). Field-size aware (Task 0078).
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = rf_rs1_data + imm32;
-            mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_addr  = rf_rs1_data + imm32;
+            fsm_mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_ABS_STORE: begin
             // MOVE Rs,@DAddr: write the low FS bits of Rs (rf_rs1_data) to the
             // absolute bit address imm32 = {imm_hi_q, imm_lo_q}. Field-size
             // aware (Task 0078).
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b1;
-            mem_addr  = imm32;
-            mem_size  = mv_fs;             // field size (1..32)
-            mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
+            fsm_mem_addr  = imm32;
+            fsm_mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_wdata = rf_rs1_data;       // = Rs (low FS bits used)
           end
           INSTR_MOVE_ABS_LOAD: begin
             // MOVE @SAddr,Rd: read an FS-bit field from the absolute address
             // imm32; the field-extended result goes to Rd at WRITEBACK
             // (rf_wr_data mux), flags from the extended value. Task 0078.
-            mem_req   = 1'b1;
+            fsm_mem_req   = 1'b1;
             mem_we_int    = 1'b0;
-            mem_addr  = imm32;
-            mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_addr  = imm32;
+            fsm_mem_size  = mv_fs;             // field size (1..32)
           end
           INSTR_MOVE_FIELD_M2M,
           INSTR_MOVE_OFF_M2M_PI,
@@ -4252,23 +5001,28 @@ module tms34010_core
             // uses the same direct two-step path only for replace/T=0/
             // PMASK=0; otherwise it inserts a destination read and writes the
             // PPOP/transparency/plane-mask result on step 2.
-            mem_req   = 1'b1;
-            mem_size  = mv_fs;             // field size (1..32)
+            fsm_mem_req   = 1'b1;
+            fsm_mem_size  = mv_fs;             // field size (1..32)
             if (mem_op_step == 2'd0) begin
               mem_we_int   = 1'b0;
-              mem_addr = m2m_src_addr_q;   // = Rs (or Rs-FS predec)
+              fsm_mem_addr = m2m_src_addr_q;   // = Rs (or Rs-FS predec)
             end else if (pixt_m2m_rmw && mem_op_step == 2'd1) begin
               mem_we_int = 1'b0;
-              mem_addr = m2m_dst_addr_q;
+              fsm_mem_addr = m2m_dst_addr_q;
             end else begin
               mem_we_int   = 1'b1;
-              mem_addr = m2m_dst_addr_q;   // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
-              mem_wdata = pixt_m2m ? pixel_ppop_merged : move_data_q;
+              fsm_mem_addr = m2m_dst_addr_q;   // = Rd (or Rd-FS predec; updated Rs if Rs==Rd)
+              pix_wr_step   = pixt_m2m;
+              fsm_mem_wdata = pixt_m2m ? pixel_wr_data : move_data_q;
+              if (CYCLE_ACCURATE && pixt_m2m) begin
+                fsm_mem_keep = pixel_wr_keep;
+                fsm_mem_rmw  = pixel_rmw;
+              end
             end
           end
           default: ;  // no transaction (shouldn't reach with needs_memory_op=0)
         endcase
-        if (mem_ack) begin
+        if (fsm_mem_ack) begin
           // Multi-step instructions stay in CORE_MEMORY until their
           // final step's ack; everything else transitions on every ack.
           unique case (decoded.iclass)
@@ -4327,6 +5081,650 @@ module tms34010_core
   end
 
   assign state_o          = state_q;
+  // Every word read through the PC: opcodes, immediates, displacements and
+  // absolute addresses (5.4).
+  assign fsm_mem_ifetch = (state_q == CORE_FETCH)
+                       || (state_q == CORE_FETCH_IMM_LO)
+                       || (state_q == CORE_FETCH_IMM_HI)
+                       || (state_q == CORE_FETCH_IMM_EXT_LO)
+                       || (state_q == CORE_FETCH_IMM_EXT_HI);
+
+  tms34010_icache #(
+    .ENABLE (CYCLE_ACCURATE)
+  ) u_icache (
+    .clk      (clk),
+    .rst      (rst),
+    .cd_i     (io_control[CTRL_CD_BIT]),
+    .cf_i     (io_hstctlh[HSTCTL_CF_BIT]),
+    .c_req    (fsm_mem_req && !(((mem_we_int || (state_q == CORE_LINE_DRAW)
+                                      || (state_q == CORE_FILL)
+                                      || ((state_q == CORE_PBLT) && pbw_word))
+                                     && pace_write_hold)
+                                    || (((state_q == CORE_FILL)
+                                         || ((state_q == CORE_PBLT) && pbw_word))
+                                        && pace_fill_hold))),
+    .c_we     (fsm_mem_we),
+    .c_addr   (fsm_mem_addr),
+    .c_size   (fsm_mem_size),
+    .c_wdata  (fsm_mem_wdata),
+    .c_iaq    (fsm_mem_iaq),
+    .c_ifetch (fsm_mem_ifetch),
+    .c_pc     (pc_value),
+    .c_srt    (fsm_mem_srt),
+    .c_is_io  (fsm_mem_is_io),
+    .c_io_we  (fsm_mem_io_we),
+    .c_ack    (fsm_mem_ack),
+    .c_rdata  (fsm_mem_rdata),
+    .c_from_mem (fsm_mem_from_mem),
+    .m_req    (mem_req),
+    .m_we     (mem_we),
+    .m_addr   (mem_addr),
+    .m_size   (mem_size),
+    .m_wdata  (mem_wdata),
+    .m_iaq    (mem_iaq),
+    .m_srt    (mem_srt),
+    .m_is_io  (mem_is_io),
+    .m_io_we  (mem_io_we),
+    .m_ack    (mem_ack),
+    .m_rdata  (mem_rdata)
+  );
+  assign mem_io_rdata = fsm_mem_io_rdata;
+  // Data writes pass the cache unchanged (it only answers instruction reads).
+  assign mem_keep     = fsm_mem_keep;
+  assign mem_rmw      = fsm_mem_rmw;
+
+  // Late write data (CYCLE_ACCURATE, see pbw_result_q and pix_res_q): a
+  // PIXBLT word write or single-pixel write is raised with mem_late, and its
+  // data and keep mask are given here one clock later.
+  assign mem_late       = CYCLE_ACCURATE && (pix_wr_step || pbw_wr_step);
+  assign mem_late_wdata = pbw_late_q      ? {16'd0, pbw_result_q}
+                        : pix_plain_sel_q ? pix_plain_q
+                        :                   pixel_wr_data;
+  assign mem_late_keep  = pbw_late_q ? {16'd0, pbw_keep} : pixel_wr_keep;
+`ifdef VERILATOR
+  // Simulation guard: the late data of every pixel or word write the memory
+  // takes is what the live path gives in the clock it is taken.
+  logic [15:0]           g_pbw_keep;
+  logic [DATA_WIDTH-1:0] g_wdata, g_keep, g_wdata_q, g_keep_q;
+  logic                  g_late_q = 1'b0, g_late_d2_q = 1'b0;
+  assign g_pbw_keep = (pbw_dst_pm
+                       | (pixel_transp_en_q
+                          ? zero_pixels(pbw_result & ~pbw_dst_pm,
+                                        io_psize[FIELD_SIZE_WIDTH-1:0])
+                          : 16'd0))
+                    & pbw_step_mask;
+  assign g_wdata = pbw_wr_step      ? {16'd0, pbw_result}
+                 : pix_wr_plain_sel ? pix_wr_plain
+                 :                    pixel_ppop_merged;
+  assign g_keep  = pbw_wr_step ? {16'd0, g_pbw_keep} : pixel_keep;
+  always_ff @(posedge clk) begin
+    g_late_q <= 1'b0;
+    if (CYCLE_ACCURATE && g_armed_q && !rst && fsm_mem_req && fsm_mem_ack
+        && (pix_wr_step || pbw_wr_step)) begin
+      g_late_q  <= 1'b1;
+      g_wdata_q <= g_wdata;
+      g_keep_q  <= g_keep;
+    end
+    if (g_late_q && (mem_late_wdata != g_wdata_q || mem_late_keep != g_keep_q)) begin
+      $display("LATE WR MISMATCH t=%0t data %h/%h keep %h/%h", $time,
+               mem_late_wdata, g_wdata_q, mem_late_keep, g_keep_q);
+      $fatal(1);
+    end
+    // and the I/O write snapshot holds it from the next clock (it commits
+    // from there for a write into the I/O page).
+    g_late_d2_q <= g_late_q;
+    if (g_late_d2_q && (io_request_wdata_q != g_wdata_q || io_request_keep_q != g_keep_q)) begin
+      $display("LATE IO MISMATCH t=%0t data %h/%h keep %h/%h", $time,
+               io_request_wdata_q, g_wdata_q, io_request_keep_q, g_keep_q);
+      $fatal(1);
+    end
+  end
+`endif
+
+  // ---------------------------------------------------------------------------
+  // CYCLE_ACCURATE instruction pacing (docs/cycle_accuracy.md).
+  //
+  // Each instruction gets its CPU states: its microcode length, worked out
+  // from the 1988 UG Section 12 "Machine States" cache-hit figures and the
+  // Section 13 tables, less the two states of every data word it reads.
+  // States in which the CPU waits for memory don't count, so bus cycles,
+  // cache fills and hidden writes add their own time. Each instruction word
+  // that had to come from memory adds one state (13.1: cache-disabled =
+  // cache-hit + 3 per word; 5.4.7: a miss costs 8 + 1). The next opcode
+  // fetch starts on the first clock of the state after the count is met.
+  // ---------------------------------------------------------------------------
+  generate
+    if (CYCLE_ACCURATE) begin : g_pace
+      localparam int unsigned PW = (CLKS_PER_STATE > 1) ? $clog2(CLKS_PER_STATE) : 1;
+      // The core's fixed per-instruction work (decode, the fabric's request
+      // register) has to fit inside one state, so the guide's state counts
+      // hold only from 8 core clocks per state (docs/cycle_accuracy.md).
+      // synthesis translate_off
+      initial if (CLKS_PER_STATE < 8)
+        $error("tms34010_core: CYCLE_ACCURATE needs CLKS_PER_STATE >= 8 (got %0d)",
+               CLKS_PER_STATE);
+      // synthesis translate_on
+
+      // Justification (a): position in the machine state, this
+      // instruction's counted CPU states and memory-sourced words, the
+      // in-state wait flag, the latched branch outcome, and the release.
+      logic [PW-1:0] phase_q;
+      logic [19:0]    cpu_cnt_q;
+      logic [3:0]    mem_words_q;
+      logic          waited_q;
+      logic          taken_q;
+      logic          released_q;
+      logic          int_entry_q;  // an interrupt or illegal-opcode entry is running
+      logic          read3_q;      // this instruction read a three-word field
+      logic          write3_q;     // ... and wrote one (Table 13-4 index 13)
+      logic          span3;
+      logic          span3_q;      // span3 one clock ago
+
+      logic          last_clk;
+      logic          waiting;
+      logic          state_counts;
+      logic [19:0]    cpu_cnt_next;
+      logic [19:0]    cpu_states;
+      logic [19:0]    need;
+      logic          due;
+
+      assign last_clk = (CLKS_PER_STATE <= 1) || (phase_q == PW'(CLKS_PER_STATE - 1));
+      assign waiting  = mem_req && !mem_ack;
+      assign state_counts = !(waited_q || waiting);
+      assign cpu_cnt_next = cpu_cnt_q + (state_counts ? 20'd1 : 20'd0);
+
+      // Extra CPU states for the pixel processing operation, beyond reading
+      // the destination (12-214..12-225, 12-68): Replace, Booleans and ADD
+      // none; ADDS, SUB, MAX and MIN one; SUBS two.
+      logic [4:0] ppop;
+      logic [19:0] ppop_states;
+      assign ppop = io_control[CTRL_PPOP_HI:CTRL_PPOP_LO];
+      always_comb begin
+        unique case (ppop)
+          5'b10001, 5'b10010, 5'b10100, 5'b10101: ppop_states = 20'd1;
+          5'b10011:                               ppop_states = 20'd2;
+          default:                                ppop_states = 20'd0;
+        endcase
+      end
+
+      // LINE (13.6): 4 setup states, then 3 + P per pixel drawn, P = 2 for
+      // Replace (Table 12-11). The other operations' P adds the destination
+      // read (two bus states, counted by the bus model) and the same extra
+      // states as PIXT. A pixel's memory accesses start after its first three
+      // CPU states; its write is posted and overlaps the next pixel's first
+      // states. This is the order that gives the guide's figures at every
+      // PSIZE (a PSIZE < 16 write is a read-modify-write of 4 bus states).
+      logic [15:0] pix_cnt_q;      // pixels this instruction has written
+      // FILL (13.3, Tables 13-5/13-6). The engine posts one word (or edge
+      // field) per step; the bus model times the words. After a row's last
+      // write has finished the CPU spends a few states on the row, and after
+      // the last row a few more; the numbers depend on the row class (N = 1,
+      // 2, 3+ words) and which row edges are word aligned (Table 13-6 less
+      // the edge read-modify-writes, which the bus times). Pixel processing
+      // reads each word and spends ADDS/SUB/MAX/MIN one, SUBS two states on
+      // it before the write (Table 13-7).
+      logic [5:0]  fill_setup_q;   // Table 13-5
+      logic        fill_win_q, fill_clip_q, fill_start_q, fill_dim_q;
+      logic [3:0]  fill_wait_q;    // row / end states still to come
+      logic [1:0]  fill_ppw_q;     // pixel processing states before a write
+      logic [20:0] fill_row_end_off;
+      logic        fill_lead_al, fill_trail_al;
+      logic [3:0]  fill_row_states, fill_end_states;
+      assign fill_row_end_off = {17'd0, fill_row_base_q[3:0]}
+                              + ({5'd0, fill_dx_q} << pix_xy_xsh);
+      assign fill_lead_al  = (fill_row_base_q[3:0] == 4'd0);
+      assign fill_trail_al = (fill_row_end_off[3:0] == 4'd0);
+      always_comb begin
+        if (fill_row_end_off <= 21'd16) begin            // short
+          fill_row_states = (fill_lead_al && fill_trail_al) ? 4'd1 : 4'd0;
+          fill_end_states = fill_lead_al ? 4'd2 : 4'd1;
+        end else if (fill_row_end_off <= 21'd32) begin   // medium
+          fill_row_states = {3'd0, fill_lead_al} + {3'd0, fill_trail_al};
+          fill_end_states = (fill_lead_al || fill_trail_al) ? 4'd2 : 4'd1;
+        end else begin                                   // long
+          fill_row_states = {3'd0, fill_trail_al};
+          fill_end_states = !fill_lead_al ? (fill_trail_al ? 4'd2 : 4'd1)
+                          : (fill_trail_al ? 4'd2 : 4'd5);
+        end
+      end
+      // Full-color PIXBLT (13.4, Tables 13-8/13-9), the same way: setup, the
+      // bus model for the source reads and destination words, then row and
+      // end states after each row's last write, from Table 13-9 less the
+      // source reads and edge read-modify-writes the bus times (docs).
+      logic [5:0]  pblt_setup_q;
+      logic [DATA_WIDTH-1:0] pbt_dst_lo, pbt_bits;
+      logic [20:0] pbt_end_off;
+      logic [4:0]  pbt_first_bits;
+      logic [DATA_WIDTH-1:0] pbt_src_first;
+      logic        pbt_lead_al, pbt_trail_al, pbt_two_src;
+      logic [3:0]  pblt_row_states, pblt_end_states;
+      assign pbt_bits     = {16'd0, pblt_dx_q} << pix_xy_xsh;
+      assign pbt_dst_lo   = pblt_hrev_q ? pblt_dst_row_q - pbt_bits : pblt_dst_row_q;
+      assign pbt_end_off  = {17'd0, pbt_dst_lo[3:0]} + pbt_bits[20:0];
+      assign pbt_lead_al  = (pbt_dst_lo[3:0] == 4'd0);
+      assign pbt_trail_al = (pbt_end_off[3:0] == 4'd0);
+      // The row's first destination word and whether it needs two source
+      // words (D < S, 13.4.2.4).
+      always_comb begin
+        if (pblt_hrev_q) begin
+          pbt_first_bits = (pblt_dst_row_q[3:0] == 4'd0) ? 5'd16 : {1'b0, pblt_dst_row_q[3:0]};
+          if (pbt_bits < DATA_WIDTH'(pbt_first_bits)) pbt_first_bits = 5'(pbt_bits);
+          pbt_src_first  = pblt_src_row_q - DATA_WIDTH'(pbt_first_bits);
+        end else begin
+          pbt_first_bits = 5'd16 - {1'b0, pblt_dst_row_q[3:0]};
+          if (pbt_bits < DATA_WIDTH'(pbt_first_bits)) pbt_first_bits = 5'(pbt_bits);
+          pbt_src_first  = pblt_src_row_q;
+        end
+        pbt_two_src = ({1'b0, pbt_src_first[3:0]} + pbt_first_bits) > 5'd16;
+      end
+      always_comb begin
+        if (!pblt_hrev_q) begin
+          if (pbt_end_off <= 21'd16) begin
+            pblt_row_states = pbt_two_src ? 4'd0 : 4'd2;
+            pblt_end_states = (pbt_lead_al && pbt_trail_al) ? 4'd5 : 4'd3;
+          end else begin
+            pblt_row_states = (pbt_end_off <= 21'd32) ? 4'd2 : 4'd0;
+            pblt_end_states = (pbt_trail_al ? 4'd5 : 4'd3) - {3'd0, pbt_two_src};
+          end
+        end else begin
+          if (pbt_end_off <= 21'd16) begin
+            pblt_row_states = (pbt_lead_al && pbt_trail_al && !pbt_two_src) ? 4'd1 : 4'd0;
+            pblt_end_states = (pbt_lead_al && pbt_trail_al) ? 4'd8 : 4'd7;
+          end else begin
+            pblt_row_states = ((pbt_end_off <= 21'd32) ? 4'd2 : 4'd1)
+                            - {3'd0, pbt_two_src && !pbt_trail_al};
+            pblt_end_states = (pbt_trail_al ? 4'd4 : 4'd3) + {3'd0, pbt_two_src};
+          end
+        end
+      end
+      // Expand (13.5.2.3, Table 13-12): after each source segment is read
+      // the CPU spends 3 states before writing, 1 when the segment's first
+      // destination write is not a whole word (its read-modify-write is
+      // timed by the bus).
+      logic [1:0]  pbx_wait_q;
+      logic [15:0] pbx_first_px;
+      logic        pbx_first_full;
+      assign pbx_first_px   = (pblt_rem_q < pbw_room_px) ? pblt_rem_q : pbw_room_px;
+      assign pbx_first_full = (pblt_dst_addr_q[3:0] == 4'd0)
+                           && ((pbx_first_px << pix_xy_xsh) == 16'd16)
+                           && ({10'd0, 6'(fsm_mem_size)} >= pbx_first_px);
+      assign pace_fill_hold = (fill_wait_q != 4'd0) || (fill_ppw_q != 2'd0)
+                           || (pbx_wait_q != 2'd0);
+      logic [15:0] skip_cnt_q;     // LINE pixels calculated, not written, no violation
+      logic [5:0]  mpy_half_q;     // FS1/2, rounded up (FS1 = 0 is 32)
+      logic        mpy_neg_q;      // MPYU: Rs's FS1-bit field has its MSB set
+      // Window checking (7.10): a pixel that W=1 or a window miss/clip leaves
+      // undrawn. The PIXT XY,XY page gives no W=1 figure; taken as W=2's
+      // (docs C9).
+      logic [1:0]  win_w;
+      logic        pixt_nodraw, drav_nodraw;
+      assign win_w       = io_control[CTRL_W_HI:CTRL_W_LO];
+      assign pixt_nodraw = pixt_xy_win && ((win_w == 2'd1) || !pixt_inside_q);
+      assign drav_nodraw = (drav_w_q == 2'd1)
+                        || ((drav_w_q != 2'd0) && !drav_inside_q);
+      // A divide whose quotient magnitude is 2^31 (12-63, 12-113).
+      logic        div_min;
+      assign div_min = (decoded.iclass == INSTR_DIVS || decoded.iclass == INSTR_MODS)
+                    && (div_quotient == 32'h8000_0000);
+      logic [19:0] line_px;        // pixel states so far: pix_cnt x (5 + extra)
+      // Table 12-10: a pixel calculated but not written takes 5 states, and
+      // so does a window violation (W=1, W=2) or, with W=1, the end of the
+      // line (5q + 5; docs C10).
+      logic [19:0] line_win_px;
+      assign line_win_px = ({4'd0, skip_cnt_q} << 2) + {4'd0, skip_cnt_q}
+                         + (((line_w_mode == 2'd1) || line_aborted_q) ? 20'd5 : 20'd0);
+      always_comb begin
+        line_px = ({4'd0, pix_cnt_q} << 2) + {4'd0, pix_cnt_q} + line_win_px;
+        if (ppop_states == 20'd1)      line_px = line_px + {4'd0, pix_cnt_q};
+        else if (ppop_states == 20'd2) line_px = line_px + ({4'd0, pix_cnt_q} << 1);
+      end
+
+      always_comb begin
+        cpu_states = 20'd1;
+        unique case (decoded.iclass)
+          // Section 12 pages: two states.
+          INSTR_MOVI_IW, INSTR_ADDI_IW, INSTR_SUBI_IW, INSTR_CMPI_IW,
+          INSTR_BTST_RR, INSTR_JUMP_RS, INSTR_EXGPC:
+            cpu_states = 20'd2;
+          // Three states.
+          INSTR_MOVI_IL, INSTR_ADDI_IL, INSTR_SUBI_IL, INSTR_CMPI_IL,
+          INSTR_ANDI_IL, INSTR_ORI_IL, INSTR_XORI_IL, INSTR_SLA_K,
+          INSTR_SLA_RR, INSTR_SEXT, INSTR_DINT, INSTR_EINT, INSTR_PUTST,
+          INSTR_CVXYL:
+            cpu_states = 20'd3;
+          // 12-237: SETF 1 state for F=0, 2 for F=1.
+          INSTR_SETF:       cpu_states = instr_word_q[9] ? 20'd2 : 20'd1;
+          // 12-95, 12-97, 12-93, 12-75, 12-70..12-73: taken / not taken.
+          INSTR_JRCC_SHORT: cpu_states = taken_q ? 20'd2 : 20'd1;
+          // 12-97: long JRcc not taken 4 (the 1986 first edition says 2).
+          INSTR_JRCC_LONG:  cpu_states = taken_q ? 20'd3 : 20'd4;
+          INSTR_JACC:       cpu_states = taken_q ? 20'd3 : 20'd4;
+          INSTR_DSJS:       cpu_states = taken_q ? 20'd2 : 20'd3;
+          INSTR_DSJ, INSTR_DSJEQ, INSTR_DSJNE:
+                            cpu_states = taken_q ? 20'd3 : 20'd2;
+          // 12-165, 12-167: 5 + FS1/2; MPYU one more if Rs is
+          // negative (taken as the MSB of its FS1-bit field, docs C11).
+          INSTR_MPYS:       cpu_states = 20'd5 + {14'd0, mpy_half_q};
+          INSTR_MPYU:       cpu_states = 20'd5 + {14'd0, mpy_half_q}
+                                       + (mpy_neg_q ? 20'd1 : 20'd0);
+          // 12-63, 12-65, 12-113, 12-114: early end on overflow / Rs = 0;
+          // DIVS and MODS take one more state when the result is >80000000
+          // (taken as a quotient magnitude of 2^31, docs C8).
+          INSTR_DIVS:       cpu_states = div_overflow ? 20'd7
+                                       : (decoded.rd_idx[0] ? 20'd39 : 20'd40)
+                                         + (div_min ? 20'd1 : 20'd0);
+          INSTR_DIVU:       cpu_states = div_overflow ? 20'd5 : 20'd37;
+          INSTR_MODS:       cpu_states = div_overflow ? 20'd3
+                                       : 20'd40 + (div_min ? 20'd1 : 20'd0);
+          INSTR_MODU:       cpu_states = div_overflow ? 20'd3 : 20'd35;
+          // 12-77.
+          INSTR_EMU:        cpu_states = 20'd8;
+          // Stack: cache-hit figure less the words read (12-227..12-232).
+          INSTR_PUSHST:     cpu_states = 20'd2;
+          INSTR_POPST:      cpu_states = 20'd4;
+          INSTR_CALL_RS:    cpu_states = 20'd3;
+          INSTR_CALLA:      cpu_states = 20'd4;
+          INSTR_CALLR:      cpu_states = 20'd3;
+          INSTR_RETS:       cpu_states = 20'd3;
+          INSTR_RETI:       cpu_states = 20'd3;
+          // 12-254: 16 states with SP aligned, 30 without; the pushes and the
+          // vector read come out of the bus model, and the guide's non-aligned
+          // figure has two more CPU states.
+          INSTR_TRAP:       cpu_states = (rf_sp[3:0] != 4'd0) ? 20'd6 : 20'd4;
+          // Tables 13-1 and 13-2: the forms' cache-hit figures less the
+          // words read; MOVE loads add one for sign extension (13-1 note 1).
+          // PIXT (12-214..12-225): the forms' Replace figures less the words
+          // read; XY forms add the conversion.
+          // A windowed XY pixel that is not drawn (W=1, or outside the
+          // window): the "Window Violation" columns of 12-216 and 12-225.
+          INSTR_MOVE_FIELD_STORE:
+            cpu_states = pixt_nodraw ? ((win_w == 2'd3) ? 20'd4 : 20'd6)
+                       : decoded.force_pixel
+                       ? ((decoded.xy_addr ? 20'd4 : 20'd2) + ppop_states)
+                       : (decoded.move_mode == MV_ADDR_PREDEC) ? 20'd2 : 20'd1;
+          INSTR_MOVE_FIELD_LOAD:
+            cpu_states = decoded.force_pixel ? (decoded.xy_addr ? 20'd4 : 20'd2)
+                       : ((decoded.move_mode == MV_ADDR_PREDEC) ? 20'd2 : 20'd1)
+                       + ((mv_fe && !decoded.force_byte && !decoded.force_pixel
+                           && (mv_fs != FIELD_SIZE_WIDTH'(DATA_WIDTH))) ? 20'd1 : 20'd0);
+          INSTR_MOVE_OFF_STORE, INSTR_MOVE_ABS_STORE:
+            cpu_states = 20'd3;
+          INSTR_MOVE_OFF_LOAD, INSTR_MOVE_ABS_LOAD:
+            cpu_states = 20'd3
+                       + ((mv_fe && !decoded.force_byte
+                           && (mv_fs != FIELD_SIZE_WIDTH'(DATA_WIDTH))) ? 20'd1 : 20'd0);
+          // Table 13-4.
+          INSTR_MOVE_FIELD_M2M:
+            cpu_states = pixt_nodraw ? ((win_w == 2'd3) ? 20'd6 : 20'd8)
+                       : decoded.force_pixel
+                       ? ((decoded.xy_addr ? 20'd5 : 20'd2) + ppop_states)
+                       : (decoded.move_mode == MV_ADDR_NONE) ? 20'd1 : 20'd2;
+          // 12-68 DRAV; its "Window Violation" columns when the pixel is not drawn.
+          INSTR_DRAV:       cpu_states = drav_nodraw ? ((drav_w_q == 2'd2) ? 20'd3 : 20'd5)
+                                       : 20'd4 + ppop_states;
+          INSTR_LINE:       cpu_states = 20'd4 + line_px;
+          // 13.3.1, Table 13-5: FILL setup; the transfer is timed by the
+          // engine (fill_wait_q).
+          INSTR_FILL_L, INSTR_FILL_XY: cpu_states = {14'd0, fill_setup_q};
+          INSTR_PIXBLT_LL:
+                            cpu_states = {14'd0, pblt_setup_q};
+          INSTR_MOVE_OFF_M2M_PI, INSTR_MOVE_ABS_M2M_PI,
+          INSTR_MOVE_OFF_M2M, INSTR_MOVB_OFF_M2M:
+            cpu_states = 20'd3;
+          INSTR_MOVE_ABS_M2M, INSTR_MOVB_ABS_M2M:
+            cpu_states = 20'd5;
+          // 12-110 MMFM 3 + 4n (Rp aligned), 3 + 6n (not): the n
+          // 32-bit reads of two or three words.
+          INSTR_MMFM:       cpu_states = 20'd3;
+          // 12-112 MMTM aligned 2 + 4n + (2): four CPU states, then the n
+          // 32-bit writes back to back through the one-deep controller
+          // (the CPU waits while each is in progress), and two more states
+          // after the last write is taken: 2 + 4n, with 2 hidden.
+          INSTR_MMTM:       cpu_states = 20'd6;
+          default:          cpu_states = 20'd1;
+        endcase
+      end
+
+      // The CPU state in which an instruction's write starts. From the
+      // guide's hidden states: hidden = start + bus states - 1 - CPU states
+      // (Table 13-2 for MOVE/MOVB stores; 12-48..12-50 CALL; 12-228 PUSHST).
+      logic [19:0] write_state;
+      always_comb begin
+        write_state = 20'd1;
+        unique case (decoded.iclass)
+          INSTR_MOVE_FIELD_STORE:
+            write_state = decoded.force_pixel
+                        ? ((decoded.xy_addr ? 20'd4 : 20'd2) + ppop_states)
+                        : (decoded.move_mode == MV_ADDR_PREDEC) ? 20'd2 : 20'd1;
+          INSTR_DRAV:       write_state = 20'd4 + ppop_states;
+          INSTR_LINE:       write_state = 20'd8 + line_px;
+          INSTR_FILL_L, INSTR_FILL_XY: write_state = {14'd0, fill_setup_q} + 20'd1;
+          INSTR_PIXBLT_LL:
+                            write_state = {14'd0, pblt_setup_q} + 20'd1;
+          // Table 13-4: the write starts in the last CPU state for the
+          // predecrement, offset and absolute forms, the first otherwise.
+          INSTR_MOVE_FIELD_M2M:
+            write_state = decoded.force_pixel
+                        ? ((decoded.xy_addr ? 20'd5 : 20'd2) + ppop_states)
+                        : (decoded.move_mode == MV_ADDR_PREDEC) ? 20'd2 : 20'd1;
+          INSTR_MOVE_OFF_M2M_PI, INSTR_MOVE_ABS_M2M_PI,
+          INSTR_MOVE_OFF_M2M, INSTR_MOVB_OFF_M2M:
+            write_state = 20'd3;
+          INSTR_MOVE_ABS_M2M, INSTR_MOVB_ABS_M2M:
+            write_state = 20'd5;
+          INSTR_MOVE_OFF_STORE, INSTR_MOVE_ABS_STORE:
+            write_state = 20'd3;
+          // 12-228 PUSHST: 2+(3) aligned, 2+(8) not: with SP not aligned the
+          // five-cycle write starts a state earlier.
+          INSTR_PUSHST:     write_state = (rf_sp[3:0] != 4'd0) ? 20'd1 : 20'd2;
+          INSTR_CALLR:      write_state = 20'd2;
+          INSTR_CALL_RS, INSTR_CALLA: write_state = 20'd3;
+          INSTR_MMTM:                 write_state = 20'd5;
+          default:          write_state = 20'd1;
+        endcase
+      end
+      // The extra state of each memory-sourced instruction word comes
+      // before the instruction's own CPU states.
+
+      // A data field that touches three words (alignment G, Figure 13-1).
+      assign span3 = (({2'b00, fsm_mem_addr[3:0]} + fsm_mem_size) > 6'd32);
+
+      // Table 13-4: a memory-to-memory move whose source and destination are
+      // both alignment G takes two more states than the other columns give,
+      // in every form.
+      logic       m2m;
+      logic [19:0] gg_states;
+      assign m2m = (decoded.iclass == INSTR_MOVE_FIELD_M2M && !decoded.force_pixel)
+                || (decoded.iclass == INSTR_MOVE_OFF_M2M_PI)
+                || (decoded.iclass == INSTR_MOVE_ABS_M2M_PI)
+                || (decoded.iclass == INSTR_MOVE_OFF_M2M)
+                || (decoded.iclass == INSTR_MOVE_ABS_M2M);
+      assign gg_states = (m2m && read3_q && write3_q) ? 20'd2 : 20'd0;
+
+      // Interrupt and illegal-opcode entry push PC and ST and read the vector,
+      // as TRAP does (12-254, 8.4). Table 8-4 note 3: 16 states with SP
+      // aligned, 28 without; four CPU states either way (TRAP's non-aligned
+      // figure, 30, has two more).
+      assign need = (int_entry_q ? 20'd4
+                                 : (cpu_states + gg_states))
+                  + {16'd0, mem_words_q};
+      // The next fetch is released in the first clock of a state, once the
+      // states completed so far cover the instruction (docs/cycle_accuracy.md).
+      logic first_clk;
+      assign first_clk = (CLKS_PER_STATE <= 1) || (phase_q == '0);
+
+      // The two extra G-to-G states come before the write (its hidden
+      // states match the other columns').
+      logic [19:0] gg_write;
+      assign gg_write = (m2m && read3_q && span3_q) ? 20'd2 : 20'd0;
+      assign pace_write_hold = (state_q != CORE_FETCH)
+                            && ((cpu_cnt_q + 20'd1) < wthresh_q);
+      // need and the write threshold are registered: they depend on the
+      // decoded instruction (fixed from CORE_DISPATCH), the latched branch
+      // outcome and counters, all settled at least a clock before use, and
+      // registering them keeps the decode tables out of the request path.
+      logic [19:0] need_q;
+      logic [19:0] wthresh_q;
+      always_ff @(posedge clk) begin
+        if (rst) begin
+          need_q    <= 20'd1;
+          wthresh_q <= 20'd1;
+          span3_q   <= 1'b0;
+        end else begin
+          need_q    <= need;
+          wthresh_q <= write_state + gg_write + {16'd0, mem_words_q};
+          span3_q   <= span3;
+        end
+      end
+      assign due  = first_clk && (state_q == CORE_FETCH) && !released_q
+                 && (cpu_cnt_q >= need_q) && (fill_wait_q == 4'd0);
+      assign pace_hold = !(released_q || due);
+
+      always_ff @(posedge clk) begin
+        if (rst) begin
+          phase_q     <= '0;
+          cpu_cnt_q   <= '0;
+          mem_words_q <= '0;
+          waited_q    <= 1'b0;
+          taken_q     <= 1'b0;
+          released_q  <= 1'b0;
+          read3_q     <= 1'b0;
+          write3_q    <= 1'b0;
+          int_entry_q <= 1'b0;
+          pix_cnt_q   <= '0;
+          skip_cnt_q  <= '0;
+          fill_setup_q <= 6'd4;
+          fill_win_q   <= 1'b0;
+          fill_clip_q  <= 1'b0;
+          fill_start_q <= 1'b0;
+          fill_dim_q   <= 1'b0;
+          pblt_setup_q <= 6'd7;
+          fill_wait_q <= '0;
+          fill_ppw_q  <= '0;
+          pbx_wait_q  <= '0;
+          mpy_half_q  <= '0;
+          mpy_neg_q   <= 1'b0;
+        end else begin
+          if (last_clk) phase_q <= '0;
+          else          phase_q <= phase_q + 1'b1;
+
+          waited_q <= last_clk ? 1'b0 : (waited_q || waiting);
+
+          if (state_q == CORE_WRITEBACK)
+            taken_q <= pc_load_en;
+
+          if (due) begin
+            // The next instruction starts with the coming state.
+            released_q  <= 1'b1;
+            cpu_cnt_q   <= '0;
+            mem_words_q <= '0;
+            read3_q     <= 1'b0;
+            write3_q    <= 1'b0;
+            int_entry_q <= 1'b0;
+            pix_cnt_q   <= '0;
+            skip_cnt_q  <= '0;
+          end else begin
+            if (state_q == CORE_LINE_DRAW && fsm_mem_req && mem_we_int && fsm_mem_ack
+                && pix_cnt_q != 16'hFFFF)
+              pix_cnt_q <= pix_cnt_q + 1'b1;
+            // FILL setup (Table 13-5): FILL L 4, FILL XY 6; with W=3
+            // preclipping 9 if the array fits, 16 if the start corner moves,
+            // 12 if only the far corner moves, 20 for both. W=1/W=2 and an
+            // array wholly outside the window: no figure (docs C12).
+            if (state_q == CORE_EXECUTE && is_fill)
+              fill_setup_q <= fill_is_xy ? 6'd6 : 6'd4;
+            // (The preclip outcome is registered at CORE_FILL_SETUP_WIN and
+            // the figure chosen a clock later, off the window-read path; the
+            // first access waits for the setup states anyway.)
+            if (state_q == CORE_FILL_SETUP_WIN && fill_win_eval_q) begin
+              fill_win_q   <= 1'b1;
+              fill_clip_q  <= fill_win_en_q && fill_clip_hit;
+              fill_start_q <= (fill_clip_x0 != fill_arr_x0) || (fill_clip_y0 != fill_arr_y0);
+              fill_dim_q   <= (fill_clip_x1 != fill_arr_x1) || (fill_clip_y1 != fill_arr_y1);
+            end else
+              fill_win_q   <= 1'b0;
+            if (fill_win_q)
+              fill_setup_q <= !fill_clip_q ? 6'd9
+                            : fill_start_q ? (fill_dim_q ? 6'd20 : 6'd16)
+                            : (fill_dim_q ? 6'd12 : 6'd9);
+            // PIXBLT setup (Table 13-8): L,L 7, XY,L and L,XY 9, XY,XY 12;
+            // with an XY destination and W=3 preclipping 3 more if the array
+            // fits, 10 if the start corner moves, 6 if the far corner moves,
+            // 14 for both; corner adjust for the XY forms +1 (PBH), +2 (PBV),
+            // +4 (both).
+            // Expand (Table 13-11): B,L 4, B,XY 6; W=3 9/17/12/21.
+            if (state_q == CORE_EXECUTE && is_pblt)
+              pblt_setup_q <= decoded.blt_binary ? (decoded.blt_dst_xy ? 6'd6 : 6'd4)
+                            : (decoded.blt_src_xy && decoded.blt_dst_xy) ? 6'd12
+                            : (decoded.blt_src_xy || decoded.blt_dst_xy) ? 6'd9 : 6'd7;
+            if (state_q == CORE_PBLT_SETUP && pblt_auto_corner_q)
+              pblt_setup_q <= pblt_setup_q
+                            + ((pblt_hrev_q && pblt_vrev_q) ? 6'd4
+                               : pblt_vrev_q ? 6'd2 : pblt_hrev_q ? 6'd1 : 6'd0);
+            if (state_q == CORE_PBLT_WIN_EVAL && pblt_win_en_q)
+              pblt_setup_q <= pblt_setup_q
+                + (!pblt_clip_hit ? 6'd3
+                   : ((pblt_clip_x0 != pblt_arr_x0) || (pblt_clip_y0 != pblt_arr_y0))
+                     ? (((pblt_clip_x1 != pblt_arr_x1) || (pblt_clip_y1 != pblt_arr_y1))
+                        ? (decoded.blt_binary ? 6'd15 : 6'd14)
+                        : (decoded.blt_binary ? 6'd11 : 6'd10))
+                   : (((pblt_clip_x1 != pblt_arr_x1) || (pblt_clip_y1 != pblt_arr_y1))
+                      ? 6'd6 : 6'd3));
+            // A row's last write: its row states, and after the last row the
+            // end states too, counted once the controller has finished.
+            if (state_q == CORE_FILL && fsm_mem_req && fsm_mem_ack && mem_we_int
+                && fill_row_end)
+              fill_wait_q <= fill_done ? (fill_row_states + fill_end_states)
+                                       : fill_row_states;
+            else if (state_q == CORE_PBLT && pbw_word && fsm_mem_req && fsm_mem_ack
+                     && mem_we_int && pblt_row_end)
+              // Expand (Table 13-12): no row states (each source segment has
+              // its own), 3 at the end.
+              fill_wait_q <= pbx_on ? (pblt_done ? 4'd3 : 4'd0)
+                           : pblt_done ? (pblt_row_states + pblt_end_states)
+                                       : pblt_row_states;
+            else if (last_clk && (fill_wait_q != 4'd0) && !mem_busy)
+              fill_wait_q <= fill_wait_q - 4'd1;
+            if (state_q == CORE_PBLT && pbx_on && pblt_substep_q == 2'd0
+                && fsm_mem_req && fsm_mem_ack)
+              pbx_wait_q <= pbx_first_full ? 2'd3 : 2'd1;
+            else if (last_clk && (pbx_wait_q != 2'd0))
+              pbx_wait_q <= pbx_wait_q - 2'd1;
+            if ((state_q == CORE_FILL && fsm_mem_req && fsm_mem_ack && !mem_we_int)
+                || (state_q == CORE_PBLT && pbw_word && pblt_substep_q == 2'd1
+                    && fsm_mem_req && fsm_mem_ack))
+              fill_ppw_q <= 2'(ppop_states);
+            else if (last_clk && (fill_ppw_q != 2'd0))
+              fill_ppw_q <= fill_ppw_q - 2'd1;
+            if (state_q == CORE_LINE_DRAW && line_skip && !line_abort
+                && skip_cnt_q != 16'hFFFF)
+              skip_cnt_q <= skip_cnt_q + 1'b1;
+            if (state_q == CORE_EXECUTE && is_mpy) begin
+              mpy_half_q <= (mpy_fs1 == 5'd0) ? 6'd16 : ({1'b0, mpy_fs1} + 6'd1) >> 1;
+              mpy_neg_q  <= (mpy_fs1 == 5'd0) ? rf_rs1_data[DATA_WIDTH-1]
+                                              : rf_rs1_data[mpy_fs1 - 5'd1];
+            end
+            if (state_q == CORE_INT_PUSH_PC || state_q == CORE_INT_VECTOR)
+              int_entry_q <= 1'b1;
+            if (fsm_mem_req && !fsm_mem_ifetch && !fsm_mem_is_io && span3) begin
+              if (fsm_mem_we) write3_q <= 1'b1;
+              else            read3_q  <= 1'b1;
+            end
+            if (last_clk && cpu_cnt_q != 20'hFFFFF) cpu_cnt_q <= cpu_cnt_next;
+            if (fsm_mem_from_mem && fsm_mem_ifetch && mem_words_q != 4'hF)
+              mem_words_q <= mem_words_q + 1'b1;
+            if (state_q != CORE_FETCH && state_q != CORE_RESET)
+              released_q <= 1'b0;
+          end
+        end
+      end
+    end else begin : g_no_pace
+      assign pace_hold       = 1'b0;
+      assign pace_write_hold = 1'b0;
+      assign pace_fill_hold  = 1'b0;
+    end
+  endgenerate
+
   assign pc_o             = pc_value;
   assign instr_word_o     = instr_word_q;
   assign illegal_opcode_o = illegal_q;

@@ -75,6 +75,7 @@ module tms34010_bus_arbiter
   output local_word_t                   cpu_rdata_o,
   output logic                          cpu_ack_o,
   output logic                          cpu_restart_o,
+  output logic                              cpu_cycle_o,   // serving the CPU
 
   output logic                          cycle_req_o,
   output local_cycle_kind_t             cycle_kind_o,
@@ -220,6 +221,8 @@ module tms34010_bus_arbiter
   // Client responses. Read data is meaningful only with the corresponding
   // acknowledgement, but direct wiring avoids storage with no architectural
   // lifetime.
+  assign cpu_cycle_o  = (state_q == ARB_CPU);
+
   assign host_rdata_o = cycle_rdata_i;
   assign cpu_rdata_o  = cycle_rdata_i;
 

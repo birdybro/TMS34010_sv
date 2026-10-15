@@ -16,18 +16,9 @@
             14
           ],
           "name": "sample_function_library"
-        },
-        {
-          "case": "17300005",
-          "field": "B",
-          "indices": [
-            5,
-            6
-          ],
-          "name": "gsp_paint"
         }
       ],
-      "mismatching_case_field_groups": 2
+      "mismatching_case_field_groups": 1
     },
     {
       "class": "production_graphics_reference_semantics",

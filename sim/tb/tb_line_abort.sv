@@ -6,16 +6,17 @@
 // and V. The V bit at the end is NOT-last-pixel-inside for every windowed mode.
 //   W=2 (miss): draws inside pixels; on an OUTSIDE pixel the write is inhibited,
 //               V=1, WVP set, and the LINE aborts.
-//   W=1 (hit):  draws OUTSIDE pixels; on an INSIDE pixel the write is inhibited,
-//               V=0 (inside found), WVP set, and the LINE aborts.
+//   W=1 (hit):  draws no pixels ("calculates points but no pixels are actually
+//               drawn", SPVU001A 12-101, 7.10.1); on an INSIDE pixel V=0
+//               (inside found), WVP set, and the LINE aborts.
 // (The WVP -> INTPEND.WV interrupt is then handled by the maskable interrupt
 //  subsystem. W=3 clip is in tb_line_win.)
 //
 // Two vertical 4-pixel lines (PSIZE=8, CONVDP=0x1B, OFFSET=0x800, COLOR1=0xAA):
 //   W=2: line (0x20,1..4), window (0x20,1)..(0x20,2). Draws words145,146;
 //        aborts at (0x20,3) (outside) → 147,148 stay 0, V=1.
-//   W=1: line (0x10,1..4), window (0x10,3)..(0x10,4). Draws words137,138
-//        (outside); aborts at (0x10,3) (inside) → 139,140 stay 0, V=0.
+//   W=1: line (0x10,1..4), window (0x10,3)..(0x10,4). Draws nothing (words
+//        137..140 stay 0); aborts at (0x10,3) (inside), V=0.
 //   Both set INTPEND.WV.
 // -----------------------------------------------------------------------------
 
@@ -37,7 +38,7 @@ module tb_line_abort;
   instr_word_t                   instr_w;
   logic                          illegal_w;
 
-  tms34010_core u_core (
+  tms34010_core #(.CLKS_PER_STATE(1), .CYCLE_ACCURATE(1'b0)) u_core (
     .clk(clk), .vclk_i(clk), .video_hsync_n_i(1'b1), .video_vsync_n_i(1'b1), .rst(rst), .vclk_rst_i(rst),
     .mem_req(mem_req), .mem_we(mem_we), .mem_addr(mem_addr), .mem_size(mem_size),
     .mem_wdata(mem_wdata), .mem_srt(), .mem_rdata(mem_rdata), .mem_ack(mem_ack),
@@ -173,9 +174,9 @@ module tb_line_abort;
     check_word("W=2: word147 (abort) skipped", 147, 16'h0000);
     check_word("W=2: word148 skipped",         148, 16'h0000);
     check_v("W=2: V=1 (aborted on outside)", 4'd8, 1'b1);
-    // W=1: drew the two outside pixels, aborted at the first inside one.
-    check_word("W=1: word137 (outside) drawn", 137, 16'h00AA);
-    check_word("W=1: word138 (outside) drawn", 138, 16'h00AA);
+    // W=1: drew nothing, aborted at the first inside pixel.
+    check_word("W=1: word137 (outside) not drawn", 137, 16'h0000);
+    check_word("W=1: word138 (outside) not drawn", 138, 16'h0000);
     check_word("W=1: word139 (abort) skipped", 139, 16'h0000);
     check_word("W=1: word140 skipped",         140, 16'h0000);
     check_v("W=1: V=0 (inside found)", 4'd9, 1'b0);

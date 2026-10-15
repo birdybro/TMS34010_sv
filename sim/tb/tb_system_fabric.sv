@@ -79,7 +79,7 @@ module tb_system_fabric;
   instr_word_t               instr_word;
   logic                      illegal_opcode;
 
-  tms34010_system u_system (
+  tms34010_system #(.CLKS_PER_STATE(1), .CYCLE_ACCURATE(1'b0)) u_system (
     .clk               (clk), .vclk_i(clk),
     .rst               (rst), .vclk_rst_i(rst),
     .video_hsync_n_i   (1'b1),

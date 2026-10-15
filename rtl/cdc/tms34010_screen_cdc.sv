@@ -22,6 +22,7 @@ module tms34010_screen_cdc
   import tms34010_pkg::*;
 (
   input  logic        video_clk_i,
+  input  logic        video_ce_i,       // video-side clock enable (1 = every clock)
   input  logic        video_rst_i,
   input  logic        video_req_i,
   input  logic [13:0] video_srfaddr_i,
@@ -62,9 +63,10 @@ module tms34010_screen_cdc
     .sync_o  (core_request_toggle_sync)
   );
 
-  tms34010_sync_bit u_ack_sync (
+  tms34010_sync_bit_ce u_ack_sync (
     .clk     (video_clk_i),
     .rst     (video_rst_i),
+    .ce      (video_ce_i),
     .async_i (core_ack_toggle_q),
     .sync_o  (video_ack_toggle_sync)
   );
@@ -76,7 +78,7 @@ module tms34010_screen_cdc
       video_request_armed_q  <= 1'b1;
       video_outstanding_q    <= 1'b0;
       video_ack_o            <= 1'b0;
-    end else begin
+    end else if (video_ce_i) begin
       video_ack_o <= 1'b0;
 
       if (!video_req_i)

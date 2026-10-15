@@ -22,6 +22,12 @@
 
 module tms34010_pin_system
   import tms34010_pkg::*;
+#(
+  // Core clocks per local clock (machine state); 1 = every core clock.
+  parameter int unsigned CLKS_PER_STATE = 1,
+  // 1: cycle-accurate timing (docs/cycle_accuracy.md). 0: upstream behaviour.
+  parameter bit          CYCLE_ACCURATE = 1'b0
+)
 (
   input  logic                              core_clk_i,
   input  logic                              bus_clk8x_i,
@@ -190,7 +196,10 @@ module tms34010_pin_system
     .host_busy_i  (core_host_busy)
   );
 
-  tms34010_system u_system (
+  tms34010_system #(
+    .CLKS_PER_STATE (CLKS_PER_STATE),
+    .CYCLE_ACCURATE (CYCLE_ACCURATE)
+  ) u_system (
     .clk                (core_clk_i),
     .vclk_i             (vclk_i),
     .rst                (core_rst_i),

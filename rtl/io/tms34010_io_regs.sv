@@ -59,6 +59,15 @@
 `default_nettype none
 module tms34010_io_regs
   import tms34010_pkg::*;
+#(
+  // Core clocks per local clock (machine state). 1 = every core clock is a
+  // local clock.
+  parameter int unsigned CLKS_PER_STATE = 1,
+  // 1: the LINT pins are sampled once per machine state (see g_lint_state).
+  parameter bit          CYCLE_ACCURATE = 1'b0,
+  // vclk_i is a clock enable on clk instead of a clock (tms34010_system)
+  parameter bit          VCLK_CEN       = 1'b0
+)
 (
   input  logic                  clk,
   input  logic                  vclk_i,
@@ -169,6 +178,8 @@ module tms34010_io_regs
 
   logic lint1_n_sync;
   logic lint2_n_sync;
+  logic lint1_n_state;   // pin level as the INTPEND bits see it
+  logic lint2_n_state;
   logic [15:0] intpend_value;
   logic        refcnt_load;
   logic        hcount_load;
@@ -301,6 +312,53 @@ module tms34010_io_regs
     .sync_o  (lint2_n_sync)
   );
 
+  // LINT1/LINT2 timing (1988 UG 8.3 External Interrupts): the GSP samples the
+  // pins at each high-to-low transition of LCLK1 and synchronises them; X1P
+  // and X2P follow the pin one to two states later, depending on the phase
+  // of the transition. With CYCLE_ACCURATE (more than one core clock per
+  // state) each synchronised pin goes through two stages clocked once per
+  // state. LCLK1 falls half way through a state (phase CLKS_PER_STATE/2;
+  // phase 0 is LCLK1 rising, as on the bus timer's timeline). The first stage
+  // samples 2 clocks after that, which is the pin as it was at the fall (the
+  // input synchroniser takes 2 clocks); the second stage passes it on in the
+  // clock before the next fall, so X1P/X2P change at a fall, 8 to 15 clocks
+  // (one to two states) after the pin. Otherwise the synchronised pins are
+  // used directly.
+  generate
+    if (CYCLE_ACCURATE && (CLKS_PER_STATE > 1)) begin : g_lint_state
+      localparam int unsigned PW = $clog2(CLKS_PER_STATE);
+      localparam int unsigned S1 = (CLKS_PER_STATE / 2 + 2) % CLKS_PER_STATE;
+      localparam int unsigned S2 = (CLKS_PER_STATE / 2 + CLKS_PER_STATE - 1)
+                                 % CLKS_PER_STATE;
+      // Justification (a): position within the machine state; the two
+      // per-state synchroniser stages of each pin.
+      logic [PW-1:0] lph_q;
+      logic [1:0]    l1_q, l2_q;
+      always_ff @(posedge clk) begin
+        if (rst) begin
+          lph_q <= '0;
+          l1_q  <= 2'b11;
+          l2_q  <= 2'b11;
+        end else begin
+          lph_q <= (lph_q == PW'(CLKS_PER_STATE - 1)) ? '0 : lph_q + 1'b1;
+          if (lph_q == PW'(S1)) begin
+            l1_q[0] <= lint1_n_sync;
+            l2_q[0] <= lint2_n_sync;
+          end
+          if (lph_q == PW'(S2)) begin
+            l1_q[1] <= l1_q[0];
+            l2_q[1] <= l2_q[0];
+          end
+        end
+      end
+      assign lint1_n_state = l1_q[1];
+      assign lint2_n_state = l2_q[1];
+    end else begin : g_lint_clk
+      assign lint1_n_state = lint1_n_sync;
+      assign lint2_n_state = lint2_n_sync;
+    end
+  endgenerate
+
   assign refcnt_load =
       io_write_commit && (io_write_idx == IO_IDX_REFCNT);
   assign hcount_load =
@@ -328,7 +386,9 @@ module tms34010_io_regs
   // CONTROL.RR clocks its continuous interval/row counter, while a processor
   // write loads the full value. The integrated arbiter consumes
   // request/row/mode alongside the other local-cycle clients.
-  tms34010_refresh u_refresh (
+  tms34010_refresh #(
+    .CLKS_PER_STATE (CLKS_PER_STATE)
+  ) u_refresh (
     .clk          (clk),
     .rst          (rst),
     .rr           (io_reg[IO_IDX_CONTROL][CTRL_RR_HI:CTRL_RR_LO]),
@@ -346,7 +406,7 @@ module tms34010_io_regs
   // scheduler live wholly in VCLK. Configuration, live-register commands,
   // coherent status snapshots, DIP events, and screen requests each use an
   // explicit handshake in tms34010_video_subsystem.
-  tms34010_video_subsystem u_video_subsystem (
+  tms34010_video_subsystem #(.VCLK_CEN(VCLK_CEN)) u_video_subsystem (
     .core_clk_i       (clk),
     .core_rst_i       (rst),
     .video_clk_i      (vclk_i),
@@ -394,8 +454,8 @@ module tms34010_io_regs
   // HIP are read-only levels; only the internal DIP/WVP latches use io_reg.
   always_comb begin
     intpend_value = 16'h0000;
-    intpend_value[INT_X1_BIT] = ~lint1_n_sync;
-    intpend_value[INT_X2_BIT] = ~lint2_n_sync;
+    intpend_value[INT_X1_BIT] = ~lint1_n_state;
+    intpend_value[INT_X2_BIT] = ~lint2_n_state;
     intpend_value[INT_HI_BIT] =
         io_reg[IO_IDX_HSTCTLL][HSTCTL_INTIN_BIT];
     intpend_value[INT_DI_BIT] =

@@ -52,7 +52,7 @@ module tb_display_addr;
 
   tms34010_display_addr u_dut (
     .clk             (clk),
-    .rst             (rst),
+    .rst             (rst), .ce(1'b1),
     .hblank_start    (hblank_start),
     .vcount          (vcount),
     .odd_field       (odd_field),
